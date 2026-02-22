@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChessQuest | Click-to-Move Arena</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #1a0033; --panel: #3d0066; --green: #39FF14;
+            --yellow: #FFEA00; --white: #ffffff;
+        }
+
+        body { background-color: var(--bg); color: var(--white); font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 10px; margin: 0; }
+        .game-container { width: 100%; max-width: 420px; background: var(--panel); border: 4px solid var(--green); border-radius: 25px; padding: 15px; box-shadow: 0 0 30px rgba(57, 255, 20, 0.2); }
+
+        /* DASHBOARD */
+        .stats-bar { display: flex; justify-content: space-between; background: rgba(0,0,0,0.4); padding: 12px; border-radius: 15px; border: 2px solid var(--yellow); margin-bottom: 10px; }
+        .xp-container { background: #000; height: 12px; border-radius: 6px; overflow: hidden; border: 1px solid #555; margin: 5px 0 15px 0; }
+        .xp-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--yellow)); width: 0%; transition: width 0.5s; }
+
+        /* BOARD STYLING */
+        #myBoard { width: 100%; margin: 10px 0; border: 3px solid var(--white); border-radius: 8px; }
+        .highlight-square { box-shadow: inset 0 0 3px 3px var(--yellow); }
+
+        .status-msg { text-align: center; color: var(--yellow); font-weight: bold; margin-bottom: 10px; font-size: 14px; text-transform: uppercase; }
+        .btn { background: var(--green); color: #000; border: none; padding: 12px; width: 100%; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        
+        /* MODAL */
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: var(--panel); border: 5px solid var(--green); padding: 30px; border-radius: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="game-container">
+    <div class="stats-bar">
+        <div><span id="streak-val" style="color:var(--yellow); font-weight:bold;">1</span><div style="font-size:9px;">STREAK</div></div>
+        <div style="font-size: 25px;">🔥</div>
+        <div style="text-align:right;"><span id="lvl-val" style="color:var(--green); font-weight:bold;">LVL 1</span><div id="rank-val" style="font-size:9px;">PAWN</div></div>
+    </div>
+
+    <div class="xp-container"><div id="xp-fill" class="xp-fill"></div></div>
+    <div class="status-msg" id="status">CLICK A PIECE TO MOVE</div>
+    
+    <div id="myBoard"></div>
+    
+    <button class="btn" onclick="loadRandomPuzzle()">NEXT CHALLENGE ➔</button>
+</div>
+
+<div id="victory-modal" class="modal">
+    <div class="modal-content">
+        <h1 style="color: var(--green);">BOOM! 💥</h1>
+        <div style="font-size: 50px;">🏆</div>
+        <p id="reward-text">Masterfully Solved!</p>
+        <button class="btn" onclick="closeModal()">COLLECT XP</button>
+    </div>
+</div>
+
+<script>
+    var board = null;
+    var game = new Chess();
+    var sourceSquare = null;
+    
+    // PUZZLE DATABASE
+    const puzzles = [
+        { name: "Sleepy King", fen: "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1", move: "d1d8" },
+        { name: "Ghost Pin", fen: "4r1k1/5ppp/8/8/8/8/1Q3PPP/4R1K1 w - - 0 1", move: "e1e8" },
+        { name: "Laser Beam", fen: "2k5/8/8/8/8/8/Q7/K1r5 w - - 0 1", move: "a2c2" }
+    ];
+    var currentPuzzle = puzzles[0];
+
+    // SAVE DATA
+    let saveData = JSON.parse(localStorage.getItem('chessQuest_Save')) || { streak: 1, xp: 0, level: 1 };
+
+    function removeHighlights() { $('#myBoard .square-55d63').removeClass('highlight-square'); }
+
+    function onSquareClick(square) {
+        // If we haven't picked a piece yet
+        if (sourceSquare === null) {
+            let piece = game.get(square);
+            if (piece && piece.color === game.turn()) {
+                sourceSquare = square;
+                $('#myBoard .square-' + square).addClass('highlight-square');
+            }
+        } else {
+            // Attempt move
+            let move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
+            removeHighlights();
+
+            if (move === null) {
+                // If clicked another piece of same color, switch to that piece
+                let piece = game.get(square);
+                if (piece && piece.color === game.turn()) {
+                    sourceSquare = square;
+                    $('#myBoard .square-' + square).addClass('highlight-square');
+                } else {
+                    sourceSquare = null;
+                }
+            } else {
+                // Move is legal, check if it's the solution
+                let moveStr = move.from + move.to;
+                if (moveStr === currentPuzzle.move) {
+                    triggerWin();
+                } else {
+                    document.getElementById('status').innerText = "WRONG MOVE! TRY AGAIN.";
+                    setTimeout(() => { game.undo(); board.position(game.fen()); }, 600);
+                }
+                sourceSquare = null;
+            }
+        }
+    }
+
+    function triggerWin() {
+        confetti({ particleCount: 150, spread: 70, colors: ['#39FF14', '#FFEA00'] });
+        saveData.xp += 34; 
+        if(saveData.xp >= 100) { saveData.level++; saveData.xp = 0; }
+        localStorage.setItem('chessQuest_Save', JSON.stringify(saveData));
+        document.getElementById('victory-modal').style.display = 'flex';
+    }
+
+    function loadRandomPuzzle() {
+        currentPuzzle = puzzles[Math.floor(Math.random() * puzzles.length)];
+        game.load(currentPuzzle.fen);
+        board.position(currentPuzzle.fen);
+        document.getElementById('status').innerText = "PUZZLE: " + currentPuzzle.name;
+        sourceSquare = null;
+        removeHighlights();
+    }
+
+    function closeModal() {
+        document.getElementById('victory-modal').style.display = 'none';
+        updateUI();
+        loadRandomPuzzle();
+    }
+
+    function updateUI() {
+        document.getElementById('streak-val').innerText = saveData.streak;
+        document.getElementById('lvl-val').innerText = "LVL " + saveData.level;
+        document.getElementById('xp-fill').style.width = saveData.xp + "%";
+        let ranks = ["PAWN", "KNIGHT", "BISHOP", "ROOK", "QUEEN", "KING"];
+        document.getElementById('rank-val').innerText = ranks[(saveData.level - 1) % 6];
+    }
+
+    board = Chessboard('myBoard', {
+        position: currentPuzzle.fen,
+        onSquareClick: onSquareClick
+    });
+
+    $(window).resize(board.resize);
+    updateUI();
+    loadRandomPuzzle();
+</script>
+
+</body>
+</html>
