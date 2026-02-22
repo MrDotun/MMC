@@ -193,28 +193,65 @@
         drawBoard();
     }
 
+    // UPDATED AI LOGIC: Awareness of threatened pieces
     function makeAIMove() {
         document.getElementById('thinking-indicator').style.visibility = 'visible';
         setTimeout(() => {
             const moves = game.moves({ verbose: true });
             if (moves.length === 0) return;
+
             const pieceValues = { p: 10, n: 30, b: 30, r: 50, q: 90, k: 900 };
+            const aiColor = game.turn();
+            
+            // Analyze the current board to see which AI pieces are under attack BEFORE moving
+            const threatenedSquares = [];
+            // We simulate the opponent's perspective to see what they can hit
+            const fen = game.fen();
+            const tempGame = new Chess(fen);
+            // Switch turn to player to see their available captures
+            const tokens = fen.split(' ');
+            tokens[1] = tokens[1] === 'w' ? 'b' : 'w';
+            tempGame.load(tokens.join(' '));
+            
+            tempGame.moves({ verbose: true }).forEach(m => {
+                if (m.captured) threatenedSquares.push(m.to);
+            });
+
             const scoredMoves = moves.map(move => {
-                let score = Math.random() * 2; 
+                let score = Math.random() * 5; // Variance
+                
+                // Priority 1: Checkmate
                 if (move.san.includes('#')) return { move, score: 10000 };
-                if (move.captured) score += pieceValues[move.captured] * 20;
+
+                // Priority 2: Protect or move pieces that are currently threatened
+                if (threatenedSquares.includes(move.from)) {
+                    score += pieceValues[move.piece] * 15;
+                }
+
+                // Priority 3: Capture player pieces
+                if (move.captured) {
+                    score += pieceValues[move.captured] * 20;
+                }
+
+                // Priority 4: Don't move into a square where the player can just take it for free
                 game.move(move);
                 const opponentMoves = game.moves({ verbose: true });
-                if (opponentMoves.find(m => m.to === move.to)) score -= (pieceValues[move.piece] * 25);
+                const canBeCaptured = opponentMoves.find(m => m.to === move.to);
+                if (canBeCaptured) {
+                    score -= (pieceValues[move.piece] * 25);
+                }
                 game.undo();
+
                 return { move, score };
             });
+
             scoredMoves.sort((a, b) => b.score - a.score);
             lastMove = game.move(scoredMoves[0].move);
+            
             document.getElementById('thinking-indicator').style.visibility = 'hidden';
             drawBoard();
             if (game.game_over()) checkEnd();
-        }, 400);
+        }, 600);
     }
 
     function startTimer() {
@@ -243,7 +280,6 @@
             result = ((userColor === 'w' && timerW <= 0) || (userColor === 'b' && timerB <= 0)) ? "loss" : "win";
         }
 
-        // Rating and Points Logic
         if (result === "win") {
             if (kidPlayer.pts < 7) kidPlayer.pts += 1;
             kidPlayer.rating += 20;
@@ -256,7 +292,6 @@
             currentOpponent.pts += 1;
         }
 
-        // Simulating other masters' results for the round
         mastersData.forEach(m => {
             if (m !== currentOpponent) m.pts += Math.random() > 0.5 ? 1 : 0.5;
         });
@@ -273,7 +308,6 @@
         const tbody = document.getElementById("ranking-tbody");
         tbody.innerHTML = "";
         
-        // Sort by points
         const sorted = [...players].sort((a, b) => b.pts - a.pts);
         sorted.forEach((p, i) => {
             const nameStr = p.isKid ? `<strong>${p.name} (You)</strong>` : p.name;
