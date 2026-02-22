@@ -104,16 +104,18 @@
 </div>
 
 <script>
-    // --- STOCKFISH ENGINE ---
+    // --- STOCKFISH INITIALIZATION ---
     const stockfish = new Worker('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');
     stockfish.onmessage = function(event) {
         if (event.data.includes('bestmove')) {
             const moveData = event.data.split(' ');
             const bestMove = moveData[1];
-            const from = bestMove.substring(0,2);
-            const to = bestMove.substring(2,4);
-            const promotion = bestMove.substring(4,5) || 'q';
             
+            // Extract from and to squares (e.g., "e2e4")
+            const from = bestMove.substring(0, 2);
+            const to = bestMove.substring(2, 4);
+            const promotion = bestMove.length > 4 ? bestMove.substring(4, 5) : 'q';
+
             lastMove = game.move({ from, to, promotion });
             document.getElementById('thinking-indicator').style.visibility = 'hidden';
             drawBoard();
@@ -121,15 +123,13 @@
         }
     };
     stockfish.postMessage('uci');
-    stockfish.postMessage('setoption name Skill Level value 20');
+    stockfish.postMessage('setoption name Skill Level value 20'); // Max Strength
 
-    // --- YOUR ORIGINAL DATA ---
     const mastersData = [
         { name: "IM Odion Aikhoje", rating: 2351, pts: 0 }, { name: "FM Adebayo Adegboyega", rating: 2312, pts: 0 },
         { name: "FM Bomo Kigigha", rating: 2334, pts: 0 }, { name: "IM Adu Oladapo", rating: 2321, pts: 0 },
         { name: "IM Bunmi Olape", rating: 2306, pts: 0 }, { name: "FM Akinseye Abiola", rating: 2252, pts: 0 },
-        { name: "IM Oluwafemi Balogun", rating: 2291, pts: 0 }, { name: "IM Anwuli Daniel", rating: 2365, pts: 0 },
-        { name: "FM Osunfuyi Abimbola", rating: 2274, pts: 0 }, { name: "CM Ojeaga Micheal", rating: 2250, pts: 0 }
+        { name: "IM Oluwafemi Balogun", rating: 2291, pts: 0 }, { name: "IM Anwuli Daniel", rating: 2365, pts: 0 }
     ];
 
     let players = [], kidPlayer = { name: "", rating: 2000, pts: 0, isKid: true }, currentRound = 1;
@@ -146,7 +146,6 @@
 
     window.onload = () => {
         const tb = document.getElementById("intro-tbody");
-        tb.innerHTML = ""; // Clear table first
         mastersData.forEach((p, i) => tb.innerHTML += `<tr><td>${i+1}</td><td>${p.name}</td><td>${p.rating}</td></tr>`);
     };
 
@@ -194,16 +193,24 @@
         if (selectedSquare === sq) selectedSquare = null;
         else if (selectedSquare) {
             const move = game.move({ from: selectedSquare, to: sq, promotion: 'q' });
-            if (move) { selectedSquare = null; lastMove = move; drawBoard(); if (!game.game_over()) makeAIMove(); else checkEnd(); }
+            if (move) { 
+                selectedSquare = null; 
+                lastMove = move; 
+                drawBoard(); 
+                if (!game.game_over()) makeAIMove(); 
+                else checkEnd(); 
+            }
             else selectedSquare = sq;
         } else selectedSquare = sq;
         drawBoard();
     }
 
+    // --- REPLACED WITH STOCKFISH CALLS ---
     function makeAIMove() {
         document.getElementById('thinking-indicator').style.visibility = 'visible';
         stockfish.postMessage('position fen ' + game.fen());
-        stockfish.postMessage('go movetime 1000');
+        // Computer calculates for 1 second (1000ms) - change this value for faster/slower play
+        stockfish.postMessage('go movetime 1000'); 
     }
 
     function startTimer() {
@@ -232,12 +239,10 @@
         currentRound++;
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
         document.getElementById('rankings-screen').classList.add('active-screen');
-        document.getElementById("end-game-btn").style.display = "none";
     }
 
     function exitToMenu() { location.reload(); }
     function resignGame() { checkEnd(); }
-    function resumeTournament() { alert("Resume feature coming soon!"); }
 </script>
 
 </body>
