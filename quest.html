@@ -5,25 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Quest Arena | Mind Masters</title>
 
-    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.1/dist/chessboard-1.0.1.min.css">
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.1/dist/chessboard-1.0.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
 
     <style>
         :root { --bg: #1a1a2e; --panel: #2D1B4D; --green: #4ade80; --yellow: #FFEA00; }
-        body { background-color: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
-        .quest-container { width: 100%; max-width: 420px; background: var(--panel); border: 3px solid var(--green); border-radius: 25px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+        body { background-color: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; padding: 10px; margin: 0; }
+        .quest-container { width: 95%; max-width: 420px; background: var(--panel); border: 3px solid var(--green); border-radius: 25px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); margin-top: 10px; }
         
         /* Highlight Square Style */
-        .highlight-sq { box-shadow: inset 0 0 3px 3px var(--yellow); }
+        .highlight-white { background-color: rgba(255, 234, 0, 0.6) !important; }
+        .highlight-black { background-color: rgba(255, 234, 0, 0.4) !important; }
         
         #myBoard { width: 100%; margin: 15px 0; border: 2px solid white; border-radius: 8px; }
-        .status-msg { text-align: center; color: var(--yellow); font-weight: bold; margin-bottom: 10px; font-size: 14px; height: 20px; }
-        .btn { background: var(--green); color: #1a1a2e; border: none; padding: 12px; width: 100%; border-radius: 10px; font-weight: bold; cursor: pointer; text-transform: uppercase; }
+        .status-msg { text-align: center; color: var(--yellow); font-weight: bold; margin-bottom: 10px; font-size: 14px; min-height: 20px; text-transform: uppercase; }
+        .btn { background: var(--green); color: #1a1a2e; border: none; padding: 15px; width: 100%; border-radius: 12px; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 14px; }
         
-        .xp-bar { background: #000; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 15px; border: 1px solid #444; }
+        .xp-bar { background: #000; height: 12px; border-radius: 6px; overflow: hidden; margin-bottom: 15px; border: 1px solid #444; }
         .xp-fill { height: 100%; background: var(--green); width: 0%; transition: width 0.5s; }
 
         .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: none; justify-content: center; align-items: center; z-index: 1000; }
@@ -34,79 +35,91 @@
 
     <div class="quest-container">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <div id="lvl-txt" style="color: var(--green); font-weight: bold;">LVL 1 PAWN</div>
-            <div style="font-size: 20px;">🔥 <span id="streak-txt" style="color:var(--yellow)">1</span></div>
+            <div id="lvl-txt" style="color: var(--green); font-weight: bold; letter-spacing: 1px;">LVL 1 PAWN</div>
+            <div style="font-size: 18px;">🔥 <span id="streak-txt" style="color:var(--yellow)">1</span></div>
         </div>
 
         <div class="xp-bar"><div id="xp-fill" class="xp-fill"></div></div>
         
-        <div class="status-msg" id="status">SELECT A PIECE</div>
+        <div class="status-msg" id="status">TAP A PIECE TO BEGIN</div>
         <div id="myBoard"></div>
         
-        <button class="btn" onclick="loadNewPuzzle()">SKIP TO NEXT MISSION</button>
+        <button class="btn" onclick="loadNewPuzzle()">SKIP MISSION</button>
     </div>
 
     <div id="victory-modal" class="modal">
         <div class="modal-content">
-            <h1 style="color: var(--green);">EXCELLENT MOVE!</h1>
-            <div style="font-size: 50px;">🌟</div>
-            <p>Puzzle Solved! +25 XP</p>
-            <button class="btn" onclick="closeVictory()">CONTINUE QUEST</button>
+            <h1 style="color: var(--green);">MISSION SOLVED!</h1>
+            <div style="font-size: 60px; margin: 15px 0;">🌟</div>
+            <p>You earned +25 XP!</p>
+            <button class="btn" onclick="closeVictory()">NEXT MISSION</button>
         </div>
     </div>
 
     <script>
-        let board = null;
-        let game = new Chess();
-        let selectedSquare = null;
-        
+        var board = null;
+        var game = new Chess();
+        var selectedSquare = null;
+        var currentPuzzle = null;
+
+        // Corrected Puzzles to match your screenshots
         const puzzles = [
-            { name: "Back Rank Mate", fen: "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1", move: "d1d8" },
-            { name: "Smothered Guard", fen: "6rk/6pp/8/8/8/8/5NPP/7K w - - 0 1", move: "f2f7" },
-            { name: "Discovery Attack", fen: "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 1", move: "f3e5" }
+            { name: "Smothered Guard", fen: "6rk/6pp/8/8/8/8/5NPP/7K w - - 1 1", move: "f2f7" },
+            { name: "Discovery Attack", fen: "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 1", move: "f3e5" },
+            { name: "Back Rank Mate", fen: "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1", move: "d1d8" }
         ];
 
         let state = JSON.parse(localStorage.getItem('mindMastersQuest')) || { xp: 0, level: 1, streak: 1 };
 
         function removeHighlights() {
-            $('#myBoard .square-55d63').removeClass('highlight-sq');
+            $('#myBoard .square-55d63').removeClass('highlight-white highlight-black');
         }
 
         function onSquareClick(square) {
-            // First click: Selecting a piece
+            // 1. If no piece selected yet
             if (selectedSquare === null) {
-                let piece = game.get(square);
+                var piece = game.get(square);
                 if (piece && piece.color === game.turn()) {
                     selectedSquare = square;
-                    $('#myBoard .square-' + square).addClass('highlight-sq');
-                    document.getElementById('status').innerText = "WHERE WILL IT MOVE?";
+                    var isWhite = $('#myBoard .square-' + square).hasClass('white-1e1d7');
+                    $('#myBoard .square-' + square).addClass(isWhite ? 'highlight-white' : 'highlight-black');
+                    document.getElementById('status').innerText = "TAP TARGET SQUARE";
                 }
                 return;
             }
 
-            // Second click: Moving the piece
-            let move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
-            
+            // 2. If clicking the SAME square, deselect
+            if (selectedSquare === square) {
+                removeHighlights();
+                selectedSquare = null;
+                document.getElementById('status').innerText = "TAP A PIECE";
+                return;
+            }
+
+            // 3. Try to move
+            var move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
+
             if (move === null) {
-                // If clicked another of our own pieces, switch selection
-                let piece = game.get(square);
+                // Check if we clicked another of our own pieces instead
+                var piece = game.get(square);
                 if (piece && piece.color === game.turn()) {
                     removeHighlights();
                     selectedSquare = square;
-                    $('#myBoard .square-' + square).addClass('highlight-sq');
-                } else {
-                    removeHighlights();
-                    selectedSquare = null;
-                    document.getElementById('status').innerText = "SELECT A PIECE";
+                    var isWhite = $('#myBoard .square-' + square).hasClass('white-1e1d7');
+                    $('#myBoard .square-' + square).addClass(isWhite ? 'highlight-white' : 'highlight-black');
                 }
             } else {
-                // Check if move matches current puzzle solution
-                let moveMade = move.from + move.to;
-                if (moveMade === currentPuzzle.move) {
-                    success();
+                // Move is legal - check if it's the solution
+                board.position(game.fen());
+                if ((move.from + move.to) === currentPuzzle.move) {
+                    setTimeout(success, 250);
                 } else {
-                    document.getElementById('status').innerText = "NOT QUITE! TRY AGAIN.";
-                    setTimeout(() => { game.undo(); board.position(game.fen()); }, 500);
+                    document.getElementById('status').innerText = "WRONG MOVE! TRY AGAIN.";
+                    setTimeout(() => { 
+                        game.undo(); 
+                        board.position(game.fen()); 
+                        document.getElementById('status').innerText = "TAP A PIECE";
+                    }, 800);
                 }
                 removeHighlights();
                 selectedSquare = null;
@@ -114,7 +127,7 @@
         }
 
         function success() {
-            confetti({ particleCount: 100, spread: 70, colors: ['#4ade80', '#FFEA00'] });
+            confetti({ particleCount: 150, spread: 70, colors: ['#4ade80', '#FFEA00'] });
             state.xp += 25;
             if (state.xp >= 100) { state.level++; state.xp = 0; }
             localStorage.setItem('mindMastersQuest', JSON.stringify(state));
@@ -137,17 +150,24 @@
         }
 
         function updateUI() {
-            document.getElementById('lvl-txt').innerText = `LVL ${state.level} PAWN`;
+            let ranks = ["PAWN", "KNIGHT", "BISHOP", "ROOK", "QUEEN", "KING"];
+            let rankLabel = ranks[(state.level - 1) % 6];
+            document.getElementById('lvl-txt').innerText = `LVL ${state.level} ${rankLabel}`;
             document.getElementById('xp-fill').style.width = state.xp + "%";
             document.getElementById('streak-txt').innerText = state.streak;
         }
 
-        // Initialize Board with Piece Theme from Wikimedia
+        // Configuration
         board = Chessboard('myBoard', {
+            draggable: false, // Disabling drag for pure click-to-move
             position: 'start',
-            draggable: false, // Set to false for Click-to-Move
-            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
-            onSquareClick: onSquareClick
+            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+        });
+
+        // Add Click Listener directly to the board container
+        $('#myBoard').on('click', '.square-55d63', function() {
+            var square = $(this).attr('data-square');
+            onSquareClick(square);
         });
 
         $(window).resize(board.resize);
