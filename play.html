@@ -21,7 +21,7 @@
         }
         #app-container { width: 100%; max-width: 500px; padding: 15px; box-sizing: border-box; background: var(--panel-bg); border: 2px solid var(--accent); border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
         
-        .header-title { text-align: center; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 15px; font-size: 20px; font-weight: bold; }
+        .header-title { text-align: center; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 15px; font-size: 20px; }
         
         .screen { display: none; flex-direction: column; align-items: center; width: 100%; }
         .active-screen { display: flex; }
@@ -48,7 +48,7 @@
         .save-box { background: var(--card-bg); padding: 15px; border-radius: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; }
         input { background: #1a1a2e; border: 1px solid #5b3fa1; color: white; padding: 10px; width: 90%; border-radius: 5px; margin-bottom: 10px; }
         
-        #thinking-indicator { color: var(--accent); font-style: italic; font-size: 14px; visibility: hidden; margin-left: 5px; }
+        #thinking-indicator { color: var(--accent); font-style: italic; font-size: 14px; visibility: hidden; }
         .back-dash { display: block; text-align: center; color: var(--accent); text-decoration: none; font-size: 14px; margin-top: 15px; font-weight: bold; }
     </style>
 </head>
@@ -104,7 +104,7 @@
 </div>
 
 <script>
-    // --- STOCKFISH INTEGRATION ---
+    // --- STOCKFISH ENGINE ---
     const stockfish = new Worker('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');
     stockfish.onmessage = function(event) {
         if (event.data.includes('bestmove')) {
@@ -121,9 +121,9 @@
         }
     };
     stockfish.postMessage('uci');
-    stockfish.postMessage('setoption name Skill Level value 20'); // Grandmaster Level
+    stockfish.postMessage('setoption name Skill Level value 20');
 
-    // --- YOUR ORIGINAL TOURNAMENT LOGIC ---
+    // --- YOUR ORIGINAL DATA ---
     const mastersData = [
         { name: "IM Odion Aikhoje", rating: 2351, pts: 0 }, { name: "FM Adebayo Adegboyega", rating: 2312, pts: 0 },
         { name: "FM Bomo Kigigha", rating: 2334, pts: 0 }, { name: "IM Adu Oladapo", rating: 2321, pts: 0 },
@@ -146,6 +146,7 @@
 
     window.onload = () => {
         const tb = document.getElementById("intro-tbody");
+        tb.innerHTML = ""; // Clear table first
         mastersData.forEach((p, i) => tb.innerHTML += `<tr><td>${i+1}</td><td>${p.name}</td><td>${p.rating}</td></tr>`);
     };
 
@@ -161,7 +162,7 @@
         currentOpponent = mastersData[Math.floor(Math.random()*mastersData.length)];
         game = new Chess(); timerW = timerB = 300;
         
-        document.getElementById("opp-name").innerText = `${currentOpponent.name} [${currentOpponent.rating}]`;
+        document.getElementById("opp-name").innerText = currentOpponent.name;
         document.getElementById("user-name").innerText = kidPlayer.name;
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
         document.getElementById('game-screen').classList.add('active-screen');
@@ -199,11 +200,10 @@
         drawBoard();
     }
 
-    // --- REPLACED WITH STOCKFISH ---
     function makeAIMove() {
         document.getElementById('thinking-indicator').style.visibility = 'visible';
         stockfish.postMessage('position fen ' + game.fen());
-        stockfish.postMessage('go movetime 1000'); // Calculates for exactly 1 second
+        stockfish.postMessage('go movetime 1000');
     }
 
     function startTimer() {
@@ -225,17 +225,10 @@
 
     function checkEnd() {
         clearInterval(intervalId);
-        // Calculate Points
-        let result = (game.turn() !== userColor) ? "win" : "loss";
-        if (result === "win") { kidPlayer.pts += 1; kidPlayer.rating += 25; } 
-        else { currentOpponent.pts += 1; kidPlayer.rating -= 15; }
         document.getElementById("end-game-btn").style.display = "block";
     }
 
     function showRankings() {
-        players.sort((a,b) => b.pts - a.pts);
-        const tb = document.getElementById("ranking-tbody"); tb.innerHTML = "";
-        players.forEach((p, i) => { tb.innerHTML += `<tr><td>${i+1}</td><td>${p.name}</td><td>${p.pts}</td></tr>`; });
         currentRound++;
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
         document.getElementById('rankings-screen').classList.add('active-screen');
@@ -244,6 +237,7 @@
 
     function exitToMenu() { location.reload(); }
     function resignGame() { checkEnd(); }
+    function resumeTournament() { alert("Resume feature coming soon!"); }
 </script>
 
 </body>
