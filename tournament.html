@@ -53,7 +53,7 @@
         </div>
         <div class="save-box">
             <input type="text" id="kid-name" placeholder="Enter Your Name..."/>
-            <input type="text" id="save-code-input" placeholder="Secret Code (to save game)"/>
+            <input type="text" id="save-code-input" placeholder="Secret Code"/>
             <div style="display:flex; gap:10px;">
                 <button onclick="enrollKid()">Start Tournament</button>
                 <button onclick="resumeTournament()" style="background:#3B2667; color: white; border: 1px solid var(--accent);">Resume</button>
@@ -65,7 +65,7 @@
     <div id="game-screen" class="screen">
         <div class="player-info">
             <div style="font-weight: bold;"><span id="opp-name">Opponent</span><span id="thinking-indicator">...</span></div>
-            <div id="timer-opp" class="timer">05:00</div>
+            <div id="timer-opp" class="timer">04:00</div>
         </div>
         
         <div id="board-container" style="position:relative; width:100%;">
@@ -74,7 +74,7 @@
 
         <div class="player-info">
             <div style="font-weight: bold;" id="user-name">You</div>
-            <div id="timer-user" class="timer">05:00</div>
+            <div id="timer-user" class="timer">10:00</div>
         </div>
 
         <div id="history-log"></div>
@@ -102,7 +102,7 @@
     ];
 
     let players = [], kidPlayer = { name: "", rating: 2000, pts: 0, isKid: true }, currentRound = 1;
-    let game, userColor, currentOpponent, intervalId, timerW = 300, timerB = 300, selectedSquare = null, lastMove = null;
+    let game, userColor, currentOpponent, intervalId, timerW, timerB, selectedSquare = null, lastMove = null;
 
     const pieces = {
         p: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg', n: 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
@@ -113,36 +113,62 @@
         Q: 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg', K: 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg'
     };
 
-    // --- AI ENGINE CORE ---
-    const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 950, k: 20000 };
+    // --- AI STRATEGY ENGINE ---
+    const PIECE_VALUES = { p: 100, n: 325, b: 335, r: 505, q: 950, k: 20000 };
     
-    // Position weights: Encourages center control and King safety
     const WEIGHTS = {
-        p: [ [0,0,0,0,0,0,0,0],[5,5,5,5,5,5,5,5],[1,1,2,3,3,2,1,1],[0.5,0.5,1,2.5,2.5,1,0.5,0.5],[0,0,0,2,2,0,0,0],[0.5,-0.5,-1,0,0,-1,-0.5,0.5],[0.5,1,1,-2,-2,1,1,0.5],[0,0,0,0,0,0,0,0] ],
-        n: [ [-5,-4,-3,-3,-3,-3,-4,-5],[-4,-2,0,0,0,0,-2,-4],[-3,0,1,1.5,1.5,1,0,-3],[-3,0.5,1.5,2,2,1.5,0.5,-3],[-3,0,1.5,2,2,1.5,0,-3],[-3,0.5,1,1.5,1.5,1,0.5,-3],[-4,-2,0,0.5,0.5,0,-2,-4],[-5,-4,-3,-3,-3,-3,-4,-5] ],
-        k: [ [-3,-4,-4,-5,-5,-4,-4,-3],[-3,-4,-4,-5,-5,-4,-4,-3],[-3,-4,-4,-5,-5,-4,-4,-3],[-3,-4,-4,-5,-5,-4,-4,-3],[-2,-3,-3,-4,-4,-3,-3,-2],[-1,-2,-2,-2,-2,-2,-2,-1],[2,2,0,0,0,0,2,2],[2,3,1,0,0,1,3,2] ]
+        p: [[0,0,0,0,0,0,0,0],[5,5,5,5,5,5,5,5],[1,1,2,3,3,2,1,1],[0.5,0.5,1,2.7,2.7,1,0.5,0.5],[0,0,0,2.5,2.5,0,0,0],[0.5,-0.5,-1,0,0,-1,-0.5,0.5],[0.5,1,1,-2,-2,1,1,0.5],[0,0,0,0,0,0,0,0]],
+        n: [[-5,-4,-3,-3,-3,-3,-4,-5],[-4,-2,0,0,0,0,-2,-4],[-3,0,1,1.5,1.5,1,0,-3],[-3,0.5,1.5,2,2,1.5,0.5,-3],[-3,0,1.5,2,2,1.5,0,-3],[-3,0.5,1,1.5,1.5,1,0.5,-3],[-4,-2,0,0.5,0.5,0,-2,-4],[-5,-4,-3,-3,-3,-3,-4,-5]],
+        k: [[-3,-4,-4,-5,-5,-4,-4,-3],[-3,-4,-4,-5,-5,-4,-4,-3],[-3,-4,-4,-5,-5,-4,-4,-3],[-3,-4,-4,-5,-5,-4,-4,-3],[-2,-3,-3,-4,-4,-3,-3,-2],[-1,-2,-2,-2,-2,-2,-2,-1],[2,2,0,0,0,0,2,2],[3,4,2,0,0,2,4,3]]
     };
 
     function evaluateBoard(g) {
         let total = 0;
         const board = g.board();
+        const openFiles = getOpenFiles(board);
+        
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
                 const p = board[r][c];
                 if (p) {
                     let val = PIECE_VALUES[p.type];
+                    // Rapid Development / King Safety
                     if (WEIGHTS[p.type]) val += (p.color === 'w' ? WEIGHTS[p.type][r][c] : WEIGHTS[p.type][7-r][c]);
+                    // Rooks on Open Files
+                    if (p.type === 'r' && openFiles.includes(c)) val += 25;
+                    // Penalty for unprotected pieces (Bad Trades)
+                    if (!isProtected(g, r, c, p.color)) val -= 15;
+                    
                     total += (p.color === 'w' ? val : -val);
                 }
             }
         }
+        // Castle Bonus
+        if (g.history().includes('O-O') || g.history().includes('O-O-O')) total += (g.turn() === 'w' ? -40 : 40);
         return total;
+    }
+
+    function getOpenFiles(board) {
+        let open = [];
+        for (let c = 0; c < 8; c++) {
+            let hasPawn = false;
+            for (let r = 0; r < 8; r++) {
+                if (board[r][c] && board[r][c].type === 'p') { hasPawn = true; break; }
+            }
+            if (!hasPawn) open.push(c);
+        }
+        return open;
+    }
+
+    function isProtected(g, r, c, color) {
+        const sq = String.fromCharCode(97+c) + (8-r);
+        return g.attackers(sq, color).length > 0;
     }
 
     function minimax(g, depth, alpha, beta, isMax) {
         if (depth === 0 || g.game_over()) return evaluateBoard(g);
         const moves = g.moves();
-        moves.sort((a, b) => b.includes('x') ? 1 : -1); // Move ordering for speed
+        moves.sort((a, b) => (b.includes('x') || b.includes('+')) ? 1 : -1); 
 
         if (isMax) {
             let maxEval = -Infinity;
@@ -174,7 +200,6 @@
         setTimeout(() => {
             const moves = game.moves();
             if (moves.length === 0) return;
-            
             let bestMove = null;
             let bestValue = (game.turn() === 'w' ? -Infinity : Infinity);
 
@@ -182,19 +207,17 @@
                 game.move(m);
                 let val = minimax(game, 2, -Infinity, Infinity, game.turn() === 'w');
                 game.undo();
-
                 if (game.turn() === 'w' && val > bestValue) { bestValue = val; bestMove = m; }
                 else if (game.turn() === 'b' && val < bestValue) { bestValue = val; bestMove = m; }
             }
-
             lastMove = game.move(bestMove || moves[0]);
             document.getElementById('thinking-indicator').style.visibility = 'hidden';
             drawBoard();
-            if (game.game_over()) checkEnd();
-        }, 300);
+            if (game.game_over()) checkEnd(false);
+        }, 200);
     }
-    // --- END AI ENGINE ---
 
+    // --- TOURNAMENT LOGIC ---
     window.onload = () => {
         const tb = document.getElementById("intro-tbody");
         mastersData.forEach((p, i) => tb.innerHTML += `<tr><td>${i+1}</td><td>${p.name}</td><td>${p.rating}</td></tr>`);
@@ -210,7 +233,9 @@
         if (currentRound > 7) return alert("Tournament Over");
         userColor = Math.random() < 0.5 ? 'w' : 'b';
         currentOpponent = mastersData[Math.floor(Math.random()*mastersData.length)];
-        game = new Chess(); timerW = timerB = 300;
+        game = new Chess();
+        timerW = (userColor === 'w') ? 600 : 240; 
+        timerB = (userColor === 'b') ? 600 : 240;
         document.getElementById("opp-name").innerText = currentOpponent.name;
         document.getElementById("user-name").innerText = kidPlayer.name;
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
@@ -243,7 +268,7 @@
         if (selectedSquare === sq) selectedSquare = null;
         else if (selectedSquare) {
             const move = game.move({ from: selectedSquare, to: sq, promotion: 'q' });
-            if (move) { selectedSquare = null; lastMove = move; drawBoard(); if (!game.game_over()) makeAIMove(); else checkEnd(); }
+            if (move) { selectedSquare = null; lastMove = move; drawBoard(); if (!game.game_over()) makeAIMove(); else checkEnd(false); }
             else selectedSquare = sq;
         } else selectedSquare = sq;
         drawBoard();
@@ -257,8 +282,19 @@
             const curB = `${Math.floor(timerB/60)}:${(timerB%60).toString().padStart(2,'0')}`;
             document.getElementById("timer-user").innerText = userColor==='w'?curW:curB;
             document.getElementById("timer-opp").innerText = userColor==='w'?curB:curW;
-            if (timerW<=0 || timerB<=0) checkEnd();
+            if (timerW<=0 || timerB<=0) checkEnd(timerW <= 0 && userColor === 'w' || timerB <= 0 && userColor === 'b');
         }, 1000);
+    }
+
+    function checkEnd(userLost) {
+        clearInterval(intervalId);
+        let win = false;
+        if (!userLost && game.in_checkmate() && game.turn() !== userColor) {
+            kidPlayer.pts += 1;
+            win = true;
+        }
+        alert(win ? "You won! +1 Point" : "Game Over. No points awarded.");
+        document.getElementById("end-game-btn").style.display = "block";
     }
 
     function updateHistory() {
@@ -266,19 +302,20 @@
         logEl.innerText = game.history().join(" ") || "Game started...";
     }
 
-    function checkEnd() {
-        clearInterval(intervalId);
-        document.getElementById("end-game-btn").style.display = "block";
-    }
-
     function showRankings() {
         currentRound++;
+        const tbody = document.getElementById("ranking-tbody");
+        tbody.innerHTML = "";
+        const sorted = [...mastersData, kidPlayer].sort((a,b) => b.pts - a.pts);
+        sorted.forEach((p, i) => {
+            tbody.innerHTML += `<tr><td>${i+1}</td><td>${p.name}</td><td>${p.pts}</td></tr>`;
+        });
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
         document.getElementById('rankings-screen').classList.add('active-screen');
     }
 
     function exitToMenu() { location.reload(); }
-    function resignGame() { checkEnd(); }
+    function resignGame() { checkEnd(true); }
 </script>
 
 </body>
