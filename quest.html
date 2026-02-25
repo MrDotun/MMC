@@ -2,202 +2,323 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Elo's Chess Quest 🛡️</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Save Mr Dotun: Wine Castle Siege</title>
     
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
-    
-    <style>
-        body {
-            background: linear-gradient(135deg, #4b0082, #2e8b57);
-            color: white;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            padding: 10px;
-            overflow-x: hidden;
-        }
-
-        h1 { text-shadow: 2px 2px #000; margin: 10px 0; font-size: 1.8rem; }
-
-        #game-container {
-            background: rgba(0, 0, 0, 0.7);
-            padding: 15px;
-            border-radius: 15px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-            width: 95%;
-            max-width: 420px;
-        }
-
-        .highlight-sq { box-shadow: inset 0 0 3px 3px yellow; }
-
-        #board { width: 100%; border: 4px solid #9370DB; border-radius: 5px; }
-
-        .status-box {
-            margin-top: 15px;
-            text-align: center;
-            font-size: 1.1rem;
-        }
-
-        #message { color: #ffd700; height: 1.5em; font-weight: bold; }
-
-        .quest-stats {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 10px;
-            font-weight: bold;
-        }
-
-        button {
-            background-color: #32CD32;
-            border: none;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 1rem;
-            margin-top: 10px;
-            width: 100%;
-        }
-
-        button:active { transform: scale(0.98); }
-    </style>
-</head>
-<body>
-
-    <h1>Elo's Chess Quest 🛡️</h1>
-
-    <div id="game-container">
-        <div class="quest-stats">
-            <span>Level: <span id="current-puzzle">1</span>/30</span>
-            <span>⭐ Score: <span id="score">0</span></span>
-        </div>
-
-        <div id="board"></div>
-
-        <div class="status-box">
-            <p id="message">Click a piece to start!</p>
-            <button onclick="nextPuzzle()">Skip Challenge</button>
-        </div>
-    </div>
-
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 
-    <script>
-        var board = null;
-        var game = new Chess();
-        var currentIdx = 0;
-        var score = 0;
-        var sourceSquare = null;
-
-        // Corrected Puzzles
-        const puzzles = [
-            { fen: 'r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4', solution: 'O-O', hint: 'Jump your King to the side (Castle)!' },
-            { fen: 'r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4', solution: 'Qxf7#', hint: 'Use your Queen to checkmate on f7!' }, // Corrected Level 2
-            { fen: 'rnbqkbnr/ppppp1pp/8/5p1Q/4P3/8/PPPP1PPP/RNB1KBNR b KQkq - 1 2', solution: 'g6', hint: 'Move a pawn to block the Queen!' },
-            { fen: '4r1k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1', solution: 'Rxe8#', hint: 'The back row is empty!' },
-            { fen: 'r1b1kbnr/pppp1ppp/2n5/4p3/2B1P2q/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4', solution: 'Nxh4', hint: 'Take their Queen with your Knight!' },
-            { fen: 'rnbqkbnr/pp2pppp/3p4/2p5/2P5/2N5/PP1PPPPP/R1BQKBNR w KQkq - 0 3', solution: 'e4', hint: 'Take control of the center!' },
-            { fen: 'r1b1k1nr/pppp1ppp/2n5/2b1p3/2B1P2q/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4', solution: 'Nxh4', hint: 'The Black Queen is hanging! Take it!' }, // Corrected Level 7
-            { fen: 'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2', solution: 'Nc6', hint: 'Defend your pawn with your Knight!' },
-            { fen: 'rnbqkbnr/pppp1ppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1', solution: 'd5', hint: 'Match their center pawn!' },
-            { fen: 'r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3', solution: 'a6', hint: 'Kick that Bishop away!' },
-            { fen: 'rnbqkb1r/pppp1ppp/5n2/4p3/4P3/2N5/PPPP1PPP/R1BQKBNR w KQkq - 2 3', solution: 'Bc4', hint: 'Develop your Bishop!' },
-            { fen: '2kr1bnr/ppp2ppp/2n5/3pp3/8/2N1P3/PPPP1PPP/R1B1KBNR w KQ - 0 1', solution: 'O-O-O', hint: 'Castle on the long side!' },
-            { fen: 'rnbqkbnr/pp1p1ppp/8/2p1p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3', solution: 'Nxe5', hint: 'Free pawn! Snap it up!' },
-            { fen: 'rnbqk1nr/pppp1ppp/8/4p3/1b1PP3/2N5/PPP2PPP/R1BQKBNR b KQkq - 2 3', solution: 'exd4', hint: 'Take the center pawn!' },
-            { fen: 'r1bqkbnr/pppp1ppp/n7/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3', solution: 'Bxa6', hint: 'Take the Knight and mess up their pawns!' },
-            { fen: 'rnbqkbnr/ppp1pppp/8/3p4/8/2N5/PPPPPPPP/R1BQKBNR w KQkq - 0 2', solution: 'd4', hint: 'Claim the middle!' },
-            { fen: 'r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 0 3', solution: 'exd4', hint: 'It is a pawn trade!' },
-            { fen: '2r3k1/5ppp/8/8/8/8/5PPP/2R3K1 w - - 0 1', solution: 'Rxc8#', hint: 'Checkmate on the back rank!' },
-            { fen: 'rnbqkbnr/pp1ppppp/2p5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2', solution: 'd4', hint: 'Take the full center!' },
-            { fen: 'rnbqkb1r/pppp1ppp/4pn2/8/3P4/5N2/PPP1PPPP/RNBQKB1R w KQkq - 2 3', solution: 'c4', hint: 'Start the Queen\'s Gambit!' },
-            { fen: 'r1bqkbnr/pp1p1ppp/2n5/2p1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 2 4', solution: 'd3', hint: 'Protect your pawn.' },
-            { fen: 'rnbqkb1r/ppp1pppp/5n2/3p4/2PP4/8/PP2PPPP/RNBQKBNR w KQkq - 1 3', solution: 'cxd5', hint: 'Trade pawns in the middle!' },
-            { fen: 'rnbqkbnr/pp3ppp/2p1p3/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R w KQkq - 0 4', solution: 'e5', hint: 'Push the pawn forward!' },
-            { fen: 'rnbqkbnr/ppp2ppp/4p3/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3', solution: 'Nc3', hint: 'Protect the center with your Knight!' },
-            { fen: 'rnbqkbnr/pp2pppp/2p5/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3', solution: 'exd5', hint: 'Exchange the pawns!' },
-            { fen: '4r1k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1', solution: 'Rxe8#', hint: 'Checkmate the King on the back row!' }, // Corrected Level 26
-            { fen: 'rnbqkbnr/pppp1ppp/8/8/3P4/2N5/PPP1PPPP/R1BQKBNR b KQkq - 1 2', solution: 'd5', hint: 'Control the center!' },
-            { fen: 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/2N5/PPPP1PPP/R1BQKBNR w KQkq - 2 3', solution: 'f4', hint: 'The Vienna Gambit!' },
-            { fen: 'rnbqkb1r/pppp1ppp/5n2/4p3/2B1P3/8/PPPP1PPP/RNBQK1NR b KQkq - 3 3', solution: 'Nxe4', hint: 'A sneaky free pawn!' },
-            { fen: 'k7/8/K7/1R6/8/8/8/8 w - - 0 1', solution: 'Rb6', hint: 'Move your Rook to b6 to wait!' }
-        ];
-
-        function removeHighlights() {
-            $('#board .square-55d63').removeClass('highlight-sq');
+    <style>
+        /* Updated Theme to Purple and Yellow */
+        :root { --wine: #4B0082; --yellow: #FFD700; --dark-wine: #310054; }
+        
+        body { 
+            background: #1a1a1a; 
+            color: white; 
+            font-family: 'Segoe UI', sans-serif; 
+            margin: 0; 
+            padding: 10px; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            min-height: 100vh; 
+            box-sizing: border-box; 
+            overflow-x: hidden;
         }
+        
+        /* --- ANIMATIONS --- */
+        @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        @keyframes knightBounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+        @keyframes blinkCursor { 50% { border-color: transparent; } }
+        @keyframes gateShake { 0% { transform: translateX(0); } 25% { transform: translateX(-5px); } 50% { transform: translateX(5px); } 75% { transform: translateX(-5px); } 100% { transform: translateX(0); } }
+        @keyframes successPulse { 0% { transform: scale(1); text-shadow: 0 0 0px var(--yellow); } 50% { transform: scale(1.05); text-shadow: 0 0 15px var(--yellow); } 100% { transform: scale(1); text-shadow: 0 0 0px var(--yellow); } }
 
-        function onSquareClick(square) {
-            if (sourceSquare === null) {
-                var piece = game.get(square);
-                if (piece && piece.color === game.turn()) {
-                    sourceSquare = square;
-                    $( '#board .square-' + square ).addClass('highlight-sq');
-                }
-            } else {
-                var move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
-                removeHighlights();
-                if (move === null) {
-                    sourceSquare = null;
-                    onSquareClick(square);
-                    return;
-                }
-                board.position(game.fen());
-                checkSolution(move);
-                sourceSquare = null;
+        .gate-success { animation: gateShake 0.4s ease-in-out; }
+        .msg-success { animation: successPulse 0.6s ease-in-out infinite; }
+
+        #main-ui { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 500px; gap: 15px; }
+        .panel { background: var(--wine); border: 3px solid var(--yellow); border-radius: 12px; padding: 15px; box-shadow: 0 8px 25px rgba(0,0,0,0.6); width: 100%; box-sizing: border-box; }
+        
+        #board { width: 100% !important; border: 2px solid var(--yellow); transition: transform 0.2s; }
+        #timer-wrap { width: 100%; height: 18px; background: var(--dark-wine); border: 2px solid var(--yellow); border-radius: 9px; margin-bottom: 8px; overflow: hidden; }
+        #timer-bar { width: 100%; height: 100%; background: var(--yellow); transition: width 1s linear; }
+        
+        .btn { background: var(--yellow); color: var(--wine); border: none; padding: 12px; font-weight: bold; border-radius: 6px; cursor: pointer; text-transform: uppercase; width: 100%; margin-top: 10px; font-size: 0.9rem; transition: 0.2s; }
+        .btn:hover { transform: scale(1.02); }
+        
+        .btn-resign { background: #444; color: #ccc; margin-top: 5px; font-size: 0.7rem; padding: 5px; border: 1px solid #666; }
+        .leaderboard-table { width: 100%; color: var(--yellow); text-align: left; border-collapse: collapse; margin-top: 10px;}
+        .leaderboard-table td { padding: 8px 5px; border-bottom: 1px solid rgba(255,215,0,0.1); font-size: 0.85rem;}
+        
+        .overlay { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100vw; 
+            height: 100vh; 
+            background: rgba(0,0,0,0.96); 
+            z-index: 1000; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            padding: 0; 
+            margin: 0;
+            box-sizing: border-box; 
+        }
+        
+        .modal { 
+            background: var(--wine); 
+            border: 4px solid var(--yellow); 
+            padding: 25px; 
+            border-radius: 20px; 
+            width: 90%; 
+            max-width: 400px; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center; 
+            animation: modalFadeIn 0.6s ease-out; 
+            box-sizing: border-box; 
+            margin: auto;
+        }
+        
+        .story-container { 
+            background: rgba(0,0,0,0.4); 
+            padding: 15px; 
+            border-radius: 10px; 
+            margin: 15px 0; 
+            min-height: 80px; 
+            width: 100%; 
+            text-align: center; 
+            border: 1px solid rgba(255,215,0,0.2); 
+            box-sizing: border-box; 
+        }
+        
+        #typewriter-text { font-size: 0.85rem; line-height: 1.4; color: #fffae6; display: inline-block; border-right: 2px solid var(--yellow); animation: blinkCursor 0.8s infinite; }
+
+        .highlight-sq { box-shadow: inset 0 0 3px 3px white !important; background-color: rgba(255, 215, 0, 0.6) !important; }
+        #status-msg { min-height: 95px; text-align: center; color: var(--yellow); margin: 10px 0; font-weight: bold; }
+        .remark-text { display: block; color: #fff; font-size: 0.85rem; font-style: italic; margin-top: 4px; font-weight: normal; }
+        #next-btn { display: none; margin: 5px auto; width: 80%; border: 2px solid white; }
+    </style>
+</head>
+<body onload="startTypewriter(); updateUI();">
+
+<div id="login-screen" class="overlay">
+    <div class="modal">
+        <img src="https://img.icons8.com/color/96/knight.png" alt="Knight" style="width:60px; animation: knightBounce 2.5s infinite ease-in-out;">
+        <h2 style="color: var(--yellow); margin: 10px 0; text-shadow: 2px 2px #000; font-size: 1.3rem;">🏰 WINE CASTLE SIEGE 🏰</h2>
+        
+        <div class="story-container">
+            <span id="typewriter-text"></span>
+        </div>
+
+        <input type="text" id="playerName" placeholder="Enter Hero's Name..." style="padding: 12px; width: 100%; border-radius: 8px; border: 2px solid var(--yellow); font-size: 1rem; margin-bottom: 10px; background: #fff; outline: none; text-align: center; box-sizing: border-box;">
+        
+        <div style="width: 100%; margin-bottom: 10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+            <h4 style="margin: 0; color: var(--yellow); font-size: 0.8rem;">🏆 TOP HEROES</h4>
+            <table class="leaderboard-table" style="margin-top: 5px;">
+                <tbody id="intro-leaderboard-body"></tbody>
+            </table>
+        </div>
+
+        <button class="btn" onclick="startQuest(); playTriumphSound();" style="width: 100%; height: 50px;">RESCUE MR DOTUN</button>
+    </div>
+</div>
+
+<div id="game-over-screen" class="overlay" style="display: none;">
+    <div class="modal">
+        <h2 id="end-title" style="color: var(--yellow); font-size: 1.4rem;">🏆 MR DOTUN IS SAFE!</h2>
+        <p id="final-score-msg" style="font-size: 1.1rem; margin: 15px 0;"></p>
+        <button class="btn" onclick="location.reload()">TRY RESCUE AGAIN</button>
+    </div>
+</div>
+
+<div id="main-ui">
+    <div id="timer-wrap"><div id="timer-bar"></div></div>
+    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 8px;">
+        <img id="sir-tactics" src="https://img.icons8.com/color/96/knight.png" alt="Knight" style="width:45px; cursor: pointer;" onclick="adminReset()">
+        <div id="streak-ui" style="color: var(--yellow); font-weight: bold; font-size: 1.1rem;">Stars: 0 ⭐</div>
+    </div>
+    <div id="board"></div>
+    <div id="status-msg">
+        <div id="msg-text">Select your first move!</div>
+        <button id="next-btn" class="btn" onclick="nextPuzzle()">ADVANCE TO NEXT GATE ➔</button>
+        <button id="resign-btn" class="btn btn-resign" onclick="if(confirm('Abandon Mr Dotun?')) endGame('surrender')">🏳️ RAISE WHITE FLAG</button>
+    </div>
+    <div class="panel">
+        <h3 style="margin:0 0 10px 0; text-align: center; color: var(--yellow); font-size: 1.1rem;">📜 CURRENT QUEST</h3>
+        <p style="text-align: center; margin: 0; font-size: 0.9rem;">Solve the puzzles to unlock the gates!</p>
+        <button class="btn" onclick="alert('Decree printed for ' + (currentPlayer ? currentPlayer.name : 'Knight'))" style="padding: 8px; font-size: 0.8rem;">🖨️ PRINT DECREE</button>
+    </div>
+</div>
+
+<script>
+    const storyText = "The kingdom's greatest tactician, Mr Dotun, has been ambushed and locked behind the 11 forbidden gates of the Wine Castle. Only a hero with a master's mind can break the seals and lead the rescue. The clock is ticking... Are you ready?";
+    let i = 0;
+
+    function startTypewriter() {
+        if (i < storyText.length) {
+            document.getElementById("typewriter-text").innerHTML += storyText.charAt(i);
+            i++;
+            setTimeout(startTypewriter, 35);
+        } else {
+            document.getElementById("typewriter-text").style.borderRight = "none";
+        }
+    }
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playTone(freq, delay, duration) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime + delay);
+        gain.gain.setValueAtTime(0, audioCtx.currentTime + delay);
+        gain.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + delay + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + delay + duration);
+        osc.start(audioCtx.currentTime + delay);
+        osc.stop(audioCtx.currentTime + delay + duration);
+    }
+
+    function playTriumphSound() { playTone(330, 0, 0.1); playTone(440, 0.1, 0.1); playTone(660, 0.2, 0.2); }
+    function playSuccessSound() { playTone(523, 0, 0.05); playTone(659, 0.05, 0.05); playTone(783, 0.1, 0.05); playTone(1046, 0.15, 0.2); }
+
+    let puzzles = [
+        { fen: '3k4/pp3ppp/8/2p5/2N4r/3P4/PPPBKPPP/8 w - - 0 1', solution: 'Bg5+', remark: "The Skewer! Strike through the King to win the Rook." },
+        { fen: 'r3k3/pp3pp1/2p1r2p/1N2p3/4P3/2P1PP2/PP4PP/5RK1 w - - 0 1', solution: 'Nc7+', remark: "Royal Fork! Your Knight traps both King and Rook." },
+        { fen: '3rkB1R/3p1p2/r7/1PP5/2K5/8/8/4P3 w - - 0 1', solution: 'Bd6#', remark: "Discovered Mate! The Bishop uncovers a fatal attack." },
+        { fen: 'r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 0 4', solution: 'Ng5', remark: "Targeting the weak f7 square!" },
+        { fen: '1r3rk1/p1p2p1p/1pN3p1/8/1r6/1P1q1PP1/P3P2P/Q5K1 w - - 0 1', solution: 'Ne7#', remark: "Smothered Mate: The King is trapped by his own guards!" },
+        { fen: '2r4k/p1R4p/1p3N2/4n3/8/6P1/5PK1/8 w - - 0 1', solution: 'Rxh7#', remark: "Arabian Mate! Rook and Knight perfectly trap the King." },
+        { fen: 'r1bqk2r/pppp1ppp/2n5/4p3/2B1P1n1/3P1N2/PPP2KPP/RNBQ3R w kq - 1 6', solution: 'Kg3', remark: "Keeping the king safe and preparing to castle artificially." },
+        { fen: 'r1b1k1nr/p2p1ppp/n1p1p3/1p6/1b1PP3/P1N2N2/1PP2PPP/R1BQKB1R w KQkq - 0 7', solution: 'axb4', remark: "Free Material! Capitalizing on a tactical blunder." },
+        { fen: '6k1/ppp2ppp/8/8/8/8/PP3PPP/3R2K1 w - - 0 1', solution: 'Rd8#', remark: "Back Rank Mate! Forcing the enemy into a corner." },
+        { fen: '2r3k1/p4p1p/6p1/1R6/8/5P2/P1r3PP/1R4K1 w - - 0 1', solution: 'Rb8', remark: "Simplification! Trading pieces to secure the endgame." },
+        { fen: 'r4rk1/pp3p1p/2p3p1/8/3P4/4P3/PP3PPP/R4RK1 w - - 0 1', solution: 'Rac1', remark: "The rook must occupy open files." }
+    ];
+
+    let game = new Chess();
+    let board = null;
+    let currentIdx = 0;
+    let timeLeft = 120;
+    let players = JSON.parse(localStorage.getItem('chessQuestPlayers')) || [];
+    let currentPlayer = null;
+    let selectedSquare = null;
+    let gameActive = false;
+
+    const pieceUrls = {
+        wP: 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
+        wN: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+        wB: 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
+        wR: 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+        wQ: 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
+        wK: 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
+        bP: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
+        bN: 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+        bB: 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
+        bR: 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+        bQ: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
+        bK: 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg'
+    };
+
+    function startQuest() {
+        const name = document.getElementById('playerName').value.trim();
+        if (!name) return alert("Who is this hero?");
+        currentPlayer = players.find(p => p.name === name) || { name: name, stars: 0 };
+        if (!players.find(p => p.name === name)) players.push(currentPlayer);
+        document.getElementById('login-screen').style.display = 'none';
+        gameActive = true;
+        initBoard();
+        const timerInterval = setInterval(() => {
+            if (timeLeft > 0 && gameActive) {
+                timeLeft--;
+                document.getElementById('timer-bar').style.width = (timeLeft / 120 * 100) + "%";
+            } else if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                if(gameActive) endGame('time');
             }
-        }
+        }, 1000);
+        updateUI();
+    }
 
-        function checkSolution(move) {
-            let userMove = move.san;
-            let correctMove = puzzles[currentIdx].solution;
-            if (userMove === correctMove || (move.from + move.to) === correctMove) {
-                document.getElementById('message').innerText = "🌟 FANTASTIC! +10 Points!";
-                score += 10;
-                document.getElementById('score').innerText = score;
-                setTimeout(nextPuzzle, 1500);
-            } else {
-                document.getElementById('message').innerText = "❌ Oops! " + puzzles[currentIdx].hint;
-                setTimeout(() => { game.undo(); board.position(game.fen()); }, 1000);
-            }
-        }
-
-        function nextPuzzle() {
-            currentIdx++;
-            if (currentIdx >= puzzles.length) {
-                document.getElementById('message').innerText = "🏆 YOU ARE A CHESS MASTER!";
-                return;
-            }
-            document.getElementById('current-puzzle').innerText = currentIdx + 1;
-            document.getElementById('message').innerText = "New Quest Unlocked!";
-            loadPuzzle();
-        }
-
-        function loadPuzzle() {
-            game.load(puzzles[currentIdx].fen);
-            board.position(puzzles[currentIdx].fen);
-        }
-
-        var config = {
-            draggable: false, 
-            position: 'start',
-            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-        };
-
-        board = ChessBoard('board', config);
-        loadPuzzle();
-
-        $(document).on('click', '.square-55d63', function() {
-            var square = $(this).attr('data-square');
-            onSquareClick(square);
+    function initBoard() {
+        game.load(puzzles[currentIdx].fen);
+        board = Chessboard('board', {
+            draggable: false, position: puzzles[currentIdx].fen,
+            pieceTheme: function(piece) { return pieceUrls[piece]; }
         });
-    </script>
+        $('#board').off('click').on('click', '.square-55d63', function() { if(gameActive) onSquareClick($(this).data('square')); });
+        document.getElementById('next-btn').style.display = 'none';
+        document.getElementById('msg-text').innerHTML = "Gate " + (currentIdx + 1);
+        $('#board').removeClass('gate-success');
+        $('#msg-text').removeClass('msg-success');
+    }
+
+    function onSquareClick(square) {
+        if (document.getElementById('next-btn').style.display === 'block') return;
+        if (selectedSquare === null) {
+            const piece = game.get(square);
+            if (piece && piece.color === game.turn()) {
+                selectedSquare = square;
+                $('.square-55d63').removeClass('highlight-sq');
+                $('.square-' + square).addClass('highlight-sq');
+            }
+        } else {
+            let move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
+            if (move) {
+                board.position(game.fen());
+                if (game.history({ verbose: true }).pop().san === puzzles[currentIdx].solution) {
+                    currentPlayer.stars += 10;
+                    playSuccessSound();
+                    $('#board').addClass('gate-success');
+                    $('#msg-text').addClass('msg-success').html(`<span style="color:#00ff00">GATE OPENED!</span><br><span class="remark-text">${puzzles[currentIdx].remark}</span>`);
+                    document.getElementById('next-btn').style.display = 'block';
+                    saveData();
+                } else {
+                    game.undo();
+                    board.position(game.fen());
+                    document.getElementById('msg-text').innerHTML = "<span style='color:#ff4444'>WRONG MOVE!</span>";
+                }
+            }
+            selectedSquare = null;
+            $('.square-55d63').removeClass('highlight-sq');
+        }
+        document.getElementById('streak-ui').innerText = `Stars: ${currentPlayer.stars} ⭐`;
+    }
+
+    function nextPuzzle() {
+        currentIdx++;
+        if (currentIdx >= puzzles.length) endGame('win');
+        else initBoard();
+    }
+
+    function endGame(reason) {
+        gameActive = false;
+        const title = document.getElementById('end-title');
+        const msg = document.getElementById('final-score-msg');
+        if (reason === 'win') { 
+            title.innerText = "🏆 MR DOTUN IS SAFE!"; 
+            msg.innerHTML = `Heroic effort! You broke every seal on the castle.<br><b>TOTAL STARS: ${currentPlayer.stars} ⭐</b>`; 
+        } else { 
+            title.innerText = "⌛ MISSION FAILED"; 
+            msg.innerHTML = `Time's up hero.<br><b>FINAL STARS: ${currentPlayer.stars} ⭐</b>`; 
+        }
+        document.getElementById('game-over-screen').style.display = 'flex';
+    }
+
+    function saveData() { localStorage.setItem('chessQuestPlayers', JSON.stringify(players)); updateUI(); }
+    
+    function updateUI() {
+        const sorted = [...players].sort((a, b) => b.stars - a.stars).slice(0, 5);
+        const rows = sorted.map((p, i) => `<tr><td>${i+1}</td><td>${p.name}</td><td>${p.stars}</td></tr>`).join('');
+        document.getElementById('intro-leaderboard-body').innerHTML = rows || '<tr><td colspan="3" style="text-align:center">No legends yet...</td></tr>';
+    }
+
+    function adminReset() { if (prompt("Master Key:") === "coach2026") { players = []; localStorage.clear(); location.reload(); } }
+</script>
 </body>
 </html>
