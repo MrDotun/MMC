@@ -1,1 +1,360 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>King Dotun's Quest: The Golden Crown</title>
+    <style>
+        :root {
+            --gold: #d4af37;
+            --bg: #121212;
+            --parchment: #f2e3c9;
+            --purple-glow: rgba(155, 38, 182, 0.7);
+            --ice: #00ccff;
+        }
+
+        body {
+            background: var(--bg);
+            color: white;
+            font-family: 'Georgia', serif;
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        /* --- UI & Overlays --- */
+        #overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .scroll {
+            background: var(--parchment);
+            color: #2c1e05;
+            padding: 30px;
+            width: 90%;
+            max-width: 550px;
+            border: 8px double #8b5a2b;
+            border-radius: 5px;
+            text-align: center;
+            box-shadow: 0 0 50px #000;
+            transform: rotate(-0.5deg);
+        }
+
+        .start-btn {
+            background: #8b5a2b;
+            color: white;
+            padding: 12px 25px;
+            font-size: 1.2rem;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-top: 15px;
+        }
+
+        .start-btn:hover { background: #5d3a1a; }
+
+        input {
+            padding: 10px;
+            font-size: 1.1rem;
+            width: 70%;
+            border: 2px solid #8b5a2b;
+            margin: 10px 0;
+            text-align: center;
+        }
+
+        /* --- Game Interface --- */
+        #game-interface {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .stats-bar {
+            background: #333;
+            padding: 15px;
+            width: 480px;
+            display: flex;
+            justify-content: space-between;
+            border: 3px solid var(--gold);
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-size: 1.2rem;
+        }
+
+        /* --- The Board --- */
+        .board {
+            display: grid;
+            grid-template-columns: repeat(8, 60px);
+            grid-template-rows: repeat(8, 60px);
+            border: 8px solid #444;
+            position: relative;
+            background: #222;
+        }
+
+        .square {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 35px;
+            cursor: pointer;
+            position: relative;
+            transition: background 0.2s;
+        }
+
+        .white { background: #eeeed2; }
+        .black { background: #769656; }
+
+        /* --- Visual Effects --- */
+        .ripple {
+            position: absolute;
+            border: 4px solid var(--gold);
+            border-radius: 50%;
+            animation: ripple-effect 0.4s ease-out forwards;
+            pointer-events: none;
+        }
+
+        @keyframes ripple-effect {
+            from { width: 0; height: 0; opacity: 1; }
+            to { width: 150px; height: 150px; opacity: 0; }
+        }
+
+        .queen-threat {
+            background: var(--purple-glow) !important;
+            box-shadow: inset 0 0 15px purple;
+        }
+
+        .frozen {
+            background: var(--ice) !important;
+            animation: shake 0.1s infinite;
+        }
+
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            50% { transform: translate(-1px, -1px) rotate(1deg); }
+            100% { transform: translate(1px, -1px) rotate(-1deg); }
+        }
+
+        #hof-list {
+            margin-top: 20px;
+            font-size: 0.9rem;
+            text-align: left;
+            max-height: 150px;
+            overflow-y: auto;
+            border-top: 1px solid #8b5a2b;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="overlay">
+        <div class="scroll" id="scroll-box">
+            <h1 id="scroll-title">📜 Hero's Registry</h1>
+            <div id="scroll-content">
+                <p>Welcome to the Hall of Fame. Enter your name to begin.</p>
+                <input type="text" id="heroName" placeholder="Hero Name..." maxlength="12">
+                <br>
+                <button class="start-btn" onclick="processName()">CLAIM QUEST</button>
+                <div id="hof-list">
+                    <strong>Previous Legends:</strong>
+                    <div id="hof-entries"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="game-interface">
+        <div class="stats-bar">
+            <span>Score: <b id="score-val">250</b></span>
+            <span>Time: <b id="timer-val">15.00</b>s</span>
+            <span>Lives: <b id="lives-val">🛡️🛡️🛡️</b></span>
+        </div>
+        <div id="board" class="board"></div>
+    </div>
+
+    <audio id="snd-gallop" src="https://actions.google.com/sounds/v1/foley/horse_gallop_fast.ogg"></audio>
+    <audio id="snd-freeze" src="https://actions.google.com/sounds/v1/foley/ice_cracking.ogg"></audio>
+
+    <script>
+        let gameState = {
+            active: false,
+            playerName: "Knight",
+            score: 250,
+            lives: 3,
+            time: 15.0,
+            playerPos: { r: 7, c: 7 }, // h8
+            queenPos: { r: 0, c: 0 },
+            godMode: false
+        };
+
+        const hofData = JSON.parse(localStorage.getItem('dotunQuestHOF')) || [
+            { name: "Dotun", score: 3500, rank: "Grandmaster" },
+            { name: "The Golem", score: 500, rank: "Gatekeeper" }
+        ];
+
+        // --- Initialization ---
+        window.onload = () => {
+            const list = document.getElementById('hof-entries');
+            list.innerHTML = hofData.map(h => `<div>${h.name}: ${h.score} (${h.rank})</div>`).join('');
+        };
+
+        function processName() {
+            const name = document.getElementById('heroName').value.trim();
+            if (!name) return alert("A hero needs a name!");
+
+            gameState.playerName = name;
+            if (name.toUpperCase() === "DOTUN") {
+                gameState.godMode = true;
+                gameState.lives = 99;
+                alert("✨ GOD MODE: 99 LIVES ACTIVATED ✨");
+            }
+
+            showStory();
+        }
+
+        function showStory() {
+            document.getElementById('scroll-title').innerText = "The Final Escape";
+            document.getElementById('scroll-content').innerHTML = `
+                <p style="font-style: italic;">"The Wicked Queen has cornered you in the vault! Reach the safe pedestal at <b>a1</b> before the time runs out. Avoid her purple shadows or be frozen!"</p>
+                <button class="start-btn" onclick="launchGame()">BEGIN THE SPRINT</button>
+            `;
+        }
+
+        function launchGame() {
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('game-interface').style.display = 'flex';
+            document.getElementById('lives-val').innerText = "🛡️".repeat(gameState.lives);
+            gameState.active = true;
+            
+            buildBoard();
+            setInterval(tick, 10);
+            setInterval(teleportQueen, 2000);
+        }
+
+        // --- Board Logic ---
+        function buildBoard() {
+            const board = document.getElementById('board');
+            board.innerHTML = '';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const sq = document.createElement('div');
+                    sq.className = `square ${(r + c) % 2 === 0 ? 'white' : 'black'}`;
+                    sq.id = `s-${r}-${c}`;
+                    sq.onclick = () => handleMove(r, c);
+                    board.appendChild(sq);
+                }
+            }
+            render();
+        }
+
+        function handleMove(r, c) {
+            if (!gameState.active) return;
+
+            const rDist = Math.abs(gameState.playerPos.r - r);
+            const cDist = Math.abs(gameState.playerPos.c - c);
+
+            if (rDist <= 1 && cDist <= 1) {
+                // Sound and FX
+                document.getElementById('snd-gallop').currentTime = 0;
+                document.getElementById('snd-gallop').play();
+                triggerRipple(r, c);
+
+                gameState.playerPos = { r, c };
+                
+                if (document.getElementById(`s-${r}-${c}`).classList.contains('queen-threat')) {
+                    takeDamage();
+                }
+
+                render();
+                if (r === 0 && c === 0) winGame();
+            }
+        }
+
+        function triggerRipple(r, c) {
+            const sq = document.getElementById(`s-${r}-${c}`);
+            const rip = document.createElement('div');
+            rip.className = 'ripple';
+            sq.appendChild(rip);
+            setTimeout(() => rip.remove(), 400);
+        }
+
+        function teleportQueen() {
+            if (!gameState.active) return;
+            
+            // Clear old threats
+            document.querySelectorAll('.queen-threat').forEach(s => s.classList.remove('queen-threat'));
+            
+            // Random move
+            gameState.queenPos = { r: Math.floor(Math.random() * 8), c: Math.floor(Math.random() * 8) };
+            
+            // Mark new threat lines
+            for (let i = 0; i < 8; i++) {
+                document.getElementById(`s-${gameState.queenPos.r}-${i}`).classList.add('queen-threat');
+                document.getElementById(`s-${i}-${gameState.queenPos.c}`).classList.add('queen-threat');
+            }
+            render();
+        }
+
+        function takeDamage() {
+            gameState.lives--;
+            document.getElementById('lives-val').innerText = "🛡️".repeat(gameState.lives);
+            document.getElementById('snd-freeze').play();
+            
+            const sq = document.getElementById(`s-${gameState.playerPos.r}-${gameState.playerPos.c}`);
+            sq.classList.add('frozen');
+            setTimeout(() => sq.classList.remove('frozen'), 1500);
+
+            if (gameState.lives <= 0) {
+                alert("The Queen's ice was too strong! Try again.");
+                location.reload();
+            }
+        }
+
+        function tick() {
+            if (!gameState.active) return;
+            gameState.time -= 0.01;
+            document.getElementById('timer-val').innerText = Math.max(0, gameState.time).toFixed(2);
+            if (gameState.time <= 0) {
+                alert("Time ran out! The treasure is lost.");
+                location.reload();
+            }
+        }
+
+        function render() {
+            document.querySelectorAll('.square').forEach(s => s.innerText = '');
+            document.getElementById(`s-${gameState.playerPos.r}-${gameState.playerPos.c}`).innerText = '👑';
+            document.getElementById(`s-${gameState.queenPos.r}-${gameState.queenPos.c}`).innerText = '👸';
+        }
+
+        function winGame() {
+            gameState.active = false;
+            const multiplier = gameState.godMode ? 0.10 : 0.05;
+            const finalScore = gameState.score + (gameState.time * multiplier) + (gameState.lives * 50);
+            
+            let rank = "Brave Squire";
+            if (finalScore > 2000) rank = "Grandmaster Paladin";
+            else if (finalScore > 1000) rank = "Royal Guardian";
+
+            // Save HOF
+            const newHOF = { name: gameState.playerName, score: Math.round(finalScore), rank: rank };
+            hofData.push(newHOF);
+            localStorage.setItem('dotunQuestHOF', JSON.stringify(hofData));
+
+            alert(`🏆 VICTORY!\n\nKing Dotun welcomes you home, ${gameState.playerName}!\nScore: ${finalScore.toFixed(2)}\nRank: ${rank}`);
+            location.reload();
+        }
+    </script>
+</body>
+</html>
