@@ -3,256 +3,219 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>King Dotun's Quest: The Golden Crown</title>
+    <title>King Dotun's Quest: Official Debugged Build</title>
     <style>
-        :root {
-            --gold: #d4af37;
-            --bg: #121212;
-            --parchment: #f2e3c9;
-            --purple-glow: rgba(155, 38, 182, 0.7);
-            --ice: #00ccff;
-        }
+        :root { --gold: #d4af37; --bg: #0a0a0a; --parchment: #f2e3c9; --danger: rgba(255, 0, 0, 0.3); --safe: #eeeed2; --dark: #769656; }
+        body { background: var(--bg); color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; touch-action: manipulation; }
+        
+        /* Overlays */
+        #overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; justify-content: center; align-items: center; z-index: 100; }
+        .scroll { background: var(--parchment); color: #2c1e05; padding: 25px; width: 85%; max-width: 450px; border: 8px double #8b5a2b; border-radius: 10px; text-align: center; box-shadow: 0 0 50px #000; }
+        
+        /* Stats */
+        #ui { display: none; width: 90%; max-width: 480px; background: #222; border: 2px solid var(--gold); padding: 10px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; font-size: 1rem; box-sizing: border-box; }
+        
+        /* Board */
+        .board { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 92vw; height: 92vw; max-width: 480px; max-height: 480px; border: 5px solid #444; background: #111; position: relative; }
+        .square { display: flex; justify-content: center; align-items: center; font-size: clamp(20px, 7vw, 35px); cursor: pointer; user-select: none; }
+        .white { background: var(--safe); }
+        .black { background: var(--dark); }
+        .collapsed { background: #000 !important; }
+        .threat { background: rgba(155, 38, 182, 0.6) !important; }
+        .frozen { background: #00ccff !important; animation: shake 0.1s infinite; }
 
-        body {
-            background: var(--bg);
-            color: white;
-            font-family: 'Georgia', serif;
-            margin: 0;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            touch-action: manipulation;
-        }
+        @keyframes shake { 0% { transform: translate(1px, 1px); } 50% { transform: translate(-1px, -1px); } 100% { transform: translate(1px, -1px); } }
 
-        /* --- UI & Overlays --- */
-        #overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.95);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 100;
-        }
-
-        .scroll {
-            background: var(--parchment);
-            color: #2c1e05;
-            padding: 20px;
-            width: 85%;
-            max-width: 450px;
-            border: 8px double #8b5a2b;
-            border-radius: 5px;
-            text-align: center;
-            box-shadow: 0 0 50px #000;
-        }
-
-        input {
-            padding: 12px;
-            font-size: 1rem;
-            width: 80%;
-            border: 2px solid #8b5a2b;
-            margin: 10px 0;
-            text-align: center;
-        }
-
-        .start-btn {
-            background: #8b5a2b;
-            color: white;
-            padding: 12px 25px;
-            font-size: 1.1rem;
-            border: none;
-            cursor: pointer;
-            border-radius: 4px;
-        }
-
-        /* --- Responsive Game Interface --- */
-        #game-interface {
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            width: 100%;
-        }
-
-        .stats-bar {
-            background: #333;
-            padding: 10px;
-            width: 90%;
-            max-width: 480px;
-            display: flex;
-            justify-content: space-between;
-            border: 2px solid var(--gold);
-            margin-bottom: 10px;
-            border-radius: 8px;
-            font-size: 1rem;
-        }
-
-        /* --- The RESPONSIVE Board --- */
-        .board {
-            display: grid;
-            grid-template-columns: repeat(8, 1fr);
-            grid-template-rows: repeat(8, 1fr);
-            border: 5px solid #444;
-            width: 90vw;
-            height: 90vw;
-            max-width: 480px;
-            max-height: 480px;
-            background: #222;
-            position: relative;
-        }
-
-        .square {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: clamp(20px, 6vw, 35px);
-            cursor: pointer;
-            position: relative;
-        }
-
-        .white { background: #eeeed2; }
-        .black { background: #769656; }
-
-        /* --- Visual Effects --- */
-        .ripple {
-            position: absolute;
-            border: 3px solid var(--gold);
-            border-radius: 50%;
-            animation: ripple-effect 0.4s ease-out forwards;
-            pointer-events: none;
-        }
-
-        @keyframes ripple-effect {
-            from { width: 0%; height: 0%; opacity: 1; }
-            to { width: 200%; height: 200%; opacity: 0; }
-        }
-
-        .queen-threat { background: var(--purple-glow) !important; }
-        .frozen { background: var(--ice) !important; animation: shake 0.1s infinite; }
-
-        @keyframes shake {
-            0% { transform: translate(1px, 1px); }
-            50% { transform: translate(-1px, -1px); }
-            100% { transform: translate(1px, -1px); }
-        }
+        input { padding: 12px; font-size: 1rem; width: 80%; border: 2px solid #8b5a2b; margin-top: 10px; outline: none; }
+        .btn { background: #8b5a2b; color: white; padding: 12px 20px; border: none; cursor: pointer; margin-top: 15px; font-weight: bold; width: 100%; border-radius: 5px; }
     </style>
 </head>
 <body>
 
     <div id="overlay">
-        <div class="scroll">
-            <h1 id="scroll-title">📜 Hero's Registry</h1>
-            <div id="scroll-content">
-                <input type="text" id="heroName" placeholder="Enter Hero Name..." maxlength="12">
-                <br>
-                <button class="start-btn" onclick="processName()">CLAIM QUEST</button>
-                <div id="hof-entries" style="margin-top:15px; font-size: 0.8rem; border-top: 1px solid #8b5a2b; padding-top:10px;"></div>
+        <div class="scroll" id="scroll-box">
+            <h1 id="m-title">👑 King Dotun's Quest</h1>
+            <div id="m-content">
+                <input type="text" id="heroName" placeholder="Enter Hero Name...">
+                <button class="btn" onclick="initStory()">BEGIN CHAPTER 1</button>
             </div>
         </div>
     </div>
 
-    <div id="game-interface">
-        <div class="stats-bar">
-            <span>Score: <b id="score-val">250</b></span>
-            <span>Time: <b id="timer-val">15.00</b></span>
-            <span>Lives: <b id="lives-val">🛡️🛡️🛡️</b></span>
-        </div>
-        <div id="board" class="board"></div>
+    <div id="ui">
+        <span>Lvl: <b id="lvl-val">1</b></span>
+        <span>Score: <b id="s-val">0</b></span>
+        <span>Time: <b id="t-val">10.00</b></span>
+        <span>Lives: <b id="l-val">🛡️🛡️🛡️</b></span>
     </div>
+    <div id="board" class="board" style="display:none"></div>
 
     <audio id="snd-gallop" src="https://actions.google.com/sounds/v1/foley/horse_gallop_fast.ogg"></audio>
-    <audio id="snd-music" loop src="https://actions.google.com/sounds/v1/ambient/dark_forest_wind_loop.ogg"></audio>
 
     <script>
-        let gameState = { active: false, score: 250, lives: 3, time: 15.0, playerPos: { r: 7, c: 7 }, queenPos: { r: 0, c: 0 }, godMode: false };
+        let game = { 
+            active: false, level: 1, name: "", score: 0, lives: 3, time: 10.0, 
+            pos: {r:7, c:0}, goal: {r:0, c:7}, queen: {r:0, c:0}, collapsed: [] 
+        };
 
-        function processName() {
-            const name = document.getElementById('heroName').value.trim();
-            if (!name) return alert("A hero needs a name!");
-            if (name.toUpperCase() === "DOTUN") { gameState.godMode = true; gameState.lives = 99; }
-            
-            document.getElementById('scroll-title').innerText = "Escape the Queen!";
-            document.getElementById('scroll-content').innerHTML = `
-                <p>Carry the Crown to <b>a1</b> (top-left). Avoid the purple shadows!</p>
-                <button class="start-btn" onclick="launchGame()">START</button>
+        const levels = {
+            1: { title: "The Golem's Gate", text: "Welcome! Move your Pawn to the flag at the top-right.", time: 12, start: {r:7,c:0}, goal: {r:0,c:7}, piece: '♟️' },
+            2: { title: "The Shadow Forest", text: "The path is crumbling! Squares disappear after you move.", time: 10, start: {r:7,c:0}, goal: {r:0,c:7}, piece: '💎' },
+            3: { title: "Island of the Beast", text: "You are a Knight! Move in an 'L' shape (2 up, 1 over) to reach the goal.", time: 15, start: {r:7,c:0}, goal: {r:4,c:1}, piece: '♞' },
+            4: { title: "The Mad Rook", text: "The Rook teleports! Avoid his purple lines of sight.", time: 12, start: {r:7,c:0}, goal: {r:0,c:7}, piece: '💰' },
+            5: { title: "The Throne Room", text: "Deliver Checkmate! Reach the King's square at the top-left.", time: 10, start: {r:7,c:7}, goal: {r:0,c:0}, piece: '♛' },
+            6: { title: "The Great Escape", text: "FINAL BOSS! The floor collapses AND the Queen hunts you. Reach a1!", time: 20, start: {r:7,c:7}, goal: {r:0,c:0}, piece: '👑' }
+        };
+
+        let queenInterval;
+
+        function initStory() {
+            const nameInput = document.getElementById('heroName').value.trim();
+            if(nameInput) game.name = nameInput;
+            if(game.name.toUpperCase() === "DOTUN") game.lives = 99;
+            showLevelIntro();
+        }
+
+        function showLevelIntro() {
+            game.active = false;
+            clearInterval(queenInterval);
+            const l = levels[game.level];
+            document.getElementById('overlay').style.display = 'flex';
+            document.getElementById('m-title').innerText = `Chapter ${game.level}`;
+            document.getElementById('m-content').innerHTML = `
+                <p><b>${l.title}</b></p><p>${l.text}</p>
+                <button class="btn" onclick="startLevel()">START LEVEL</button>
             `;
         }
 
-        function launchGame() {
+        function startLevel() {
+            const l = levels[game.level];
+            game.time = l.time;
+            game.pos = {...l.start};
+            game.goal = {...l.goal};
+            game.collapsed = [];
+            
             document.getElementById('overlay').style.display = 'none';
-            document.getElementById('game-interface').style.display = 'flex';
-            document.getElementById('snd-music').play();
-            gameState.active = true;
-            buildBoard();
-            setInterval(tick, 10);
-            setInterval(teleportQueen, 2000);
+            document.getElementById('ui').style.display = 'flex';
+            document.getElementById('board').style.display = 'grid';
+            document.getElementById('lvl-val').innerText = game.level;
+            document.getElementById('l-val').innerText = "🛡️".repeat(game.lives);
+            
+            game.active = true;
+            initBoard();
+
+            if(game.level >= 4) {
+                queenInterval = setInterval(moveQueen, 2000);
+            }
         }
 
-        function buildBoard() {
-            const board = document.getElementById('board');
-            board.innerHTML = '';
-            for (let r = 0; r < 8; r++) {
-                for (let c = 0; c < 8; c++) {
-                    const sq = document.createElement('div');
-                    sq.className = `square ${(r + c) % 2 === 0 ? 'white' : 'black'}`;
-                    sq.id = `s-${r}-${c}`;
-                    sq.onclick = () => handleMove(r, c);
-                    board.appendChild(sq);
+        function initBoard() {
+            const b = document.getElementById('board');
+            b.innerHTML = '';
+            for(let r = 0; r < 8; r++) {
+                for(let c = 0; c < 8; c++) {
+                    const s = document.createElement('div');
+                    s.className = `square ${(r+c)%2===0 ? 'white':'black'}`;
+                    s.id = `s-${r}-${c}`;
+                    s.onclick = () => movePlayer(r,c);
+                    b.appendChild(s);
                 }
             }
-            render();
+            update();
         }
 
-        function handleMove(r, c) {
-            if (!gameState.active) return;
-            const rDist = Math.abs(gameState.playerPos.r - r);
-            const cDist = Math.abs(gameState.playerPos.c - c);
+        function movePlayer(r,c) {
+            if(!game.active) return;
+            if(game.collapsed.includes(`${r}-${c}`)) return;
 
-            if (rDist <= 1 && cDist <= 1) {
-                document.getElementById('snd-gallop').currentTime = 0;
-                document.getElementById('snd-gallop').play();
-                gameState.playerPos = { r, c };
-                if (document.getElementById(`s-${r}-${c}`).classList.contains('queen-threat')) takeDamage();
-                render();
-                if (r === 0 && c === 0) alert("Victory!"); 
+            const rd = Math.abs(game.pos.r - r);
+            const cd = Math.abs(game.pos.c - c);
+
+            const isKnightMove = (rd === 2 && cd === 1) || (rd === 1 && cd === 2);
+            const isKingMove = rd <= 1 && cd <= 1;
+
+            if (game.level === 3 ? isKnightMove : isKingMove) {
+                if(game.level === 2 || game.level === 6) {
+                    game.collapsed.push(`${game.pos.r}-${game.pos.c}`);
+                }
+                game.pos = {r, c};
+                
+                // Sound
+                const snd = document.getElementById('snd-gallop');
+                snd.currentTime = 0;
+                snd.play().catch(()=>{}); 
+
+                if(document.getElementById(`s-${r}-${c}`).classList.contains('threat')) {
+                    takeDamage();
+                }
+
+                update();
+                if(r === game.goal.r && c === game.goal.c) nextLevel();
             }
         }
 
-        function teleportQueen() {
-            if (!gameState.active) return;
-            document.querySelectorAll('.queen-threat').forEach(s => s.classList.remove('queen-threat'));
-            gameState.queenPos = { r: Math.floor(Math.random() * 8), c: Math.floor(Math.random() * 8) };
-            for (let i = 0; i < 8; i++) {
-                document.getElementById(`s-${gameState.queenPos.r}-${i}`).classList.add('queen-threat');
-                document.getElementById(`s-${i}-${gameState.queenPos.c}`).classList.add('queen-threat');
+        function moveQueen() {
+            if(!game.active) return;
+            document.querySelectorAll('.threat').forEach(s => s.classList.remove('threat'));
+            game.queen = { r: Math.floor(Math.random()*8), c: Math.floor(Math.random()*8) };
+            
+            // Rook lines for Level 4, Queen lines for 5 & 6
+            for(let i=0; i<8; i++) {
+                document.getElementById(`s-${game.queen.r}-${i}`).classList.add('threat');
+                document.getElementById(`s-${i}-${game.queen.c}`).classList.add('threat');
             }
-            render();
+            update();
         }
 
         function takeDamage() {
-            gameState.lives--;
-            document.getElementById('lives-val').innerText = "🛡️".repeat(gameState.lives);
-            const sq = document.getElementById(`s-${gameState.playerPos.r}-${gameState.playerPos.c}`);
+            game.lives--;
+            document.getElementById('l-val').innerText = "🛡️".repeat(game.lives);
+            const sq = document.getElementById(`s-${game.pos.r}-${game.pos.c}`);
             sq.classList.add('frozen');
-            setTimeout(() => sq.classList.remove('frozen'), 1000);
-            if (gameState.lives <= 0) location.reload();
+            setTimeout(() => sq.classList.remove('frozen'), 500);
+            if(game.lives <= 0) {
+                alert("Game Over! Try again.");
+                location.reload();
+            }
         }
 
         function tick() {
-            if (!gameState.active) return;
-            gameState.time -= 0.01;
-            document.getElementById('timer-val').innerText = Math.max(0, gameState.time).toFixed(2);
-            if (gameState.time <= 0) location.reload();
+            if(!game.active) return;
+            game.time -= 0.01;
+            document.getElementById('t-val').innerText = Math.max(0, game.time).toFixed(2);
+            if(game.time <= 0) { 
+                alert("Time's up!"); 
+                location.reload(); 
+            }
         }
 
-        function render() {
-            document.querySelectorAll('.square').forEach(s => s.innerText = '');
-            document.getElementById(`s-${gameState.playerPos.r}-${gameState.playerPos.c}`).innerText = '👑';
-            document.getElementById(`s-${gameState.queenPos.r}-${gameState.queenPos.c}`).innerText = '👸';
+        function update() {
+            document.querySelectorAll('.square').forEach(s => {
+                const coord = s.id.replace('s-', '');
+                s.innerText = '';
+                if(game.collapsed.includes(coord)) s.classList.add('collapsed');
+            });
+            document.getElementById(`s-${game.pos.r}-${game.pos.c}`).innerText = levels[game.level].piece;
+            document.getElementById(`s-${game.goal.r}-${game.goal.c}`).innerText = "🏁";
+            if(game.level >= 4) {
+                document.getElementById(`s-${game.queen.r}-${game.queen.c}`).innerText = (game.level === 4) ? '🏰' : '👸';
+            }
         }
+
+        function nextLevel() {
+            game.score += 50 + Math.floor(game.time * 5);
+            document.getElementById('s-val').innerText = game.score;
+            if(game.level < 6) {
+                game.level++;
+                showLevelIntro();
+            } else {
+                game.active = false;
+                alert(`CONGRATULATIONS ${game.name}! Total Score: ${game.score}`);
+                location.reload();
+            }
+        }
+
+        setInterval(tick, 10);
     </script>
 </body>
 </html>
