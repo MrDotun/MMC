@@ -90,8 +90,6 @@
         .lb-table th { color: var(--lab-blue); border-bottom: 1px solid #444; padding: 5px; }
         .lb-table td { padding: 5px; border-bottom: 1px solid #222; }
 
-        /* Game UI Adjustments */
-        #game-screen { overflow-y: auto; }
         #story-box { background: rgba(0,0,0,0.8); padding: 15px; border-radius: 15px; border: 2px solid var(--accent); margin-bottom: 10px; }
         #story-box b { font-size: 1.4rem; color: var(--accent); display: block; } 
 
@@ -350,9 +348,9 @@
     }
 
     function initStage3() {
-        timeLeft = 25;
+        timeLeft = 45;
         document.getElementById('stage-title').innerText = "EXPERIMENT 3: CONTAINMENT";
-        document.getElementById('objective-text').innerText = "Use both Rooks to trap the King. Don't let him touch your Rooks!";
+        document.getElementById('objective-text').innerText = "Use both Rooks to trap the King. WATCH OUT: He will try to capture you!";
         currentBoard = new Array(64).fill('');
         currentBoard[56] = 'R'; currentBoard[63] = 'R'; currentBoard[36] = 'k'; 
         startTimer();
@@ -363,10 +361,8 @@
         if (selectedIndex === null) { if (currentBoard[i] === 'R') selectedIndex = i; }
         else {
             if (isLegalRookMove(selectedIndex, i)) {
-                let target = currentBoard[i];
                 currentBoard[i] = 'R'; currentBoard[selectedIndex] = '';
-                if (target === 'k') winGame(); 
-                else setTimeout(toughKingMove, 300);
+                setTimeout(toughKingMove, 300);
             }
             selectedIndex = null;
         }
@@ -389,11 +385,17 @@
             return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
         });
         
-        // AI captures rook if possible
+        // --- LOGIC 1: AGGRESSIVE CAPTURE ---
         let rookToCapture = possibleMoves.find(m => currentBoard[m] === 'R');
-        if (rookToCapture !== undefined) { handleLoss(); return; }
+        if (rookToCapture !== undefined) {
+            currentBoard[kP] = '';
+            currentBoard[rookToCapture] = 'k';
+            renderBoard(handleS3Click);
+            setTimeout(() => handleLoss(), 200);
+            return;
+        }
 
-        // Difficult logic: AI stays near center or escapes rooks
+        // Escape logic
         let safeMoves = possibleMoves.filter(m => {
             let rIndices = currentBoard.map((p, idx) => p === 'R' ? idx : null).filter(n => n !== null);
             return !rIndices.some(r => Math.floor(r/8) === Math.floor(m/8) || (r%8) === (m%8));
@@ -401,7 +403,6 @@
 
         if (safeMoves.length === 0) { winGame(); return; }
         
-        // Priority: Move towards center (ranks 3-4, files 3-4)
         safeMoves.sort((a,b) => {
             let distA = Math.abs(3.5 - Math.floor(a/8)) + Math.abs(3.5 - (a%8));
             let distB = Math.abs(3.5 - Math.floor(b/8)) + Math.abs(3.5 - (b%8));
@@ -413,15 +414,16 @@
         renderBoard(handleS3Click);
     }
 
-    // --- STAGE 4: ADVANCED AI LOGIC ---
     function initStage4() {
-        timeLeft = 30;
+        timeLeft = 60;
         document.getElementById('stage-title').innerText = "EXPERIMENT 4: FINAL EXTRACTION";
-        document.getElementById('objective-text').innerText = "Checkmate the Lab AI with Queen & King. Stalemate = Failure!";
+        document.getElementById('objective-text').innerText = "Checkmate the AI. He is fighting to stay in the center!";
         currentBoard = new Array(64).fill('');
         
-        let p = Array.from({length: 64}, (_, i) => i).sort(() => Math.random() - 0.5);
-        currentBoard[p[0]] = 'K'; currentBoard[p[1]] = 'Q'; currentBoard[p[2]] = 'k';
+        // Kid Queen: A1 (Index 56), Kid King: B1 (Index 57), AI King: E4 (Index 28)
+        currentBoard[56] = 'Q'; 
+        currentBoard[57] = 'K'; 
+        currentBoard[28] = 'k';
         
         startTimer();
         renderBoard(handleS4Click);
@@ -441,7 +443,7 @@
                 currentBoard[selectedIndex] = '';
                 selectedIndex = null;
                 renderBoard(handleS4Click);
-                setTimeout(difficultAIKing, 300);
+                setTimeout(difficultAIKing, 400);
             } else {
                 selectedIndex = null;
                 renderBoard(handleS4Click);
@@ -470,17 +472,12 @@
         let pK = currentBoard.indexOf('K');
         let pQ = currentBoard.indexOf('Q');
 
-        function squareAttacked(pos) {
-            // Attacked by King
+        function isAttacked(pos) {
             if (Math.abs(Math.floor(pos/8) - Math.floor(pK/8)) <= 1 && Math.abs((pos%8) - (pK%8)) <= 1) return true;
-            // Attacked by Queen
             let sR = Math.floor(pQ/8), sC = pQ%8, eR = Math.floor(pos/8), eC = pos%8;
             let dR = Math.abs(sR - eR), dC = Math.abs(sC - eC);
             if (sR === eR || sC === eC || dR === dC) {
-                let step = 0;
-                if (sR === eR) step = pos > pQ ? 1 : -1;
-                else if (sC === eC) step = pos > pQ ? 8 : -8;
-                else step = (eR > sR ? 8 : -8) + (eC > sC ? 1 : -1);
+                let step = sR === eR ? (pos > pQ ? 1 : -1) : sC === eC ? (pos > pQ ? 8 : -8) : ((eR > sR ? 8 : -8) + (eC > sC ? 1 : -1));
                 let blocked = false;
                 for (let c = pQ + step; c !== pos; c += step) if (currentBoard[c] !== '' && currentBoard[c] !== 'k') blocked = true;
                 if (!blocked) return true;
@@ -493,23 +490,37 @@
             return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
         });
 
-        let safe = possible.filter(m => !squareAttacked(m));
+        let safe = possible.filter(m => !isAttacked(m));
 
         if (safe.length === 0) {
-            if (squareAttacked(kP)) winGame(); // Checkmate!
-            else { alert("STALEMATE DETECTED! Laboratory logic loop."); handleLoss(); }
+            if (isAttacked(kP)) winGame(); 
+            else { alert("STALEMATE!"); handleLoss(); }
             return;
         }
 
-        // Difficult Logic: 
-        // 1. Prefer squares away from the edge (center is safer)
-        // 2. Maximize distance from the enemy King
+        // --- LOGIC: AVOID EDGES AT ALL COSTS ---
         safe.sort((a,b) => {
-            let centerDistA = Math.abs(3.5 - Math.floor(a/8)) + Math.abs(3.5 - (a%8));
-            let centerDistB = Math.abs(3.5 - Math.floor(b/8)) + Math.abs(3.5 - (b%8));
-            let playerKDistA = Math.abs(Math.floor(a/8) - Math.floor(pK/8)) + Math.abs((a%8) - (pK%8));
-            let playerKDistB = Math.abs(Math.floor(b/8) - Math.floor(pK/8)) + Math.abs((b%8) - (pK%8));
-            return (centerDistA - playerKDistA) - (centerDistB - playerKDistB);
+            let rowA = Math.floor(a/8), colA = a%8;
+            let rowB = Math.floor(b/8), colB = b%8;
+            
+            // Penalty for being on row 0, 7 or col 0, 7
+            function getEdgePenalty(r, c) {
+                let p = 0;
+                if (r === 0 || r === 7) p += 10;
+                if (c === 0 || c === 7) p += 10;
+                return p;
+            }
+            
+            // Priority 1: Distance from edges (Lower penalty is better)
+            let penaltyA = getEdgePenalty(rowA, colA);
+            let penaltyB = getEdgePenalty(rowB, colB);
+            
+            if (penaltyA !== penaltyB) return penaltyA - penaltyB;
+            
+            // Priority 2: Stay near center
+            let distCenterA = Math.abs(3.5 - rowA) + Math.abs(3.5 - colA);
+            let distCenterB = Math.abs(3.5 - rowB) + Math.abs(3.5 - colB);
+            return distCenterA - distCenterB;
         });
 
         currentBoard[kP] = '';
@@ -541,7 +552,7 @@
         }, 1000);
     }
 
-    function giveHint() { alert("Mr. Dotun says: The center of the board is where the King survives. Push him to the wall!"); }
+    function giveHint() { alert("Mr. Dotun says: The AI is programmed to hold the center. You must push it to the edge to trap it!"); }
 
     function winGame() {
         clearInterval(timerInterval);
@@ -555,7 +566,7 @@
                 currentStage++;
                 launchGame(currentStage);
             } else {
-                alert("MAXIMUM RANK ATTAINED: LABORATORY DIRECTOR! Station Secure.");
+                alert("MAXIMUM RANK ATTAINED: LABORATORY DIRECTOR!");
                 localStorage.removeItem(`dotun_lab_${playerName}_${playerCode}`);
                 location.reload();
             }
