@@ -243,7 +243,7 @@
         currentBoard = new Array(64).fill('');
         currentBoard[56] = 'R'; 
         currentBoard[63] = 'R';
-        currentBoard[36] = 'k'; // King on e4
+        currentBoard[36] = 'k'; 
         startTimer();
         renderBoard(handleS3Click);
     }
@@ -256,8 +256,12 @@
                 let target = currentBoard[i];
                 currentBoard[i] = 'R';
                 currentBoard[selectedIndex] = '';
-                if (target === 'k') winGame(); 
-                else setTimeout(toughKingMove, 300);
+                if (target === 'k') {
+                    document.getElementById('win-title').innerText = "🎯 KING CAPTURED!";
+                    winGame();
+                } else {
+                    setTimeout(toughKingMove, 300);
+                }
             }
             selectedIndex = null;
         }
@@ -275,26 +279,61 @@
     function toughKingMove() {
         let kP = currentBoard.indexOf('k');
         if (kP === -1) return;
-        let moves = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => {
+
+        let rookIndices = currentBoard.map((p, idx) => p === 'R' ? idx : null).filter(n => n !== null);
+        
+        let possibleMoves = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => {
             let rD = Math.abs(Math.floor(m/8) - Math.floor(kP/8));
             let cD = Math.abs((m%8) - (kP%8));
-            return m >= 0 && m < 64 && rD <= 1 && cD <= 1 && currentBoard[m] === '';
+            return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
         });
-        let safe = moves.filter(m => {
-            let rs = currentBoard.map((p, idx) => p === 'R' ? idx : null).filter(n => n !== null);
-            return !rs.some(r => Math.floor(r/8) === Math.floor(m/8) || (r%8) === (m%8));
+
+        // Safe moves (not in line of fire of a rook)
+        let safeMoves = possibleMoves.filter(m => {
+            return !rookIndices.some(r => Math.floor(r/8) === Math.floor(m/8) || (r%8) === (m%8));
         });
-        
-        let move = safe.length > 0 ? safe[Math.floor(Math.random()*safe.length)] : moves[0];
-        
-        if (move !== undefined) { 
-            currentBoard[move] = 'k'; 
-            currentBoard[kP] = ''; 
-        } else { 
-            // FIXED: Stage 3 checkmate win logic
-            document.getElementById('win-title').innerText = "🏆 CHECKMATE!";
-            winGame(); 
-        } 
+
+        // 1. Recognize Checkmate
+        let isInCheck = rookIndices.some(r => Math.floor(r/8) === Math.floor(kP/8) || (r%8) === (kP%8));
+        if (safeMoves.length === 0) {
+            // Check if he can capture a rook to save himself
+            let captureMove = possibleMoves.find(m => currentBoard[m] === 'R');
+            if (!captureMove) {
+                if (isInCheck) document.getElementById('win-title').innerText = "🏆 CHECKMATE!";
+                else document.getElementById('win-title').innerText = "🧱 STALEMATE!";
+                winGame();
+                return;
+            }
+        }
+
+        // 2. Try to capture a rook if adjacent
+        let rookToCapture = possibleMoves.find(m => currentBoard[m] === 'R');
+        if (rookToCapture !== undefined) {
+            currentBoard[kP] = '';
+            currentBoard[rookToCapture] = 'k';
+            renderBoard(handleS3Click);
+            setTimeout(() => { alert("GAME OVER! The King captured your Rook!"); location.reload(); }, 200);
+            return;
+        }
+
+        // 3. Move closer to the nearest Rook (Aggressive movement)
+        let bestMove = safeMoves[Math.floor(Math.random() * safeMoves.length)];
+        let minTargetDist = 100;
+
+        safeMoves.forEach(m => {
+            rookIndices.forEach(r => {
+                let dist = Math.sqrt(Math.pow(Math.floor(m/8) - Math.floor(r/8), 2) + Math.pow((m%8) - (r%8), 2));
+                if (dist < minTargetDist) {
+                    minTargetDist = dist;
+                    bestMove = m;
+                }
+            });
+        });
+
+        if (bestMove !== undefined) {
+            currentBoard[kP] = '';
+            currentBoard[bestMove] = 'k';
+        }
         renderBoard(handleS3Click);
     }
 
@@ -330,7 +369,7 @@
     function giveHint() {
         if(currentStage === 1) alert("Mr. Dotun says: Rook — Knight — Bishop!");
         else if(currentStage === 2) alert("Mr. Dotun says: Pawns walk straight but capture diagonally!");
-        else alert("Mr. Dotun says: Push the King to the edge using your Rooks like walls!");
+        else alert("Mr. Dotun says: Use your Rooks as walls to trap the King, but don't let him get close!");
     }
 
     function winGame() {
@@ -338,7 +377,6 @@
         const score = 50 + (timeLeft * 3);
         saveScore(playerName, score);
         
-        // Reset win-title for Stage 1 & 2 in case they replay
         if(currentStage < 3) document.getElementById('win-title').innerText = "🔑 KEY OBTAINED!";
         
         document.getElementById('score-report').innerHTML = `Master <b>${playerName}</b> of <b>${playerClass}</b>,<br>Score: <b>${score}</b>`;
