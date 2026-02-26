@@ -2,141 +2,165 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Chess Quest: Stage 1</title>
     <style>
         :root {
             --light-sq: #f0d9b5;
             --dark-sq: #b58863;
-            --highlight: rgba(255, 255, 0, 0.6);
-            --correct: rgba(0, 255, 0, 0.4);
+            --highlight: rgba(255, 235, 59, 0.7);
+            --correct: rgba(76, 175, 80, 0.6);
+            --accent: #f1c40f;
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Comic Sans MS', 'Chalkboard SE', cursive;
             display: flex;
             flex-direction: column;
             align-items: center;
-            background-color: #2c3e50;
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            background-attachment: fixed;
             color: white;
+            margin: 0;
+            overflow-x: hidden;
+            min-height: 100vh;
         }
 
-        h1 { margin-bottom: 10px; color: #f1c40f; }
+        /* 1. Responsiveness: Board fits to screen */
+        #game-wrapper {
+            width: 100%;
+            max-width: 400px;
+            padding: 10px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
 
-        #game-container {
-            position: relative;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        h1 { font-size: 1.5rem; margin: 10px 0; text-shadow: 2px 2px #000; text-align: center; }
+
+        /* Storyline Styling */
+        #story-box {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            border: 2px solid var(--accent);
+            line-height: 1.4;
         }
 
         .board {
             display: grid;
-            grid-template-columns: repeat(8, 60px);
-            grid-template-rows: repeat(8, 60px);
-            border: 5px solid #34495e;
+            grid-template-columns: repeat(8, 1fr);
+            width: 100%;
+            aspect-ratio: 1 / 1; /* Keeps board square */
+            border: 4px solid #333;
+            touch-action: manipulation;
         }
 
         .square {
-            width: 60px;
-            height: 60px;
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 40px;
             cursor: pointer;
-            user-select: none;
             position: relative;
+        }
+
+        .square img {
+            width: 85%;
+            height: 85%;
+            pointer-events: none;
         }
 
         .square.light { background-color: var(--light-sq); }
         .square.dark { background-color: var(--dark-sq); }
-        .square.selected { background-color: var(--highlight) !important; }
-        .square.is-correct { background-color: var(--correct) !important; cursor: default; }
+        .square.selected { background-color: var(--highlight) !important; transform: scale(1.1); z-index: 5; }
+        .square.is-correct { background-color: var(--correct) !important; pointer-events: none; }
 
-        .piece {
-            transition: transform 0.1s;
-            z-index: 2;
-        }
+        /* 2. Distinguishing pieces (Black vs White) */
+        .white-piece { filter: drop-shadow(0px 0px 2px #000); }
+        .black-piece { filter: drop-shadow(0px 0px 2px #fff); }
 
-        #ui-panel {
-            margin-top: 20px;
-            text-align: center;
-        }
-
-        #timer { font-size: 24px; font-weight: bold; color: #e74c3c; }
+        #timer { font-size: 1.2rem; font-weight: bold; color: #ffeb3b; margin: 10px 0; }
         
         #key-inventory {
-            margin-top: 15px;
+            background: rgba(255, 255, 255, 0.1);
             padding: 10px;
-            background: #34495e;
-            border-radius: 10px;
+            border-radius: 15px;
+            width: 100%;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 5px;
         }
 
         .key-slot {
-            display: inline-block;
-            width: 30px;
-            height: 30px;
-            margin: 5px;
-            border: 2px dashed #7f8c8d;
-            border-radius: 50%;
-            line-height: 30px;
-            font-size: 18px;
+            font-size: 20px;
+            opacity: 0.2;
+            transition: all 0.5s;
         }
 
-        .key-earned { border-style: solid; border-color: #f1c40f; color: #f1c40f; }
+        .key-earned { opacity: 1; text-shadow: 0 0 10px gold; }
 
         .modal {
             display: none;
-            position: absolute;
-            top: 50%;
-            left: 50%;
+            position: fixed;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            background: white;
-            color: #333;
-            padding: 20px;
-            border-radius: 15px;
-            text-align: center;
-            z-index: 10;
-            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            background: white; color: #222;
+            padding: 30px; border-radius: 20px;
+            text-align: center; z-index: 100;
+            width: 80%;
         }
     </style>
 </head>
 <body>
 
-    <h1>STAGE 1: THE GREAT SCRAMBLE</h1>
-    
-    <div id="game-container">
+    <div id="game-wrapper">
+        <h1>STAGE 1: THE GREAT SCRAMBLE</h1>
+
+        <div id="story-box">
+            🏰 <b>Quest Log:</b> A mischievous wind has blown through the King's Castle and scattered all the Royal Guard! 
+            Quickly, return the pieces to their home squares to earn the <b>First Key</b> and unlock the Castle Gate!
+        </div>
+
+        <div id="timer">⏳ Time: <span id="seconds">0</span>s</div>
+
         <div id="board" class="board"></div>
-        
-        <div id="win-modal" class="modal">
-            <h2>STAGE CLEAR!</h2>
-            <p>You found the first key!</p>
-            <div style="font-size: 50px;">🗝️</div>
-            <button onclick="location.reload()" style="padding: 10px 20px; cursor: pointer;">Play Again</button>
+
+        <div id="key-inventory">
+            <div id="keys-container"></div>
         </div>
     </div>
 
-    <div id="ui-panel">
-        <div id="timer">Time: <span id="seconds">0</span>s</div>
-        <p>Click a piece, then click its <b>correct starting square</b>!</p>
-        
-        <div id="key-inventory">
-            <span>Keys: </span>
-            <div id="keys-container"></div>
-        </div>
+    <div id="win-modal" class="modal">
+        <h2>🔑 KEY OBTAINED!</h2>
+        <p>Excellent work! You've organized the Royal Guard. Stage 2 awaits!</p>
+        <button onclick="location.reload()" style="background:#27ae60; color:white; border:none; padding:15px 30px; border-radius:10px; font-weight:bold;">NEXT STAGE</button>
     </div>
 
 <script>
     const boardElement = document.getElementById('board');
     const timerElement = document.getElementById('seconds');
     const winModal = document.getElementById('win-modal');
-    
-    // Chess piece Unicode characters
-    const pieces = {
-        'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
-        'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙'
+
+    // High-contrast SVG pieces for better distinction
+    const pieceImages = {
+        'r': 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+        'n': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+        'b': 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
+        'q': 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
+        'k': 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
+        'p': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
+        'R': 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+        'N': 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+        'B': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
+        'Q': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
+        'K': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
+        'P': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg'
     };
 
-    // Correct starting setup (Standard Chess)
     const startingBoard = [
         'r','n','b','q','k','b','n','r',
         'p','p','p','p','p','p','p','p',
@@ -155,41 +179,32 @@
     const totalPieces = startingBoard.filter(p => p !== '').length;
 
     function initGame() {
-        // Create 20 key slots
+        // Create 20 keys
         const keysCont = document.getElementById('keys-container');
         for(let i=0; i<20; i++) {
             const slot = document.createElement('div');
             slot.className = 'key-slot';
-            slot.innerHTML = '🗝️';
-            slot.style.opacity = '0.2';
+            slot.innerHTML = '🔑';
             keysCont.appendChild(slot);
         }
 
-        // Scramble logic: Get all pieces and put them in random wrong squares
+        // Scramble logic
         let allPieces = startingBoard.filter(p => p !== '');
-        let emptySquares = new Array(64).fill('');
+        let positions = Array.from({length: 64}, (_, i) => i).sort(() => Math.random() - 0.5);
         
-        // Randomly distribute pieces
-        let positions = Array.from({length: 64}, (_, i) => i);
-        positions = positions.sort(() => Math.random() - 0.5);
-
+        currentBoard = new Array(64).fill('');
         positions.forEach((pos, index) => {
             if(index < allPieces.length) {
-                // Ensure it doesn't accidentally start in the right spot
-                if (allPieces[index] === startingBoard[pos]) {
-                    // Simple swap to break correctness
-                    let next = (index + 1) % allPieces.length;
-                    currentBoard[pos] = allPieces[next];
-                } else {
-                    currentBoard[pos] = allPieces[index];
-                }
-            } else {
-                currentBoard[pos] = '';
+                currentBoard[pos] = allPieces[index];
             }
         });
 
         renderBoard();
-        setInterval(updateTimer, 1000);
+        setInterval(() => {
+            if(solvedCount < totalPieces) {
+                timerElement.innerText = Math.floor((Date.now() - startTime) / 1000);
+            }
+        }, 1000);
     }
 
     function renderBoard() {
@@ -198,10 +213,10 @@
 
         currentBoard.forEach((piece, i) => {
             const square = document.createElement('div');
-            const isDark = (Math.floor(i / 8) + i) % 2 === 1;
+            const row = Math.floor(i / 8);
+            const isDark = (row + i) % 2 === 1;
             square.className = `square ${isDark ? 'dark' : 'light'}`;
             
-            // Check if piece is already in correct spot
             if (piece !== '' && piece === startingBoard[i]) {
                 square.classList.add('is-correct');
                 solvedCount++;
@@ -209,45 +224,35 @@
 
             if (selectedIndex === i) square.classList.add('selected');
             
-            square.innerHTML = pieces[piece] || '';
+            if (piece !== '') {
+                const img = document.createElement('img');
+                img.src = pieceImages[piece];
+                img.className = piece === piece.toLowerCase() ? 'black-piece' : 'white-piece';
+                square.appendChild(img);
+            }
+
             square.onclick = () => handleSquareClick(i);
             boardElement.appendChild(square);
         });
 
         if (solvedCount === totalPieces) {
-            winGame();
+            document.querySelectorAll('.key-slot')[0].classList.add('key-earned');
+            winModal.style.display = 'block';
         }
     }
 
     function handleSquareClick(index) {
-        // If square is already correct, ignore clicks
         if (currentBoard[index] !== '' && currentBoard[index] === startingBoard[index]) return;
 
         if (selectedIndex === null) {
-            if (currentBoard[index] !== '') {
-                selectedIndex = index;
-            }
+            if (currentBoard[index] !== '') selectedIndex = index;
         } else {
-            // SWAP pieces
             let temp = currentBoard[index];
             currentBoard[index] = currentBoard[selectedIndex];
             currentBoard[selectedIndex] = temp;
             selectedIndex = null;
         }
         renderBoard();
-    }
-
-    function updateTimer() {
-        if(solvedCount < totalPieces) {
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            timerElement.innerText = elapsed;
-        }
-    }
-
-    function winGame() {
-        winModal.style.display = 'block';
-        document.querySelectorAll('.key-slot')[0].style.opacity = '1';
-        document.querySelectorAll('.key-slot')[0].classList.add('key-earned');
     }
 
     initGame();
