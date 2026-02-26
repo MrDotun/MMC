@@ -2,220 +2,255 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>King Dotun's Quest: Official Debugged Build</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Quest: Stage 1</title>
     <style>
-        :root { --gold: #d4af37; --bg: #0a0a0a; --parchment: #f2e3c9; --danger: rgba(255, 0, 0, 0.3); --safe: #eeeed2; --dark: #769656; }
-        body { background: var(--bg); color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; touch-action: manipulation; }
-        
-        /* Overlays */
-        #overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; justify-content: center; align-items: center; z-index: 100; }
-        .scroll { background: var(--parchment); color: #2c1e05; padding: 25px; width: 85%; max-width: 450px; border: 8px double #8b5a2b; border-radius: 10px; text-align: center; box-shadow: 0 0 50px #000; }
-        
-        /* Stats */
-        #ui { display: none; width: 90%; max-width: 480px; background: #222; border: 2px solid var(--gold); padding: 10px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; font-size: 1rem; box-sizing: border-box; }
-        
-        /* Board */
-        .board { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: 92vw; height: 92vw; max-width: 480px; max-height: 480px; border: 5px solid #444; background: #111; position: relative; }
-        .square { display: flex; justify-content: center; align-items: center; font-size: clamp(20px, 7vw, 35px); cursor: pointer; user-select: none; }
-        .white { background: var(--safe); }
-        .black { background: var(--dark); }
-        .collapsed { background: #000 !important; }
-        .threat { background: rgba(155, 38, 182, 0.6) !important; }
-        .frozen { background: #00ccff !important; animation: shake 0.1s infinite; }
+        :root {
+            --light-sq: #f0d9b5;
+            --dark-sq: #b58863;
+            --highlight: rgba(255, 255, 0, 0.6);
+            --correct: rgba(0, 255, 0, 0.4);
+        }
 
-        @keyframes shake { 0% { transform: translate(1px, 1px); } 50% { transform: translate(-1px, -1px); } 100% { transform: translate(1px, -1px); } }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #2c3e50;
+            color: white;
+        }
 
-        input { padding: 12px; font-size: 1rem; width: 80%; border: 2px solid #8b5a2b; margin-top: 10px; outline: none; }
-        .btn { background: #8b5a2b; color: white; padding: 12px 20px; border: none; cursor: pointer; margin-top: 15px; font-weight: bold; width: 100%; border-radius: 5px; }
+        h1 { margin-bottom: 10px; color: #f1c40f; }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(8, 60px);
+            grid-template-rows: repeat(8, 60px);
+            border: 5px solid #34495e;
+        }
+
+        .square {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 40px;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+
+        .square.light { background-color: var(--light-sq); }
+        .square.dark { background-color: var(--dark-sq); }
+        .square.selected { background-color: var(--highlight) !important; }
+        .square.is-correct { background-color: var(--correct) !important; cursor: default; }
+
+        .piece {
+            transition: transform 0.1s;
+            z-index: 2;
+        }
+
+        #ui-panel {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        #timer { font-size: 24px; font-weight: bold; color: #e74c3c; }
+        
+        #key-inventory {
+            margin-top: 15px;
+            padding: 10px;
+            background: #34495e;
+            border-radius: 10px;
+        }
+
+        .key-slot {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            margin: 5px;
+            border: 2px dashed #7f8c8d;
+            border-radius: 50%;
+            line-height: 30px;
+            font-size: 18px;
+        }
+
+        .key-earned { border-style: solid; border-color: #f1c40f; color: #f1c40f; }
+
+        .modal {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            color: #333;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            z-index: 10;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
     </style>
 </head>
 <body>
 
-    <div id="overlay">
-        <div class="scroll" id="scroll-box">
-            <h1 id="m-title">👑 King Dotun's Quest</h1>
-            <div id="m-content">
-                <input type="text" id="heroName" placeholder="Enter Hero Name...">
-                <button class="btn" onclick="initStory()">BEGIN CHAPTER 1</button>
-            </div>
+    <h1>STAGE 1: THE GREAT SCRAMBLE</h1>
+    
+    <div id="game-container">
+        <div id="board" class="board"></div>
+        
+        <div id="win-modal" class="modal">
+            <h2>STAGE CLEAR!</h2>
+            <p>You found the first key!</p>
+            <div style="font-size: 50px;">🗝️</div>
+            <button onclick="location.reload()" style="padding: 10px 20px; cursor: pointer;">Play Again</button>
         </div>
     </div>
 
-    <div id="ui">
-        <span>Lvl: <b id="lvl-val">1</b></span>
-        <span>Score: <b id="s-val">0</b></span>
-        <span>Time: <b id="t-val">10.00</b></span>
-        <span>Lives: <b id="l-val">🛡️🛡️🛡️</b></span>
+    <div id="ui-panel">
+        <div id="timer">Time: <span id="seconds">0</span>s</div>
+        <p>Click a piece, then click its <b>correct starting square</b>!</p>
+        
+        <div id="key-inventory">
+            <span>Keys: </span>
+            <div id="keys-container"></div>
+        </div>
     </div>
-    <div id="board" class="board" style="display:none"></div>
 
-    <audio id="snd-gallop" src="https://actions.google.com/sounds/v1/foley/horse_gallop_fast.ogg"></audio>
+<script>
+    const boardElement = document.getElementById('board');
+    const timerElement = document.getElementById('seconds');
+    const winModal = document.getElementById('win-modal');
+    
+    // Chess piece Unicode characters
+    const pieces = {
+        'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
+        'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙'
+    };
 
-    <script>
-        let game = { 
-            active: false, level: 1, name: "", score: 0, lives: 3, time: 10.0, 
-            pos: {r:7, c:0}, goal: {r:0, c:7}, queen: {r:0, c:0}, collapsed: [] 
-        };
+    // Correct starting setup (Standard Chess)
+    const startingBoard = [
+        'r','n','b','q','k','b','n','r',
+        'p','p','p','p','p','p','p','p',
+        '','','','','','','','',
+        '','','','','','','','',
+        '','','','','','','','',
+        '','','','','','','','',
+        'P','P','P','P','P','P','P','P',
+        'R','N','B','Q','K','B','N','R'
+    ];
 
-        const levels = {
-            1: { title: "The Golem's Gate", text: "Welcome! Move your Pawn to the flag at the top-right.", time: 12, start: {r:7,c:0}, goal: {r:0,c:7}, piece: '♟️' },
-            2: { title: "The Shadow Forest", text: "The path is crumbling! Squares disappear after you move.", time: 10, start: {r:7,c:0}, goal: {r:0,c:7}, piece: '💎' },
-            3: { title: "Island of the Beast", text: "You are a Knight! Move in an 'L' shape (2 up, 1 over) to reach the goal.", time: 15, start: {r:7,c:0}, goal: {r:4,c:1}, piece: '♞' },
-            4: { title: "The Mad Rook", text: "The Rook teleports! Avoid his purple lines of sight.", time: 12, start: {r:7,c:0}, goal: {r:0,c:7}, piece: '💰' },
-            5: { title: "The Throne Room", text: "Deliver Checkmate! Reach the King's square at the top-left.", time: 10, start: {r:7,c:7}, goal: {r:0,c:0}, piece: '♛' },
-            6: { title: "The Great Escape", text: "FINAL BOSS! The floor collapses AND the Queen hunts you. Reach a1!", time: 20, start: {r:7,c:7}, goal: {r:0,c:0}, piece: '👑' }
-        };
+    let currentBoard = [];
+    let selectedIndex = null;
+    let startTime = Date.now();
+    let solvedCount = 0;
+    const totalPieces = startingBoard.filter(p => p !== '').length;
 
-        let queenInterval;
-
-        function initStory() {
-            const nameInput = document.getElementById('heroName').value.trim();
-            if(nameInput) game.name = nameInput;
-            if(game.name.toUpperCase() === "DOTUN") game.lives = 99;
-            showLevelIntro();
+    function initGame() {
+        // Create 20 key slots
+        const keysCont = document.getElementById('keys-container');
+        for(let i=0; i<20; i++) {
+            const slot = document.createElement('div');
+            slot.className = 'key-slot';
+            slot.innerHTML = '🗝️';
+            slot.style.opacity = '0.2';
+            keysCont.appendChild(slot);
         }
 
-        function showLevelIntro() {
-            game.active = false;
-            clearInterval(queenInterval);
-            const l = levels[game.level];
-            document.getElementById('overlay').style.display = 'flex';
-            document.getElementById('m-title').innerText = `Chapter ${game.level}`;
-            document.getElementById('m-content').innerHTML = `
-                <p><b>${l.title}</b></p><p>${l.text}</p>
-                <button class="btn" onclick="startLevel()">START LEVEL</button>
-            `;
-        }
+        // Scramble logic: Get all pieces and put them in random wrong squares
+        let allPieces = startingBoard.filter(p => p !== '');
+        let emptySquares = new Array(64).fill('');
+        
+        // Randomly distribute pieces
+        let positions = Array.from({length: 64}, (_, i) => i);
+        positions = positions.sort(() => Math.random() - 0.5);
 
-        function startLevel() {
-            const l = levels[game.level];
-            game.time = l.time;
-            game.pos = {...l.start};
-            game.goal = {...l.goal};
-            game.collapsed = [];
-            
-            document.getElementById('overlay').style.display = 'none';
-            document.getElementById('ui').style.display = 'flex';
-            document.getElementById('board').style.display = 'grid';
-            document.getElementById('lvl-val').innerText = game.level;
-            document.getElementById('l-val').innerText = "🛡️".repeat(game.lives);
-            
-            game.active = true;
-            initBoard();
-
-            if(game.level >= 4) {
-                queenInterval = setInterval(moveQueen, 2000);
-            }
-        }
-
-        function initBoard() {
-            const b = document.getElementById('board');
-            b.innerHTML = '';
-            for(let r = 0; r < 8; r++) {
-                for(let c = 0; c < 8; c++) {
-                    const s = document.createElement('div');
-                    s.className = `square ${(r+c)%2===0 ? 'white':'black'}`;
-                    s.id = `s-${r}-${c}`;
-                    s.onclick = () => movePlayer(r,c);
-                    b.appendChild(s);
+        positions.forEach((pos, index) => {
+            if(index < allPieces.length) {
+                // Ensure it doesn't accidentally start in the right spot
+                if (allPieces[index] === startingBoard[pos]) {
+                    // Simple swap to break correctness
+                    let next = (index + 1) % allPieces.length;
+                    currentBoard[pos] = allPieces[next];
+                } else {
+                    currentBoard[pos] = allPieces[index];
                 }
-            }
-            update();
-        }
-
-        function movePlayer(r,c) {
-            if(!game.active) return;
-            if(game.collapsed.includes(`${r}-${c}`)) return;
-
-            const rd = Math.abs(game.pos.r - r);
-            const cd = Math.abs(game.pos.c - c);
-
-            const isKnightMove = (rd === 2 && cd === 1) || (rd === 1 && cd === 2);
-            const isKingMove = rd <= 1 && cd <= 1;
-
-            if (game.level === 3 ? isKnightMove : isKingMove) {
-                if(game.level === 2 || game.level === 6) {
-                    game.collapsed.push(`${game.pos.r}-${game.pos.c}`);
-                }
-                game.pos = {r, c};
-                
-                // Sound
-                const snd = document.getElementById('snd-gallop');
-                snd.currentTime = 0;
-                snd.play().catch(()=>{}); 
-
-                if(document.getElementById(`s-${r}-${c}`).classList.contains('threat')) {
-                    takeDamage();
-                }
-
-                update();
-                if(r === game.goal.r && c === game.goal.c) nextLevel();
-            }
-        }
-
-        function moveQueen() {
-            if(!game.active) return;
-            document.querySelectorAll('.threat').forEach(s => s.classList.remove('threat'));
-            game.queen = { r: Math.floor(Math.random()*8), c: Math.floor(Math.random()*8) };
-            
-            // Rook lines for Level 4, Queen lines for 5 & 6
-            for(let i=0; i<8; i++) {
-                document.getElementById(`s-${game.queen.r}-${i}`).classList.add('threat');
-                document.getElementById(`s-${i}-${game.queen.c}`).classList.add('threat');
-            }
-            update();
-        }
-
-        function takeDamage() {
-            game.lives--;
-            document.getElementById('l-val').innerText = "🛡️".repeat(game.lives);
-            const sq = document.getElementById(`s-${game.pos.r}-${game.pos.c}`);
-            sq.classList.add('frozen');
-            setTimeout(() => sq.classList.remove('frozen'), 500);
-            if(game.lives <= 0) {
-                alert("Game Over! Try again.");
-                location.reload();
-            }
-        }
-
-        function tick() {
-            if(!game.active) return;
-            game.time -= 0.01;
-            document.getElementById('t-val').innerText = Math.max(0, game.time).toFixed(2);
-            if(game.time <= 0) { 
-                alert("Time's up!"); 
-                location.reload(); 
-            }
-        }
-
-        function update() {
-            document.querySelectorAll('.square').forEach(s => {
-                const coord = s.id.replace('s-', '');
-                s.innerText = '';
-                if(game.collapsed.includes(coord)) s.classList.add('collapsed');
-            });
-            document.getElementById(`s-${game.pos.r}-${game.pos.c}`).innerText = levels[game.level].piece;
-            document.getElementById(`s-${game.goal.r}-${game.goal.c}`).innerText = "🏁";
-            if(game.level >= 4) {
-                document.getElementById(`s-${game.queen.r}-${game.queen.c}`).innerText = (game.level === 4) ? '🏰' : '👸';
-            }
-        }
-
-        function nextLevel() {
-            game.score += 50 + Math.floor(game.time * 5);
-            document.getElementById('s-val').innerText = game.score;
-            if(game.level < 6) {
-                game.level++;
-                showLevelIntro();
             } else {
-                game.active = false;
-                alert(`CONGRATULATIONS ${game.name}! Total Score: ${game.score}`);
-                location.reload();
+                currentBoard[pos] = '';
             }
-        }
+        });
 
-        setInterval(tick, 10);
-    </script>
+        renderBoard();
+        setInterval(updateTimer, 1000);
+    }
+
+    function renderBoard() {
+        boardElement.innerHTML = '';
+        solvedCount = 0;
+
+        currentBoard.forEach((piece, i) => {
+            const square = document.createElement('div');
+            const isDark = (Math.floor(i / 8) + i) % 2 === 1;
+            square.className = `square ${isDark ? 'dark' : 'light'}`;
+            
+            // Check if piece is already in correct spot
+            if (piece !== '' && piece === startingBoard[i]) {
+                square.classList.add('is-correct');
+                solvedCount++;
+            }
+
+            if (selectedIndex === i) square.classList.add('selected');
+            
+            square.innerHTML = pieces[piece] || '';
+            square.onclick = () => handleSquareClick(i);
+            boardElement.appendChild(square);
+        });
+
+        if (solvedCount === totalPieces) {
+            winGame();
+        }
+    }
+
+    function handleSquareClick(index) {
+        // If square is already correct, ignore clicks
+        if (currentBoard[index] !== '' && currentBoard[index] === startingBoard[index]) return;
+
+        if (selectedIndex === null) {
+            if (currentBoard[index] !== '') {
+                selectedIndex = index;
+            }
+        } else {
+            // SWAP pieces
+            let temp = currentBoard[index];
+            currentBoard[index] = currentBoard[selectedIndex];
+            currentBoard[selectedIndex] = temp;
+            selectedIndex = null;
+        }
+        renderBoard();
+    }
+
+    function updateTimer() {
+        if(solvedCount < totalPieces) {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            timerElement.innerText = elapsed;
+        }
+    }
+
+    function winGame() {
+        winModal.style.display = 'block';
+        document.querySelectorAll('.key-slot')[0].style.opacity = '1';
+        document.querySelectorAll('.key-slot')[0].classList.add('key-earned');
+    }
+
+    initGame();
+</script>
 </body>
 </html>
