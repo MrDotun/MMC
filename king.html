@@ -517,39 +517,45 @@
     }
 
     function initStage5() {
-        timeLeft = 30;
+        timeLeft = 60;
         document.getElementById('stage-title').innerText = "EXPERIMENT 5: SPEED PROMOTION";
-        document.getElementById('objective-text').innerText = "Promote your Pawn and Checkmate the AI King in 30 seconds!";
+        document.getElementById('objective-text').innerText = "Advance the Pawn to e8 to promote! Use the Queen to trap the King.";
         currentBoard = new Array(64).fill('');
         currentBoard[52] = 'P'; 
         currentBoard[60] = 'K'; 
-        currentBoard[4] = 'k';  
+        currentBoard[12] = 'k';  
         startTimer();
         renderBoard(handleS5Click);
     }
 
     function handleS5Click(i) {
         if (selectedIndex === null) {
-            if (currentBoard[i] === 'P' || currentBoard[i] === 'K' || currentBoard[i] === 'Q') selectedIndex = i;
+            if (['P', 'K', 'Q'].includes(currentBoard[i])) selectedIndex = i;
         } else {
             let piece = currentBoard[selectedIndex];
             let isLegal = false;
             
             if (piece === 'P') {
+                // Moving forward 1 or 2 squares
                 if (i === selectedIndex - 8 && currentBoard[i] === '') isLegal = true;
+                else if (selectedIndex >= 48 && selectedIndex <= 55 && i === selectedIndex - 16 && currentBoard[i] === '' && currentBoard[selectedIndex - 8] === '') isLegal = true;
             } else if (piece === 'K') {
                 isLegal = isLegalKingMove(selectedIndex, i);
+                // King cannot move next to King
+                let enemyK = currentBoard.indexOf('k');
+                if (isLegal && Math.abs(Math.floor(i/8) - Math.floor(enemyK/8)) <= 1 && Math.abs((i%8) - (enemyK%8)) <= 1) isLegal = false;
             } else if (piece === 'Q') {
                 isLegal = isLegalQueenMove(selectedIndex, i);
             }
 
-            if (isLegal && currentBoard[i] === '') {
+            if (isLegal && (currentBoard[i] === '' || currentBoard[i] === 'k')) {
                 currentBoard[i] = piece;
                 currentBoard[selectedIndex] = '';
                 
-                // Automatic Queen Promotion at Rank 8 (Top row)
+                // Automatic Queen Promotion at top rank
                 if (piece === 'P' && i < 8) {
                     currentBoard[i] = 'Q';
+                    alert("PROMOTED TO QUEEN!");
                 }
                 
                 selectedIndex = null;
@@ -564,12 +570,24 @@
 
     function stage5AIKing() {
         let kP = currentBoard.indexOf('k');
+        if (kP === -1) { winGame(); return; }
+
         let pK = currentBoard.indexOf('K');
         let pQ = currentBoard.indexOf('Q');
         let pP = currentBoard.indexOf('P');
 
         function isSquareSafe(pos) {
+            // White King Check
             if (Math.abs(Math.floor(pos/8) - Math.floor(pK/8)) <= 1 && Math.abs((pos%8) - (pK%8)) <= 1) return false;
+            
+            // White Pawn Attack Check
+            if (pP !== -1) {
+                let pR = Math.floor(pP/8), pC = pP % 8;
+                let tR = Math.floor(pos/8), tC = pos % 8;
+                if (tR === pR - 1 && Math.abs(tC - pC) === 1) return false;
+            }
+
+            // Queen Attack Check
             if (pQ !== -1) {
                 let sR = Math.floor(pQ/8), sC = pQ%8, eR = Math.floor(pos/8), eC = pos%8;
                 let dR = Math.abs(sR - eR), dC = Math.abs(sC - eC);
@@ -587,24 +605,25 @@
 
         let possible = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => {
             let rD = Math.abs(Math.floor(m/8) - Math.floor(kP/8)), cD = Math.abs((m%8) - (kP%8));
-            let mRow = Math.floor(m/8);
-            let pRow = pP !== -1 ? Math.floor(pP/8) : (pQ !== -1 ? Math.floor(pQ/8) : 0);
-            // AI Rule: Stay at or below the level of the pawn
-            return m >= 0 && m < 64 && rD <= 1 && cD <= 1 && mRow >= pRow;
+            return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
         });
 
         let safe = possible.filter(m => isSquareSafe(m));
 
         if (safe.length === 0) {
-            safe = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => {
-                let rD = Math.abs(Math.floor(m/8) - Math.floor(kP/8)), cD = Math.abs((m%8) - (kP%8));
-                return m >= 0 && m < 64 && rD <= 1 && cD <= 1 && isSquareSafe(m);
-            });
-            if (safe.length === 0) { winGame(); return; }
+            if (!isSquareSafe(kP)) winGame(); // Mate
+            else { alert("STALEMATE!"); handleLoss(); }
+            return;
         }
 
-        let targetCol = pP !== -1 ? (pP % 8) : 4;
-        safe.sort((a,b) => Math.abs((a%8) - targetCol) - Math.abs((b%8) - targetCol));
+        // Move to a safe square further from the player's queen
+        if (pQ !== -1) {
+            safe.sort((a,b) => {
+                let dA = Math.abs(Math.floor(a/8)-Math.floor(pQ/8)) + Math.abs((a%8)-(pQ%8));
+                let dB = Math.abs(Math.floor(b/8)-Math.floor(pQ/8)) + Math.abs((b%8)-(pQ%8));
+                return dB - dA;
+            });
+        }
 
         currentBoard[kP] = '';
         currentBoard[safe[0]] = 'k';
@@ -636,7 +655,7 @@
     }
 
     function giveHint() { 
-        if(currentStage === 5) alert("Push the pawn to the end! Once it is a Queen, use your King to trap the AI King against an edge.");
+        if(currentStage === 5) alert("Push the pawn forward! Once it promotes, use the Queen and King to push the enemy King to a corner.");
         else alert("Mr. Dotun says: Look for the quickest path to capture or safety!"); 
     }
 
