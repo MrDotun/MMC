@@ -600,11 +600,7 @@
             return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
         });
 
-        // AI Strategy: Stay "under" (higher row index) or same row as Pawn unless promoted
-        let movePool = pP !== -1 ? possible.filter(m => Math.floor(m/8) >= Math.floor(pP/8)) : possible;
-        if (movePool.length === 0) movePool = possible;
-
-        let safe = movePool.filter(m => isSquareSafe(m));
+        let safe = possible.filter(m => isSquareSafe(m));
 
         if (safe.length === 0) {
             if (!isSquareSafe(kP)) winGame();
@@ -613,7 +609,7 @@
         }
 
         if (pP !== -1) {
-            // Hunter Logic: Capture the pawn if safe
+            // Attempt capture
             let captureMove = safe.find(m => m === pP);
             if (captureMove !== undefined) {
                 currentBoard[kP] = '';
@@ -622,14 +618,32 @@
                 setTimeout(() => { alert("RESEARCH FAILED: AI Captured your Pawn!"); handleLoss(); }, 200);
                 return;
             }
-            // Otherwise, sort to get as close to the pawn as possible
-            safe.sort((a,b) => {
-                let distA = Math.abs(Math.floor(a/8) - Math.floor(pP/8)) + Math.abs((a%8) - (pP%8));
-                let distB = Math.abs(Math.floor(b/8) - Math.floor(pP/8)) + Math.abs((b%8) - (pP%8));
+            
+            // STAY IN FRONT LOGIC
+            let pR = Math.floor(pP / 8);
+            let pC = pP % 8;
+
+            safe.sort((a, b) => {
+                let rowA = Math.floor(a / 8), colA = a % 8;
+                let rowB = Math.floor(b / 8), colB = b % 8;
+
+                // Priority 1: King wants to be between Rank 0 and the Pawn's current Rank
+                let aInFront = rowA < pR ? 0 : 1;
+                let bInFront = rowB < pR ? 0 : 1;
+                if (aInFront !== bInFront) return aInFront - bInFront;
+
+                // Priority 2: Stay on or close to the pawn's file (column)
+                let aDistCol = Math.abs(colA - pC);
+                let bDistCol = Math.abs(colB - pC);
+                if (aDistCol !== bDistCol) return aDistCol - bDistCol;
+
+                // Priority 3: Get physically as close to the pawn's front as possible
+                let distA = Math.abs(rowA - (pR-1)) + aDistCol;
+                let distB = Math.abs(rowB - (pR-1)) + bDistCol;
                 return distA - distB;
             });
         } else if (pQ !== -1) {
-            // Evasion Logic: Run from Queen
+            // Only switch to evasion once pawn is a Queen
             safe.sort((a,b) => {
                 let dA = Math.abs(Math.floor(a/8)-Math.floor(pQ/8)) + Math.abs((a%8)-(pQ%8));
                 let dB = Math.abs(Math.floor(b/8)-Math.floor(pQ/8)) + Math.abs((b%8)-(pQ%8));
