@@ -49,9 +49,9 @@
         .screen { display: none; width: 100%; max-width: 500px; padding: 15px; box-sizing: border-box; text-align: center; height: 100%; justify-content: center; }
         .active-screen { display: flex; flex-direction: column; animation: slideIn 0.5s ease-out; }
 
-        .welcome-card, .briefing-card { 
+        .welcome-card { 
             background: rgba(20, 20, 20, 0.95); 
-            padding: 30px; 
+            padding: 20px; 
             border-radius: 20px; 
             border: 2px solid var(--lab-blue);
             animation: pulse-blue 3s infinite;
@@ -65,7 +65,7 @@
             line-height: 1.1;
         }
         
-        .welcome-card p, .briefing-card p { font-size: 1.1rem; color: #ccc; margin-bottom: 20px; line-height: 1.4; }
+        .welcome-card p { font-size: 1rem; color: #ccc; margin-bottom: 15px; }
         
         input { 
             padding: 12px; 
@@ -142,9 +142,8 @@
         
         .title-badge { color: #00ff88; font-weight: bold; font-size: 1.1rem; margin-top: 5px; display: block;}
         
+        /* Shake effect for errors */
         .shake { animation: shake 0.4s; }
-        
-        .save-note { font-size: 0.85rem; color: #f1c40f; margin-top: 10px; font-style: italic; }
     </style>
 </head>
 <body>
@@ -152,12 +151,12 @@
     <div id="welcome-screen" class="screen active-screen">
         <div class="welcome-card">
             <h1 class="big-title">MASTER CODE:<br>STRATEGIC SPEED LAB</h1>
-            <p>Enter your details to begin. <b>Remember your Code to resume your progress later!</b></p>
+            <p>Master the experiments to earn your Laboratory Ranks!</p>
             
             <div class="input-group">
                 <input type="text" id="kid-name" placeholder="Assistant Name">
                 <input type="number" id="kid-age" placeholder="Age">
-                <input type="password" id="kid-code" placeholder="Secret Recovery Code (Save Key)" oninput="checkReturningPlayer()">
+                <input type="password" id="kid-code" placeholder="Secret Station Code" oninput="checkReturningPlayer()">
             </div>
             
             <button id="resume-btn" class="btn-main btn-resume" onclick="resumeGame()">RESUME EXPERIMENT</button>
@@ -174,15 +173,6 @@
                     <tbody id="leaderboard-list"></tbody>
                 </table>
             </div>
-        </div>
-    </div>
-
-    <div id="briefing-screen" class="screen">
-        <div class="briefing-card">
-            <h1 id="brief-title" style="color: var(--accent);">MISSION BRIEFING</h1>
-            <p id="brief-text"></p>
-            <p style="color: var(--error-red); font-weight: bold;">⚠️ WARNING: You have only 1 minute to fulfill the task!</p>
-            <button class="btn-main" onclick="beginStage()">INITIALIZE EXPERIMENT</button>
         </div>
     </div>
 
@@ -221,28 +211,27 @@
     let playerAge = "";
     let playerCode = "";
     let playerLives = 3;
-    let timeLeft = 60; 
+    let playerScore = 0; // GLOBAL SCORE TRACKER
+    let timeLeft = 30; 
     let timerInterval;
     let selectedIndex = null;
     let currentBoard = [];
     let aiCaptures = 0;
 
-    const stageBriefings = {
-        1: "Your first task is <b>Piece Recognition</b>. The Lab systems have scrambled the initial board. You must reorganize the pieces back to their correct starting home squares.",
-        2: "This is a <b>Velocity Check</b>. You need to sprint your White Pawn to the 8th rank for promotion. Be careful: the Lab AI has 3 attempts to capture you. Move fast and smart!",
-        3: "<b>Containment</b> protocols active. You have two Rooks. You must trap the enemy King. But beware: this King is aggressive and will hunt your Rooks if you leave them unprotected!",
-        4: "<b>Final Extraction</b>. You have a Queen and a King. Your objective is to deliver Checkmate to the enemy King. He will fight desperately to stay in the center of the board.",
-        5: "The <b>Speed Promotion</b> challenge. Advance your Pawn to the end of the board while using your King as a shield. The AI King will try to block your path and capture your assets!"
-    };
+    // Helper to identify white pieces (Uppercase)
+    const isWhite = (p) => p && p === p.toUpperCase();
 
+    // AUDIO SYNTHESIZER
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playSound(type) {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.connect(gain);
         gain.connect(audioCtx.destination);
+        
         if(type === 'move') {
             osc.type = 'sine'; osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
             gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
         } else if(type === 'capture') {
@@ -251,6 +240,7 @@
             gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
         } else if(type === 'win') {
             osc.type = 'triangle'; osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1046.50, audioCtx.currentTime + 0.3);
             gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
         } else if(type === 'error') {
@@ -261,7 +251,14 @@
         osc.start(); osc.stop(audioCtx.currentTime + 0.4);
     }
 
-    const titles = { 1: "LAB TECHNICIAN", 2: "RESEARCH SPECIALIST", 3: "SENIOR STRATEGIST", 4: "LABORATORY DIRECTOR", 5: "SUPREME GRANDMASTER" };
+    const titles = {
+        1: "LAB TECHNICIAN",
+        2: "RESEARCH SPECIALIST",
+        3: "SENIOR STRATEGIST",
+        4: "LABORATORY DIRECTOR",
+        5: "SUPREME GRANDMASTER"
+    };
+
     const pieceImages = {
         'p': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
         'P': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
@@ -276,6 +273,7 @@
         'Q': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
         'K': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg'
     };
+
     const s1Starting = ['r','n','b','q','k','b','n','r','p','p','p','p','p','p','p','p','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','P','P','P','P','P','P','P','P','R','N','B','Q','K','B','N','R'];
 
     function checkReturningPlayer() {
@@ -296,10 +294,11 @@
             document.querySelector('.welcome-card').classList.add('shake');
             setTimeout(()=>document.querySelector('.welcome-card').classList.remove('shake'), 400);
             playSound('error');
-            alert("Access Denied: You must enter a Name, Age, and a Secret Code to save progress!"); 
+            alert("Access Denied: Missing Credentials!"); 
             return; 
         }
         playerLives = 3;
+        playerScore = 0; // NEW GAME STARTS AT 0
         currentStage = 1;
         launchGame(1);
     }
@@ -311,6 +310,7 @@
         if(savedData) {
             playerLives = savedData.lives;
             currentStage = savedData.stage;
+            playerScore = 0; // REQUIREMENT 3: RESUME STARTS AT 0
             launchGame(currentStage);
         }
     }
@@ -319,64 +319,51 @@
         if(playerName && playerCode) {
             const saveData = { stage: currentStage, lives: playerLives };
             localStorage.setItem(`dotun_lab_${playerName}_${playerCode}`, JSON.stringify(saveData));
-            alert(`Station Locked.\n\nTo continue later, remember:\nName: ${playerName}\nCode: ${playerCode}`);
+            // Automatically updates leaderboard with current session score before exit
+            saveScore(playerName, playerScore, titles[currentStage]);
+            alert("Station locked. Progress saved and leaderboard updated.");
             location.reload();
         }
     }
 
     function launchGame(stageNum) {
         currentStage = stageNum;
+        document.body.style.overflow = "auto"; 
         document.getElementById('win-modal').classList.remove('active-screen');
         document.getElementById('welcome-screen').classList.remove('active-screen');
-        document.getElementById('game-screen').classList.remove('active-screen');
-        document.getElementById('briefing-screen').classList.add('active-screen');
-        document.getElementById('brief-title').innerText = `EXPERIMENT ${stageNum}: BRIEFING`;
-        document.getElementById('brief-text').innerHTML = stageBriefings[stageNum];
-    }
-
-    function beginStage() {
-        document.getElementById('briefing-screen').classList.remove('active-screen');
         document.getElementById('game-screen').classList.add('active-screen');
         document.getElementById('display-name').innerText = playerName;
         document.getElementById('display-lives').innerText = playerLives;
-        if(currentStage === 1) initStage1();
-        else if(currentStage === 2) initStage2();
-        else if(currentStage === 3) initStage3();
-        else if(currentStage === 4) initStage4();
-        else if(currentStage === 5) initStage5();
+        
+        if(stageNum === 1) initStage1();
+        else if(stageNum === 2) initStage2();
+        else if(stageNum === 3) initStage3();
+        else if(stageNum === 4) initStage4();
+        else if(stageNum === 5) initStage5();
     }
 
     function handleLoss() {
         playerLives--;
         playSound('error');
+        document.getElementById('game-screen').classList.add('shake');
+        setTimeout(()=>document.getElementById('game-screen').classList.remove('shake'), 400);
+        
         clearInterval(timerInterval);
         document.getElementById('display-lives').innerText = playerLives;
         if(playerLives <= 0) {
-            alert("LAB CRITICAL FAILURE! Restarting session.");
+            alert("LAB CRITICAL FAILURE! Lives exhausted. Restarting from Stage 1.");
             localStorage.removeItem(`dotun_lab_${playerName}_${playerCode}`);
             location.reload();
         } else {
-            alert(`Life lost! ${playerLives} remaining.`);
-            beginStage();
+            alert(`Equipment damaged! You have ${playerLives} lives left.`);
+            launchGame(currentStage);
         }
     }
 
-    function adminRefresh() {
-        let code = prompt("Enter Admin Refresh Code:");
-        if(code === "1234") {
-            localStorage.removeItem('dotun_LB');
-            updateLeaderboardDisplay();
-            alert("Leaderboard wiped successfully.");
-        } else {
-            alert("Invalid Code.");
-        }
-    }
-
-    // --- GAME LOGIC (Stages 1-5) ---
     function initStage1() {
-        timeLeft = 60; 
+        timeLeft = 30;
         document.getElementById('stage-title').innerText = "EXPERIMENT 1: PIECE RECOGNITION";
-        document.getElementById('objective-text').innerText = "Restore the board positions.";
+        document.getElementById('objective-text').innerText = "Reorganize the scrambled pieces to their correct home squares.";
         let pieces = s1Starting.filter(p => p !== '');
         let pos = Array.from({length: 64}, (_, i) => i).sort(() => Math.random() - 0.5);
         currentBoard = new Array(64).fill('');
@@ -384,63 +371,98 @@
         startTimer();
         renderBoard(handleS1Click);
     }
+
     function handleS1Click(i) {
         if (currentBoard[i] === s1Starting[i] && currentBoard[i] !== '') return;
         if (selectedIndex === null) { if (currentBoard[i] !== '') { selectedIndex = i; playSound('move'); } }
         else {
-            let temp = currentBoard[i]; currentBoard[i] = currentBoard[selectedIndex]; currentBoard[selectedIndex] = temp;
-            selectedIndex = null; playSound('move');
+            // REQUIREMENT 1: NO WHITE CAPTURES WHITE
+            if (isWhite(currentBoard[selectedIndex]) && isWhite(currentBoard[i])) {
+                selectedIndex = null;
+                renderBoard(handleS1Click);
+                return;
+            }
+            let temp = currentBoard[i];
+            currentBoard[i] = currentBoard[selectedIndex];
+            currentBoard[selectedIndex] = temp;
+            selectedIndex = null;
+            playSound('move');
         }
         renderBoard(handleS1Click);
         if (currentBoard.every((p, idx) => p === s1Starting[idx])) winGame();
     }
 
     function initStage2() {
-        timeLeft = 60; aiCaptures = 0;
+        timeLeft = 30;
+        aiCaptures = 0;
         document.getElementById('stage-title').innerText = "EXPERIMENT 2: VELOCITY CHECK";
-        document.getElementById('objective-text').innerText = "Race the Pawn to rank 8.";
+        document.getElementById('objective-text').innerText = "Sprint a Pawn to the end. The Lab AI has 3 capture attempts.";
         currentBoard = new Array(64).fill('');
         for(let i=8; i<16; i++) currentBoard[i] = 'p'; 
         for(let i=48; i<56; i++) currentBoard[i] = 'P'; 
         startTimer();
         renderBoard(handleS2Click);
     }
+
     function handleS2Click(i) {
         if (selectedIndex === null) { if (currentBoard[i] === 'P') { selectedIndex = i; playSound('move'); } }
         else {
+            // REQUIREMENT 1: NO WHITE CAPTURES WHITE
+            if (isWhite(currentBoard[selectedIndex]) && isWhite(currentBoard[i])) {
+                selectedIndex = null;
+                renderBoard(handleS2Click);
+                return;
+            }
             const diff = selectedIndex - i;
-            if ((diff === 8 && currentBoard[i] === '') || (diff === 16 && selectedIndex >= 48 && currentBoard[i] === '') || ((diff === 7 || diff === 9) && currentBoard[i] === 'p')) {
-                currentBoard[i] = 'P'; currentBoard[selectedIndex] = '';
-                if (i < 8) winGame(); else setTimeout(aiMoveS2, 400);
+            if ((diff === 8 && currentBoard[i] === '') || 
+                (diff === 16 && selectedIndex >= 48 && currentBoard[i] === '' && currentBoard[i+8] === '') ||
+                ((diff === 7 || diff === 9) && currentBoard[i] === 'p')) {
+                if(currentBoard[i] === 'p') playSound('capture'); else playSound('move');
+                currentBoard[i] = 'P';
+                currentBoard[selectedIndex] = '';
+                if (i < 8) winGame(); 
+                else setTimeout(aiMoveS2, 400);
             }
             selectedIndex = null;
         }
         renderBoard(handleS2Click);
     }
+
     function aiMoveS2() {
+        let moved = false;
         for(let i=0; i<64; i++) {
             if(currentBoard[i] === 'p') {
-                if(aiCaptures < 3 && (currentBoard[i+7] === 'P' || currentBoard[i+9] === 'P')) {
-                    let target = currentBoard[i+7] === 'P' ? i+7 : i+9;
-                    currentBoard[target] = 'p'; currentBoard[i] = ''; aiCaptures++; playSound('capture'); break;
+                if(aiCaptures < 3) {
+                    if(currentBoard[i+7] === 'P' && i%8 !== 0) { currentBoard[i+7] = 'p'; currentBoard[i] = ''; aiCaptures++; playSound('capture'); moved = true; break; }
+                    if(currentBoard[i+9] === 'P' && i%8 !== 7) { currentBoard[i+9] = 'p'; currentBoard[i] = ''; aiCaptures++; playSound('capture'); moved = true; break; }
                 }
-                if(currentBoard[i+8] === '') { currentBoard[i+8] = 'p'; currentBoard[i] = ''; break; }
+                if(currentBoard[i+8] === '') { currentBoard[i+8] = 'p'; currentBoard[i] = ''; playSound('move'); moved = true; break; }
             }
         }
         renderBoard(handleS2Click);
     }
 
     function initStage3() {
-        timeLeft = 60;
+        timeLeft = 30;
+        document.getElementById('stage-title').innerText = "EXPERIMENT 3: CONTAINMENT";
+        document.getElementById('objective-text').innerText = "Use both Rooks to trap the King. WATCH OUT: He will try to hunt your Rooks!";
         currentBoard = new Array(64).fill('');
         currentBoard[56] = 'R'; currentBoard[63] = 'R'; currentBoard[36] = 'k'; 
         startTimer();
         renderBoard(handleS3Click);
     }
+
     function handleS3Click(i) {
-        if (selectedIndex === null) { if (currentBoard[i] === 'R') { selectedIndex = i; } }
+        if (selectedIndex === null) { if (currentBoard[i] === 'R') { selectedIndex = i; playSound('move'); } }
         else {
+            // REQUIREMENT 1: NO WHITE CAPTURES WHITE
+            if (isWhite(currentBoard[selectedIndex]) && isWhite(currentBoard[i])) {
+                selectedIndex = null;
+                renderBoard(handleS3Click);
+                return;
+            }
             if (isLegalRookMove(selectedIndex, i)) {
+                playSound('move');
                 currentBoard[i] = 'R'; currentBoard[selectedIndex] = '';
                 setTimeout(toughKingMove, 300);
             }
@@ -448,86 +470,304 @@
         }
         renderBoard(handleS3Click);
     }
-    function isLegalRookMove(s, e) {
-        let sR = Math.floor(s/8), sC = s%8, eR = Math.floor(e/8), eC = e%8;
+
+    function isLegalRookMove(start, end) {
+        let sR = Math.floor(start/8), sC = start%8, eR = Math.floor(end/8), eC = end%8;
         if (sR !== eR && sC !== eC) return false;
-        let step = (sR === eR) ? (e > s ? 1 : -1) : (e > s ? 8 : -8);
-        for (let c = s + step; c !== e; c += step) if (currentBoard[c] !== '') return false;
+        let step = (sR === eR) ? (end > start ? 1 : -1) : (end > start ? 8 : -8);
+        for (let c = start + step; c !== end; c += step) if (currentBoard[c] !== '') return false;
         return true;
     }
+
     function toughKingMove() {
         let kP = currentBoard.indexOf('k');
-        let moves = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => m>=0 && m<64 && Math.abs(Math.floor(m/8)-Math.floor(kP/8))<=1);
-        let rook = moves.find(m => currentBoard[m] === 'R');
-        if(rook) { currentBoard[kP] = ''; currentBoard[rook] = 'k'; handleLoss(); return; }
-        let safe = moves.filter(m => !currentBoard.some((p,idx) => p==='R' && (Math.floor(idx/8)===Math.floor(m/8) || idx%8===m%8)));
-        if(safe.length === 0) { winGame(); return; }
-        currentBoard[kP] = ''; currentBoard[safe[0]] = 'k'; renderBoard(handleS3Click);
+        let possibleMoves = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => {
+            let rD = Math.abs(Math.floor(m/8) - Math.floor(kP/8));
+            let cD = Math.abs((m%8) - (kP%8));
+            return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
+        });
+        
+        let rookToCapture = possibleMoves.find(m => currentBoard[m] === 'R');
+        if (rookToCapture !== undefined) {
+            currentBoard[kP] = '';
+            currentBoard[rookToCapture] = 'k';
+            playSound('capture');
+            renderBoard(handleS3Click);
+            setTimeout(() => handleLoss(), 200);
+            return;
+        }
+
+        let rookIndices = currentBoard.map((p, idx) => p === 'R' ? idx : null).filter(n => n !== null);
+        let safeMoves = possibleMoves.filter(m => {
+            return !rookIndices.some(r => Math.floor(r/8) === Math.floor(m/8) || (r%8) === (m%8));
+        });
+
+        if (safeMoves.length === 0) { winGame(); return; }
+        
+        safeMoves.sort((a,b) => {
+            let minDistA = Math.min(...rookIndices.map(r => Math.abs(Math.floor(a/8) - Math.floor(r/8)) + Math.abs((a%8) - (r%8))));
+            let minDistB = Math.min(...rookIndices.map(r => Math.abs(Math.floor(b/8) - Math.floor(r/8)) + Math.abs((b%8) - (r%8))));
+            return minDistA - minDistB;
+        });
+
+        currentBoard[kP] = '';
+        currentBoard[safeMoves[0]] = 'k';
+        playSound('move');
+        renderBoard(handleS3Click);
     }
 
     function initStage4() {
-        timeLeft = 60; currentBoard = new Array(64).fill('');
-        currentBoard[56] = 'Q'; currentBoard[57] = 'K'; currentBoard[43] = 'k';
-        startTimer(); renderBoard(handleS4Click);
+        timeLeft = 30;
+        document.getElementById('stage-title').innerText = "EXPERIMENT 4: FINAL EXTRACTION";
+        document.getElementById('objective-text').innerText = "Checkmate the AI. He is fighting to stay in the center!";
+        currentBoard = new Array(64).fill('');
+        currentBoard[56] = 'Q'; 
+        currentBoard[57] = 'K'; 
+        currentBoard[43] = 'k';
+        startTimer();
+        renderBoard(handleS4Click);
     }
+
     function handleS4Click(i) {
-        if (selectedIndex === null) { if (['Q', 'K'].includes(currentBoard[i])) selectedIndex = i; }
-        else {
-            let isL = currentBoard[selectedIndex] === 'Q' ? isLegalQueenMove(selectedIndex, i) : isLegalKingMove(selectedIndex, i);
-            if(isL) { currentBoard[i] = currentBoard[selectedIndex]; currentBoard[selectedIndex] = ''; setTimeout(difficultAIKing, 400); }
-            selectedIndex = null; renderBoard(handleS4Click);
+        if (selectedIndex === null) {
+            if (currentBoard[i] === 'Q' || currentBoard[i] === 'K') { selectedIndex = i; playSound('move'); }
+        } else {
+            // REQUIREMENT 1: NO WHITE CAPTURES WHITE
+            if (isWhite(currentBoard[selectedIndex]) && isWhite(currentBoard[i])) {
+                selectedIndex = null;
+                renderBoard(handleS4Click);
+                return;
+            }
+            let piece = currentBoard[selectedIndex];
+            let isLegal = false;
+            if (piece === 'Q') isLegal = isLegalQueenMove(selectedIndex, i);
+            if (piece === 'K') isLegal = isLegalKingMove(selectedIndex, i);
+
+            if (isLegal && (currentBoard[i] === '' || currentBoard[i] === 'k')) {
+                if(currentBoard[i] === 'k') playSound('capture'); else playSound('move');
+                currentBoard[i] = piece;
+                currentBoard[selectedIndex] = '';
+                selectedIndex = null;
+                renderBoard(handleS4Click);
+                setTimeout(difficultAIKing, 400);
+            } else {
+                selectedIndex = null;
+                renderBoard(handleS4Click);
+            }
         }
     }
+
     function isLegalQueenMove(s, e) {
         let sR = Math.floor(s/8), sC = s%8, eR = Math.floor(e/8), eC = e%8;
         let dR = Math.abs(sR - eR), dC = Math.abs(sC - eC);
         if (sR !== eR && sC !== eC && dR !== dC) return false;
-        let step = sR === eR ? (e > s ? 1 : -1) : sC === eC ? (e > s ? 8 : -8) : ((eR > sR ? 8 : -8) + (eC > sC ? 1 : -1));
+        let step = 0;
+        if (sR === eR) step = e > s ? 1 : -1;
+        else if (sC === eC) step = e > s ? 8 : -8;
+        else step = (eR > sR ? 8 : -8) + (eC > sC ? 1 : -1);
         for (let c = s + step; c !== e; c += step) if (currentBoard[c] !== '') return false;
         return true;
     }
-    function isLegalKingMove(s, e) { return Math.abs(Math.floor(s/8) - Math.floor(e/8)) <= 1 && Math.abs((s%8) - (e%8)) <= 1; }
+
+    function isLegalKingMove(s, e) {
+        return Math.abs(Math.floor(s/8) - Math.floor(e/8)) <= 1 && Math.abs((s%8) - (e%8)) <= 1;
+    }
+
     function difficultAIKing() {
         let kP = currentBoard.indexOf('k');
-        let moves = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => m>=0 && m<64 && isLegalKingMove(kP, m));
-        let safe = moves.filter(m => !isSquareAttacked(m));
-        if(safe.length === 0) { if(isSquareAttacked(kP)) winGame(); else handleLoss(); return; }
-        currentBoard[kP] = ''; currentBoard[safe[0]] = 'k'; renderBoard(handleS4Click);
-    }
-    function isSquareAttacked(pos) {
-        let pQ = currentBoard.indexOf('Q'), pK = currentBoard.indexOf('K');
-        if(isLegalKingMove(pK, pos)) return true;
-        if(isLegalQueenMove(pQ, pos)) return true;
-        return false;
+        let pK = currentBoard.indexOf('K');
+        let pQ = currentBoard.indexOf('Q');
+
+        function isAttacked(pos) {
+            if (Math.abs(Math.floor(pos/8) - Math.floor(pK/8)) <= 1 && Math.abs((pos%8) - (pK%8)) <= 1) return true;
+            let sR = Math.floor(pQ/8), sC = pQ%8, eR = Math.floor(pos/8), eC = pos%8;
+            let dR = Math.abs(sR - eR), dC = Math.abs(sC - eC);
+            if (sR === eR || sC === eC || dR === dC) {
+                let step = sR === eR ? (pos > pQ ? 1 : -1) : sC === eC ? (pos > pQ ? 8 : -8) : ((eR > sR ? 8 : -8) + (eC > sC ? 1 : -1));
+                let blocked = false;
+                for (let c = pQ + step; c !== pos; c += step) if (currentBoard[c] !== '' && currentBoard[c] !== 'k') blocked = true;
+                if (!blocked) return true;
+            }
+            return false;
+        }
+
+        let possible = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => {
+            let rD = Math.abs(Math.floor(m/8) - Math.floor(kP/8)), cD = Math.abs((m%8) - (kP%8));
+            return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
+        });
+
+        if (pQ !== -1 && possible.includes(pQ)) {
+            let isQueenProtected = Math.abs(Math.floor(pQ/8) - Math.floor(pK/8)) <= 1 && Math.abs((pQ%8) - (pK%8)) <= 1;
+            if (!isQueenProtected) {
+                currentBoard[kP] = ''; currentBoard[pQ] = 'k';
+                playSound('capture');
+                renderBoard(handleS4Click);
+                setTimeout(() => { alert("RESEARCH FAILED: AI Captured your Queen!"); handleLoss(); }, 200);
+                return;
+            }
+        }
+
+        let safe = possible.filter(m => !isAttacked(m));
+
+        if (safe.length === 0) {
+            if (isAttacked(kP)) winGame(); 
+            else { alert("STALEMATE!"); handleLoss(); }
+            return;
+        }
+
+        safe.sort((a,b) => {
+            let rowA = Math.floor(a/8), colA = a%8;
+            let rowB = Math.floor(b/8), colB = b%8;
+            function getEdgePenalty(r, c) {
+                let p = 0;
+                if (r === 0 || r === 7) p += 10;
+                if (c === 0 || c === 7) p += 10;
+                return p;
+            }
+            let penaltyA = getEdgePenalty(rowA, colA);
+            let penaltyB = getEdgePenalty(rowB, colB);
+            if (penaltyA !== penaltyB) return penaltyA - penaltyB;
+            let distCenterA = Math.abs(3.5 - rowA) + Math.abs(3.5 - colA);
+            let distCenterB = Math.abs(3.5 - rowB) + Math.abs(3.5 - colB);
+            return distCenterA - distCenterB;
+        });
+
+        currentBoard[kP] = '';
+        currentBoard[safe[0]] = 'k';
+        playSound('move');
+        renderBoard(handleS4Click);
     }
 
     function initStage5() {
-        timeLeft = 60; currentBoard = new Array(64).fill('');
-        currentBoard[52] = 'P'; currentBoard[60] = 'K'; currentBoard[12] = 'k'; 
-        startTimer(); renderBoard(handleS5Click);
+        timeLeft = 30;
+        document.getElementById('stage-title').innerText = "EXPERIMENT 5: SPEED PROMOTION";
+        document.getElementById('objective-text').innerText = "Advance the Pawn to e8! The AI King will try to block and capture it.";
+        currentBoard = new Array(64).fill('');
+        currentBoard[52] = 'P'; 
+        currentBoard[60] = 'K'; 
+        currentBoard[12] = 'k';  
+        startTimer();
+        renderBoard(handleS5Click);
     }
+
     function handleS5Click(i) {
-        if (selectedIndex === null) { if (['P', 'K', 'Q'].includes(currentBoard[i])) selectedIndex = i; }
-        else {
-            let p = currentBoard[selectedIndex], isL = false;
-            if(p==='P') { if(i===selectedIndex-8 && currentBoard[i]==='') isL=true; else if((i===selectedIndex-7 || i===selectedIndex-9) && currentBoard[i]==='k') isL=true; }
-            else if(p==='K') isL = isLegalKingMove(selectedIndex, i);
-            else if(p==='Q') isL = isLegalQueenMove(selectedIndex, i);
-            if(isL) { currentBoard[i]=p; currentBoard[selectedIndex]=''; if(p==='P' && i<8) currentBoard[i]='Q'; setTimeout(stage5AIKing, 300); }
-            selectedIndex = null; renderBoard(handleS5Click);
+        if (selectedIndex === null) {
+            if (['P', 'K', 'Q'].includes(currentBoard[i])) { selectedIndex = i; playSound('move'); }
+        } else {
+            // REQUIREMENT 1: NO WHITE CAPTURES WHITE
+            if (isWhite(currentBoard[selectedIndex]) && isWhite(currentBoard[i])) {
+                selectedIndex = null;
+                renderBoard(handleS5Click);
+                return;
+            }
+            let piece = currentBoard[selectedIndex];
+            let isLegal = false;
+            
+            if (piece === 'P') {
+                if (i === selectedIndex - 8 && currentBoard[i] === '') isLegal = true;
+                else if (selectedIndex >= 48 && selectedIndex <= 55 && i === selectedIndex - 16 && currentBoard[i] === '' && currentBoard[selectedIndex - 8] === '') isLegal = true;
+                else if ((i === selectedIndex - 7 || i === selectedIndex - 9) && currentBoard[i] === 'k') isLegal = true;
+            } else if (piece === 'K') {
+                isLegal = isLegalKingMove(selectedIndex, i);
+                let enemyK = currentBoard.indexOf('k');
+                if (isLegal && enemyK !== -1 && Math.abs(Math.floor(i/8) - Math.floor(enemyK/8)) <= 1 && Math.abs((i%8) - (enemyK%8)) <= 1) isLegal = false;
+            } else if (piece === 'Q') {
+                isLegal = isLegalQueenMove(selectedIndex, i);
+            }
+
+            if (isLegal && (currentBoard[i] === '' || currentBoard[i] === 'k')) {
+                if(currentBoard[i] === 'k') playSound('capture'); else playSound('move');
+                currentBoard[i] = piece;
+                currentBoard[selectedIndex] = '';
+                
+                if (piece === 'P' && i < 8) {
+                    currentBoard[i] = 'Q';
+                    playSound('win');
+                    alert("PROMOTED TO QUEEN!");
+                }
+                
+                selectedIndex = null;
+                renderBoard(handleS5Click);
+                setTimeout(stage5AIKing, 300);
+            } else {
+                selectedIndex = null;
+                renderBoard(handleS5Click);
+            }
         }
     }
+
     function stage5AIKing() {
-        let kP = currentBoard.indexOf('k'); if(kP===-1) { winGame(); return; }
-        let moves = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => m>=0 && m<64 && isLegalKingMove(kP, m));
-        let pP = currentBoard.indexOf('P'); if(moves.includes(pP)) { currentBoard[kP]=''; currentBoard[pP]='k'; handleLoss(); return; }
-        let safe = moves.filter(m => !isSquareAttacked(m));
-        if(safe.length === 0) { if(isSquareAttacked(kP)) winGame(); else handleLoss(); return; }
-        currentBoard[kP] = ''; currentBoard[safe[0]] = 'k'; renderBoard(handleS5Click);
+        let kP = currentBoard.indexOf('k');
+        if (kP === -1) { winGame(); return; }
+        let pK = currentBoard.indexOf('K'), pQ = currentBoard.indexOf('Q'), pP = currentBoard.indexOf('P');
+
+        function isSquareSafe(pos) {
+            if (pK !== -1 && Math.abs(Math.floor(pos/8) - Math.floor(pK/8)) <= 1 && Math.abs((pos%8) - (pK%8)) <= 1) return false;
+            if (pP !== -1) {
+                let pR = Math.floor(pP/8), pC = pP % 8, tR = Math.floor(pos/8), tC = pos % 8;
+                if (tR === pR - 1 && Math.abs(tC - pC) === 1) return false;
+            }
+            if (pQ !== -1) {
+                let sR = Math.floor(pQ/8), sC = pQ%8, eR = Math.floor(pos/8), eC = pos%8;
+                let dR = Math.abs(sR - eR), dC = Math.abs(sC - eC);
+                if (sR === eR || sC === eC || dR === dC) {
+                    let step = sR === eR ? (pos > pQ ? 1 : -1) : sC === eC ? (pos > pQ ? 8 : -8) : ((eR > sR ? 8 : -8) + (eC > sC ? 1 : -1));
+                    let blocked = false;
+                    for (let c = pQ + step; c !== pos; c += step) if (currentBoard[c] !== '' && currentBoard[c] !== 'k') blocked = true;
+                    if (!blocked) return false;
+                }
+            }
+            return true;
+        }
+
+        let possible = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => {
+            let rD = Math.abs(Math.floor(m/8) - Math.floor(kP/8)), cD = Math.abs((m%8) - (kP%8));
+            return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
+        });
+
+        if (pQ !== -1 && possible.includes(pQ)) {
+            let isQueenProtected = pK !== -1 && Math.abs(Math.floor(pQ/8) - Math.floor(pK/8)) <= 1 && Math.abs((pQ%8) - (pK%8)) <= 1;
+            if (!isQueenProtected) {
+                currentBoard[kP] = ''; currentBoard[pQ] = 'k';
+                playSound('capture');
+                renderBoard(handleS5Click);
+                setTimeout(() => { alert("RESEARCH FAILED: AI Captured your Queen!"); handleLoss(); }, 200);
+                return;
+            }
+        }
+
+        let safe = possible.filter(m => isSquareSafe(m));
+        if (safe.length === 0) { if (!isSquareSafe(kP)) winGame(); else { alert("STALEMATE!"); handleLoss(); } return; }
+
+        if (pP !== -1) {
+            let captureMove = safe.find(m => m === pP);
+            if (captureMove !== undefined) {
+                currentBoard[kP] = ''; currentBoard[pP] = 'k';
+                playSound('capture');
+                renderBoard(handleS5Click);
+                setTimeout(() => { alert("RESEARCH FAILED: AI Captured your Pawn!"); handleLoss(); }, 200);
+                return;
+            }
+            let pR = Math.floor(pP / 8), pC = pP % 8;
+            safe.sort((a, b) => {
+                let rowA = Math.floor(a / 8), colA = a % 8, rowB = Math.floor(b / 8), colB = b % 8;
+                let aInFront = rowA < pR ? 0 : 1, bInFront = rowB < pR ? 0 : 1;
+                if (aInFront !== bInFront) return aInFront - bInFront;
+                let aDistCol = Math.abs(colA - pC), bDistCol = Math.abs(colB - pC);
+                if (aDistCol !== bDistCol) return aDistCol - bDistCol;
+                return (Math.abs(rowA - (pR-1)) + aDistCol) - (Math.abs(rowB - (pR-1)) + bDistCol);
+            });
+        }
+
+        currentBoard[kP] = '';
+        currentBoard[safe[0]] = 'k';
+        playSound('move');
+        renderBoard(handleS5Click);
     }
 
     function renderBoard(clickHandler) {
-        const b = document.getElementById('board'); b.innerHTML = '';
+        const b = document.getElementById('board');
+        b.innerHTML = '';
         currentBoard.forEach((p, i) => {
             const sq = document.createElement('div');
             sq.className = `square ${(Math.floor(i/8)+i)%2?'dark':'light'}`;
@@ -541,39 +781,77 @@
 
     function startTimer() {
         clearInterval(timerInterval);
+        document.getElementById('seconds').innerText = timeLeft;
         timerInterval = setInterval(() => {
-            timeLeft--; document.getElementById('seconds').innerText = timeLeft;
+            timeLeft--;
+            document.getElementById('seconds').innerText = timeLeft;
+            if(timeLeft <= 5) document.getElementById('seconds').style.color = '#ff4757';
+            else document.getElementById('seconds').style.color = '#ffeb3b';
             if(timeLeft <= 0) handleLoss();
         }, 1000);
     }
 
-    function giveHint() { alert("Mr. Dotun says: Stay focused! Remember your path."); }
+    function giveHint() { 
+        alert(currentStage === 5 ? "The AI King is hunting your pawn! Use your White King to protect it." : "Mr. Dotun says: Look for the quickest path to capture or safety!"); 
+    }
 
     function winGame() {
-        clearInterval(timerInterval); playSound('win');
-        const score = 100 + (timeLeft * 5);
-        saveScore(playerName, score, titles[currentStage]); 
+        clearInterval(timerInterval);
+        playSound('win');
+        const stageScore = 100 + (timeLeft * 5);
+        playerScore += stageScore; // UPDATE GLOBAL SCORE
+        saveScore(playerName, playerScore, titles[currentStage]); // REQUIREMENT 2: AUTO UPDATE LEADERBOARD
         document.getElementById('rank-award').innerText = `🔬 NEW RANK: ${titles[currentStage]}`;
-        document.getElementById('score-report').innerHTML = `Assistant <b>${playerName}</b>,<br>Score: <b>${score}</b>`;
+        document.getElementById('score-report').innerHTML = `Assistant <b>${playerName}</b>,<br>Lab Efficiency Score: <b>${playerScore}</b>`;
         document.getElementById('win-modal').classList.add('active-screen');
         document.getElementById('next-btn').onclick = () => {
             if(currentStage < 5) { currentStage++; launchGame(currentStage); } 
-            else { alert("MAXIMUM RANK ATTAINED!"); location.reload(); }
+            else { alert("MAXIMUM RANK ATTAINED: SUPREME GRANDMASTER!"); location.reload(); }
         };
     }
 
     function saveScore(name, score, title) {
         let s = JSON.parse(localStorage.getItem('dotun_LB') || "[]");
-        s.push({name, score, title}); 
+        // Update existing entry or add new
+        let existing = s.find(x => x.name === name);
+        if (existing) {
+            existing.score = score;
+            existing.title = title;
+        } else {
+            s.push({name, score, title});
+        }
         s.sort((a,b) => b.score - a.score);
         localStorage.setItem('dotun_LB', JSON.stringify(s.slice(0, 10)));
         updateLeaderboardDisplay();
     }
 
+    function adminRefresh() {
+        const pass = prompt("Enter Master Key to refresh Lab Records:");
+        const icon = document.getElementById('refresh-icon');
+        icon.style.transform = "rotate(360deg)";
+        
+        if(pass === "1234") { 
+            localStorage.removeItem('dotun_LB'); 
+            updateLeaderboardDisplay();
+            setTimeout(() => {
+                alert("Database Cleared and Refreshed.");
+                icon.style.transform = "rotate(0deg)";
+            }, 500);
+        } else {
+            playSound('error');
+            alert("Unauthorized Access Attempt Detected.");
+            icon.style.transform = "rotate(0deg)";
+        }
+    }
+
     function updateLeaderboardDisplay() {
         let s = JSON.parse(localStorage.getItem('dotun_LB') || "[]");
         document.getElementById('leaderboard-list').innerHTML = s.map((x, i) => 
-            `<tr><td>#${i+1}</td><td><b>${x.name}</b><br><small>${x.title}</small></td><td>${x.score}</td></tr>`).join('');
+            `<tr>
+                <td>#${i+1}</td>
+                <td style="text-align:left;"><b>${x.name}</b><br><small style="color:var(--accent)">${x.title || 'Assistant'}</small></td>
+                <td>${x.score}</td>
+            </tr>`).join('');
     }
 
     window.onload = updateLeaderboardDisplay;
