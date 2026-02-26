@@ -134,10 +134,12 @@
             <button class="btn-main" onclick="startNewGame()">START NEW SESSION</button>
 
             <div class="leaderboard">
-                <h3>🏆 Lab Elites</h3>
+                <h3 style="display: flex; justify-content: center; align-items: center; gap: 8px;">
+                    🏆 Lab Elites <span onclick="adminRefresh()" style="cursor:pointer; font-size: 1.1rem;">🔄</span>
+                </h3>
                 <table class="lb-table">
                     <thead>
-                        <tr><th>Rank</th><th>Name</th><th>Score</th></tr>
+                        <tr><th>Rank</th><th>Name & Title</th><th>Score</th></tr>
                     </thead>
                     <tbody id="leaderboard-list"></tbody>
                 </table>
@@ -187,11 +189,11 @@
     let aiCaptures = 0;
 
     const titles = {
-        1: "🔬 NEW RANK: LAB TECHNICIAN",
-        2: "🧬 NEW RANK: RESEARCH SPECIALIST",
-        3: "🎓 NEW RANK: SENIOR STRATEGIST",
-        4: "👑 NEW RANK: LABORATORY DIRECTOR",
-        5: "🎖️ NEW RANK: SUPREME GRANDMASTER"
+        1: "LAB TECHNICIAN",
+        2: "RESEARCH SPECIALIST",
+        3: "SENIOR STRATEGIST",
+        4: "LABORATORY DIRECTOR",
+        5: "SUPREME GRANDMASTER"
     };
 
     const pieceImages = {
@@ -370,6 +372,9 @@
     }
 
     function isLegalRookMove(start, end) {
+        // PREVENT CAPTURING YOUR OWN ROOK
+        if (currentBoard[end] === 'R') return false;
+
         let sR = Math.floor(start/8), sC = start%8, eR = Math.floor(end/8), eC = end%8;
         if (sR !== eR && sC !== eC) return false;
         let step = (sR === eR) ? (end > start ? 1 : -1) : (end > start ? 8 : -8);
@@ -701,8 +706,8 @@
     function winGame() {
         clearInterval(timerInterval);
         const score = 100 + (timeLeft * 5);
-        saveScore(playerName, score);
-        document.getElementById('rank-award').innerText = titles[currentStage];
+        saveScore(playerName, score, titles[currentStage]); // Integrated titles
+        document.getElementById('rank-award').innerText = `🔬 NEW RANK: ${titles[currentStage]}`;
         document.getElementById('score-report').innerHTML = `Assistant <b>${playerName}</b>,<br>Lab Efficiency Score: <b>${score}</b>`;
         document.getElementById('win-modal').classList.add('active-screen');
         document.getElementById('next-btn').onclick = () => {
@@ -717,18 +722,34 @@
         };
     }
 
-    function saveScore(name, score) {
+    // UPDATED: Leaderboard logic with Title integration
+    function saveScore(name, score, title) {
         let s = JSON.parse(localStorage.getItem('dotun_LB') || "[]");
-        s.push({name, score});
+        s.push({name, score, title});
         s.sort((a,b) => b.score - a.score);
         localStorage.setItem('dotun_LB', JSON.stringify(s.slice(0, 10)));
         updateLeaderboardDisplay();
     }
 
+    // UPDATED: Admin Refresh logic
+    function adminRefresh() {
+        const pass = prompt("Enter Master Key to refresh Lab Records:");
+        if(pass === "1234") { // Change this to your desired code
+            updateLeaderboardDisplay();
+            alert("Database Refreshed.");
+        } else {
+            alert("Unauthorized Access Attempt Detected.");
+        }
+    }
+
     function updateLeaderboardDisplay() {
         let s = JSON.parse(localStorage.getItem('dotun_LB') || "[]");
         document.getElementById('leaderboard-list').innerHTML = s.map((x, i) => 
-            `<tr><td>#${i+1}</td><td>${x.name}</td><td>${x.score}</td></tr>`).join('');
+            `<tr>
+                <td>#${i+1}</td>
+                <td style="text-align:left;"><b>${x.name}</b><br><small style="color:var(--accent)">${x.title || 'Assistant'}</small></td>
+                <td>${x.score}</td>
+            </tr>`).join('');
     }
 
     window.onload = updateLeaderboardDisplay;
