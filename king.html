@@ -350,7 +350,7 @@
     function initStage3() {
         timeLeft = 45;
         document.getElementById('stage-title').innerText = "EXPERIMENT 3: CONTAINMENT";
-        document.getElementById('objective-text').innerText = "Use both Rooks to trap the King. WATCH OUT: He will try to capture you!";
+        document.getElementById('objective-text').innerText = "Use both Rooks to trap the King. WATCH OUT: He will try to hunt your Rooks!";
         currentBoard = new Array(64).fill('');
         currentBoard[56] = 'R'; currentBoard[63] = 'R'; currentBoard[36] = 'k'; 
         startTimer();
@@ -395,18 +395,21 @@
             return;
         }
 
-        // Escape logic
+        // Find all rook positions
+        let rookIndices = currentBoard.map((p, idx) => p === 'R' ? idx : null).filter(n => n !== null);
+
+        // Escape logic: find safe squares
         let safeMoves = possibleMoves.filter(m => {
-            let rIndices = currentBoard.map((p, idx) => p === 'R' ? idx : null).filter(n => n !== null);
-            return !rIndices.some(r => Math.floor(r/8) === Math.floor(m/8) || (r%8) === (m%8));
+            return !rookIndices.some(r => Math.floor(r/8) === Math.floor(m/8) || (r%8) === (m%8));
         });
 
         if (safeMoves.length === 0) { winGame(); return; }
         
+        // AI KING HUNTING LOGIC: Move closer to the nearest rook
         safeMoves.sort((a,b) => {
-            let distA = Math.abs(3.5 - Math.floor(a/8)) + Math.abs(3.5 - (a%8));
-            let distB = Math.abs(3.5 - Math.floor(b/8)) + Math.abs(3.5 - (b%8));
-            return distA - distB;
+            let minDistA = Math.min(...rookIndices.map(r => Math.abs(Math.floor(a/8) - Math.floor(r/8)) + Math.abs((a%8) - (r%8))));
+            let minDistB = Math.min(...rookIndices.map(r => Math.abs(Math.floor(b/8) - Math.floor(r/8)) + Math.abs((b%8) - (r%8))));
+            return minDistA - minDistB;
         });
 
         currentBoard[kP] = '';
@@ -420,10 +423,13 @@
         document.getElementById('objective-text').innerText = "Checkmate the AI. He is fighting to stay in the center!";
         currentBoard = new Array(64).fill('');
         
-        // Kid Queen: A1 (Index 56), Kid King: B1 (Index 57), AI King: E4 (Index 28)
+        // Initial Board Setup:
+        // Queen on a1 (Index 56)
+        // King on b1 (Index 57)
+        // AI King on d3 (Index 43 - which is Row 5, Col 3)
         currentBoard[56] = 'Q'; 
         currentBoard[57] = 'K'; 
-        currentBoard[28] = 'k';
+        currentBoard[43] = 'k';
         
         startTimer();
         renderBoard(handleS4Click);
@@ -498,26 +504,18 @@
             return;
         }
 
-        // --- LOGIC: AVOID EDGES AT ALL COSTS ---
         safe.sort((a,b) => {
             let rowA = Math.floor(a/8), colA = a%8;
             let rowB = Math.floor(b/8), colB = b%8;
-            
-            // Penalty for being on row 0, 7 or col 0, 7
             function getEdgePenalty(r, c) {
                 let p = 0;
                 if (r === 0 || r === 7) p += 10;
                 if (c === 0 || c === 7) p += 10;
                 return p;
             }
-            
-            // Priority 1: Distance from edges (Lower penalty is better)
             let penaltyA = getEdgePenalty(rowA, colA);
             let penaltyB = getEdgePenalty(rowB, colB);
-            
             if (penaltyA !== penaltyB) return penaltyA - penaltyB;
-            
-            // Priority 2: Stay near center
             let distCenterA = Math.abs(3.5 - rowA) + Math.abs(3.5 - colA);
             let distCenterB = Math.abs(3.5 - rowB) + Math.abs(3.5 - colB);
             return distCenterA - distCenterB;
