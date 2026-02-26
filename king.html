@@ -192,7 +192,8 @@
         1: "🔬 NEW RANK: LAB TECHNICIAN",
         2: "🧬 NEW RANK: RESEARCH SPECIALIST",
         3: "🎓 NEW RANK: SENIOR STRATEGIST",
-        4: "👑 NEW RANK: LABORATORY DIRECTOR"
+        4: "👑 NEW RANK: LABORATORY DIRECTOR",
+        5: "🎖️ NEW RANK: SUPREME GRANDMASTER"
     };
 
     const pieceImages = {
@@ -264,7 +265,8 @@
         if(stageNum === 1) initStage1();
         else if(stageNum === 2) initStage2();
         else if(stageNum === 3) initStage3();
-        else initStage4();
+        else if(stageNum === 4) initStage4();
+        else if(stageNum === 5) initStage5();
     }
 
     function handleLoss() {
@@ -385,7 +387,6 @@
             return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
         });
         
-        // --- LOGIC 1: AGGRESSIVE CAPTURE ---
         let rookToCapture = possibleMoves.find(m => currentBoard[m] === 'R');
         if (rookToCapture !== undefined) {
             currentBoard[kP] = '';
@@ -395,17 +396,13 @@
             return;
         }
 
-        // Find all rook positions
         let rookIndices = currentBoard.map((p, idx) => p === 'R' ? idx : null).filter(n => n !== null);
-
-        // Escape logic: find safe squares
         let safeMoves = possibleMoves.filter(m => {
             return !rookIndices.some(r => Math.floor(r/8) === Math.floor(m/8) || (r%8) === (m%8));
         });
 
         if (safeMoves.length === 0) { winGame(); return; }
         
-        // AI KING HUNTING LOGIC: Move closer to the nearest rook
         safeMoves.sort((a,b) => {
             let minDistA = Math.min(...rookIndices.map(r => Math.abs(Math.floor(a/8) - Math.floor(r/8)) + Math.abs((a%8) - (r%8))));
             let minDistB = Math.min(...rookIndices.map(r => Math.abs(Math.floor(b/8) - Math.floor(r/8)) + Math.abs((b%8) - (r%8))));
@@ -422,15 +419,9 @@
         document.getElementById('stage-title').innerText = "EXPERIMENT 4: FINAL EXTRACTION";
         document.getElementById('objective-text').innerText = "Checkmate the AI. He is fighting to stay in the center!";
         currentBoard = new Array(64).fill('');
-        
-        // Initial Board Setup:
-        // Queen on a1 (Index 56)
-        // King on b1 (Index 57)
-        // AI King on d3 (Index 43 - which is Row 5, Col 3)
         currentBoard[56] = 'Q'; 
         currentBoard[57] = 'K'; 
         currentBoard[43] = 'k';
-        
         startTimer();
         renderBoard(handleS4Click);
     }
@@ -444,7 +435,7 @@
             if (piece === 'Q') isLegal = isLegalQueenMove(selectedIndex, i);
             if (piece === 'K') isLegal = isLegalKingMove(selectedIndex, i);
 
-            if (isLegal && currentBoard[i] === '') {
+            if (isLegal && (currentBoard[i] === '' || currentBoard[i] === 'k')) {
                 currentBoard[i] = piece;
                 currentBoard[selectedIndex] = '';
                 selectedIndex = null;
@@ -523,7 +514,99 @@
 
         currentBoard[kP] = '';
         currentBoard[safe[0]] = 'k';
-        renderBoard(handleS4Click);
+        renderBoard(currentStage === 4 ? handleS4Click : handleS5Click);
+    }
+
+    /* STAGE 5 INTEGRATION */
+    function initStage5() {
+        timeLeft = 30;
+        document.getElementById('stage-title').innerText = "EXPERIMENT 5: SPEED PROMOTION";
+        document.getElementById('objective-text').innerText = "Promote your Pawn and Checkmate the AI King in 30 seconds!";
+        currentBoard = new Array(64).fill('');
+        currentBoard[52] = 'P'; // e2
+        currentBoard[60] = 'K'; // e1
+        currentBoard[4] = 'k';  // e8
+        startTimer();
+        renderBoard(handleS5Click);
+    }
+
+    function handleS5Click(i) {
+        if (selectedIndex === null) {
+            if (currentBoard[i] === 'P' || currentBoard[i] === 'K' || currentBoard[i] === 'Q') selectedIndex = i;
+        } else {
+            let piece = currentBoard[selectedIndex];
+            let isLegal = false;
+            if (piece === 'P') {
+                if (i === selectedIndex - 8 && currentBoard[i] === '') isLegal = true;
+            } else if (piece === 'K') {
+                isLegal = isLegalKingMove(selectedIndex, i);
+            } else if (piece === 'Q') {
+                isLegal = isLegalQueenMove(selectedIndex, i);
+            }
+
+            if (isLegal && currentBoard[i] === '') {
+                currentBoard[i] = piece;
+                currentBoard[selectedIndex] = '';
+                // Check Promotion
+                if (piece === 'P' && i < 8) currentBoard[i] = 'Q';
+                
+                selectedIndex = null;
+                renderBoard(handleS5Click);
+                setTimeout(stage5AIKing, 300);
+            } else {
+                selectedIndex = null;
+                renderBoard(handleS5Click);
+            }
+        }
+    }
+
+    function stage5AIKing() {
+        let kP = currentBoard.indexOf('k');
+        let pK = currentBoard.indexOf('K');
+        let pQ = currentBoard.indexOf('Q');
+        let pP = currentBoard.indexOf('P');
+
+        function isAttacked(pos) {
+            if (Math.abs(Math.floor(pos/8) - Math.floor(pK/8)) <= 1 && Math.abs((pos%8) - (pK%8)) <= 1) return true;
+            if (pQ !== -1) {
+                let sR = Math.floor(pQ/8), sC = pQ%8, eR = Math.floor(pos/8), eC = pos%8;
+                let dR = Math.abs(sR - eR), dC = Math.abs(sC - eC);
+                if (sR === eR || sC === eC || dR === dC) {
+                    let step = sR === eR ? (pos > pQ ? 1 : -1) : sC === eC ? (pos > pQ ? 8 : -8) : ((eR > sR ? 8 : -8) + (eC > sC ? 1 : -1));
+                    let blocked = false;
+                    for (let c = pQ + step; c !== pos; c += step) if (currentBoard[c] !== '' && currentBoard[c] !== 'k') blocked = true;
+                    if (!blocked) return true;
+                }
+            }
+            return false;
+        }
+
+        let possible = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => {
+            let rD = Math.abs(Math.floor(m/8) - Math.floor(kP/8)), cD = Math.abs((m%8) - (kP%8));
+            let col = m % 8;
+            // AI stays on d, e, f files (3, 4, 5)
+            return m >= 0 && m < 64 && rD <= 1 && cD <= 1 && (col >= 3 && col <= 5);
+        });
+
+        let safe = possible.filter(m => !isAttacked(m));
+
+        if (safe.length === 0) {
+            if (isAttacked(kP)) winGame(); 
+            else { alert("STALEMATE!"); handleLoss(); }
+            return;
+        }
+
+        // AI tries to stay under or near the pawn
+        let targetCol = pP !== -1 ? (pP % 8) : 4;
+        safe.sort((a,b) => {
+            let distA = Math.abs((a%8) - targetCol) + Math.abs(Math.floor(a/8) - 4);
+            let distB = Math.abs((b%8) - targetCol) + Math.abs(Math.floor(b/8) - 4);
+            return distA - distB;
+        });
+
+        currentBoard[kP] = '';
+        currentBoard[safe[0]] = 'k';
+        renderBoard(handleS5Click);
     }
 
     function renderBoard(clickHandler) {
@@ -550,7 +633,10 @@
         }, 1000);
     }
 
-    function giveHint() { alert("Mr. Dotun says: The AI is programmed to hold the center. You must push it to the edge to trap it!"); }
+    function giveHint() { 
+        if(currentStage === 5) alert("Move your King up to support the Pawn! Once you promote to a Queen, use your King and Queen together.");
+        else alert("Mr. Dotun says: The AI is programmed to hold the center. You must push it to the edge to trap it!"); 
+    }
 
     function winGame() {
         clearInterval(timerInterval);
@@ -560,11 +646,11 @@
         document.getElementById('score-report').innerHTML = `Assistant <b>${playerName}</b>,<br>Lab Efficiency Score: <b>${score}</b>`;
         document.getElementById('win-modal').classList.add('active-screen');
         document.getElementById('next-btn').onclick = () => {
-            if(currentStage < 4) {
+            if(currentStage < 5) {
                 currentStage++;
                 launchGame(currentStage);
             } else {
-                alert("MAXIMUM RANK ATTAINED: LABORATORY DIRECTOR!");
+                alert("MAXIMUM RANK ATTAINED: SUPREME GRANDMASTER!");
                 localStorage.removeItem(`dotun_lab_${playerName}_${playerCode}`);
                 location.reload();
             }
