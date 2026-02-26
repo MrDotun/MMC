@@ -149,10 +149,15 @@
 
     function startStage(stageNum) {
         playerName = document.getElementById('kid-name').value || "Brave Knight";
+        playerClass = document.getElementById('kid-class').value || "Class 1";
         currentStage = stageNum;
-        document.getElementById('display-name').innerText = playerName;
+
+        document.getElementById('win-modal').classList.remove('active-screen');
         document.getElementById('welcome-screen').classList.remove('active-screen');
         document.getElementById('game-screen').classList.add('active-screen');
+        
+        document.getElementById('display-name').innerText = playerName;
+        selectedIndex = null; 
         
         if(stageNum === 1) initStage1();
         else if(stageNum === 2) initStage2();
@@ -238,7 +243,7 @@
         currentBoard = new Array(64).fill('');
         currentBoard[56] = 'R'; 
         currentBoard[63] = 'R';
-        currentBoard[12] = 'k'; 
+        currentBoard[36] = 'k'; // King on e4
         startTimer();
         renderBoard(handleS3Click);
     }
@@ -279,9 +284,17 @@
             let rs = currentBoard.map((p, idx) => p === 'R' ? idx : null).filter(n => n !== null);
             return !rs.some(r => Math.floor(r/8) === Math.floor(m/8) || (r%8) === (m%8));
         });
+        
         let move = safe.length > 0 ? safe[Math.floor(Math.random()*safe.length)] : moves[0];
-        if (move !== undefined) { currentBoard[move] = 'k'; currentBoard[kP] = ''; }
-        else winGame(); 
+        
+        if (move !== undefined) { 
+            currentBoard[move] = 'k'; 
+            currentBoard[kP] = ''; 
+        } else { 
+            // FIXED: Stage 3 checkmate win logic
+            document.getElementById('win-title').innerText = "🏆 CHECKMATE!";
+            winGame(); 
+        } 
         renderBoard(handleS3Click);
     }
 
@@ -324,8 +337,13 @@
         clearInterval(timerInterval);
         const score = 50 + (timeLeft * 3);
         saveScore(playerName, score);
+        
+        // Reset win-title for Stage 1 & 2 in case they replay
+        if(currentStage < 3) document.getElementById('win-title').innerText = "🔑 KEY OBTAINED!";
+        
         document.getElementById('score-report').innerHTML = `Master <b>${playerName}</b> of <b>${playerClass}</b>,<br>Score: <b>${score}</b>`;
         document.getElementById('win-modal').classList.add('active-screen');
+        
         document.getElementById('next-btn').onclick = () => {
             if(currentStage < 3) startStage(currentStage + 1);
             else location.reload();
