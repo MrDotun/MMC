@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chess Quest: Stage 1</title>
+    <title>Chess Quest</title>
     <style>
         :root {
             --light-sq: #f0d9b5;
@@ -22,130 +22,105 @@
             background-attachment: fixed;
             color: white;
             margin: 0;
-            overflow-x: hidden;
             min-height: 100vh;
         }
 
-        /* 1. Responsiveness: Board fits to screen */
-        #game-wrapper {
-            width: 100%;
-            max-width: 400px;
-            padding: 10px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
+        /* Screens */
+        .screen { display: none; width: 100%; max-width: 450px; padding: 20px; box-sizing: border-box; text-align: center; }
+        .active-screen { display: flex; flex-direction: column; }
 
-        h1 { font-size: 1.5rem; margin: 10px 0; text-shadow: 2px 2px #000; text-align: center; }
+        /* Welcome Page */
+        .welcome-card { background: rgba(0,0,0,0.8); padding: 30px; border-radius: 20px; border: 3px solid var(--accent); }
+        h1.big-title { font-size: 2.5rem; color: var(--accent); margin-bottom: 10px; }
+        .input-group { margin: 20px 0; }
+        input { padding: 12px; border-radius: 8px; border: none; width: 80%; margin: 5px 0; font-size: 1rem; }
+        .btn-main { background: #27ae60; color: white; padding: 15px 30px; border: none; border-radius: 50px; font-size: 1.2rem; cursor: pointer; font-weight: bold; margin-top: 10px; }
 
-        /* Storyline Styling */
-        #story-box {
-            background: rgba(0, 0, 0, 0.7);
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 15px;
-            font-size: 0.9rem;
-            border: 2px solid var(--accent);
-            line-height: 1.4;
-        }
+        /* Game UI */
+        #story-box { background: rgba(0,0,0,0.8); padding: 20px; border-radius: 15px; border: 2px solid var(--accent); margin-bottom: 15px; }
+        #story-box b { font-size: 1.4rem; color: var(--accent); display: block; margin-bottom: 5px; } /* Bigger Lettering */
+        #story-box p { font-size: 1.1rem; margin: 0; }
 
+        .board-container { width: 100%; position: relative; }
         .board {
             display: grid;
             grid-template-columns: repeat(8, 1fr);
             width: 100%;
-            aspect-ratio: 1 / 1; /* Keeps board square */
-            border: 4px solid #333;
-            touch-action: manipulation;
+            aspect-ratio: 1 / 1;
+            border: 5px solid #333;
+            /* Fix for shrinking squares: ensure rows are also 1fr */
+            grid-template-rows: repeat(8, 1fr); 
         }
 
-        .square {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            cursor: pointer;
-            position: relative;
-        }
-
-        .square img {
-            width: 85%;
-            height: 85%;
-            pointer-events: none;
-        }
-
+        .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; }
+        .square img { width: 90%; height: 90%; object-fit: contain; }
         .square.light { background-color: var(--light-sq); }
         .square.dark { background-color: var(--dark-sq); }
-        .square.selected { background-color: var(--highlight) !important; transform: scale(1.1); z-index: 5; }
-        .square.is-correct { background-color: var(--correct) !important; pointer-events: none; }
+        .square.selected { background-color: var(--highlight); }
+        .square.is-correct { background-color: var(--correct); pointer-events: none; }
+        .hint-glow { animation: pulse 1s infinite; }
 
-        /* 2. Distinguishing pieces (Black vs White) */
-        .white-piece { filter: drop-shadow(0px 0px 2px #000); }
-        .black-piece { filter: drop-shadow(0px 0px 2px #fff); }
+        @keyframes pulse { 0% { box-shadow: inset 0 0 0px gold; } 50% { box-shadow: inset 0 0 20px gold; } 100% { box-shadow: inset 0 0 0px gold; } }
 
-        #timer { font-size: 1.2rem; font-weight: bold; color: #ffeb3b; margin: 10px 0; }
-        
-        #key-inventory {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 10px;
-            border-radius: 15px;
-            width: 100%;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 5px;
-        }
+        .controls { display: flex; gap: 10px; margin: 15px 0; justify-content: center; }
+        .btn-small { padding: 10px 15px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; }
+        .btn-hint { background: #8e44ad; color: white; }
+        .btn-exit { background: #c0392b; color: white; }
 
-        .key-slot {
-            font-size: 20px;
-            opacity: 0.2;
-            transition: all 0.5s;
-        }
-
-        .key-earned { opacity: 1; text-shadow: 0 0 10px gold; }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            background: white; color: #222;
-            padding: 30px; border-radius: 20px;
-            text-align: center; z-index: 100;
-            width: 80%;
-        }
+        #stats { font-size: 1.2rem; margin: 5px; }
+        .timer-text { font-size: 1.5rem; color: #ffeb3b; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <div id="game-wrapper">
-        <h1>STAGE 1: THE GREAT SCRAMBLE</h1>
-
-        <div id="story-box">
-            🏰 <b>Quest Log:</b> A mischievous wind has blown through the King's Castle and scattered all the Royal Guard! 
-            Quickly, return the pieces to their home squares to earn the <b>First Key</b> and unlock the Castle Gate!
-        </div>
-
-        <div id="timer">⏳ Time: <span id="seconds">0</span>s</div>
-
-        <div id="board" class="board"></div>
-
-        <div id="key-inventory">
-            <div id="keys-container"></div>
+    <div id="welcome-screen" class="screen active-screen">
+        <div class="welcome-card">
+            <h1 class="big-title">CHESS QUEST</h1>
+            <p>Welcome, Young Grandmaster! Your mission is to restore order to the Chess Kingdom. Collect all 20 keys to become the Ultimate Protector!</p>
+            <div class="input-group">
+                <input type="text" id="kid-name" placeholder="Enter Your Name">
+                <input type="text" id="kid-class" placeholder="Enter Your Class">
+            </div>
+            <button class="btn-main" onclick="startGame()">START ADVENTURE</button>
         </div>
     </div>
 
-    <div id="win-modal" class="modal">
-        <h2>🔑 KEY OBTAINED!</h2>
-        <p>Excellent work! You've organized the Royal Guard. Stage 2 awaits!</p>
-        <button onclick="location.reload()" style="background:#27ae60; color:white; border:none; padding:15px 30px; border-radius:10px; font-weight:bold;">NEXT STAGE</button>
+    <div id="game-screen" class="screen">
+        <div id="story-box">
+            <b>STAGE 1: THE GREAT SCRAMBLE</b>
+            <p id="objective-text">The wind scattered the Royal Guard! You have <span id="time-limit">60</span> seconds to put them back!</p>
+        </div>
+
+        <div id="stats">
+            Player: <span id="display-name"></span> | <span class="timer-text">⏳ <span id="seconds">60</span>s</span>
+        </div>
+
+        <div class="board-container">
+            <div id="board" class="board"></div>
+        </div>
+
+        <div class="controls">
+            <button class="btn-small btn-hint" onclick="giveHint()">💡 Mr. Dotun's Hint</button>
+            <button class="btn-small btn-exit" onclick="exitGame()">💾 Exit & Save</button>
+        </div>
+    </div>
+
+    <div id="win-modal" class="screen" style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:white; color:#222; border-radius:20px; z-index:100;">
+        <h2>QUEST COMPLETE!</h2>
+        <p id="score-report"></p>
+        <button class="btn-main" onclick="location.reload()">CLAIM KEY 🔑</button>
     </div>
 
 <script>
-    const boardElement = document.getElementById('board');
-    const timerElement = document.getElementById('seconds');
-    const winModal = document.getElementById('win-modal');
+    let playerName = "";
+    let playerClass = "";
+    let timeLimit = 60; 
+    let timeLeft = 60;
+    let timerInterval;
+    let solvedCount = 0;
+    let selectedIndex = null;
+    let currentBoard = [];
 
-    // High-contrast SVG pieces for better distinction
     const pieceImages = {
         'r': 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
         'n': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
@@ -164,57 +139,52 @@
     const startingBoard = [
         'r','n','b','q','k','b','n','r',
         'p','p','p','p','p','p','p','p',
-        '','','','','','','','',
-        '','','','','','','','',
-        '','','','','','','','',
-        '','','','','','','','',
+        '','','','','','','','', '','','','','','','','',
+        '','','','','','','','', '','','','','','','','',
         'P','P','P','P','P','P','P','P',
         'R','N','B','Q','K','B','N','R'
     ];
 
-    let currentBoard = [];
-    let selectedIndex = null;
-    let startTime = Date.now();
-    let solvedCount = 0;
-    const totalPieces = startingBoard.filter(p => p !== '').length;
+    function startGame() {
+        playerName = document.getElementById('kid-name').value || "Brave Knight";
+        playerClass = document.getElementById('kid-class').value || "Beginner";
+        
+        if(playerName === "") { alert("Please enter your name!"); return; }
+
+        document.getElementById('display-name').innerText = playerName;
+        document.getElementById('welcome-screen').classList.remove('active-screen');
+        document.getElementById('game-screen').classList.add('active-screen');
+        
+        initGame();
+    }
 
     function initGame() {
-        // Create 20 keys
-        const keysCont = document.getElementById('keys-container');
-        for(let i=0; i<20; i++) {
-            const slot = document.createElement('div');
-            slot.className = 'key-slot';
-            slot.innerHTML = '🔑';
-            keysCont.appendChild(slot);
+        // Load saved progress if any
+        const saved = localStorage.getItem('chessQuest_stage1');
+        if(saved) {
+            currentBoard = JSON.parse(saved);
+        } else {
+            // Scramble
+            let allPieces = startingBoard.filter(p => p !== '');
+            let positions = Array.from({length: 64}, (_, i) => i).sort(() => Math.random() - 0.5);
+            currentBoard = new Array(64).fill('');
+            positions.forEach((pos, index) => {
+                if(index < allPieces.length) currentBoard[pos] = allPieces[index];
+            });
         }
 
-        // Scramble logic
-        let allPieces = startingBoard.filter(p => p !== '');
-        let positions = Array.from({length: 64}, (_, i) => i).sort(() => Math.random() - 0.5);
-        
-        currentBoard = new Array(64).fill('');
-        positions.forEach((pos, index) => {
-            if(index < allPieces.length) {
-                currentBoard[pos] = allPieces[index];
-            }
-        });
-
         renderBoard();
-        setInterval(() => {
-            if(solvedCount < totalPieces) {
-                timerElement.innerText = Math.floor((Date.now() - startTime) / 1000);
-            }
-        }, 1000);
+        timerInterval = setInterval(updateTimer, 1000);
     }
 
     function renderBoard() {
+        const boardElement = document.getElementById('board');
         boardElement.innerHTML = '';
         solvedCount = 0;
 
         currentBoard.forEach((piece, i) => {
             const square = document.createElement('div');
-            const row = Math.floor(i / 8);
-            const isDark = (row + i) % 2 === 1;
+            const isDark = (Math.floor(i / 8) + i) % 2 === 1;
             square.className = `square ${isDark ? 'dark' : 'light'}`;
             
             if (piece !== '' && piece === startingBoard[i]) {
@@ -223,22 +193,16 @@
             }
 
             if (selectedIndex === i) square.classList.add('selected');
-            
             if (piece !== '') {
                 const img = document.createElement('img');
                 img.src = pieceImages[piece];
-                img.className = piece === piece.toLowerCase() ? 'black-piece' : 'white-piece';
                 square.appendChild(img);
             }
-
             square.onclick = () => handleSquareClick(i);
             boardElement.appendChild(square);
         });
 
-        if (solvedCount === totalPieces) {
-            document.querySelectorAll('.key-slot')[0].classList.add('key-earned');
-            winModal.style.display = 'block';
-        }
+        if (solvedCount === 32) winGame();
     }
 
     function handleSquareClick(index) {
@@ -255,7 +219,53 @@
         renderBoard();
     }
 
-    initGame();
+    function updateTimer() {
+        timeLeft--;
+        document.getElementById('seconds').innerText = timeLeft;
+        if(timeLeft <= 0) {
+            clearInterval(timerInterval);
+            alert("Time's up! Try again!");
+            location.reload();
+        }
+    }
+
+    function giveHint() {
+        // Mr Dotun finds the first piece that isn't in the right place
+        for(let i=0; i<64; i++) {
+            if(currentBoard[i] !== '' && currentBoard[i] !== startingBoard[i]) {
+                // Find where it SHOULD go
+                const targetPiece = currentBoard[i];
+                const targetIndex = startingBoard.indexOf(targetPiece); // Simplified for hint
+                
+                const squares = document.querySelectorAll('.square');
+                squares[i].classList.add('hint-glow');
+                setTimeout(() => squares[i].classList.remove('hint-glow'), 2000);
+                alert("Mr. Dotun says: Look at the glowing piece!");
+                break;
+            }
+        }
+    }
+
+    function exitGame() {
+        localStorage.setItem('chessQuest_stage1', JSON.stringify(currentBoard));
+        alert("Game Saved, " + playerName + "! See you next time.");
+        location.reload();
+    }
+
+    function winGame() {
+        clearInterval(timerInterval);
+        const basePoints = 50;
+        const bonus = timeLeft * 3;
+        const total = basePoints + bonus;
+        
+        document.getElementById('score-report').innerHTML = `
+            Master <b>${playerName}</b> of <b>${playerClass}</b>,<br><br>
+            Base Points: 50<br>
+            Time Bonus: ${timeLeft}s x 3 = ${bonus}<br>
+            <b>Total Score: ${total}</b>
+        `;
+        document.getElementById('win-modal').classList.add('active-screen');
+    }
 </script>
 </body>
 </html>
