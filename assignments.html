@@ -11,54 +11,53 @@
     <style>
         body, html {
             margin: 0; padding: 0;
-            height: 100%; width: 100%;
-            overflow: hidden; 
+            min-height: 100%; width: 100%;
+            overflow-y: auto; 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            /* Academy Theme Color */
+            align-items: center; justify-content: flex-start;
             background-color: #1a1a2e;
         }
         #game-container {
-            width: 90vmin; 
-            max-width: 600px;
+            width: 95vmin; 
+            max-width: 550px;
             text-align: center;
+            padding: 20px 10px;
         }
-        #board { width: 100%; margin-bottom: 10px; }
+        #board { 
+            width: 100%; 
+            margin-bottom: 15px; 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+        }
         .info-panel {
-            /* Academy Theme Colors */
-            background: #2D1B4D; padding: 15px;
-            border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            background: #2D1B4D; padding: 20px;
+            border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             border: 2px solid #4ade80;
             color: white;
         }
-        h2 { margin: 0 0 10px 0; color: #4ade80; }
-        .grade { font-size: 1.5em; font-weight: bold; color: #4ade80; }
+        h2 { margin: 0 0 10px 0; color: #4ade80; font-size: 1.4em; }
+        .grade { font-size: 1.3em; font-weight: bold; color: #4ade80; }
         
-        /* Submit Button Styling */
         .submit-btn {
             background-color: #4ade80;
             color: #1a1a2e;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            text-decoration: none;
-            display: inline-block;
-            margin-top: 10px;
+            padding: 14px 28px;
+            border: none; border-radius: 8px;
+            cursor: pointer; font-weight: bold;
+            text-decoration: none; display: inline-block;
+            margin-top: 20px;
+            transition: transform 0.2s, background-color 0.2s;
+            box-shadow: 0 4px 10px rgba(74, 222, 128, 0.2);
         }
+        .submit-btn:hover { background-color: #22c55e; transform: translateY(-2px); }
 
-        /* Highlight square on click */
         .highlight-white { background-color: #f6f669 !important; }
         .highlight-black { background-color: #e6e600 !important; }
-
-        /* Board Square Colors */
         .white-1e1d7 { background-color: #ebecd0 !important; }
         .black-3c85d { background-color: #779556 !important; }
         
-        /* Remark Styling */
-        #remark { font-style: italic; color: #facc15; min-height: 1.2em; display: block; margin-bottom: 5px; }
+        #remark { font-style: italic; color: #facc15; min-height: 1.5em; display: block; margin: 10px 0; font-weight: 500; }
+        #status { font-weight: bold; color: #cbd5e1; }
     </style>
 </head>
 <body>
@@ -70,7 +69,10 @@
         <p id="remark">"If you don't win, I'll be disappointed"</p>
         <p>Your Grade: <span id="grade" class="grade">Beginner</span></p>
         <p id="status">Your turn! Click a piece to select it.</p>
-        <a href="https://docs.google.com/forms/d/e/1FAIpQLSfduqoEyvRko9-TM2T1SU0WVkr2vCdg2sFPZUTtQLOwSnJbBA/viewform" class="submit-btn">Submit to Mr. Dotun</a>
+        
+        <hr style="border: 0; border-top: 1px solid #4ade80; margin: 20px 0; opacity: 0.3;">
+        
+        <a href="https://docs.google.com/forms/d/e/1FAIpQLSfduqoEyvRko9-TM2T1SU0WVkr2vCdg2sFPZUTtQLOwSnJbBA/viewform" class="submit-btn">SUBMIT TO MR. DOTUN</a>
     </div>
 </div>
 
@@ -93,6 +95,22 @@
         else $grade.text("Beginner");
     }
 
+    function checkGameOver() {
+        if (game.in_checkmate()) {
+            var winner = game.turn() === 'w' ? "Mr. Dotun" : "You";
+            $status.text("CHECKMATE! " + winner + " wins!");
+            $remark.text(winner === "You" ? "Unbelievable! You actually beat me!" : "Stick to your books, checkmate!");
+            alert("Game Over: Checkmate! Winner: " + winner);
+            return true;
+        } else if (game.in_draw() || game.in_stalemate() || game.in_threefold_repetition()) {
+            $status.text("Game Over: It's a Draw/Stalemate!");
+            $remark.text("A draw? We'll have to play again.");
+            alert("Game Over: Stalemate/Draw!");
+            return true;
+        }
+        return false;
+    }
+
     function mrDotunRemarks(type) {
         var remarks = {
             illegal: "I'll reduce your score if you make an illegal move!",
@@ -110,15 +128,10 @@
         }
     }
 
-    // Integrated AI Strength Logic
     function makeAIMove() {
-        var moves = game.moves({ verbose: true });
-        if (game.game_over()) {
-            $status.text('Game Over!');
-            return;
-        }
+        if (checkGameOver()) return;
 
-        // 1. Check for AI pieces threatened by player
+        var moves = game.moves({ verbose: true });
         var threatenedSquares = [];
         var fen = game.fen();
         var tempGame = new Chess(fen);
@@ -129,17 +142,14 @@
             if (m.captured) threatenedSquares.push(m.to);
         });
 
-        // 2. Score moves
         var scoredMoves = moves.map(function(move) {
             var score = Math.random() * 5; 
             if (move.san.includes('#')) return { move: move, score: 10000 };
-            
             if (threatenedSquares.includes(move.from)) {
                 var val = pieceValues[move.piece] || 10;
                 score += val * 15;
             }
             if (move.captured) score += pieceValues[move.captured] * 20;
-
             game.move(move);
             var opponentMoves = game.moves({ verbose: true });
             if (opponentMoves.find(function(m) { return m.to === move.to; })) {
@@ -152,12 +162,16 @@
 
         scoredMoves.sort(function(a, b) { return b.score - a.score; });
         game.move(scoredMoves[0].move);
-        
         board.position(game.fen());
-        $status.text("Mr. Dotun moved. Your turn!");
+        
+        if (!checkGameOver()) {
+            $status.text("Mr. Dotun moved. Your turn!");
+        }
     }
 
     function onSquareClick(square) {
+        if (game.game_over()) return;
+
         if (sourceSquare === null) {
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
@@ -199,12 +213,13 @@
             updateGrade();
             mrDotunRemarks('good');
         } else {
-            // Randomly critique non-capturing moves
             if(Math.random() > 0.7) mrDotunRemarks('bad');
         }
 
-        $status.text("Nice move! Mr. Dotun is thinking...");
-        window.setTimeout(makeAIMove, 500);
+        if (!checkGameOver()) {
+            $status.text("Nice move! Mr. Dotun is thinking...");
+            window.setTimeout(makeAIMove, 500);
+        }
     }
 
     function addHighlight(square) {
