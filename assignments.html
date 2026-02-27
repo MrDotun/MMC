@@ -41,7 +41,7 @@
         }
         .login-card {
             background: #2D1B4D;
-            padding: 40px;
+            padding: 30px;
             border-radius: 15px;
             border: 2px solid #4ade80;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
@@ -59,9 +59,38 @@
             box-sizing: border-box;
         }
 
-        /* Game Container (Hidden initially) */
+        /* Leaderboard Styles */
+        .leaderboard {
+            margin-top: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: left;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .leaderboard h3 {
+            margin: 0 0 10px 0;
+            font-size: 0.9em;
+            color: #facc15;
+            text-transform: uppercase;
+            border-bottom: 1px solid #4ade80;
+            padding-bottom: 5px;
+        }
+        .leaderboard ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .leaderboard li {
+            font-size: 0.85em;
+            padding: 3px 0;
+            color: #4ade80;
+        }
+
+        /* Game Container */
         #game-container {
-            display: none; /* Hidden until login */
+            display: none; 
             width: 95vmin; 
             max-width: 550px;
             text-align: center;
@@ -124,10 +153,16 @@
 <div id="welcome-overlay">
     <div class="login-card">
         <h1 style="color: #4ade80;">Week One Task</h1>
-        <p>Welcome, Chess Champion! Please enter your details to start the match against Mr. Dotun.</p>
+        <p>Welcome, Chess Champion! Please enter your details to start the match.</p>
         <input type="text" id="studentName" placeholder="Enter Your Full Name" required>
         <input type="text" id="studentClass" placeholder="Enter Your Class" required>
         <button class="submit-btn" onclick="startGame()">START GAME</button>
+
+        <div class="leaderboard">
+            <h3>🏆 Grandmaster Hall of Fame</h3>
+            <ul id="leaderboardList">
+                </ul>
+        </div>
     </div>
 </div>
 
@@ -146,19 +181,34 @@
 </div>
 
 <script>
-    // Transition function
+    var currentPlayerName = "";
+    var grandmasters = JSON.parse(localStorage.getItem('chessGrandmasters')) || [];
+
+    function updateLeaderboardUI() {
+        const list = document.getElementById('leaderboardList');
+        list.innerHTML = grandmasters.length === 0 ? "<li>No Grandmasters yet. Be the first!</li>" : "";
+        grandmasters.forEach(name => {
+            const li = document.createElement('li');
+            li.textContent = "👑 " + name;
+            list.appendChild(li);
+        });
+    }
+
+    // Initialize leaderboard on load
+    updateLeaderboardUI();
+
     function startGame() {
-        const name = document.getElementById('studentName').value;
+        currentPlayerName = document.getElementById('studentName').value;
         const className = document.getElementById('studentClass').value;
 
-        if (name.trim() === "" || className.trim() === "") {
+        if (currentPlayerName.trim() === "" || className.trim() === "") {
             alert("Please enter both your name and class.");
             return;
         }
 
         document.getElementById('welcome-overlay').style.display = 'none';
         document.getElementById('game-container').style.display = 'block';
-        board.resize(); // Ensure board renders correctly after being hidden
+        board.resize(); 
     }
 
     var board = null;
@@ -170,15 +220,31 @@
 
     var pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 0 };
     var totalScore = 0;
+    var hasAchievedGM = false;
 
     function updateGrade() {
-        if (totalScore >= 200) $grade.text("Grandmaster! 👑");
+        if (totalScore >= 200) {
+            $grade.text("Grandmaster! 👑");
+            checkAndRecordGM();
+        }
         else if (totalScore >= 120) $grade.text("Expert 🏆");
         else if (totalScore >= 70) $grade.text("Pro 🌟");
         else if (totalScore >= 30) $grade.text("Advanced 👍");
         else $grade.text("Beginner");
     }
 
+    function checkAndRecordGM() {
+        if (!hasAchievedGM && currentPlayerName) {
+            if (!grandmasters.includes(currentPlayerName)) {
+                grandmasters.push(currentPlayerName);
+                localStorage.setItem('chessGrandmasters', JSON.stringify(grandmasters));
+                updateLeaderboardUI();
+            }
+            hasAchievedGM = true;
+        }
+    }
+
+    // ... [Rest of your mrDotunRemarks and makeAIMove logic remains exactly the same] ...
     function mrDotunRemarks(type) {
         var remarks = {
             illegal: "I'll reduce your score if you make an illegal move!",
