@@ -10,12 +10,16 @@
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
     <style>
         body, html {
-            margin: 0; padding: 0;
-            min-height: 100%; width: 100%;
+            margin: 0; 
+            padding: 0;
+            min-height: 100%; 
+            width: 100%;
             overflow-y: auto; 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: flex-start;
+            display: flex; 
+            flex-direction: column;
+            align-items: center; 
+            justify-content: flex-start;
             background-color: #1a1a2e;
         }
         #game-container {
@@ -30,8 +34,10 @@
             box-shadow: 0 8px 25px rgba(0,0,0,0.5);
         }
         .info-panel {
-            background: #2D1B4D; padding: 20px;
-            border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            background: #2D1B4D; 
+            padding: 20px;
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             border: 2px solid #4ade80;
             color: white;
         }
@@ -42,21 +48,34 @@
             background-color: #4ade80;
             color: #1a1a2e;
             padding: 14px 28px;
-            border: none; border-radius: 8px;
-            cursor: pointer; font-weight: bold;
-            text-decoration: none; display: inline-block;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
             margin-top: 20px;
             transition: transform 0.2s, background-color 0.2s;
             box-shadow: 0 4px 10px rgba(74, 222, 128, 0.2);
         }
-        .submit-btn:hover { background-color: #22c55e; transform: translateY(-2px); }
+        .submit-btn:hover {
+            background-color: #22c55e;
+            transform: translateY(-2px);
+        }
 
         .highlight-white { background-color: #f6f669 !important; }
         .highlight-black { background-color: #e6e600 !important; }
         .white-1e1d7 { background-color: #ebecd0 !important; }
         .black-3c85d { background-color: #779556 !important; }
         
-        #remark { font-style: italic; color: #facc15; min-height: 1.5em; display: block; margin: 10px 0; font-weight: 500; }
+        #remark { 
+            font-style: italic; 
+            color: #facc15; 
+            min-height: 1.5em; 
+            display: block; 
+            margin: 10px 0; 
+            font-weight: 500;
+        }
         #status { font-weight: bold; color: #cbd5e1; }
     </style>
 </head>
@@ -95,28 +114,33 @@
         else $grade.text("Beginner");
     }
 
-    function checkGameOver() {
-        if (game.in_checkmate()) {
-            var winner = game.turn() === 'w' ? "Mr. Dotun" : "You";
-            $status.text("CHECKMATE! " + winner + " wins!");
-            $remark.text(winner === "You" ? "Unbelievable! You actually beat me!" : "Stick to your books, checkmate!");
-            alert("Game Over: Checkmate! Winner: " + winner);
-            return true;
-        } else if (game.in_draw() || game.in_stalemate() || game.in_threefold_repetition()) {
-            $status.text("Game Over: It's a Draw/Stalemate!");
-            $remark.text("A draw? We'll have to play again.");
-            alert("Game Over: Stalemate/Draw!");
-            return true;
-        }
-        return false;
-    }
-
     function mrDotunRemarks(type) {
         var remarks = {
             illegal: "I'll reduce your score if you make an illegal move!",
-            bad: ["Is this what I taught you?", "Hahahha. You're playing like you're in Nursery 1.", "Should I take you back to Creche?"],
-            good: ["You made a good move.", "You're going to be world champion someday!"],
-            neutral: "If you don't win, I'll be disappointed"
+            bad: [
+                "Control the center, don't just push wood!",
+                "Every pawn move creates a permanent weakness.",
+                "Is this what I taught you?",
+                "Hahahha. You're playing like you're in Nursery 1.",
+                "Should I take you back to Creche?",
+                "A knight on the rim is dim!",
+                "Don't bring your Queen out too early.",
+                "Are you even calculating, or just hoping?",
+                "Develop your pieces before you start attacking.",
+                "Castle early, stay safe!"
+            ],
+            good: [
+                "You're learning! Good vision.",
+                "Strong move. You're seeing the board better.",
+                "You're going to be world champion someday!",
+                "Now you're playing real chess.",
+                "Tactical! I didn't see that coming immediately.",
+                "Excellent use of the open file.",
+                "Pinning that piece was a smart choice.",
+                "You're thinking like a candidate master now.",
+                "Pressure! Keep the pressure on!",
+                "Beautiful! Checkmate is the goal!"
+            ]
         };
 
         if (type === 'illegal') {
@@ -129,7 +153,15 @@
     }
 
     function makeAIMove() {
-        if (checkGameOver()) return;
+        if (game.game_over()) {
+            $status.text('Game Over!');
+            if (game.in_checkmate()) {
+                totalScore = 250; // Force Grandmaster Grade
+                updateGrade();
+                $remark.text("Checkmate! You've surpassed the master. Grandmaster status achieved!");
+            }
+            return;
+        }
 
         var moves = game.moves({ verbose: true });
         var threatenedSquares = [];
@@ -164,7 +196,10 @@
         game.move(scoredMoves[0].move);
         board.position(game.fen());
         
-        if (!checkGameOver()) {
+        if (game.game_over()) {
+            $status.text("Mr. Dotun wins! Better luck next time.");
+            $remark.text("Go back and study your endgames!");
+        } else {
             $status.text("Mr. Dotun moved. Your turn!");
         }
     }
@@ -210,13 +245,20 @@
 
         if (move.captured) {
             totalScore += pieceValues[move.captured];
-            updateGrade();
-            mrDotunRemarks('good');
-        } else {
-            if(Math.random() > 0.7) mrDotunRemarks('bad');
         }
 
-        if (!checkGameOver()) {
+        if (game.in_checkmate()) {
+            totalScore = 250; 
+            updateGrade();
+            $remark.text("Masterful! You checkmated Mr. Dotun!");
+            $status.text("Victory! You are a Grandmaster.");
+        } else {
+            updateGrade();
+            if (move.captured || move.san.includes('+')) {
+                mrDotunRemarks('good');
+            } else {
+                if(Math.random() > 0.6) mrDotunRemarks('bad');
+            }
             $status.text("Nice move! Mr. Dotun is thinking...");
             window.setTimeout(makeAIMove, 500);
         }
