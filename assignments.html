@@ -63,40 +63,24 @@
             box-sizing: border-box;
         }
 
-        /* Embedded Leaderboard Styles */
-        .leaderboard {
+        /* Leaderboard Style added inside your login card structure */
+        #leaderboard-box {
             margin-top: 20px;
-            background: rgba(0, 0, 0, 0.3);
-            padding: 15px;
-            border-radius: 10px;
             text-align: left;
-            max-height: 150px;
+            background: rgba(0,0,0,0.2);
+            padding: 10px;
+            border-radius: 8px;
+            max-height: 120px;
             overflow-y: auto;
             border: 1px solid #4ade8044;
         }
-        .leaderboard h3 {
-            margin: 0 0 10px 0;
-            font-size: 0.9em;
-            color: #facc15;
-            text-transform: uppercase;
-            border-bottom: 1px solid #4ade80;
-            padding-bottom: 5px;
-        }
-        .leaderboard ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        .leaderboard li {
-            font-size: 0.85em;
-            padding: 4px 0;
-            color: #4ade80;
-            border-bottom: 1px solid #ffffff11;
-        }
+        #leaderboard-box h3 { font-size: 0.9em; margin: 0 0 5px 0; color: #facc15; text-align: center;}
+        #leaderboardList { list-style: none; padding: 0; margin: 0; font-size: 0.85em; color: #4ade80; }
+        #leaderboardList li { border-bottom: 1px solid #ffffff11; padding: 3px 0; }
 
         /* Game Container (Hidden initially) */
         #game-container {
-            display: none; 
+            display: none; /* Hidden until login */
             width: 95vmin; 
             max-width: 550px;
             text-align: center;
@@ -140,6 +124,9 @@
 
         .highlight-white { background-color: #f6f669 !important; }
         .highlight-black { background-color: #e6e600 !important; }
+        .white-1e1d7 { background-color: #ebecd0 !important; }
+        .black-3c85d { background-color: #779556 !important; }
+        
         #remark { 
             font-style: italic; 
             color: #facc15; 
@@ -161,11 +148,9 @@
         <input type="text" id="studentClass" placeholder="Enter Your Class" required>
         <button class="submit-btn" onclick="startGame()">START GAME</button>
 
-        <div class="leaderboard">
-            <h3>🏆 Global Grandmasters</h3>
-            <ul id="leaderboardList">
-                <li>Loading Hall of Fame...</li>
-            </ul>
+        <div id="leaderboard-box">
+            <h3>🏆 Hall of Grandmasters</h3>
+            <ul id="leaderboardList"><li>Loading...</li></ul>
         </div>
     </div>
 </div>
@@ -177,55 +162,57 @@
         <p id="remark">"If you don't win, I'll be disappointed"</p>
         <p>Your Grade: <span id="grade" class="grade">Beginner</span></p>
         <p id="status">Your turn! Click a piece to select it.</p>
+        
         <hr style="border: 0; border-top: 1px solid #4ade80; margin: 20px 0; opacity: 0.3;">
+        
         <a href="https://docs.google.com/forms/d/e/1FAIpQLSfduqoEyvRko9-TM2T1SU0WVkr2vCdg2sFPZUTtQLOwSnJbBA/viewform" class="submit-btn">SUBMIT TO MR. DOTUN</a>
     </div>
 </div>
 
 <script>
-    // --- FIREBASE EMBEDDED CONFIG ---
+    // --- FIREBASE INTEGRATION ---
     const firebaseConfig = {
-        apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
-        authDomain: "assignments-de95a.firebaseapp.com",
-        projectId: "assignments-de95a",
-        storageBucket: "assignments-de95a.firebasestorage.app",
-        messagingSenderId: "1088073398299",
-        appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
+      apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+      authDomain: "assignments-de95a.firebaseapp.com",
+      projectId: "assignments-de95a",
+      storageBucket: "assignments-de95a.firebasestorage.app",
+      messagingSenderId: "1088073398299",
+      appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    var currentPlayerName = "";
-    var currentPlayerClass = "";
-    var hasRecordedGM = false;
+    var currentName = "";
+    var currentClass = "";
+    var hasSavedWin = false;
 
-    // Load Hall of Fame (Embedded Listener)
+    // Real-time Leaderboard logic
     db.collection("grandmasters").orderBy("timestamp", "desc").limit(10)
       .onSnapshot((snapshot) => {
-          const list = document.getElementById('leaderboardList');
-          list.innerHTML = "";
-          if (snapshot.empty) list.innerHTML = "<li>Be the first Grandmaster!</li>";
-          snapshot.forEach((doc) => {
-              const data = doc.data();
-              const li = document.createElement('li');
-              li.textContent = `👑 ${data.name} (${data.class})`;
-              list.appendChild(li);
-          });
-      });
+        const list = document.getElementById('leaderboardList');
+        list.innerHTML = "";
+        if (snapshot.empty) list.innerHTML = "<li>No Grandmasters yet. Win to be first!</li>";
+        snapshot.forEach((doc) => {
+            const data = doc.data();
+            const li = document.createElement('li');
+            li.textContent = `👑 ${data.name} (${data.class})`;
+            list.appendChild(li);
+        });
+    });
 
     // Transition function
     function startGame() {
-        currentPlayerName = document.getElementById('studentName').value;
-        currentPlayerClass = document.getElementById('studentClass').value;
+        currentName = document.getElementById('studentName').value;
+        currentClass = document.getElementById('studentClass').value;
 
-        if (currentPlayerName.trim() === "" || currentPlayerClass.trim() === "") {
+        if (currentName.trim() === "" || currentClass.trim() === "") {
             alert("Please enter both your name and class.");
             return;
         }
 
         document.getElementById('welcome-overlay').style.display = 'none';
         document.getElementById('game-container').style.display = 'block';
-        board.resize(); 
+        board.resize(); // Ensure board renders correctly after being hidden
     }
 
     var board = null;
@@ -241,14 +228,14 @@
     function updateGrade() {
         if (totalScore >= 200) {
             $grade.text("Grandmaster! 👑");
-            // RECORD TO STORAGE IF NOT ALREADY DONE
-            if (!hasRecordedGM && currentPlayerName) {
+            // SAVE TO FIREBASE AUTOMATICALLY
+            if (!hasSavedWin && currentName) {
                 db.collection("grandmasters").add({
-                    name: currentPlayerName,
-                    class: currentPlayerClass,
+                    name: currentName,
+                    class: currentClass,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                hasRecordedGM = true;
+                hasSavedWin = true;
             }
         }
         else if (totalScore >= 120) $grade.text("Expert 🏆");
