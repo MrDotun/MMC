@@ -156,15 +156,15 @@
             <div class="input-group">
                 <input type="text" id="kid-name" placeholder="Enter your Name">
                 <input type="number" id="kid-age" placeholder="Age">
-                <input type="password" id="kid-code" placeholder="Choose a password" oninput="checkReturningPlayer()">
+                <input type="password" id="kid-code" placeholder="Choose a password">
             </div>
             
-            <button id="resume-btn" class="btn-main btn-resume" onclick="resumeGame()">RESUME EXPERIMENT</button>
-            <button class="btn-main" onclick="startNewGame()">START NEW SESSION</button>
+            <button id="resume-btn" class="btn-main btn-resume">RESUME EXPERIMENT</button>
+            <button id="start-btn" class="btn-main">START NEW SESSION</button>
 
             <div class="leaderboard">
                 <h3 style="display: flex; justify-content: center; align-items: center; gap: 8px;">
-                    🏆 Lab Elites <span onclick="adminRefresh()" style="cursor:pointer; font-size: 1.1rem; transition: 0.5s;" id="refresh-icon">🔄</span>
+                    🏆 Lab Elites <span id="refresh-icon" style="cursor:pointer; font-size: 1.1rem; transition: 0.5s;">🔄</span>
                 </h3>
                 <table class="lb-table">
                     <thead>
@@ -193,8 +193,8 @@
         </div>
 
         <div class="controls">
-            <button class="btn-small btn-hint" onclick="giveHint()">💡 Hint</button>
-            <button class="btn-small btn-exit" onclick="saveAndExit()">💾 Save & Exit</button>
+            <button id="hint-btn" class="btn-small btn-hint">💡 Hint</button>
+            <button id="exit-btn" class="btn-small btn-exit">💾 Save & Exit</button>
         </div>
     </div>
 
@@ -205,14 +205,32 @@
         <button id="next-btn" class="btn-main">PROCEED</button>
     </div>
 
-<script>
+<script type="module">
+    // --- FIREBASE INITIALIZATION ---
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getDatabase, ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+      authDomain: "assignments-de95a.firebaseapp.com",
+      databaseURL: "https://assignments-de95a-default-rtdb.firebaseio.com",
+      projectId: "assignments-de95a",
+      storageBucket: "assignments-de95a.firebasestorage.app",
+      messagingSenderId: "1088073398299",
+      appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // --- GAME ENGINE VARIABLES ---
     let currentStage = 1;
     let playerName = "";
     let playerAge = "";
     let playerCode = "";
     let playerLives = 3;
     let playerScore = 0; 
-    let timeLeft = 60; // INITIALIZED TO 60s
+    let timeLeft = 60; 
     let timerInterval;
     let selectedIndex = null;
     let currentBoard = [];
@@ -275,7 +293,41 @@
 
     const s1Starting = ['r','n','b','q','k','b','n','r','p','p','p','p','p','p','p','p','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','P','P','P','P','P','P','P','P','R','N','B','Q','K','B','N','R'];
 
-    function checkReturningPlayer() {
+    // --- LEADERBOARD LOGIC (GLOBAL) ---
+
+    function updateLeaderboardDisplay() {
+        const lbRef = ref(db, 'leaderboard');
+        onValue(lbRef, (snapshot) => {
+            const data = snapshot.val();
+            if (!data) return;
+            
+            // Convert Firebase object to array and sort descending
+            let scoresArray = Object.values(data);
+            scoresArray.sort((a, b) => b.score - a.score);
+            
+            // Display only top 10
+            document.getElementById('leaderboard-list').innerHTML = scoresArray.slice(0, 10).map((x, i) => 
+                `<tr>
+                    <td>#${i+1}</td>
+                    <td style="text-align:left;"><b>${x.name}</b><br><small style="color:var(--accent)">${x.title || 'Assistant'}</small></td>
+                    <td>${x.score}</td>
+                </tr>`).join('');
+        });
+    }
+
+    function saveScore(name, score, title) {
+        // We sanitize name to use as a key
+        const safeName = name.replace(/[.#$[\]]/g, "_");
+        set(ref(db, 'leaderboard/' + safeName), {
+            name: name,
+            score: score,
+            title: title
+        });
+    }
+
+    // --- BUTTON EVENT HANDLERS ---
+
+    window.checkReturningPlayer = function() {
         const name = document.getElementById('kid-name').value.trim();
         const code = document.getElementById('kid-code').value.trim();
         const resumeBtn = document.getElementById('resume-btn');
@@ -284,8 +336,9 @@
             resumeBtn.style.display = savedData ? "block" : "none";
         }
     }
+    document.getElementById('kid-code').oninput = window.checkReturningPlayer;
 
-    function startNewGame() {
+    document.getElementById('start-btn').onclick = function() {
         playerName = document.getElementById('kid-name').value.trim();
         playerAge = document.getElementById('kid-age').value.trim();
         playerCode = document.getElementById('kid-code').value.trim();
@@ -300,9 +353,9 @@
         playerScore = 0; 
         currentStage = 1;
         launchGame(1);
-    }
+    };
 
-    function resumeGame() {
+    document.getElementById('resume-btn').onclick = function() {
         playerName = document.getElementById('kid-name').value.trim();
         playerCode = document.getElementById('kid-code').value.trim();
         const savedData = JSON.parse(localStorage.getItem(`dotun_lab_${playerName}_${playerCode}`));
@@ -312,9 +365,9 @@
             playerScore = 0; 
             launchGame(currentStage);
         }
-    }
+    };
 
-    function saveAndExit() {
+    document.getElementById('exit-btn').onclick = function() {
         if(playerName && playerCode) {
             const saveData = { stage: currentStage, lives: playerLives };
             localStorage.setItem(`dotun_lab_${playerName}_${playerCode}`, JSON.stringify(saveData));
@@ -322,7 +375,20 @@
             alert("Station locked. Progress saved.");
             location.reload();
         }
-    }
+    };
+
+    document.getElementById('refresh-icon').onclick = function() {
+        const pass = prompt("Enter Master Key to WIPE GLOBAL Lab Records:");
+        if(pass === "1234") { 
+            set(ref(db, 'leaderboard'), null); 
+            alert("Database Cleared.");
+        } else {
+            playSound('error');
+            alert("Unauthorized Access Attempt Detected.");
+        }
+    };
+
+    // --- GAMEPLAY FUNCTIONS ---
 
     function launchGame(stageNum) {
         currentStage = stageNum;
@@ -359,7 +425,7 @@
     }
 
     function initStage1() {
-        timeLeft = 60; // 1 MINUTE
+        timeLeft = 60; 
         document.getElementById('stage-title').innerText = "EXPERIMENT 1: PIECE RECOGNITION";
         document.getElementById('objective-text').innerText = "Reorganize the scrambled pieces to their correct home squares.";
         let pieces = s1Starting.filter(p => p !== '');
@@ -390,7 +456,7 @@
     }
 
     function initStage2() {
-        timeLeft = 60; // 1 MINUTE
+        timeLeft = 60; 
         aiCaptures = 0;
         document.getElementById('stage-title').innerText = "EXPERIMENT 2: VELOCITY CHECK";
         document.getElementById('objective-text').innerText = "Sprint a Pawn to the end. The Lab AI has 3 capture attempts.";
@@ -439,9 +505,9 @@
     }
 
     function initStage3() {
-        timeLeft = 60; // 1 MINUTE
+        timeLeft = 60; 
         document.getElementById('stage-title').innerText = "EXPERIMENT 3: CONTAINMENT";
-        document.getElementById('objective-text').innerText = "Use both Rooks to trap the King. WATCH OUT: He will try to hunt your Rooks!";
+        document.getElementById('objective-text').innerText = "Use both Rooks to trap the King. He will hunt your Rooks!";
         currentBoard = new Array(64).fill('');
         currentBoard[56] = 'R'; currentBoard[63] = 'R'; currentBoard[36] = 'k'; 
         startTimer();
@@ -512,7 +578,7 @@
     }
 
     function initStage4() {
-        timeLeft = 60; // 1 MINUTE
+        timeLeft = 60; 
         document.getElementById('stage-title').innerText = "EXPERIMENT 4: FINAL EXTRACTION";
         document.getElementById('objective-text').innerText = "Checkmate the AI. He is fighting to stay in the center!";
         currentBoard = new Array(64).fill('');
@@ -633,9 +699,9 @@
     }
 
     function initStage5() {
-        timeLeft = 60; // 1 MINUTE
+        timeLeft = 60; 
         document.getElementById('stage-title').innerText = "EXPERIMENT 5: SPEED PROMOTION";
-        document.getElementById('objective-text').innerText = "Advance the Pawn to e8! The AI King will try to block and capture it.";
+        document.getElementById('objective-text').innerText = "Advance the Pawn to e8! The AI King will try to block it.";
         currentBoard = new Array(64).fill('');
         currentBoard[52] = 'P'; 
         currentBoard[60] = 'K'; 
@@ -778,15 +844,15 @@
         timerInterval = setInterval(() => {
             timeLeft--;
             document.getElementById('seconds').innerText = timeLeft;
-            if(timeLeft <= 10) document.getElementById('seconds').style.color = '#ff4757'; // ALERT AT 10s
+            if(timeLeft <= 10) document.getElementById('seconds').style.color = '#ff4757'; 
             else document.getElementById('seconds').style.color = '#ffeb3b';
             if(timeLeft <= 0) handleLoss();
         }, 1000);
     }
 
-    function giveHint() { 
-        alert(currentStage === 5 ? "The AI King is hunting your pawn! Use your White King to protect it." : "Mr. Dotun says: Look for the quickest path to capture or safety!"); 
-    }
+    document.getElementById('hint-btn').onclick = function() { 
+        alert(currentStage === 5 ? "Protect your pawn with your King!" : "Quickly move pieces to their home spots!"); 
+    };
 
     function winGame() {
         clearInterval(timerInterval);
@@ -795,58 +861,17 @@
         playerScore += stageScore; 
         saveScore(playerName, playerScore, titles[currentStage]); 
         document.getElementById('rank-award').innerText = `🔬 NEW RANK: ${titles[currentStage]}`;
-        document.getElementById('score-report').innerHTML = `Assistant <b>${playerName}</b>,<br>Lab Efficiency Score: <b>${playerScore}</b>`;
+        document.getElementById('score-report').innerHTML = `Assistant <b>${playerName}</b>,<br>Efficiency Score: <b>${playerScore}</b>`;
         document.getElementById('win-modal').classList.add('active-screen');
         document.getElementById('next-btn').onclick = () => {
             if(currentStage < 5) { currentStage++; launchGame(currentStage); } 
-            else { alert("MAXIMUM RANK ATTAINED: SUPREME GRANDMASTER!"); location.reload(); }
+            else { alert("MAX RANK REACHED!"); location.reload(); }
         };
     }
 
-    function saveScore(name, score, title) {
-        let s = JSON.parse(localStorage.getItem('dotun_LB') || "[]");
-        let existing = s.find(x => x.name === name);
-        if (existing) {
-            existing.score = score;
-            existing.title = title;
-        } else {
-            s.push({name, score, title});
-        }
-        s.sort((a,b) => b.score - a.score);
-        localStorage.setItem('dotun_LB', JSON.stringify(s.slice(0, 10)));
-        updateLeaderboardDisplay();
-    }
+    // Initialize global listeners on page load
+    updateLeaderboardDisplay();
 
-    function adminRefresh() {
-        const pass = prompt("Enter Master Key to refresh Lab Records:");
-        const icon = document.getElementById('refresh-icon');
-        icon.style.transform = "rotate(360deg)";
-        
-        if(pass === "1234") { 
-            localStorage.removeItem('dotun_LB'); 
-            updateLeaderboardDisplay();
-            setTimeout(() => {
-                alert("Database Cleared.");
-                icon.style.transform = "rotate(0deg)";
-            }, 500);
-        } else {
-            playSound('error');
-            alert("Unauthorized Access Attempt Detected.");
-            icon.style.transform = "rotate(0deg)";
-        }
-    }
-
-    function updateLeaderboardDisplay() {
-        let s = JSON.parse(localStorage.getItem('dotun_LB') || "[]");
-        document.getElementById('leaderboard-list').innerHTML = s.map((x, i) => 
-            `<tr>
-                <td>#${i+1}</td>
-                <td style="text-align:left;"><b>${x.name}</b><br><small style="color:var(--accent)">${x.title || 'Assistant'}</small></td>
-                <td>${x.score}</td>
-            </tr>`).join('');
-    }
-
-    window.onload = updateLeaderboardDisplay;
 </script>
 </body>
 </html>
