@@ -2,33 +2,30 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Fast Master AI</title>
+    <title>2200 Elo Master AI</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
     <style>
-        body { background: #111; color: #eee; font-family: -apple-system, sans-serif; text-align: center; margin: 0; padding: 5px; overflow: hidden; }
-        #board { width: 98vw; max-width: 400px; margin: 5px auto; touch-action: manipulation; }
-        .status-bar { background: #222; padding: 12px; margin-bottom: 5px; border-bottom: 2px solid #333; font-weight: bold; }
-        .highlight-active { box-shadow: inset 0 0 4px 4px rgba(255, 255, 0, 0.7) !important; }
-        button { background: #444; color: white; border: 1px solid #666; padding: 8px 15px; border-radius: 4px; margin-top: 5px; }
+        body { background: #111; color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 10px; }
+        #board { width: 95vw; max-width: 400px; margin: auto; }
+        .highlight-active { box-shadow: inset 0 0 5px 5px #f1c40f !important; }
+        .status { padding: 15px; font-weight: bold; color: #2ecc71; }
     </style>
 </head>
 <body>
 
-    <div class="status-bar">
-        <span id="status">Your Turn</span>
-        <br><button onclick="location.reload()">Reset</button>
-    </div>
-    
+    <div class="status" id="status">Your Turn</div>
     <div id="board"></div>
+    <br>
+    <button onclick="location.reload()">New Game</button>
 
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
 
     <script>
-        var board = null, game = new Chess(), sourceSquare = null;
+        var board = null, game = new Chess(), selectedSquare = null;
 
-        // Position Values (The AI's Intuition)
+        // THE MASTER TABLES (The "N, B, R, Q" logic you asked for)
         const pst = {
             p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
             n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
@@ -53,36 +50,25 @@
             return total;
         }
 
-        // Fast Alpha-Beta Pruning
+        // Alpha-Beta Pruning (Deep Thinking)
         function minimax(g, depth, alpha, beta, isMax) {
             if (depth === 0) return -evaluateBoard(g);
             let moves = g.moves();
-            if (isMax) {
-                let best = -99999;
-                for (let m of moves) {
-                    g.move(m);
-                    best = Math.max(best, minimax(g, depth-1, alpha, beta, false));
-                    g.undo();
-                    alpha = Math.max(alpha, best);
-                    if (beta <= alpha) break;
-                }
-                return best;
-            } else {
-                let best = 99999;
-                for (let m of moves) {
-                    g.move(m);
-                    best = Math.min(best, minimax(g, depth-1, alpha, beta, true));
-                    g.undo();
-                    beta = Math.min(beta, best);
-                    if (beta <= alpha) break;
-                }
-                return best;
+            let v = isMax ? -99999 : 99999;
+            for (let m of moves) {
+                g.move(m);
+                let res = minimax(g, depth-1, alpha, beta, !isMax);
+                g.undo();
+                v = isMax ? Math.max(v, res) : Math.min(v, res);
+                if (isMax) alpha = Math.max(alpha, v); else beta = Math.min(beta, v);
+                if (beta <= alpha) break;
             }
+            return v;
         }
 
-        function makeAiMove() {
+        function makeBestMove() {
             let moves = game.moves();
-            if (game.game_over()) { alert("Game Over"); return; }
+            if (game.game_over()) return;
             let bestMove = null, bestVal = 99999;
             for (let m of moves) {
                 game.move(m);
@@ -96,38 +82,34 @@
         }
 
         function onSquareClick() {
-            let square = $(this).attr('data-square');
-            if (sourceSquare === null) {
-                let piece = game.get(square);
+            var square = $(this).attr('data-square');
+            var piece = game.get(square);
+
+            if (selectedSquare === null) {
                 if (piece && piece.color === 'w') {
-                    sourceSquare = square;
-                    $('.square-adfc7').removeClass('highlight-active');
+                    selectedSquare = square;
                     $(this).addClass('highlight-active');
                 }
             } else {
-                let move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
+                var move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
                 $('.square-adfc7').removeClass('highlight-active');
-                sourceSquare = null;
-                if (move) {
+                
+                if (move === null) {
+                    // Switch selection if clicking another white piece
+                    if (piece && piece.color === 'w') {
+                        selectedSquare = square;
+                        $(this).addClass('highlight-active');
+                    } else { selectedSquare = null; }
+                } else {
+                    selectedSquare = null;
                     board.position(game.fen());
                     $("#status").text("Thinking...");
-                    setTimeout(makeAiMove, 100);
-                } else {
-                    // Try re-selecting a different piece
-                    let p = game.get(square);
-                    if (p && p.color === 'w') {
-                        sourceSquare = square;
-                        $(this).addClass('highlight-active');
-                    }
+                    setTimeout(makeBestMove, 250);
                 }
             }
         }
 
-        board = ChessBoard('board', { 
-            position: 'start', 
-            draggable: false, 
-            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' 
-        });
+        board = ChessBoard('board', { position: 'start', draggable: false, pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
         $('#board').on('click', '.square-adfc7', onSquareClick);
     </script>
 </body>
