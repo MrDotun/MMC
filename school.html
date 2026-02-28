@@ -2,876 +2,201 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MASTER CODE - STRATEGIC SPEED LAB</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Play Masters | Mind Masters Academy</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, push, onValue, query, orderByChild, limitToLast } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        // Your Firebase config
+        const firebaseConfig = {
+            apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+            authDomain: "assignments-de95a.firebaseapp.com",
+            databaseURL: "https://assignments-de95a-default-rtdb.firebaseio.com",
+            projectId: "assignments-de95a",
+            storageBucket: "assignments-de95a.firebasestorage.app",
+            messagingSenderId: "1088073398299",
+            appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // --- GLOBAL FUNCTIONS EXPOSED TO WINDOW ---
+        window.saveFinalScore = (name, score) => {
+            push(ref(db, 'leaderboard'), { name, score, timestamp: Date.now() });
+        };
+
+        window.loadCloudLeaderboard = () => {
+            const scoresRef = query(ref(db, 'leaderboard'), orderByChild('score'), limitToLast(10));
+            onValue(scoresRef, (snapshot) => {
+                const data = snapshot.val();
+                const tbody = document.getElementById("hall-of-fame-body");
+                tbody.innerHTML = "";
+                if (!data) { tbody.innerHTML = "<tr><td colspan='3'>No entries yet</td></tr>"; return; }
+                
+                const sorted = Object.values(data).sort((a, b) => b.score - a.score);
+                sorted.forEach((r, i) => {
+                    tbody.innerHTML += `<tr><td>${i+1}</td><td>${r.name}</td><td>${r.score}/7</td></tr>`;
+                });
+            });
+        };
+    </script>
+
     <style>
         :root {
-            --light-sq: #f0d9b5;
-            --dark-sq: #b58863;
-            --highlight: rgba(255, 235, 59, 0.7);
-            --correct: rgba(76, 175, 80, 0.6);
-            --accent: #f1c40f;
-            --lab-blue: #00d2ff;
-            --error-red: #ff4757;
+            --light-sq: #ebecd0; --dark-sq: #779556;
+            --highlight-select: rgba(255, 255, 0, 0.5); --highlight-last: rgba(255, 255, 0, 0.3);
+            --bg-color: #1a1a2e; 
+            --panel-bg: #2D1B4D;
+            --accent: #4ade80;
+            --card-bg: #3B2667;
         }
-
-        /* ANIMATIONS */
-        @keyframes pulse-blue {
-            0% { box-shadow: 0 0 5px var(--lab-blue); }
-            50% { box-shadow: 0 0 20px var(--lab-blue); }
-            100% { box-shadow: 0 0 5px var(--lab-blue); }
-        }
-
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
-        }
-
-        @keyframes slideIn {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-
         body {
-            font-family: 'Comic Sans MS', 'Chalkboard SE', cursive;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background: radial-gradient(circle, #1a2a6c, #101010);
-            background-attachment: fixed;
-            color: white;
-            margin: 0;
-            height: 100vh;
-            overflow: hidden;
+            font-family: 'Segoe UI', sans-serif; background-color: var(--bg-color); color: white;
+            margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh;
         }
-
-        .screen { display: none; width: 100%; max-width: 500px; padding: 15px; box-sizing: border-box; text-align: center; height: 100%; justify-content: center; }
-        .active-screen { display: flex; flex-direction: column; animation: slideIn 0.5s ease-out; }
-
-        .welcome-card { 
-            background: rgba(20, 20, 20, 0.95); 
-            padding: 20px; 
-            border-radius: 20px; 
-            border: 2px solid var(--lab-blue);
-            animation: pulse-blue 3s infinite;
-        }
-        
-        h1.big-title { 
-            font-size: 2.2rem; 
-            color: var(--lab-blue); 
-            margin: 0 0 10px 0; 
-            text-shadow: 2px 2px #000;
-            line-height: 1.1;
-        }
-        
-        .welcome-card p { font-size: 1rem; color: #ccc; margin-bottom: 15px; }
-        
-        input { 
-            padding: 12px; 
-            border-radius: 8px; 
-            border: 1px solid var(--lab-blue); 
-            width: 90%; 
-            margin: 5px 0; 
-            font-size: 1rem; 
-            background: #222; 
-            color: white; 
-            transition: 0.3s;
-        }
-        input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 10px var(--accent); }
-
-        .btn-main { 
-            background: var(--lab-blue); 
-            color: #000; 
-            padding: 14px; 
-            border: none; 
-            border-radius: 10px; 
-            font-size: 1.2rem; 
-            cursor: pointer; 
-            font-weight: bold; 
-            margin-top: 10px; 
-            width: 100%; 
-            transition: 0.3s;
-        }
-        .btn-main:hover { transform: scale(1.02); filter: brightness(1.2); }
-        .btn-main:active { transform: scale(0.98); }
-        .btn-resume { background: #e67e22 !important; color: white !important; display: none; }
-
-        .leaderboard { 
-            margin-top: 20px; 
-            background: rgba(0,0,0,0.5); 
-            padding: 10px; 
-            border-radius: 12px; 
-            max-height: 180px;
-            overflow-y: auto;
-            border: 1px solid #333;
-        }
-        .leaderboard h3 { color: var(--accent); font-size: 1.2rem; margin: 5px 0; }
-        .lb-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-        .lb-table th { color: var(--lab-blue); border-bottom: 1px solid #444; padding: 5px; }
-        .lb-table td { padding: 5px; border-bottom: 1px solid #222; }
-
-        #story-box { background: rgba(0,0,0,0.8); padding: 15px; border-radius: 15px; border: 2px solid var(--accent); margin-bottom: 10px; }
-        #story-box b { font-size: 1.4rem; color: var(--accent); display: block; } 
-
-        .board {
-            display: grid;
-            grid-template-columns: repeat(8, 1fr);
-            grid-template-rows: repeat(8, 1fr); 
-            width: 100%;
-            aspect-ratio: 1 / 1;
-            border: 4px solid #333;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-
-        .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; cursor: pointer; transition: background 0.2s; }
-        .square img { width: 85%; height: 85%; object-fit: contain; transition: transform 0.2s; }
-        .square:active img { transform: scale(0.8); }
-        .square.light { background-color: var(--light-sq); }
-        .square.dark { background-color: var(--dark-sq); }
-        .square.selected { background-color: var(--highlight); animation: pulse-blue 1s infinite; }
-        .square.is-correct { background-color: var(--correct); pointer-events: none; }
-        
-        .controls { display: flex; gap: 10px; margin: 15px 0; justify-content: center; }
-        .btn-small { padding: 10px 15px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .btn-small:hover { filter: brightness(1.2); transform: translateY(-2px); }
-        .btn-hint { background: #8e44ad; color: white; }
-        .btn-exit { background: #c0392b; color: white; }
-
-        #stats { font-size: 1.1rem; margin: 5px; font-weight: bold; display: flex; justify-content: space-between; width: 100%; }
-        
-        .title-badge { color: #00ff88; font-weight: bold; font-size: 1.1rem; margin-top: 5px; display: block;}
-        
-        /* Shake effect for errors */
-        .shake { animation: shake 0.4s; }
+        #app-container { width: 100%; max-width: 500px; padding: 15px; box-sizing: border-box; background: var(--panel-bg); border: 2px solid var(--accent); border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+        .header-title { text-align: center; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 15px; font-size: 20px; }
+        .screen { display: none; flex-direction: column; align-items: center; width: 100%; }
+        .active-screen { display: flex; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; background: var(--card-bg); border-radius: 10px; overflow: hidden; }
+        th, td { padding: 10px; border-bottom: 1px solid #5b3fa1; text-align: left; font-size: 14px; }
+        th { background: rgba(74, 222, 128, 0.1); color: var(--accent); }
+        button { background-color: var(--accent); color: #1a1a2e; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin: 5px 0; width: 100%; transition: 0.3s; }
+        .timer { background: #1a1a2e; padding: 8px 15px; border-radius: 8px; font-family: monospace; font-size: 20px; color: #ffca28; border: 1px solid #444; }
+        #board { display: grid; grid-template-columns: repeat(8, 1fr); width: 100%; aspect-ratio: 1/1; border: 4px solid #111; border-radius: 5px; overflow: hidden; }
+        .square { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; }
+        .light { background-color: var(--light-sq); } .dark { background-color: var(--dark-sq); }
+        .square img { width: 90%; z-index: 2; }
+        .save-box { background: var(--card-bg); padding: 15px; border-radius: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; }
+        input { background: #1a1a2e; border: 1px solid #5b3fa1; color: white; padding: 10px; width: 90%; border-radius: 5px; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
-    <div id="welcome-screen" class="screen active-screen">
-        <div class="welcome-card">
-            <h1 class="big-title">MASTER CODE:<br>STRATEGIC SPEED LAB</h1>
-            <p>Master the experiments to earn your Laboratory Ranks!</p>
-            
-            <div class="input-group">
-                <input type="text" id="kid-name" placeholder="Enter your Name">
-                <input type="number" id="kid-age" placeholder="Age">
-                <input type="password" id="kid-code" placeholder="Choose a password">
-            </div>
-            
-            <button id="resume-btn" class="btn-main btn-resume">RESUME EXPERIMENT</button>
-            <button id="start-btn" class="btn-main">START NEW SESSION</button>
+<div id="app-container">
+    <div class="header-title">Nigerian Masters Blitz</div>
 
-            <div class="leaderboard">
-                <h3 style="display: flex; justify-content: center; align-items: center; gap: 8px;">
-                    🏆 Lab Elites <span id="refresh-icon" style="cursor:pointer; font-size: 1.1rem; transition: 0.5s;">🔄</span>
-                </h3>
-                <table class="lb-table">
-                    <thead>
-                        <tr><th>Rank</th><th>Name & Title</th><th>Score</th></tr>
-                    </thead>
-                    <tbody id="leaderboard-list"></tbody>
-                </table>
-            </div>
+    <div id="intro-screen" class="screen active-screen">
+        <h3 style="color: var(--accent); margin-bottom: 10px;">🏆 All-Time Rankings</h3>
+        <table id="hall-of-fame-table">
+            <thead><tr><th>Rank</th><th>Kid</th><th>Score</th></tr></thead>
+            <tbody id="hall-of-fame-body"></tbody>
+        </table>
+        <div class="save-box">
+            <input type="text" id="kid-name" placeholder="Your Name..."/>
+            <button onclick="enrollKid()">Start 7-Round Tourney</button>
         </div>
     </div>
 
     <div id="game-screen" class="screen">
-        <div id="stats">
-            <span>👤 <span id="display-name"></span></span>
-            <span style="color:#ff4757">❤️ <span id="display-lives">3</span></span>
-            <span style="color:#ffeb3b">⏳ <span id="seconds">0</span>s</span>
+        <div style="display:flex; justify-content:space-between; width:100%; margin-bottom:10px;">
+            <div id="opp-name">Master</div>
+            <div id="timer-opp" class="timer">05:00</div>
         </div>
-
-        <div id="story-box">
-            <b id="stage-title">EXPERIMENT 1</b>
-            <p id="objective-text"></p>
+        <div id="board"></div>
+        <div style="display:flex; justify-content:space-between; width:100%; margin-top:10px;">
+            <div id="user-name">Kid</div>
+            <div id="timer-user" class="timer">05:00</div>
         </div>
-
-        <div class="board-container">
-            <div id="board" class="board"></div>
-        </div>
-
-        <div class="controls">
-            <button id="hint-btn" class="btn-small btn-hint">💡 Hint</button>
-            <button id="exit-btn" class="btn-small btn-exit">💾 Save & Exit</button>
-        </div>
+        <p id="round-indicator" style="color: var(--accent);">Round 1 of 7</p>
+        <button id="next-btn" style="display:none;" onclick="nextMatch()">Next Match</button>
     </div>
+</div>
 
-    <div id="win-modal" class="screen" style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:white; color:#222; border-radius:20px; z-index:100; box-shadow: 0 0 50px rgba(0,0,0,0.8); height: auto; border: 4px solid var(--lab-blue);">
-        <h2 id="win-title">⚡ DATA RECOVERED!</h2>
-        <span id="rank-award" class="title-badge"></span>
-        <p id="score-report" style="font-size: 1.2rem;"></p>
-        <button id="next-btn" class="btn-main">PROCEED</button>
-    </div>
+<script>
+    // List of Masters
+    const masters = ["IM Odion Aikhoje", "FM Adebayo Adegboyega", "FM Bomo Kigigha", "IM Adu Oladapo", "IM Bunmi Olape", "FM Akinseye Abiola", "IM Anwuli Daniel"];
+    const pieces = { p: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg', n: 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg', b: 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg', r: 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg', q: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg', k: 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg', P: 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg', N: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg', B: 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg', R: 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg', Q: 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg', K: 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg' };
 
-<script type="module">
-    // --- FIREBASE INITIALIZATION ---
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getDatabase, ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+    let kidName = "", currentRound = 0, totalPts = 0;
+    let game, userColor, selectedSquare, intervalId, timerW, timerB;
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
-      authDomain: "assignments-de95a.firebaseapp.com",
-      databaseURL: "https://assignments-de95a-default-rtdb.firebaseio.com",
-      projectId: "assignments-de95a",
-      storageBucket: "assignments-de95a.firebasestorage.app",
-      messagingSenderId: "1088073398299",
-      appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
-    };
+    window.onload = () => { if(window.loadCloudLeaderboard) window.loadCloudLeaderboard(); };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    // --- GAME ENGINE VARIABLES ---
-    let currentStage = 1;
-    let playerName = "";
-    let playerAge = "";
-    let playerCode = "";
-    let playerLives = 3;
-    let playerScore = 0; 
-    let timeLeft = 60; 
-    let timerInterval;
-    let selectedIndex = null;
-    let currentBoard = [];
-    let aiCaptures = 0;
-
-    const isWhite = (p) => p && p === p.toUpperCase();
-
-    // AUDIO SYNTHESIZER
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playSound(type) {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        
-        if(type === 'move') {
-            osc.type = 'sine'; osc.frequency.setValueAtTime(400, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-        } else if(type === 'capture') {
-            osc.type = 'square'; osc.frequency.setValueAtTime(150, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-        } else if(type === 'win') {
-            osc.type = 'triangle'; osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(1046.50, audioCtx.currentTime + 0.3);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
-        } else if(type === 'error') {
-            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-        }
-        osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+    function enrollKid() {
+        kidName = document.getElementById("kid-name").value.trim() || "Kid Master";
+        currentRound = 0; totalPts = 0;
+        document.getElementById("intro-screen").classList.remove("active-screen");
+        document.getElementById("game-screen").classList.add("active-screen");
+        nextMatch();
     }
 
-    const titles = {
-        1: "LAB TECHNICIAN",
-        2: "RESEARCH SPECIALIST",
-        3: "SENIOR STRATEGIST",
-        4: "LABORATORY DIRECTOR",
-        5: "SUPREME GRANDMASTER"
-    };
-
-    const pieceImages = {
-        'p': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
-        'P': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
-        'r': 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
-        'n': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
-        'b': 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
-        'q': 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
-        'k': 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
-        'R': 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
-        'N': 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
-        'B': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
-        'Q': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
-        'K': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg'
-    };
-
-    const s1Starting = ['r','n','b','q','k','b','n','r','p','p','p','p','p','p','p','p','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','','P','P','P','P','P','P','P','P','R','N','B','Q','K','B','N','R'];
-
-    // --- LEADERBOARD LOGIC (GLOBAL) ---
-
-    function updateLeaderboardDisplay() {
-        const lbRef = ref(db, 'leaderboard');
-        onValue(lbRef, (snapshot) => {
-            const data = snapshot.val();
-            if (!data) return;
-            
-            // Convert Firebase object to array and sort descending
-            let scoresArray = Object.values(data);
-            scoresArray.sort((a, b) => b.score - a.score);
-            
-            // Display only top 10
-            document.getElementById('leaderboard-list').innerHTML = scoresArray.slice(0, 10).map((x, i) => 
-                `<tr>
-                    <td>#${i+1}</td>
-                    <td style="text-align:left;"><b>${x.name}</b><br><small style="color:var(--accent)">${x.title || 'Assistant'}</small></td>
-                    <td>${x.score}</td>
-                </tr>`).join('');
-        });
-    }
-
-    function saveScore(name, score, title) {
-        // We sanitize name to use as a key
-        const safeName = name.replace(/[.#$[\]]/g, "_");
-        set(ref(db, 'leaderboard/' + safeName), {
-            name: name,
-            score: score,
-            title: title
-        });
-    }
-
-    // --- BUTTON EVENT HANDLERS ---
-
-    window.checkReturningPlayer = function() {
-        const name = document.getElementById('kid-name').value.trim();
-        const code = document.getElementById('kid-code').value.trim();
-        const resumeBtn = document.getElementById('resume-btn');
-        if(name && code) {
-            const savedData = localStorage.getItem(`dotun_lab_${name}_${code}`);
-            resumeBtn.style.display = savedData ? "block" : "none";
-        }
-    }
-    document.getElementById('kid-code').oninput = window.checkReturningPlayer;
-
-    document.getElementById('start-btn').onclick = function() {
-        playerName = document.getElementById('kid-name').value.trim();
-        playerAge = document.getElementById('kid-age').value.trim();
-        playerCode = document.getElementById('kid-code').value.trim();
-        if(!playerName || !playerCode || !playerAge) { 
-            document.querySelector('.welcome-card').classList.add('shake');
-            setTimeout(()=>document.querySelector('.welcome-card').classList.remove('shake'), 400);
-            playSound('error');
-            alert("Access Denied: Missing Credentials!"); 
-            return; 
-        }
-        playerLives = 3;
-        playerScore = 0; 
-        currentStage = 1;
-        launchGame(1);
-    };
-
-    document.getElementById('resume-btn').onclick = function() {
-        playerName = document.getElementById('kid-name').value.trim();
-        playerCode = document.getElementById('kid-code').value.trim();
-        const savedData = JSON.parse(localStorage.getItem(`dotun_lab_${playerName}_${playerCode}`));
-        if(savedData) {
-            playerLives = savedData.lives;
-            currentStage = savedData.stage;
-            playerScore = 0; 
-            launchGame(currentStage);
-        }
-    };
-
-    document.getElementById('exit-btn').onclick = function() {
-        if(playerName && playerCode) {
-            const saveData = { stage: currentStage, lives: playerLives };
-            localStorage.setItem(`dotun_lab_${playerName}_${playerCode}`, JSON.stringify(saveData));
-            saveScore(playerName, playerScore, titles[currentStage]);
-            alert("Station locked. Progress saved.");
+    function nextMatch() {
+        if (currentRound >= 7) {
+            window.saveFinalScore(kidName, totalPts);
+            alert(`Tournament Complete! Final Score: ${totalPts}/7`);
             location.reload();
-        }
-    };
-
-    document.getElementById('refresh-icon').onclick = function() {
-        const pass = prompt("Enter Master Key to WIPE GLOBAL Lab Records:");
-        if(pass === "1234") { 
-            set(ref(db, 'leaderboard'), null); 
-            alert("Database Cleared.");
-        } else {
-            playSound('error');
-            alert("Unauthorized Access Attempt Detected.");
-        }
-    };
-
-    // --- GAMEPLAY FUNCTIONS ---
-
-    function launchGame(stageNum) {
-        currentStage = stageNum;
-        document.body.style.overflow = "auto"; 
-        document.getElementById('win-modal').classList.remove('active-screen');
-        document.getElementById('welcome-screen').classList.remove('active-screen');
-        document.getElementById('game-screen').classList.add('active-screen');
-        document.getElementById('display-name').innerText = playerName;
-        document.getElementById('display-lives').innerText = playerLives;
-        
-        if(stageNum === 1) initStage1();
-        else if(stageNum === 2) initStage2();
-        else if(stageNum === 3) initStage3();
-        else if(stageNum === 4) initStage4();
-        else if(stageNum === 5) initStage5();
-    }
-
-    function handleLoss() {
-        playerLives--;
-        playSound('error');
-        document.getElementById('game-screen').classList.add('shake');
-        setTimeout(()=>document.getElementById('game-screen').classList.remove('shake'), 400);
-        
-        clearInterval(timerInterval);
-        document.getElementById('display-lives').innerText = playerLives;
-        if(playerLives <= 0) {
-            alert("LAB CRITICAL FAILURE! Lives exhausted. Restarting from Stage 1.");
-            localStorage.removeItem(`dotun_lab_${playerName}_${playerCode}`);
-            location.reload();
-        } else {
-            alert(`Equipment damaged! You have ${playerLives} lives left.`);
-            launchGame(currentStage);
-        }
-    }
-
-    function initStage1() {
-        timeLeft = 60; 
-        document.getElementById('stage-title').innerText = "EXPERIMENT 1: PIECE RECOGNITION";
-        document.getElementById('objective-text').innerText = "Reorganize the scrambled pieces to their correct home squares.";
-        let pieces = s1Starting.filter(p => p !== '');
-        let pos = Array.from({length: 64}, (_, i) => i).sort(() => Math.random() - 0.5);
-        currentBoard = new Array(64).fill('');
-        pos.forEach((p, i) => { if(i < pieces.length) currentBoard[p] = pieces[i]; });
-        startTimer();
-        renderBoard(handleS1Click);
-    }
-
-    function handleS1Click(i) {
-        if (currentBoard[i] === s1Starting[i] && currentBoard[i] !== '') return;
-        if (selectedIndex === null) { if (currentBoard[i] !== '') { selectedIndex = i; playSound('move'); } }
-        else {
-            if (isWhite(currentBoard[selectedIndex]) && isWhite(currentBoard[i])) {
-                selectedIndex = null;
-                renderBoard(handleS1Click);
-                return;
-            }
-            let temp = currentBoard[i];
-            currentBoard[i] = currentBoard[selectedIndex];
-            currentBoard[selectedIndex] = temp;
-            selectedIndex = null;
-            playSound('move');
-        }
-        renderBoard(handleS1Click);
-        if (currentBoard.every((p, idx) => p === s1Starting[idx])) winGame();
-    }
-
-    function initStage2() {
-        timeLeft = 60; 
-        aiCaptures = 0;
-        document.getElementById('stage-title').innerText = "EXPERIMENT 2: VELOCITY CHECK";
-        document.getElementById('objective-text').innerText = "Sprint a Pawn to the end. The Lab AI has 3 capture attempts.";
-        currentBoard = new Array(64).fill('');
-        for(let i=8; i<16; i++) currentBoard[i] = 'p'; 
-        for(let i=48; i<56; i++) currentBoard[i] = 'P'; 
-        startTimer();
-        renderBoard(handleS2Click);
-    }
-
-    function handleS2Click(i) {
-        if (selectedIndex === null) { if (currentBoard[i] === 'P') { selectedIndex = i; playSound('move'); } }
-        else {
-            if (isWhite(currentBoard[selectedIndex]) && isWhite(currentBoard[i])) {
-                selectedIndex = null;
-                renderBoard(handleS2Click);
-                return;
-            }
-            const diff = selectedIndex - i;
-            if ((diff === 8 && currentBoard[i] === '') || 
-                (diff === 16 && selectedIndex >= 48 && currentBoard[i] === '' && currentBoard[i+8] === '') ||
-                ((diff === 7 || diff === 9) && currentBoard[i] === 'p')) {
-                if(currentBoard[i] === 'p') playSound('capture'); else playSound('move');
-                currentBoard[i] = 'P';
-                currentBoard[selectedIndex] = '';
-                if (i < 8) winGame(); 
-                else setTimeout(aiMoveS2, 400);
-            }
-            selectedIndex = null;
-        }
-        renderBoard(handleS2Click);
-    }
-
-    function aiMoveS2() {
-        let moved = false;
-        for(let i=0; i<64; i++) {
-            if(currentBoard[i] === 'p') {
-                if(aiCaptures < 3) {
-                    if(currentBoard[i+7] === 'P' && i%8 !== 0) { currentBoard[i+7] = 'p'; currentBoard[i] = ''; aiCaptures++; playSound('capture'); moved = true; break; }
-                    if(currentBoard[i+9] === 'P' && i%8 !== 7) { currentBoard[i+9] = 'p'; currentBoard[i] = ''; aiCaptures++; playSound('capture'); moved = true; break; }
-                }
-                if(currentBoard[i+8] === '') { currentBoard[i+8] = 'p'; currentBoard[i] = ''; playSound('move'); moved = true; break; }
-            }
-        }
-        renderBoard(handleS2Click);
-    }
-
-    function initStage3() {
-        timeLeft = 60; 
-        document.getElementById('stage-title').innerText = "EXPERIMENT 3: CONTAINMENT";
-        document.getElementById('objective-text').innerText = "Use both Rooks to trap the King. He will hunt your Rooks!";
-        currentBoard = new Array(64).fill('');
-        currentBoard[56] = 'R'; currentBoard[63] = 'R'; currentBoard[36] = 'k'; 
-        startTimer();
-        renderBoard(handleS3Click);
-    }
-
-    function handleS3Click(i) {
-        if (selectedIndex === null) { if (currentBoard[i] === 'R') { selectedIndex = i; playSound('move'); } }
-        else {
-            if (isWhite(currentBoard[selectedIndex]) && isWhite(currentBoard[i])) {
-                selectedIndex = null;
-                renderBoard(handleS3Click);
-                return;
-            }
-            if (isLegalRookMove(selectedIndex, i)) {
-                playSound('move');
-                currentBoard[i] = 'R'; currentBoard[selectedIndex] = '';
-                setTimeout(toughKingMove, 300);
-            }
-            selectedIndex = null;
-        }
-        renderBoard(handleS3Click);
-    }
-
-    function isLegalRookMove(start, end) {
-        let sR = Math.floor(start/8), sC = start%8, eR = Math.floor(end/8), eC = end%8;
-        if (sR !== eR && sC !== eC) return false;
-        let step = (sR === eR) ? (end > start ? 1 : -1) : (end > start ? 8 : -8);
-        for (let c = start + step; c !== end; c += step) if (currentBoard[c] !== '') return false;
-        return true;
-    }
-
-    function toughKingMove() {
-        let kP = currentBoard.indexOf('k');
-        let possibleMoves = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => {
-            let rD = Math.abs(Math.floor(m/8) - Math.floor(kP/8));
-            let cD = Math.abs((m%8) - (kP%8));
-            return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
-        });
-        
-        let rookToCapture = possibleMoves.find(m => currentBoard[m] === 'R');
-        if (rookToCapture !== undefined) {
-            currentBoard[kP] = '';
-            currentBoard[rookToCapture] = 'k';
-            playSound('capture');
-            renderBoard(handleS3Click);
-            setTimeout(() => handleLoss(), 200);
             return;
         }
-
-        let rookIndices = currentBoard.map((p, idx) => p === 'R' ? idx : null).filter(n => n !== null);
-        let safeMoves = possibleMoves.filter(m => {
-            return !rookIndices.some(r => Math.floor(r/8) === Math.floor(m/8) || (r%8) === (m%8));
-        });
-
-        if (safeMoves.length === 0) { winGame(); return; }
-        
-        safeMoves.sort((a,b) => {
-            let minDistA = Math.min(...rookIndices.map(r => Math.abs(Math.floor(a/8) - Math.floor(r/8)) + Math.abs((a%8) - (r%8))));
-            let minDistB = Math.min(...rookIndices.map(r => Math.abs(Math.floor(b/8) - Math.floor(r/8)) + Math.abs((b%8) - (r%8))));
-            return minDistA - minDistB;
-        });
-
-        currentBoard[kP] = '';
-        currentBoard[safeMoves[0]] = 'k';
-        playSound('move');
-        renderBoard(handleS3Click);
+        setupBoard();
     }
 
-    function initStage4() {
-        timeLeft = 60; 
-        document.getElementById('stage-title').innerText = "EXPERIMENT 4: FINAL EXTRACTION";
-        document.getElementById('objective-text').innerText = "Checkmate the AI. He is fighting to stay in the center!";
-        currentBoard = new Array(64).fill('');
-        currentBoard[56] = 'Q'; 
-        currentBoard[57] = 'K'; 
-        currentBoard[43] = 'k';
-        startTimer();
-        renderBoard(handleS4Click);
+    function setupBoard() {
+        game = new Chess();
+        userColor = Math.random() < 0.5 ? 'w' : 'b';
+        timerW = timerB = 300;
+        document.getElementById("opp-name").innerText = masters[currentRound];
+        document.getElementById("user-name").innerText = kidName;
+        document.getElementById("round-indicator").innerText = `Round ${currentRound + 1} of 7 (Score: ${totalPts})`;
+        document.getElementById("next-btn").style.display = "none";
+        draw(); startTimer();
+        if (game.turn() !== userColor) aiMove();
     }
 
-    function handleS4Click(i) {
-        if (selectedIndex === null) {
-            if (currentBoard[i] === 'Q' || currentBoard[i] === 'K') { selectedIndex = i; playSound('move'); }
-        } else {
-            if (isWhite(currentBoard[selectedIndex]) && isWhite(currentBoard[i])) {
-                selectedIndex = null;
-                renderBoard(handleS4Click);
-                return;
-            }
-            let piece = currentBoard[selectedIndex];
-            let isLegal = false;
-            if (piece === 'Q') isLegal = isLegalQueenMove(selectedIndex, i);
-            if (piece === 'K') isLegal = isLegalKingMove(selectedIndex, i);
+    function endMatch() {
+        clearInterval(intervalId);
+        if (game.in_draw()) totalPts += 0.5;
+        else if (game.turn() !== userColor) totalPts += 1;
+        currentRound++;
+        document.getElementById("next-btn").innerText = currentRound === 7 ? "Submit Result" : "Next Round";
+        document.getElementById("next-btn").style.display = "block";
+    }
 
-            if (isLegal && (currentBoard[i] === '' || currentBoard[i] === 'k')) {
-                if(currentBoard[i] === 'k') playSound('capture'); else playSound('move');
-                currentBoard[i] = piece;
-                currentBoard[selectedIndex] = '';
-                selectedIndex = null;
-                renderBoard(handleS4Click);
-                setTimeout(difficultAIKing, 400);
-            } else {
-                selectedIndex = null;
-                renderBoard(handleS4Click);
-            }
+    function draw() {
+        const b = document.getElementById("board"); b.innerHTML = "";
+        const state = game.board();
+        for (let i = 0; i < 64; i++) {
+            let r = Math.floor(i/8), c = i%8;
+            if (userColor === 'b') { r = 7-r; c = 7-c; }
+            const sq = String.fromCharCode(97+c) + (8-r);
+            const el = document.createElement("div");
+            el.className = `square ${(r+c)%2===0?'light':'dark'}`;
+            const p = state[r][c];
+            if (p) { const img = document.createElement("img"); img.src = pieces[p.color==='w'?p.type.toUpperCase():p.type]; el.appendChild(img); }
+            el.onclick = () => {
+                if (game.turn() !== userColor) return;
+                if (selectedSquare) {
+                    const move = game.move({ from: selectedSquare, to: sq, promotion: 'q' });
+                    if (move) { selectedSquare = null; draw(); if (game.game_over()) endMatch(); else aiMove(); }
+                    else selectedSquare = sq;
+                } else selectedSquare = sq;
+                draw();
+            };
+            b.appendChild(el);
         }
     }
 
-    function isLegalQueenMove(s, e) {
-        let sR = Math.floor(s/8), sC = s%8, eR = Math.floor(e/8), eC = e%8;
-        let dR = Math.abs(sR - eR), dC = Math.abs(sC - eC);
-        if (sR !== eR && sC !== eC && dR !== dC) return false;
-        let step = 0;
-        if (sR === eR) step = e > s ? 1 : -1;
-        else if (sC === eC) step = e > s ? 8 : -8;
-        else step = (eR > sR ? 8 : -8) + (eC > sC ? 1 : -1);
-        for (let c = s + step; c !== e; c += step) if (currentBoard[c] !== '') return false;
-        return true;
-    }
-
-    function isLegalKingMove(s, e) {
-        return Math.abs(Math.floor(s/8) - Math.floor(e/8)) <= 1 && Math.abs((s%8) - (e%8)) <= 1;
-    }
-
-    function difficultAIKing() {
-        let kP = currentBoard.indexOf('k');
-        let pK = currentBoard.indexOf('K');
-        let pQ = currentBoard.indexOf('Q');
-
-        function isAttacked(pos) {
-            if (Math.abs(Math.floor(pos/8) - Math.floor(pK/8)) <= 1 && Math.abs((pos%8) - (pK%8)) <= 1) return true;
-            let sR = Math.floor(pQ/8), sC = pQ%8, eR = Math.floor(pos/8), eC = pos%8;
-            let dR = Math.abs(sR - eR), dC = Math.abs(sC - eC);
-            if (sR === eR || sC === eC || dR === dC) {
-                let step = sR === eR ? (pos > pQ ? 1 : -1) : sC === eC ? (pos > pQ ? 8 : -8) : ((eR > sR ? 8 : -8) + (eC > sC ? 1 : -1));
-                let blocked = false;
-                for (let c = pQ + step; c !== pos; c += step) if (currentBoard[c] !== '' && currentBoard[c] !== 'k') blocked = true;
-                if (!blocked) return true;
-            }
-            return false;
-        }
-
-        let possible = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => {
-            let rD = Math.abs(Math.floor(m/8) - Math.floor(kP/8)), cD = Math.abs((m%8) - (kP%8));
-            return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
-        });
-
-        if (pQ !== -1 && possible.includes(pQ)) {
-            let isQueenProtected = pK !== -1 && Math.abs(Math.floor(pQ/8) - Math.floor(pK/8)) <= 1 && Math.abs((pQ%8) - (pK%8)) <= 1;
-            if (!isQueenProtected) {
-                currentBoard[kP] = ''; currentBoard[pQ] = 'k';
-                playSound('capture');
-                renderBoard(handleS4Click);
-                setTimeout(() => { alert("RESEARCH FAILED: AI Captured your Queen!"); handleLoss(); }, 200);
-                return;
-            }
-        }
-
-        let safe = possible.filter(m => !isAttacked(m));
-
-        if (safe.length === 0) {
-            if (isAttacked(kP)) winGame(); 
-            else { alert("STALEMATE!"); handleLoss(); }
-            return;
-        }
-
-        safe.sort((a,b) => {
-            let rowA = Math.floor(a/8), colA = a%8;
-            let rowB = Math.floor(b/8), colB = b%8;
-            function getEdgePenalty(r, c) {
-                let p = 0;
-                if (r === 0 || r === 7) p += 10;
-                if (c === 0 || c === 7) p += 10;
-                return p;
-            }
-            let penaltyA = getEdgePenalty(rowA, colA);
-            let penaltyB = getEdgePenalty(rowB, colB);
-            if (penaltyA !== penaltyB) return penaltyA - penaltyB;
-            let distCenterA = Math.abs(3.5 - rowA) + Math.abs(3.5 - colA);
-            let distCenterB = Math.abs(3.5 - rowB) + Math.abs(3.5 - colB);
-            return distCenterA - distCenterB;
-        });
-
-        currentBoard[kP] = '';
-        currentBoard[safe[0]] = 'k';
-        playSound('move');
-        renderBoard(handleS4Click);
-    }
-
-    function initStage5() {
-        timeLeft = 60; 
-        document.getElementById('stage-title').innerText = "EXPERIMENT 5: SPEED PROMOTION";
-        document.getElementById('objective-text').innerText = "Advance the Pawn to e8! The AI King will try to block it.";
-        currentBoard = new Array(64).fill('');
-        currentBoard[52] = 'P'; 
-        currentBoard[60] = 'K'; 
-        currentBoard[12] = 'k';  
-        startTimer();
-        renderBoard(handleS5Click);
-    }
-
-    function handleS5Click(i) {
-        if (selectedIndex === null) {
-            if (['P', 'K', 'Q'].includes(currentBoard[i])) { selectedIndex = i; playSound('move'); }
-        } else {
-            if (isWhite(currentBoard[selectedIndex]) && isWhite(currentBoard[i])) {
-                selectedIndex = null;
-                renderBoard(handleS5Click);
-                return;
-            }
-            let piece = currentBoard[selectedIndex];
-            let isLegal = false;
-            
-            if (piece === 'P') {
-                if (i === selectedIndex - 8 && currentBoard[i] === '') isLegal = true;
-                else if (selectedIndex >= 48 && selectedIndex <= 55 && i === selectedIndex - 16 && currentBoard[i] === '' && currentBoard[selectedIndex - 8] === '') isLegal = true;
-                else if ((i === selectedIndex - 7 || i === selectedIndex - 9) && currentBoard[i] === 'k') isLegal = true;
-            } else if (piece === 'K') {
-                isLegal = isLegalKingMove(selectedIndex, i);
-                let enemyK = currentBoard.indexOf('k');
-                if (isLegal && enemyK !== -1 && Math.abs(Math.floor(i/8) - Math.floor(enemyK/8)) <= 1 && Math.abs((i%8) - (enemyK%8)) <= 1) isLegal = false;
-            } else if (piece === 'Q') {
-                isLegal = isLegalQueenMove(selectedIndex, i);
-            }
-
-            if (isLegal && (currentBoard[i] === '' || currentBoard[i] === 'k')) {
-                if(currentBoard[i] === 'k') playSound('capture'); else playSound('move');
-                currentBoard[i] = piece;
-                currentBoard[selectedIndex] = '';
-                
-                if (piece === 'P' && i < 8) {
-                    currentBoard[i] = 'Q';
-                    playSound('win');
-                    alert("PROMOTED TO QUEEN!");
-                }
-                
-                selectedIndex = null;
-                renderBoard(handleS5Click);
-                setTimeout(stage5AIKing, 300);
-            } else {
-                selectedIndex = null;
-                renderBoard(handleS5Click);
-            }
-        }
-    }
-
-    function stage5AIKing() {
-        let kP = currentBoard.indexOf('k');
-        if (kP === -1) { winGame(); return; }
-        let pK = currentBoard.indexOf('K'), pQ = currentBoard.indexOf('Q'), pP = currentBoard.indexOf('P');
-
-        function isSquareSafe(pos) {
-            if (pK !== -1 && Math.abs(Math.floor(pos/8) - Math.floor(pK/8)) <= 1 && Math.abs((pos%8) - (pK%8)) <= 1) return false;
-            if (pP !== -1) {
-                let pR = Math.floor(pP/8), pC = pP % 8, tR = Math.floor(pos/8), tC = pos % 8;
-                if (tR === pR - 1 && Math.abs(tC - pC) === 1) return false;
-            }
-            if (pQ !== -1) {
-                let sR = Math.floor(pQ/8), sC = pQ%8, eR = Math.floor(pos/8), eC = pos%8;
-                let dR = Math.abs(sR - eR), dC = Math.abs(sC - eC);
-                if (sR === eR || sC === eC || dR === dC) {
-                    let step = sR === eR ? (pos > pQ ? 1 : -1) : sC === eC ? (pos > pQ ? 8 : -8) : ((eR > sR ? 8 : -8) + (eC > sC ? 1 : -1));
-                    let blocked = false;
-                    for (let c = pQ + step; c !== pos; c += step) if (currentBoard[c] !== '' && currentBoard[c] !== 'k') blocked = true;
-                    if (!blocked) return false;
-                }
-            }
-            return true;
-        }
-
-        let possible = [kP-9, kP-8, kP-7, kP-1, kP+1, kP+7, kP+8, kP+9].filter(m => {
-            let rD = Math.abs(Math.floor(m/8) - Math.floor(kP/8)), cD = Math.abs((m%8) - (kP%8));
-            return m >= 0 && m < 64 && rD <= 1 && cD <= 1;
-        });
-
-        if (pQ !== -1 && possible.includes(pQ)) {
-            let isQueenProtected = pK !== -1 && Math.abs(Math.floor(pQ/8) - Math.floor(pK/8)) <= 1 && Math.abs((pQ%8) - (pK%8)) <= 1;
-            if (!isQueenProtected) {
-                currentBoard[kP] = ''; currentBoard[pQ] = 'k';
-                playSound('capture');
-                renderBoard(handleS5Click);
-                setTimeout(() => { alert("RESEARCH FAILED: AI Captured your Queen!"); handleLoss(); }, 200);
-                return;
-            }
-        }
-
-        let safe = possible.filter(m => isSquareSafe(m));
-        if (safe.length === 0) { if (!isSquareSafe(kP)) winGame(); else { alert("STALEMATE!"); handleLoss(); } return; }
-
-        if (pP !== -1) {
-            let captureMove = safe.find(m => m === pP);
-            if (captureMove !== undefined) {
-                currentBoard[kP] = ''; currentBoard[pP] = 'k';
-                playSound('capture');
-                renderBoard(handleS5Click);
-                setTimeout(() => { alert("RESEARCH FAILED: AI Captured your Pawn!"); handleLoss(); }, 200);
-                return;
-            }
-            let pR = Math.floor(pP / 8), pC = pP % 8;
-            safe.sort((a, b) => {
-                let rowA = Math.floor(a / 8), colA = a % 8, rowB = Math.floor(b / 8), colB = b % 8;
-                let aInFront = rowA < pR ? 0 : 1, bInFront = rowB < pR ? 0 : 1;
-                if (aInFront !== bInFront) return aInFront - bInFront;
-                let aDistCol = Math.abs(colA - pC), bDistCol = Math.abs(colB - pC);
-                if (aDistCol !== bDistCol) return aDistCol - bDistCol;
-                return (Math.abs(rowA - (pR-1)) + aDistCol) - (Math.abs(rowB - (pR-1)) + bDistCol);
-            });
-        }
-
-        currentBoard[kP] = '';
-        currentBoard[safe[0]] = 'k';
-        playSound('move');
-        renderBoard(handleS5Click);
-    }
-
-    function renderBoard(clickHandler) {
-        const b = document.getElementById('board');
-        b.innerHTML = '';
-        currentBoard.forEach((p, i) => {
-            const sq = document.createElement('div');
-            sq.className = `square ${(Math.floor(i/8)+i)%2?'dark':'light'}`;
-            if(currentStage === 1 && p === s1Starting[i] && p !== '') sq.classList.add('is-correct');
-            if(selectedIndex === i) sq.classList.add('selected');
-            if(p) { const img = document.createElement('img'); img.src = pieceImages[p]; sq.appendChild(img); }
-            sq.onclick = () => { if (audioCtx.state === 'suspended') audioCtx.resume(); clickHandler(i); };
-            b.appendChild(sq);
-        });
+    function aiMove() {
+        setTimeout(() => {
+            const moves = game.moves();
+            game.move(moves[Math.floor(Math.random() * moves.length)]);
+            draw(); if (game.game_over()) endMatch();
+        }, 500);
     }
 
     function startTimer() {
-        clearInterval(timerInterval);
-        document.getElementById('seconds').innerText = timeLeft;
-        timerInterval = setInterval(() => {
-            timeLeft--;
-            document.getElementById('seconds').innerText = timeLeft;
-            if(timeLeft <= 10) document.getElementById('seconds').style.color = '#ff4757'; 
-            else document.getElementById('seconds').style.color = '#ffeb3b';
-            if(timeLeft <= 0) handleLoss();
+        clearInterval(intervalId);
+        intervalId = setInterval(() => {
+            if (game.turn() === 'w') timerW--; else timerB--;
+            const fmt = (s) => `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
+            document.getElementById("timer-user").innerText = fmt(userColor==='w'?timerW:timerB);
+            document.getElementById("timer-opp").innerText = fmt(userColor==='w'?timerB:timerW);
+            if (timerW<=0 || timerB<=0) endMatch();
         }, 1000);
     }
-
-    document.getElementById('hint-btn').onclick = function() { 
-        alert(currentStage === 5 ? "Protect your pawn with your King!" : "Quickly move pieces to their home spots!"); 
-    };
-
-    function winGame() {
-        clearInterval(timerInterval);
-        playSound('win');
-        const stageScore = 100 + (timeLeft * 5);
-        playerScore += stageScore; 
-        saveScore(playerName, playerScore, titles[currentStage]); 
-        document.getElementById('rank-award').innerText = `🔬 NEW RANK: ${titles[currentStage]}`;
-        document.getElementById('score-report').innerHTML = `Assistant <b>${playerName}</b>,<br>Efficiency Score: <b>${playerScore}</b>`;
-        document.getElementById('win-modal').classList.add('active-screen');
-        document.getElementById('next-btn').onclick = () => {
-            if(currentStage < 5) { currentStage++; launchGame(currentStage); } 
-            else { alert("MAX RANK REACHED!"); location.reload(); }
-        };
-    }
-
-    // Initialize global listeners on page load
-    updateLeaderboardDisplay();
-
 </script>
 </body>
 </html>
