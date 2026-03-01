@@ -27,7 +27,6 @@
             background-color: #1a1a2e;
         }
 
-        /* Welcome Page Styles */
         #welcome-overlay {
             position: fixed;
             top: 0;
@@ -63,7 +62,6 @@
             box-sizing: border-box;
         }
 
-        /* Leaderboard Style added inside your login card structure */
         #leaderboard-box {
             margin-top: 20px;
             text-align: left;
@@ -78,9 +76,8 @@
         #leaderboardList { list-style: none; padding: 0; margin: 0; font-size: 0.85em; color: #4ade80; }
         #leaderboardList li { border-bottom: 1px solid #ffffff11; padding: 3px 0; }
 
-        /* Game Container (Hidden initially) */
         #game-container {
-            display: none; /* Hidden until login */
+            display: none; 
             width: 95vmin; 
             max-width: 550px;
             text-align: center;
@@ -186,7 +183,6 @@
     var currentClass = "";
     var hasSavedWin = false;
 
-    // Real-time Leaderboard logic
     db.collection("grandmasters").orderBy("timestamp", "desc").limit(10)
       .onSnapshot((snapshot) => {
         const list = document.getElementById('leaderboardList');
@@ -200,19 +196,16 @@
         });
     });
 
-    // Transition function
     function startGame() {
         currentName = document.getElementById('studentName').value;
         currentClass = document.getElementById('studentClass').value;
-
         if (currentName.trim() === "" || currentClass.trim() === "") {
             alert("Please enter both your name and class.");
             return;
         }
-
         document.getElementById('welcome-overlay').style.display = 'none';
         document.getElementById('game-container').style.display = 'block';
-        board.resize(); // Ensure board renders correctly after being hidden
+        board.resize();
     }
 
     var board = null;
@@ -228,7 +221,6 @@
     function updateGrade() {
         if (totalScore >= 200) {
             $grade.text("Grandmaster! 👑");
-            // SAVE TO FIREBASE AUTOMATICALLY
             if (!hasSavedWin && currentName) {
                 db.collection("grandmasters").add({
                     name: currentName,
@@ -247,78 +239,56 @@
     function mrDotunRemarks(type) {
         var remarks = {
             illegal: "I'll reduce your score if you make an illegal move!",
-            bad: [
-                "Control the center, don't just push wood!",
-                "Every pawn move creates a permanent weakness.",
-                "Is this what I taught you?",
-                "Hahahha. You're playing like you're in Nursery 1.",
-                "Should I take you back to Creche?",
-                "A knight on the rim is dim!",
-                "Don't bring your Queen out too early.",
-                "Are you even calculating, or just hoping?",
-                "Develop your pieces before you start attacking.",
-                "Castle early, stay safe!"
-            ],
-            good: [
-                "You're learning! Good vision.",
-                "Strong move. You're seeing the board better.",
-                "You're going to be world champion someday!",
-                "Now you're playing real chess.",
-                "Tactical! I didn't see that coming immediately.",
-                "Excellent use of the open file.",
-                "Pinning that piece was a smart choice.",
-                "You're thinking like a candidate master now.",
-                "Pressure! Keep the pressure on!",
-                "Beautiful! Checkmate is the goal!"
-            ]
+            bad: ["Control the center!", "Every pawn move creates a weakness.", "Is this what I taught you?", "Hahahha. Nursery 1 moves.", "Castle early, stay safe!"],
+            good: ["You're learning!", "Strong move.", "You're going to be world champion!", "Now you're playing real chess.", "Beautiful!"]
         };
-
-        if (type === 'illegal') {
-            $remark.text(remarks.illegal);
-        } else if (type === 'good') {
-            $remark.text(remarks.good[Math.floor(Math.random() * remarks.good.length)]);
-        } else if (type === 'bad') {
-            $remark.text(remarks.bad[Math.floor(Math.random() * remarks.bad.length)]);
-        }
+        if (type === 'illegal') $remark.text(remarks.illegal);
+        else if (type === 'good') $remark.text(remarks.good[Math.floor(Math.random() * remarks.good.length)]);
+        else if (type === 'bad') $remark.text(remarks.bad[Math.floor(Math.random() * remarks.bad.length)]);
     }
 
     function makeAIMove() {
         if (game.game_over()) {
             $status.text('Game Over!');
-            if (game.in_checkmate()) {
-                totalScore = 250; 
-                updateGrade();
-                $remark.text("Checkmate! You've surpassed the master. Grandmaster status achieved!");
-            }
             return;
         }
 
         var moves = game.moves({ verbose: true });
-        var threatenedSquares = [];
-        var fen = game.fen();
-        var tempGame = new Chess(fen);
-        var tokens = fen.split(' ');
-        tokens[1] = tokens[1] === 'w' ? 'b' : 'w'; 
-        tempGame.load(tokens.join(' '));
-        tempGame.moves({ verbose: true }).forEach(function(m) {
-            if (m.captured) threatenedSquares.push(m.to);
-        });
-
         var scoredMoves = moves.map(function(move) {
-            var score = Math.random() * 5; 
-            if (move.san.includes('#')) return { move: move, score: 10000 };
-            if (threatenedSquares.includes(move.from)) {
-                var val = pieceValues[move.piece] || 10;
-                score += val * 15;
-            }
-            if (move.captured) score += pieceValues[move.captured] * 20;
+            var score = Math.random() * 2; 
+
+            // 1. Instant Victory
+            if (move.san.includes('#')) return { move: move, score: 50000 };
+            
+            // 2. Aggressive Target: f7 (Weakest point)
+            if (move.to === 'f7') score += 150;
+            if (move.san.includes('xf7')) score += 200;
+
+            // 3. Early Attack Setup (Scholar's Mate pieces)
+            if (['c4', 'h5', 'f3'].includes(move.to)) score += 50;
+
+            // 4. Aggressive Checks
+            if (move.san.includes('+')) score += 80;
+
+            // 5. Lookahead Safety
             game.move(move);
-            var opponentMoves = game.moves({ verbose: true });
-            if (opponentMoves.find(function(m) { return m.to === move.to; })) {
+            if (game.in_checkmate()) score -= 30000;
+            var responses = game.moves({ verbose: true });
+            
+            // 6. Capture Logic
+            if (move.captured) score += (pieceValues[move.captured] * 40);
+
+            // 7. Defensive Safety
+            var isCapturedByPlayer = responses.find(function(m) { return m.to === move.to; });
+            if (isCapturedByPlayer) {
                 var val = pieceValues[move.piece] || 10;
-                score -= (val * 25);
+                score -= (val * 35);
             }
             game.undo();
+
+            // 8. Center Control
+            if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) score += 30;
+
             return { move: move, score: score };
         });
 
@@ -326,11 +296,15 @@
         game.move(scoredMoves[0].move);
         board.position(game.fen());
         
+        // Update Status with History
+        var history = game.history();
+        var histText = history.length > 0 ? "<br><small>History: " + history.slice(-6).join(' ') + "</small>" : "";
+        
         if (game.game_over()) {
-            $status.text("Mr. Dotun wins! Better luck next time.");
+            $status.html("Mr. Dotun wins!" + histText);
             $remark.text("Go back and study your endgames!");
         } else {
-            $status.text("Mr. Dotun moved. Your turn!");
+            $status.html("Mr. Dotun moved. Your turn!" + histText);
         }
     }
 
@@ -343,17 +317,31 @@
                 sourceSquare = square;
                 removeHighlights();
                 addHighlight(square);
-                $status.text("Piece selected. Click where to move.");
             }
             return;
         }
 
-        var move = game.move({
-            from: sourceSquare,
-            to: square,
-            promotion: 'q'
-        });
+        // --- BLUNDER DETECTOR ---
+        var testGame = new Chess(game.fen());
+        var moveAttempt = { from: sourceSquare, to: square, promotion: 'q' };
+        var valid = testGame.move(moveAttempt);
+        
+        if (valid) {
+            var responses = testGame.moves();
+            for (var i = 0; i < responses.length; i++) {
+                testGame.move(responses[i]);
+                if (testGame.in_checkmate()) {
+                    $remark.text("Careful! That leads to immediate checkmate!");
+                    $status.text("Blunder blocked! Try again.");
+                    sourceSquare = null;
+                    removeHighlights();
+                    return;
+                }
+                testGame.undo();
+            }
+        }
 
+        var move = game.move(moveAttempt);
         if (move === null) {
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
@@ -363,7 +351,6 @@
             } else {
                 sourceSquare = null;
                 removeHighlights();
-                $status.text("Invalid move.");
                 mrDotunRemarks('illegal');
             }
             return;
@@ -373,23 +360,19 @@
         sourceSquare = null;
         removeHighlights();
 
-        if (move.captured) {
-            totalScore += pieceValues[move.captured];
-        }
+        if (move.captured) totalScore += pieceValues[move.captured];
 
         if (game.in_checkmate()) {
             totalScore = 250; 
             updateGrade();
             $remark.text("Masterful! You checkmated Mr. Dotun!");
-            $status.text("Victory! You are a Grandmaster.");
         } else {
             updateGrade();
-            if (move.captured || move.san.includes('+')) {
-                mrDotunRemarks('good');
-            } else {
-                if(Math.random() > 0.6) mrDotunRemarks('bad');
-            }
-            $status.text("Nice move! Mr. Dotun is thinking...");
+            if (move.captured || move.san.includes('+')) mrDotunRemarks('good');
+            else if(Math.random() > 0.7) mrDotunRemarks('bad');
+            
+            var history = game.history();
+            $status.html("Thinking... <br><small>History: " + history.slice(-6).join(' ') + "</small>");
             window.setTimeout(makeAIMove, 500);
         }
     }
@@ -411,12 +394,9 @@
     };
     
     board = ChessBoard('board', config);
-
     $('#board').on('click', '[class*="square-"]', function() {
-        var square = $(this).attr('data-square');
-        onSquareClick(square);
+        onSquareClick($(this).attr('data-square'));
     });
-
     $(window).resize(board.resize);
 </script>
 </body>
