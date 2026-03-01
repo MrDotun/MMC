@@ -255,36 +255,31 @@
 
         var moves = game.moves({ verbose: true });
         
-        // --- 1. PRE-MOVE ANALYSIS: DETECT SPECIFIC THREATS ---
+        // --- 1. PRE-MOVE ANALYSIS: IDENTIFY WHAT PLAYER (WHITE) IS THREATENING ---
         var currentThreats = [];
-        var playerMoves = game.moves({ verbose: true });
+        var playerMoves = new Chess(game.fen()).moves({ verbose: true });
         
         playerMoves.forEach(m => { 
             if(m.captured) {
-                var attacker = game.get(m.from);
                 var target = game.get(m.to);
                 currentThreats.push({
                     square: m.to,
-                    attackerVal: pieceValues[attacker.type],
                     targetVal: pieceValues[target.type]
                 });
             }
         });
 
         var scoredMoves = moves.map(function(move) {
-            var score = Math.random() * 5; 
+            var score = Math.random() * 10; 
 
             // Rule 1: Instant Victory
             if (move.san.includes('#')) return { move: move, score: 100000 };
             
-            // Rule 2: Protect Threatened Pieces (Enhanced)
+            // Rule 2: DEFENSIVE PRIORITY - If this piece is currently being attacked, move it!
             var threat = currentThreats.find(t => t.square === move.from);
             if (threat) {
-                score += (pieceValues[move.piece] * 60); 
-                // CRITICAL: If a smaller piece is attacking a bigger AI piece, add massive priority to escape
-                if (threat.attackerVal < threat.targetVal) {
-                    score += 9000; 
-                }
+                // Massive priority to save pieces, especially high value ones
+                score += (threat.targetVal * 150); 
             }
 
             // Rule 3: Exchange Evaluation
@@ -297,49 +292,45 @@
                 game.undo();
 
                 if (recaptures.length > 0) {
-                    if (valGained >= valLost) score += (valGained * 45); 
-                    else score -= (valLost * 100); 
+                    // Only capture if we win material or trade equally
+                    if (valGained >= valLost) score += (valGained * 50); 
+                    else score -= (valLost * 60); 
                 } else {
-                    score += (valGained * 70); 
+                    score += (valGained * 85); 
                 }
             }
 
-            // Rule 4: Square Safety (Suicide prevention)
+            // Rule 4: DESTINATION SAFETY (Don't move into a trap)
             game.move(move);
-            var responses = game.moves({ verbose: true });
-            var possibleRecapture = responses.find(m => m.to === move.to);
-            if (possibleRecapture) {
-                var potentialAttacker = game.get(possibleRecapture.from);
-                // Heavily penalize moving into a square where a smaller piece can take us
-                if (pieceValues[potentialAttacker.type] < pieceValues[move.piece]) {
-                    score -= (pieceValues[move.piece] * 150);
-                } else {
-                    score -= (pieceValues[move.piece] * 80);
-                }
+            var opponentResponses = game.moves({ verbose: true });
+            var landingSquareAttacked = opponentResponses.find(m => m.to === move.to);
+            
+            if (landingSquareAttacked) {
+                // If moving here means being captured immediately, penalize heavily
+                score -= (pieceValues[move.piece] * 130);
             }
 
             // Rule 5: Blunder Prevention (Checkmate Lookahead)
             var walkIntoMate = false;
-            for (var i = 0; i < responses.length; i++) {
-                game.move(responses[i]);
+            for (var i = 0; i < opponentResponses.length; i++) {
+                game.move(opponentResponses[i]);
                 if (game.in_checkmate()) walkIntoMate = true;
                 game.undo();
                 if (walkIntoMate) break;
             }
-            if (walkIntoMate) score -= 95000;
+            if (walkIntoMate) score -= 99000;
 
             game.undo();
 
-            // Rule 6: General Strategy
+            // Rule 6: General Development
             if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) score += 20;
-            if (move.san.includes('+')) score += 35;
+            if (move.san.includes('+')) score += 30;
 
             return { move: move, score: score };
         });
 
+        // Execute the smartest move
         scoredMoves.sort(function(a, b) { return b.score - a.score; });
-        
-        // Execute move
         game.move(scoredMoves[0].move);
         board.position(game.fen());
         
