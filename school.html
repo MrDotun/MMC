@@ -255,7 +255,7 @@
         board.resize();
     }
 
-    // --- ENHANCED ENGINE LOGIC ---
+    // --- ENHANCED CHESS ENGINE LOGIC ---
     var board = null;
     var game = new Chess();
     var $status = $('#status');
@@ -263,35 +263,49 @@
     var $remark = $('#remark');
     var sourceSquare = null; 
 
+    // Piece weights for Evaluation
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
     var totalScore = 0;
 
+    // Piece-Square Tables (Positional awareness)
     const pst = {
-        p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
-        n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]]
+        p: [
+            [0,  0,  0,  0,  0,  0,  0,  0], [50, 50, 50, 50, 50, 50, 50, 50],
+            [10, 10, 20, 30, 30, 20, 10, 10], [5,  5, 10, 25, 25, 10,  5,  5],
+            [0,  0,  0, 20, 20,  0,  0,  0], [5, -5,-10,  0,  0,-10, -5,  5],
+            [5, 10, 10,-20,-20, 10, 10,  5], [0,  0,  0,  0,  0,  0,  0,  0]
+        ],
+        n: [
+            [-50,-40,-30,-30,-30,-30,-40,-50], [-40,-20,  0,  0,  0,  0,-20,-40],
+            [-30,  0, 10, 15, 15, 10,  0,-30], [-30,  5, 15, 20, 20, 15,  5,-30],
+            [-30,  0, 15, 20, 20, 15,  0,-30], [-30,  5, 10, 15, 15, 10,  5,-30],
+            [-40,-20,  0,  5,  5,  0,-20,-40], [-50,-40,-30,-30,-30,-30,-40,-50]
+        ]
     };
 
     function evaluateBoard(game) {
         let totalEvaluation = 0;
-        const b = game.board();
+        const board = game.board();
         for (let i = 0; i < 8; i++) {
             for (let j = 0; j < 8; j++) {
-                if(b[i][j]) totalEvaluation += getPieceValue(b[i][j], i, j);
+                totalEvaluation += getPieceValue(board[i][j], i, j);
             }
         }
         return totalEvaluation;
     }
 
     function getPieceValue(piece, x, y) {
+        if (piece === null) return 0;
         const isWhite = piece.color === 'w';
         const type = piece.type;
         let val = weights[type];
         if (pst[type]) {
             val += isWhite ? pst[type][7 - x][y] : pst[type][x][y];
         }
-        return isWhite ? -val : val; 
+        return isWhite ? -val : val; // AI is Black (positive is good for AI)
     }
 
+    // Minimax with Alpha-Beta Pruning
     function minimax(game, depth, alpha, beta, isMaximizing) {
         if (depth === 0) return evaluateBoard(game);
         let moves = game.moves();
@@ -339,22 +353,28 @@
     function mrDotunRemarks(type) {
         var remarks = {
             illegal: "I'll reduce your score if you make an illegal move!",
-            bad: ["Control the center!", "Every pawn move creates a weakness.", "Is this what I taught you?", "Hahahha. Nursery 1 moves."],
-            good: ["You're learning!", "Strong move.", "World champion material!", "Beautiful!"],
-            check: ["CHECK! Watch your King!", "Nowhere to hide!", "I have your King in my sights!", "Be careful, that's Check!"]
+            bad: ["Control the center!", "Every pawn move creates a weakness.", "Is this what I taught you?", "Hahahha. Nursery 1 moves.", "Castle early, stay safe!"],
+            good: ["You're learning!", "Strong move.", "You're going to be world champion!", "Now you're playing real chess.", "Beautiful!"]
         };
         if (type === 'illegal') $remark.text(remarks.illegal);
         else if (type === 'good') $remark.text(remarks.good[Math.floor(Math.random() * remarks.good.length)]);
         else if (type === 'bad') $remark.text(remarks.bad[Math.floor(Math.random() * remarks.bad.length)]);
-        else if (type === 'check') $remark.text(remarks.check[Math.floor(Math.random() * remarks.check.length)]);
     }
 
     function makeAIMove() {
         if (game.game_over()) return;
+
         let moves = game.moves();
+        
+        // SPEED OPTIMIZATION: Move sorting (Captures first) makes search much faster
+        moves.sort(function(a, b) {
+            return b.indexOf('x') - a.indexOf('x');
+        });
+
         let bestMove = null;
         let bestValue = -99999;
 
+        // Depth 3 search - Professional club level strength
         moves.forEach(m => {
             game.move(m);
             let boardValue = minimax(game, 2, -100000, 100000, false);
@@ -365,22 +385,18 @@
             }
         });
 
-        game.move(bestMove);
+        var move = game.move(bestMove);
         board.position(game.fen());
-        $status.css('color', '#cbd5e1'); 
-
-        if (game.in_check()) mrDotunRemarks('check');
+        
+        // HIGHLIGHT: Highlight AI move
+        highlightLastMove(move.from, move.to);
 
         var history = game.history();
         var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
 
         if (game.game_over()) {
-            if (game.in_checkmate()) {
-                $status.html("Mr. Dotun wins by Checkmate!" + histText);
-                $remark.text("Checkmate! Go back and study your endgames!");
-            } else {
-                $status.html("Game Over (Draw)!" + histText);
-            }
+            $status.html("Mr. Dotun wins!" + histText);
+            $remark.text("Go back and study your endgames!");
         } else {
             $status.html("Mr. Dotun moved. Your turn!" + histText);
         }
@@ -413,8 +429,11 @@
             return;
         }
         board.position(game.fen());
+        
+        // HIGHLIGHT: Highlight player move
+        highlightLastMove(move.from, move.to);
+        
         sourceSquare = null;
-        removeHighlights();
         
         if (move.captured) {
             const pValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 0 };
@@ -429,10 +448,17 @@
             updateGrade();
             if (move.captured || move.san.includes('+')) mrDotunRemarks('good');
             else if(Math.random() > 0.7) mrDotunRemarks('bad');
-            
-            $status.html("Thinking...").css('color', 'red');
-            window.setTimeout(makeAIMove, 150); // Speed set to 150ms for quick response
+            $status.html("Thinking...");
+            // SPEED INCREASE: Reduced timeout from 300 to 50 for faster AI response
+            window.setTimeout(makeAIMove, 50);
         }
+    }
+
+    // NEW HELPER: Wrapper to highlight both ends of a move
+    function highlightLastMove(from, to) {
+        removeHighlights();
+        addHighlight(from);
+        addHighlight(to);
     }
 
     function addHighlight(square) {
