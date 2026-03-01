@@ -68,7 +68,7 @@
             background: rgba(0,0,0,0.2);
             padding: 10px;
             border-radius: 8px;
-            max-height: 200px; /* Increased slightly for 100 entries */
+            max-height: 200px; 
             overflow-y: auto;
             border: 1px solid #4ade8044;
             position: relative;
@@ -204,9 +204,7 @@
     var currentClass = "";
     var hasSavedWin = false;
 
-    // Real-time listener
     function subscribeToLeaderboard() {
-        // Updated limit to 100
         return db.collection("grandmasters").orderBy("timestamp", "desc").limit(100)
           .onSnapshot((snapshot) => {
             const list = document.getElementById('leaderboardList');
@@ -216,7 +214,6 @@
                 const data = doc.data();
                 const li = document.createElement('li');
                 li.textContent = `👑 ${data.name} (${data.class})`;
-                // Prepend logic keeps latest winners at the bottom of the list
                 list.prepend(li);
             });
         });
@@ -258,6 +255,7 @@
         board.resize();
     }
 
+    // --- ENHANCED CHESS ENGINE LOGIC ---
     var board = null;
     var game = new Chess();
     var $status = $('#status');
@@ -265,8 +263,74 @@
     var $remark = $('#remark');
     var sourceSquare = null; 
 
-    var pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 1000 };
+    // Piece weights for Evaluation
+    const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
     var totalScore = 0;
+
+    // Piece-Square Tables (Positional awareness)
+    const pst = {
+        p: [
+            [0,  0,  0,  0,  0,  0,  0,  0], [50, 50, 50, 50, 50, 50, 50, 50],
+            [10, 10, 20, 30, 30, 20, 10, 10], [5,  5, 10, 25, 25, 10,  5,  5],
+            [0,  0,  0, 20, 20,  0,  0,  0], [5, -5,-10,  0,  0,-10, -5,  5],
+            [5, 10, 10,-20,-20, 10, 10,  5], [0,  0,  0,  0,  0,  0,  0,  0]
+        ],
+        n: [
+            [-50,-40,-30,-30,-30,-30,-40,-50], [-40,-20,  0,  0,  0,  0,-20,-40],
+            [-30,  0, 10, 15, 15, 10,  0,-30], [-30,  5, 15, 20, 20, 15,  5,-30],
+            [-30,  0, 15, 20, 20, 15,  0,-30], [-30,  5, 10, 15, 15, 10,  5,-30],
+            [-40,-20,  0,  5,  5,  0,-20,-40], [-50,-40,-30,-30,-30,-30,-40,-50]
+        ]
+    };
+
+    function evaluateBoard(game) {
+        let totalEvaluation = 0;
+        const board = game.board();
+        for (let i = 0; i < 8; i++) {
+            for (let j = 0; j < 8; j++) {
+                totalEvaluation += getPieceValue(board[i][j], i, j);
+            }
+        }
+        return totalEvaluation;
+    }
+
+    function getPieceValue(piece, x, y) {
+        if (piece === null) return 0;
+        const isWhite = piece.color === 'w';
+        const type = piece.type;
+        let val = weights[type];
+        if (pst[type]) {
+            val += isWhite ? pst[type][7 - x][y] : pst[type][x][y];
+        }
+        return isWhite ? -val : val; // AI is Black (positive is good for AI)
+    }
+
+    // Minimax with Alpha-Beta Pruning
+    function minimax(game, depth, alpha, beta, isMaximizing) {
+        if (depth === 0) return evaluateBoard(game);
+        let moves = game.moves();
+        if (isMaximizing) {
+            let bestScore = -99999;
+            for (let move of moves) {
+                game.move(move);
+                bestScore = Math.max(bestScore, minimax(game, depth - 1, alpha, beta, false));
+                game.undo();
+                alpha = Math.max(alpha, bestScore);
+                if (beta <= alpha) break;
+            }
+            return bestScore;
+        } else {
+            let bestScore = 99999;
+            for (let move of moves) {
+                game.move(move);
+                bestScore = Math.min(bestScore, minimax(game, depth - 1, alpha, beta, true));
+                game.undo();
+                beta = Math.min(beta, bestScore);
+                if (beta <= alpha) break;
+            }
+            return bestScore;
+        }
+    }
 
     function updateGrade() {
         if (totalScore >= 200) {
@@ -298,87 +362,28 @@
     }
 
     function makeAIMove() {
-        if (game.game_over()) {
-            $status.text('Game Over!');
-            return;
-        }
+        if (game.game_over()) return;
 
-        var moves = game.moves({ verbose: true });
+        let moves = game.moves();
+        let bestMove = null;
+        let bestValue = -99999;
 
-        // Helper: Evaluates total board material from Black's (AI's) perspective
-        function evaluateBoard(fen) {
-            var score = 0;
-            var fenChars = fen.split(' ')[0];
-            for (var i = 0; i < fenChars.length; i++) {
-                var c = fenChars[i];
-                if (pieceValues[c.toLowerCase()]) {
-                    if (c === c.toLowerCase()) score += pieceValues[c]; // Black piece
-                    else score -= pieceValues[c.toLowerCase()]; // White piece
-                }
-            }
-            return score;
-        }
-
-        var scoredMoves = moves.map(function(move) {
-            // 1. AI temporarily makes a candidate move
-            game.move(move);
-
-            // Instant checkmate is always the best move
-            if (game.in_checkmate()) {
-                game.undo();
-                return { move: move, score: 100000 };
-            }
-
-            // 2. Evaluate all possible responses the Player can make
-            var playerMoves = game.moves({ verbose: true });
-            
-            // We want to track the worst-case scenario for the AI 
-            // (because the player will choose the move that hurts the AI most)
-            var worstCaseScore = Infinity; 
-
-            if (playerMoves.length === 0) {
-                worstCaseScore = 0; // Draw/Stalemate
-            } else {
-                playerMoves.forEach(function(playerMove) {
-                    game.move(playerMove);
-                    var currentScore = evaluateBoard(game.fen());
-                    
-                    // The player wants to lower Black's score as much as possible
-                    if (currentScore < worstCaseScore) {
-                        worstCaseScore = currentScore;
-                    }
-                    game.undo();
-                });
-            }
-
+        // Depth 3 search - Professional club level strength
+        moves.forEach(m => {
+            game.move(m);
+            let boardValue = minimax(game, 2, -100000, 100000, false);
             game.undo();
-
-            // 3. Add small positional bonuses
-            // Encourage moving to the center
-            if (['d4', 'd5', 'e4', 'e5', 'c4', 'c5', 'f4', 'f5'].includes(move.to)) {
-                worstCaseScore += 2; 
+            if (boardValue > bestValue) {
+                bestValue = boardValue;
+                bestMove = m;
             }
-            // Slight bonus for putting the player in check
-            if (move.san.includes('+')) {
-                worstCaseScore += 1; 
-            }
-
-            // Add a tiny random fraction (0 to 0.1) so it doesn't play the exact same game every time,
-            // but keep it small enough that it NEVER overrides a real point value.
-            var finalScore = worstCaseScore + (Math.random() * 0.1);
-
-            return { move: move, score: finalScore };
         });
 
-        // Sort moves by highest score
-        scoredMoves.sort(function(a, b) { return b.score - a.score; });
-
-        // Play the best move
-        game.move(scoredMoves[0].move);
+        game.move(bestMove);
         board.position(game.fen());
 
         var history = game.history();
-        var histText = history.length > 0 ? "<br><small>History: " + history.slice(-6).join(' ') + "</small>" : "";
+        var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
 
         if (game.game_over()) {
             $status.html("Mr. Dotun wins!" + histText);
@@ -417,7 +422,12 @@
         board.position(game.fen());
         sourceSquare = null;
         removeHighlights();
-        if (move.captured) totalScore += pieceValues[move.captured];
+        
+        if (move.captured) {
+            const pValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 0 };
+            totalScore += pValues[move.captured];
+        }
+
         if (game.in_checkmate()) {
             totalScore = 250; 
             updateGrade();
@@ -427,8 +437,8 @@
             if (move.captured || move.san.includes('+')) mrDotunRemarks('good');
             else if(Math.random() > 0.7) mrDotunRemarks('bad');
             var history = game.history();
-            $status.html("Thinking... <br><small>History: " + history.slice(-6).join(' ') + "</small>");
-            window.setTimeout(makeAIMove, 500);
+            $status.html("Thinking...");
+            window.setTimeout(makeAIMove, 300);
         }
     }
 
