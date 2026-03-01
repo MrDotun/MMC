@@ -304,44 +304,82 @@
         }
 
         var moves = game.moves({ verbose: true });
-        var threatenedByPlayer = [];
-        var playerMoves = game.moves({ verbose: true });
-        playerMoves.forEach(m => { if(m.captured) threatenedByPlayer.push(m.to); });
 
-        var scoredMoves = moves.map(function(move) {
-            var score = Math.random() * 5; 
-            if (move.san.includes('#')) return { move: move, score: 100000 };
-            if (threatenedByPlayer.includes(move.from)) {
-                score += (pieceValues[move.piece] * 60);
-            }
-            if (move.captured) {
-                var valGained = pieceValues[move.captured];
-                var valLost = pieceValues[move.piece];
-                game.move(move);
-                var recaptures = game.moves({ verbose: true }).filter(m => m.to === move.to);
-                game.undo();
-                if (recaptures.length > 0) {
-                    if (valGained >= valLost) score += (valGained * 45); 
-                    else score -= (valLost * 100);
-                } else {
-                    score += (valGained * 70);
+        // Helper: Evaluates total board material from Black's (AI's) perspective
+        function evaluateBoard(fen) {
+            var score = 0;
+            var fenChars = fen.split(' ')[0];
+            for (var i = 0; i < fenChars.length; i++) {
+                var c = fenChars[i];
+                if (pieceValues[c.toLowerCase()]) {
+                    if (c === c.toLowerCase()) score += pieceValues[c]; // Black piece
+                    else score -= pieceValues[c.toLowerCase()]; // White piece
                 }
             }
+            return score;
+        }
+
+        var scoredMoves = moves.map(function(move) {
+            // 1. AI temporarily makes a candidate move
             game.move(move);
-            var responses = game.moves({ verbose: true });
-            var canBeRecaptured = responses.find(m => m.to === move.to);
-            if (canBeRecaptured) score -= (pieceValues[move.piece] * 80);
+
+            // Instant checkmate is always the best move
+            if (game.in_checkmate()) {
+                game.undo();
+                return { move: move, score: 100000 };
+            }
+
+            // 2. Evaluate all possible responses the Player can make
+            var playerMoves = game.moves({ verbose: true });
+            
+            // We want to track the worst-case scenario for the AI 
+            // (because the player will choose the move that hurts the AI most)
+            var worstCaseScore = Infinity; 
+
+            if (playerMoves.length === 0) {
+                worstCaseScore = 0; // Draw/Stalemate
+            } else {
+                playerMoves.forEach(function(playerMove) {
+                    game.move(playerMove);
+                    var currentScore = evaluateBoard(game.fen());
+                    
+                    // The player wants to lower Black's score as much as possible
+                    if (currentScore < worstCaseScore) {
+                        worstCaseScore = currentScore;
+                    }
+                    game.undo();
+                });
+            }
+
             game.undo();
-            if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) score += 20;
-            if (move.san.includes('+')) score += 35;
-            return { move: move, score: score };
+
+            // 3. Add small positional bonuses
+            // Encourage moving to the center
+            if (['d4', 'd5', 'e4', 'e5', 'c4', 'c5', 'f4', 'f5'].includes(move.to)) {
+                worstCaseScore += 2; 
+            }
+            // Slight bonus for putting the player in check
+            if (move.san.includes('+')) {
+                worstCaseScore += 1; 
+            }
+
+            // Add a tiny random fraction (0 to 0.1) so it doesn't play the exact same game every time,
+            // but keep it small enough that it NEVER overrides a real point value.
+            var finalScore = worstCaseScore + (Math.random() * 0.1);
+
+            return { move: move, score: finalScore };
         });
 
+        // Sort moves by highest score
         scoredMoves.sort(function(a, b) { return b.score - a.score; });
+
+        // Play the best move
         game.move(scoredMoves[0].move);
         board.position(game.fen());
+
         var history = game.history();
         var histText = history.length > 0 ? "<br><small>History: " + history.slice(-6).join(' ') + "</small>" : "";
+
         if (game.game_over()) {
             $status.html("Mr. Dotun wins!" + histText);
             $remark.text("Go back and study your endgames!");
