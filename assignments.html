@@ -68,13 +68,31 @@
             background: rgba(0,0,0,0.2);
             padding: 10px;
             border-radius: 8px;
-            max-height: 120px;
+            max-height: 200px; /* Increased slightly for 100 entries */
             overflow-y: auto;
             border: 1px solid #4ade8044;
+            position: relative;
         }
-        #leaderboard-box h3 { font-size: 0.9em; margin: 0 0 5px 0; color: #facc15; text-align: center;}
+        #leaderboard-box h3 { font-size: 0.9em; margin: 0 0 5px 0; color: #facc15; text-align: center; cursor: pointer; }
         #leaderboardList { list-style: none; padding: 0; margin: 0; font-size: 0.85em; color: #4ade80; }
         #leaderboardList li { border-bottom: 1px solid #ffffff11; padding: 3px 0; }
+
+        .admin-controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 5px;
+        }
+        .refresh-btn {
+            background: none;
+            border: 1px solid #4ade80;
+            color: #4ade80;
+            border-radius: 4px;
+            font-size: 0.7em;
+            cursor: pointer;
+            padding: 2px 8px;
+        }
+        .refresh-btn:hover { background: #4ade8022; }
 
         #game-container {
             display: none; 
@@ -140,13 +158,16 @@
 <div id="welcome-overlay">
     <div class="login-card">
         <h1 style="color: #4ade80;">Week One Task</h1>
-        <p>Welcome, Chess Champion! Please enter your details to start the match against Mr. Dotun.</p>
+        <p>Welcome, Chess Champion! Please enter your details to start the match.</p>
         <input type="text" id="studentName" placeholder="Enter Your Full Name" required>
         <input type="text" id="studentClass" placeholder="Enter Your Class" required>
         <button class="submit-btn" onclick="startGame()">START GAME</button>
 
         <div id="leaderboard-box">
-            <h3>🏆 Hall of Grandmasters</h3>
+            <h3 ondblclick="adminResetLeaderboard()">🏆 Hall of Grandmasters</h3>
+            <div class="admin-controls">
+                <button class="refresh-btn" onclick="manualRefresh()">↻ Refresh</button>
+            </div>
             <ul id="leaderboardList"><li>Loading...</li></ul>
         </div>
     </div>
@@ -183,18 +204,47 @@
     var currentClass = "";
     var hasSavedWin = false;
 
-    db.collection("grandmasters").orderBy("timestamp", "desc").limit(10)
-      .onSnapshot((snapshot) => {
-        const list = document.getElementById('leaderboardList');
-        list.innerHTML = "";
-        if (snapshot.empty) list.innerHTML = "<li>No Grandmasters yet. Win to be first!</li>";
-        snapshot.forEach((doc) => {
-            const data = doc.data();
-            const li = document.createElement('li');
-            li.textContent = `👑 ${data.name} (${data.class})`;
-            list.appendChild(li);
+    // Real-time listener
+    function subscribeToLeaderboard() {
+        // Updated limit to 100
+        return db.collection("grandmasters").orderBy("timestamp", "desc").limit(100)
+          .onSnapshot((snapshot) => {
+            const list = document.getElementById('leaderboardList');
+            list.innerHTML = "";
+            if (snapshot.empty) list.innerHTML = "<li>No Grandmasters yet. Win to be first!</li>";
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                const li = document.createElement('li');
+                li.textContent = `👑 ${data.name} (${data.class})`;
+                // Prepend logic keeps latest winners at the bottom of the list
+                list.prepend(li);
+            });
         });
-    });
+    }
+
+    let unsubscribe = subscribeToLeaderboard();
+
+    function manualRefresh() {
+        unsubscribe();
+        document.getElementById('leaderboardList').innerHTML = "<li>Refreshing...</li>";
+        unsubscribe = subscribeToLeaderboard();
+    }
+
+    function adminResetLeaderboard() {
+        const pass = prompt("Enter Admin Password to Clear Leaderboard:");
+        if (pass === "dotun123") {
+            if (confirm("Are you sure you want to wipe the leaderboard?")) {
+                db.collection("grandmasters").get().then((snapshot) => {
+                    snapshot.forEach((doc) => {
+                        db.collection("grandmasters").doc(doc.id).delete();
+                    });
+                    alert("Leaderboard Cleared.");
+                });
+            }
+        } else {
+            alert("Incorrect password.");
+        }
+    }
 
     function startGame() {
         currentName = document.getElementById('studentName').value;
@@ -254,76 +304,44 @@
         }
 
         var moves = game.moves({ verbose: true });
-        
-        // --- 1. PRE-MOVE ANALYSIS: WHAT IS CURRENTLY THREATENED? ---
         var threatenedByPlayer = [];
         var playerMoves = game.moves({ verbose: true });
         playerMoves.forEach(m => { if(m.captured) threatenedByPlayer.push(m.to); });
 
         var scoredMoves = moves.map(function(move) {
             var score = Math.random() * 5; 
-
-            // Rule 1: Instant Victory
             if (move.san.includes('#')) return { move: move, score: 100000 };
-            
-            // Rule 2: Protect Threatened Pieces (Self-Preservation)
             if (threatenedByPlayer.includes(move.from)) {
-                score += (pieceValues[move.piece] * 60); // Strong incentive to move away
+                score += (pieceValues[move.piece] * 60);
             }
-
-            // Rule 3: Exchange Evaluation (No Bad Trades)
             if (move.captured) {
                 var valGained = pieceValues[move.captured];
                 var valLost = pieceValues[move.piece];
-                
                 game.move(move);
                 var recaptures = game.moves({ verbose: true }).filter(m => m.to === move.to);
                 game.undo();
-
                 if (recaptures.length > 0) {
                     if (valGained >= valLost) score += (valGained * 45); 
-                    else score -= (valLost * 100); // Block bad trades
+                    else score -= (valLost * 100);
                 } else {
-                    score += (valGained * 70); // Free capture
+                    score += (valGained * 70);
                 }
             }
-
-            // Rule 4: Square Safety (Don't move into fire)
             game.move(move);
             var responses = game.moves({ verbose: true });
             var canBeRecaptured = responses.find(m => m.to === move.to);
-            if (canBeRecaptured) {
-                score -= (pieceValues[move.piece] * 80);
-            }
-
-            // Rule 5: Blunder Prevention (Checkmate Lookahead)
-            var walkIntoMate = false;
-            for (var i = 0; i < responses.length; i++) {
-                game.move(responses[i]);
-                if (game.in_checkmate()) walkIntoMate = true;
-                game.undo();
-                if (walkIntoMate) break;
-            }
-            if (walkIntoMate) score -= 95000;
-
+            if (canBeRecaptured) score -= (pieceValues[move.piece] * 80);
             game.undo();
-
-            // Rule 6: General Strategy
             if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) score += 20;
             if (move.san.includes('+')) score += 35;
-
             return { move: move, score: score };
         });
 
         scoredMoves.sort(function(a, b) { return b.score - a.score; });
-        
-        // Execute move
         game.move(scoredMoves[0].move);
         board.position(game.fen());
-        
         var history = game.history();
         var histText = history.length > 0 ? "<br><small>History: " + history.slice(-6).join(' ') + "</small>" : "";
-        
         if (game.game_over()) {
             $status.html("Mr. Dotun wins!" + histText);
             $remark.text("Go back and study your endgames!");
@@ -334,7 +352,6 @@
 
     function onSquareClick(square) {
         if (game.game_over()) return;
-
         if (sourceSquare === null) {
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
@@ -344,26 +361,7 @@
             }
             return;
         }
-
-        var testGame = new Chess(game.fen());
         var moveAttempt = { from: sourceSquare, to: square, promotion: 'q' };
-        var valid = testGame.move(moveAttempt);
-        
-        if (valid) {
-            var responses = testGame.moves();
-            for (var i = 0; i < responses.length; i++) {
-                testGame.move(responses[i]);
-                if (testGame.in_checkmate()) {
-                    $remark.text("Careful! That leads to immediate checkmate!");
-                    $status.text("Blunder blocked! Try again.");
-                    sourceSquare = null;
-                    removeHighlights();
-                    return;
-                }
-                testGame.undo();
-            }
-        }
-
         var move = game.move(moveAttempt);
         if (move === null) {
             var piece = game.get(square);
@@ -378,13 +376,10 @@
             }
             return;
         }
-
         board.position(game.fen());
         sourceSquare = null;
         removeHighlights();
-
         if (move.captured) totalScore += pieceValues[move.captured];
-
         if (game.in_checkmate()) {
             totalScore = 250; 
             updateGrade();
@@ -393,7 +388,6 @@
             updateGrade();
             if (move.captured || move.san.includes('+')) mrDotunRemarks('good');
             else if(Math.random() > 0.7) mrDotunRemarks('bad');
-            
             var history = game.history();
             $status.html("Thinking... <br><small>History: " + history.slice(-6).join(' ') + "</small>");
             window.setTimeout(makeAIMove, 500);
@@ -415,7 +409,6 @@
         position: 'start',
         pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
     };
-    
     board = ChessBoard('board', config);
     $('#board').on('click', '[class*="square-"]', function() {
         onSquareClick($(this).attr('data-square'));
