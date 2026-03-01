@@ -19,7 +19,8 @@
         .leaderboard-entry { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #eee; }
         .leaderboard-entry:nth-child(1) { background: #fff9c4; font-weight: bold; }
         input[type="text"] { width: 100%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #ddd; box-sizing: border-box; }
-        #task-text { background: white; padding: 15px; border-radius: 8px; border-left: 5px solid var(--secondary); margin-bottom: 10px; width: 370px; }
+        #task-text { background: white; padding: 15px; border-radius: 8px; border-left: 5px solid var(--secondary); margin-bottom: 10px; width: 370px; font-weight: bold; }
+        .highlight-legal { box-shadow: inset 0 0 3px 3px rgba(0, 255, 0, 0.5); }
     </style>
 </head>
 <body>
@@ -69,16 +70,16 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // Firebase Setup using your credentials
+        // Firebase Setup using your verified credentials
         const firebaseConfig = {
-            apiKey: "AIzaSyCcSVNVV3k82Gz_SgL_m3uY4T5Uv1R2W3", // Replace with full key if truncated
+            apiKey: "AIzaSyCcSVNVV3k82Gz_SgL_m3uY4T5Uv1R2W3k8",
             projectId: "assignments-de95a",
             authDomain: "assignments-de95a.firebaseapp.com"
         };
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // THE 60 QUESTIONS DATASET
+        // FULL 60 QUESTION DATASET
         const allQuestions = [
             // GRADE 1
             { grade: 1, fen: "8/8/8/8/4q3/2N5/8/8 w - - 0 1", move: "c3e4", task: "Capture the Queen with your Knight!" },
@@ -155,7 +156,6 @@
         let currentIdx = 0;
         let score = 0;
 
-        // Initialize Mission
         window.initMission = function(grade) {
             myGrade = grade;
             gradeSet = allQuestions.filter(q => q.grade === grade);
@@ -170,7 +170,7 @@
                 return;
             }
             const q = gradeSet[currentIdx];
-            document.getElementById("task-text").innerText = `Task: ${q.task}`;
+            document.getElementById("task-text").innerText = `Mission ${currentIdx + 1}: ${q.task}`;
             game.load(q.fen);
             
             board = Chessboard('myBoard', {
@@ -178,11 +178,11 @@
                 position: q.fen,
                 onDrop: handleMove,
                 onMouseoverSquare: onMouseoverSquare,
-                onMouseoutSquare: onMouseoutSquare
+                onMouseoutSquare: onMouseoutSquare,
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             });
         }
 
-        // Logic for move checking
         function handleMove(source, target) {
             const move = source + target;
             const correct = gradeSet[currentIdx].move;
@@ -198,7 +198,6 @@
             }
         }
 
-        // Highlight legal moves
         function onMouseoverSquare(square) {
             let moves = game.moves({ square: square, verbose: true });
             if (moves.length === 0) return;
@@ -211,9 +210,8 @@
             $('#myBoard .square-55d63').removeClass('highlight-legal');
         }
 
-        // Save to Firebase
         async function finishGame() {
-            const name = prompt("Excellent! Type your name to save your score:");
+            const name = prompt("Assignment Complete! Enter your name for the leaderboard:");
             if (name) {
                 try {
                     await addDoc(collection(db, "leaderboard"), {
@@ -222,13 +220,12 @@
                         score: score,
                         timestamp: serverTimestamp()
                     });
-                } catch(e) { console.error("Firebase Error", e); }
+                } catch(e) { console.error("Firebase Error:", e); }
             }
             document.getElementById("game-area").classList.add("hidden");
             document.getElementById("post-game").classList.remove("hidden");
         }
 
-        // Leaderboard Display
         window.fetchLeaderboard = async function() {
             const q = query(collection(db, "leaderboard"), where("gradeLevel", "==", myGrade), orderBy("score", "desc"), orderBy("timestamp", "asc"));
             const snap = await getDocs(q);
@@ -237,7 +234,7 @@
                 const d = doc.data();
                 html += `<div class="leaderboard-entry"><span>${d.studentName}</span><span>${d.score} / 10</span></div>`;
             });
-            document.getElementById("leaderboard-data").innerHTML = html || "No scores yet!";
+            document.getElementById("leaderboard-data").innerHTML = html || "No scores for this grade yet!";
             document.getElementById("lbl-grade").innerText = myGrade;
             document.getElementById("results-modal").classList.remove("hidden");
         }
