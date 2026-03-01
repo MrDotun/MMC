@@ -8,21 +8,22 @@
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #2c3e50; color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        #board-container { width: 400px; max-width: 90vw; margin-top: 10px; }
-        .info-panel { background: #34495e; padding: 15px; border-radius: 8px; width: 400px; max-width: 90vw; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        #status { font-weight: bold; color: #f1c40f; margin-bottom: 5px; height: 24px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a1a; color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        #board-container { width: 400px; max-width: 95vw; margin-top: 20px; border: 5px solid #333; border-radius: 4px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .info-panel { background: #262626; padding: 20px; border-radius: 8px; width: 400px; max-width: 90vw; text-align: center; border-bottom: 4px solid #f1c40f; }
+        #status { font-weight: bold; color: #f1c40f; margin-bottom: 10px; font-size: 1.2rem; min-height: 1.5em; }
+        #player-tag { color: #bdc3c7; font-size: 0.9rem; }
+        
+        /* Highlighting Styles */
         .highlight-white { box-shadow: inset 0 0 3px 3px #f1c40f; }
         .highlight-hint { background-color: rgba(46, 204, 113, 0.4); border-radius: 50%; width: 20px !important; height: 20px !important; margin: 10px; }
-        h1 { margin: 0 0 10px 0; font-size: 1.5rem; }
     </style>
 </head>
 <body>
 
     <div class="info-panel">
-        <h1>Chess vs Mr Dotun</h1>
-        <div id="status">Starting Game...</div>
-        <div id="player-tag">Waiting for player...</div>
+        <div id="status">Loading Mr Dotun...</div>
+        <div id="player-tag">White vs Black</div>
     </div>
 
     <div id="board-container">
@@ -37,10 +38,13 @@
         var board = null;
         var game = new Chess();
         var selectedSquare = null;
-        var playerName = prompt("Please enter your name:", "Challenger");
+        var playerName = prompt("Enter your name to face Mr Dotun:", "Challenger");
         $('#player-tag').text(`${playerName} (White) vs Mr Dotun (Black)`);
 
-        // --- Engine Weights (1800 Elo PST) ---
+        // --- THE FIX: Load pieces from the web instead of local folder ---
+        var pieceThemeUrl = 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png';
+
+        // --- Mr Dotun's Engine Logic ---
         const weights = { p: 10, n: 32, b: 33, r: 50, q: 90, k: 900 };
         const pst = {
             p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,27,27,10,5,5],[0,0,0,22,22,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
@@ -89,11 +93,8 @@
         function makeAiMove() {
             let moves = game.moves();
             if (game.game_over()) return updateStatus();
-            
-            let bestMove = null;
-            let bestVal = -9999;
+            let bestMove = null; let bestVal = -9999;
             moves.sort(() => Math.random() - 0.5);
-
             for (let m of moves) {
                 game.move(m);
                 let val = minimax(game, 3, -10000, 10000, false);
@@ -105,10 +106,8 @@
             updateStatus("Mr Dotun moved. Your turn.");
         }
 
-        // --- Click-to-Move Handler ---
         function onSquareClick(square) {
             if (game.turn() === 'b' || game.game_over()) return;
-
             if (selectedSquare === null) {
                 let piece = game.get(square);
                 if (piece && piece.color === 'w') {
@@ -119,11 +118,10 @@
                 let move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
                 removeHighlights();
                 selectedSquare = null;
-
                 if (move) {
                     board.position(game.fen());
-                    updateStatus("Thinking...");
-                    setTimeout(makeAiMove, 600);
+                    updateStatus("Mr Dotun is thinking...");
+                    setTimeout(makeAiMove, 800);
                 } else {
                     let piece = game.get(square);
                     if (piece && piece.color === 'w') {
@@ -147,18 +145,20 @@
         }
 
         function updateStatus(msg) {
-            let status = msg || (game.turn() === 'w' ? "Your turn" : "Calculating...");
+            let status = msg || (game.turn() === 'w' ? "Your turn, " + playerName : "Calculating...");
             if (game.in_checkmate()) status = "Checkmate. Mr Dotun wins.";
             else if (game.in_draw()) status = "Draw.";
             $('#status').text(status);
         }
 
+        // Initialize Board with pieceTheme parameter
         board = Chessboard('myBoard', { 
             position: 'start', 
             onSquareClick: onSquareClick,
-            draggable: false // Strict click-to-move
+            pieceTheme: pieceThemeUrl, // THE FIX
+            draggable: false
         });
-        updateStatus("Mr Dotun is ready.");
+        updateStatus("Mr Dotun is ready. You are White.");
     </script>
 </body>
 </html>
