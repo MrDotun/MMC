@@ -255,7 +255,7 @@
         board.resize();
     }
 
-    // --- ENHANCED CHESS ENGINE LOGIC ---
+    // --- OPTIMIZED CHESS ENGINE LOGIC ---
     var board = null;
     var game = new Chess();
     var $status = $('#status');
@@ -266,53 +266,28 @@
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
     var totalScore = 0;
 
-    const pst = {
-        p: [
-            [0,  0,  0,  0,  0,  0,  0,  0], [50, 50, 50, 50, 50, 50, 50, 50],
-            [10, 10, 20, 30, 30, 20, 10, 10], [5,  5, 10, 25, 25, 10,  5,  5],
-            [0,  0,  0, 20, 20,  0,  0,  0], [5, -5,-10,  0,  0,-10, -5,  5],
-            [5, 10, 10,-20,-20, 10, 10,  5], [0,  0,  0,  0,  0,  0,  0,  0]
-        ],
-        n: [
-            [-50,-40,-30,-30,-30,-30,-40,-50], [-40,-20,  0,  0,  0,  0,-20,-40],
-            [-30,  0, 10, 15, 15, 10,  0,-30], [-30,  5, 15, 20, 20, 15,  5,-30],
-            [-30,  0, 15, 20, 20, 15,  0,-30], [-30,  5, 10, 15, 15, 10,  5,-30],
-            [-40,-20,  0,  5,  5,  0,-20,-40], [-50,-40,-30,-30,-30,-30,-40,-50]
-        ]
-    };
-
     function evaluateBoard(game) {
         let totalEvaluation = 0;
         const b = game.board();
         for (let i = 0; i < 8; i++) {
             for (let j = 0; j < 8; j++) {
-                if (b[i][j]) totalEvaluation += getPieceValue(b[i][j], i, j);
+                let piece = b[i][j];
+                if (piece) {
+                    let val = weights[piece.type];
+                    totalEvaluation += (piece.color === 'w' ? -val : val);
+                }
             }
         }
         return totalEvaluation;
     }
 
-    function getPieceValue(piece, x, y) {
-        const isWhite = piece.color === 'w';
-        const type = piece.type;
-        let val = weights[type];
-        if (pst[type]) {
-            val += isWhite ? pst[type][7 - x][y] : pst[type][x][y];
-        }
-        return isWhite ? -val : val; 
-    }
-
-    // Minimax with optimized Move Ordering for speed
+    // Faster Minimax (Depth 1 or 2 max for Mobile)
     function minimax(game, depth, alpha, beta, isMaximizing) {
-        if (depth === 0) return evaluateBoard(game);
+        if (depth === 0 || game.game_over()) return evaluateBoard(game);
 
-        // Sorting moves: Captures first to trigger Alpha-Beta pruning faster
-        let moves = game.moves({ verbose: true }).sort((a, b) => {
-            return (b.captured ? 1 : 0) - (a.captured ? 1 : 0);
-        });
-
+        let moves = game.moves();
         if (isMaximizing) {
-            let bestScore = -99999;
+            let bestScore = -Infinity;
             for (let move of moves) {
                 game.move(move);
                 bestScore = Math.max(bestScore, minimax(game, depth - 1, alpha, beta, false));
@@ -322,7 +297,7 @@
             }
             return bestScore;
         } else {
-            let bestScore = 99999;
+            let bestScore = Infinity;
             for (let move of moves) {
                 game.move(move);
                 bestScore = Math.min(bestScore, minimax(game, depth - 1, alpha, beta, true));
@@ -331,6 +306,48 @@
                 if (beta <= alpha) break;
             }
             return bestScore;
+        }
+    }
+
+    function makeAIMove() {
+        if (game.game_over()) return;
+
+        let moves = game.moves();
+        if (moves.length === 0) return;
+
+        // Shuffle moves to avoid repetitive AI patterns
+        moves.sort(() => Math.random() - 0.5);
+
+        let bestMove = moves[0];
+        let bestValue = -Infinity;
+
+        // Using Depth 2 for a balance of speed and skill
+        for (let move of moves) {
+            game.move(move);
+            let boardValue = minimax(game, 1, -100000, 100000, false);
+            game.undo();
+            if (boardValue > bestValue) {
+                bestValue = boardValue;
+                bestMove = move;
+            }
+        }
+
+        game.move(bestMove);
+        board.position(game.fen());
+        updateStatus();
+    }
+
+    function updateStatus() {
+        var history = game.history();
+        var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
+
+        if (game.in_checkmate()) {
+            $status.html("Game Over! Mr. Dotun wins." + histText);
+            $remark.text("Checkmate! Better luck next time.");
+        } else if (game.in_draw()) {
+            $status.html("Game Over! It's a draw." + histText);
+        } else {
+            $status.html("Mr. Dotun moved. Your turn!" + histText);
         }
     }
 
@@ -352,65 +369,6 @@
         else $grade.text("Beginner");
     }
 
-    function mrDotunRemarks(type) {
-        var remarks = {
-            illegal: "I'll reduce your score if you make an illegal move!",
-            bad: ["Control the center!", "Every pawn move creates a weakness.", "Is this what I taught you?", "Hahahha. Nursery 1 moves.", "Castle early, stay safe!"],
-            good: ["You're learning!", "Strong move.", "You're going to be world champion!", "Now you're playing real chess.", "Beautiful!"]
-        };
-        if (type === 'illegal') $remark.text(remarks.illegal);
-        else if (type === 'good') $remark.text(remarks.good[Math.floor(Math.random() * remarks.good.length)]);
-        else if (type === 'bad') $remark.text(remarks.bad[Math.floor(Math.random() * remarks.bad.length)]);
-    }
-
-    function makeAIMove() {
-        if (game.game_over()) return;
-
-        let moves = game.moves({ verbose: true });
-        
-        // Immediate play if only one legal move
-        if (moves.length === 1) {
-            game.move(moves[0]);
-            finalizeAIMove();
-            return;
-        }
-
-        // Sort moves before evaluating top-level
-        moves.sort((a, b) => (b.captured ? 1 : 0) - (a.captured ? 1 : 0));
-
-        let bestMove = null;
-        let bestValue = -99999;
-        let alpha = -100000;
-        let beta = 100000;
-
-        for (let move of moves) {
-            game.move(move);
-            let boardValue = minimax(game, 2, alpha, beta, false);
-            game.undo();
-            if (boardValue > bestValue) {
-                bestValue = boardValue;
-                bestMove = move;
-            }
-            alpha = Math.max(alpha, bestValue);
-        }
-
-        game.move(bestMove);
-        finalizeAIMove();
-    }
-
-    function finalizeAIMove() {
-        board.position(game.fen());
-        var history = game.history();
-        var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
-
-        if (game.game_over()) {
-            $status.html("Mr. Dotun wins!" + histText);
-            $remark.text("Go back and study your endgames!");
-        } else {
-            $status.html("Mr. Dotun moved. Your turn!" + histText);
-        }
-    }
-
     function onSquareClick(square) {
         if (game.game_over()) return;
         if (sourceSquare === null) {
@@ -422,8 +380,7 @@
             }
             return;
         }
-        var moveAttempt = { from: sourceSquare, to: square, promotion: 'q' };
-        var move = game.move(moveAttempt);
+        var move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
         if (move === null) {
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
@@ -433,7 +390,6 @@
             } else {
                 sourceSquare = null;
                 removeHighlights();
-                mrDotunRemarks('illegal');
             }
             return;
         }
@@ -446,17 +402,9 @@
             totalScore += pValues[move.captured];
         }
 
-        if (game.in_checkmate()) {
-            totalScore = 250; 
-            updateGrade();
-            $remark.text("Masterful! You checkmated Mr. Dotun!");
-        } else {
-            updateGrade();
-            if (move.captured || move.san.includes('+')) mrDotunRemarks('good');
-            else if(Math.random() > 0.7) mrDotunRemarks('bad');
-            $status.html("Thinking...");
-            window.setTimeout(makeAIMove, 250);
-        }
+        updateGrade();
+        $status.html("Thinking...");
+        window.setTimeout(makeAIMove, 250);
     }
 
     function addHighlight(square) {
