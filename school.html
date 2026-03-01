@@ -68,7 +68,7 @@
             background: rgba(0,0,0,0.2);
             padding: 10px;
             border-radius: 8px;
-            max-height: 200px; /* Increased height for more names */
+            max-height: 200px;
             overflow-y: auto;
             border: 1px solid #4ade8044;
         }
@@ -183,7 +183,6 @@
     var currentClass = "";
     var hasSavedWin = false;
 
-    // --- LOGIC TO PIN FIRST WINNER AND SHOW NEXT 99 ---
     function renderLeaderboard(snapshot) {
         const list = document.getElementById('leaderboardList');
         list.innerHTML = "";
@@ -198,20 +197,15 @@
             entries.push(data);
         });
 
-        // Sort by oldest first to find the "Original"
         entries.sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
         const firstWinner = entries[0];
-
-        // Take the rest, sort by newest first, and limit to 99 more (Total 100)
         let others = entries.slice(1).sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)).slice(0, 99);
 
-        // Render Original
         const liFirst = document.createElement('li');
         liFirst.className = "first-winner";
         liFirst.textContent = `⭐ ${firstWinner.name} (${firstWinner.class}) - ORIGINAL`;
         list.appendChild(liFirst);
 
-        // Render Others
         others.forEach(data => {
             const li = document.createElement('li');
             li.textContent = `👑 ${data.name} (${data.class})`;
@@ -219,7 +213,6 @@
         });
     }
 
-    // Increased limit to 100 for real-time listener
     db.collection("grandmasters").orderBy("timestamp", "asc").limit(100).onSnapshot((snapshot) => {
         renderLeaderboard(snapshot);
     });
@@ -228,10 +221,11 @@
         currentName = document.getElementById('studentName').value;
         currentClass = document.getElementById('studentClass').value;
 
-        // Force Refresh with 1122
+        // Enable Refresh with 1122
         if (currentName === "1122") {
             db.collection("grandmasters").orderBy("timestamp", "asc").limit(100).get().then((snapshot) => {
                 renderLeaderboard(snapshot);
+                alert("Leaderboard refreshed!");
             });
             return;
         }
@@ -245,15 +239,58 @@
         board.resize();
     }
 
-    // --- Standard Game Logic (Unchanged) ---
     var board = null;
     var game = new Chess();
     var $status = $('#status');
     var $grade = $('#grade');
     var $remark = $('#remark');
     var sourceSquare = null; 
-    var pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 1000 };
     var totalScore = 0;
+
+    // Advanced Material Weights
+    var weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+    
+    // Piece-Square Tables (PST) to make AI play strategically
+    var pst = {
+        p: [
+            [0,  0,  0,  0,  0,  0,  0,  0],
+            [50, 50, 50, 50, 50, 50, 50, 50],
+            [10, 10, 20, 30, 30, 20, 10, 10],
+            [5,  5, 10, 25, 25, 10,  5,  5],
+            [0,  0,  0, 20, 20,  0,  0,  0],
+            [5, -5,-10,  0,  0,-10, -5,  5],
+            [5, 10, 10,-20,-20, 10, 10,  5],
+            [0,  0,  0,  0,  0,  0,  0,  0]
+        ],
+        n: [
+            [-50,-40,-30,-30,-30,-30,-40,-50],
+            [-40,-20,  0,  0,  0,  0,-20,-40],
+            [-30,  0, 10, 15, 15, 10,  0,-30],
+            [-30,  5, 15, 20, 20, 15,  5,-30],
+            [-30,  0, 15, 20, 20, 15,  0,-30],
+            [-30,  5, 10, 15, 15, 10,  5,-30],
+            [-40,-20,  0,  5,  5,  0,-20,-40],
+            [-50,-40,-30,-30,-30,-30,-40,-50]
+        ]
+    };
+
+    function evaluateBoard(current_game) {
+        var total = 0;
+        var board_state = current_game.board();
+        for (var i = 0; i < 8; i++) {
+            for (var j = 0; j < 8; j++) {
+                var piece = board_state[i][j];
+                if (piece) {
+                    var val = weights[piece.type];
+                    // Add positional bonus for pawns and knights
+                    if (piece.type === 'p') val += pst.p[i][j];
+                    if (piece.type === 'n') val += pst.n[i][j];
+                    total += (piece.color === 'b' ? val : -val);
+                }
+            }
+        }
+        return total;
+    }
 
     function updateGrade() {
         if (totalScore >= 200) {
@@ -276,8 +313,8 @@
     function mrDotunRemarks(type) {
         var remarks = {
             illegal: "I'll reduce your score if you make an illegal move!",
-            bad: ["Control the center!", "Every pawn move creates a weakness.", "Is this what I taught you?", "Hahahha. Nursery 1 moves.", "Castle early, stay safe!"],
-            good: ["You're learning!", "Strong move.", "You're going to be world champion!", "Now you're playing real chess.", "Beautiful!"]
+            bad: ["Control the center!", "Is this what I taught you?", "Hahahha. Nursery 1 moves.", "You're leaving your king open!"],
+            good: ["You're learning!", "Strong move.", "You're going to be world champion!", "Beautiful!"]
         };
         if (type === 'illegal') $remark.text(remarks.illegal);
         else if (type === 'good') $remark.text(remarks.good[Math.floor(Math.random() * remarks.good.length)]);
@@ -286,51 +323,35 @@
 
     function makeAIMove() {
         if (game.game_over()) { $status.text('Game Over!'); return; }
-        var moves = game.moves({ verbose: true });
-        var threatenedByPlayer = [];
-        var playerMoves = game.moves({ verbose: true });
-        playerMoves.forEach(m => { if(m.captured) threatenedByPlayer.push(m.to); });
-        var scoredMoves = moves.map(function(move) {
-            var score = Math.random() * 5; 
-            if (move.san.includes('#')) return { move: move, score: 100000 };
-            if (threatenedByPlayer.includes(move.from)) score += (pieceValues[move.piece] * 60);
-            if (move.captured) {
-                var valGained = pieceValues[move.captured];
-                var valLost = pieceValues[move.piece];
-                game.move(move);
-                var recaptures = game.moves({ verbose: true }).filter(m => m.to === move.to);
-                game.undo();
-                if (recaptures.length > 0) {
-                    if (valGained >= valLost) score += (valGained * 45); 
-                    else score -= (valLost * 100);
-                } else { score += (valGained * 70); }
-            }
-            game.move(move);
-            var responses = game.moves({ verbose: true });
-            var canBeRecaptured = responses.find(m => m.to === move.to);
-            if (canBeRecaptured) score -= (pieceValues[move.piece] * 80);
-            var walkIntoMate = false;
-            for (var i = 0; i < responses.length; i++) {
-                game.move(responses[i]);
-                if (game.in_checkmate()) walkIntoMate = true;
-                game.undo();
-                if (walkIntoMate) break;
-            }
-            if (walkIntoMate) score -= 95000;
+        
+        var moves = game.moves();
+        var bestMove = null;
+        var bestValue = -99999;
+
+        // 1-Move Lookahead with Position Evaluation
+        moves.forEach(function(m) {
+            game.move(m);
+            var boardValue = evaluateBoard(game);
+            if (game.in_checkmate()) boardValue += 10000;
             game.undo();
-            if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) score += 20;
-            if (move.san.includes('+')) score += 35;
-            return { move: move, score: score };
+
+            if (boardValue > bestValue) {
+                bestValue = boardValue;
+                bestMove = m;
+            }
         });
-        scoredMoves.sort(function(a, b) { return b.score - a.score; });
-        game.move(scoredMoves[0].move);
+
+        game.move(bestMove || moves[Math.floor(Math.random() * moves.length)]);
         board.position(game.fen());
+        
         var history = game.history();
-        var histText = history.length > 0 ? "<br><small>History: " + history.slice(-6).join(' ') + "</small>" : "";
+        var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
         if (game.game_over()) {
             $status.html("Mr. Dotun wins!" + histText);
             $remark.text("Go back and study your endgames!");
-        } else { $status.html("Mr. Dotun moved. Your turn!" + histText); }
+        } else { 
+            $status.html("Mr. Dotun moved. Your turn!" + histText); 
+        }
     }
 
     function onSquareClick(square) {
@@ -340,38 +361,34 @@
             if (piece && piece.color === 'w') { sourceSquare = square; removeHighlights(); addHighlight(square); }
             return;
         }
-        var testGame = new Chess(game.fen());
+        
         var moveAttempt = { from: sourceSquare, to: square, promotion: 'q' };
-        var valid = testGame.move(moveAttempt);
-        if (valid) {
-            var responses = testGame.moves();
-            for (var i = 0; i < responses.length; i++) {
-                testGame.move(responses[i]);
-                if (testGame.in_checkmate()) {
-                    $remark.text("Careful! That leads to immediate checkmate!");
-                    $status.text("Blunder blocked! Try again.");
-                    sourceSquare = null; removeHighlights(); return;
-                }
-                testGame.undo();
-            }
-        }
         var move = game.move(moveAttempt);
+
         if (move === null) {
             var piece = game.get(square);
             if (piece && piece.color === 'w') { sourceSquare = square; removeHighlights(); addHighlight(square); }
             else { sourceSquare = null; removeHighlights(); mrDotunRemarks('illegal'); }
             return;
         }
+
         board.position(game.fen());
         sourceSquare = null; removeHighlights();
-        if (move.captured) totalScore += pieceValues[move.captured];
-        if (game.in_checkmate()) { totalScore = 250; updateGrade(); $remark.text("Masterful! You checkmated Mr. Dotun!"); }
-        else {
+        
+        if (move.captured) {
+            var valMap = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90 };
+            totalScore += (valMap[move.captured] || 0);
+        }
+
+        if (game.in_checkmate()) { 
+            totalScore = 250; 
+            updateGrade(); 
+            $remark.text("Masterful! You checkmated Mr. Dotun!"); 
+        } else {
             updateGrade();
             if (move.captured || move.san.includes('+')) mrDotunRemarks('good');
             else if(Math.random() > 0.7) mrDotunRemarks('bad');
-            var history = game.history();
-            $status.html("Thinking... <br><small>History: " + history.slice(-6).join(' ') + "</small>");
+            $status.html("Thinking...");
             window.setTimeout(makeAIMove, 500);
         }
     }
