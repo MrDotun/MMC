@@ -1,116 +1,164 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>2200 Elo Master AI</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Play Mr Dotun | 1800 Elo Chess</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    
     <style>
-        body { background: #111; color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 10px; }
-        #board { width: 95vw; max-width: 400px; margin: auto; }
-        .highlight-active { box-shadow: inset 0 0 5px 5px #f1c40f !important; }
-        .status { padding: 15px; font-weight: bold; color: #2ecc71; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #2c3e50; color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        #board-container { width: 400px; max-width: 90vw; margin-top: 10px; }
+        .info-panel { background: #34495e; padding: 15px; border-radius: 8px; width: 400px; max-width: 90vw; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        #status { font-weight: bold; color: #f1c40f; margin-bottom: 5px; height: 24px; }
+        .highlight-white { box-shadow: inset 0 0 3px 3px #f1c40f; }
+        .highlight-hint { background-color: rgba(46, 204, 113, 0.4); border-radius: 50%; width: 20px !important; height: 20px !important; margin: 10px; }
+        h1 { margin: 0 0 10px 0; font-size: 1.5rem; }
     </style>
 </head>
 <body>
 
-    <div class="status" id="status">Your Turn</div>
-    <div id="board"></div>
-    <br>
-    <button onclick="location.reload()">New Game</button>
+    <div class="info-panel">
+        <h1>Chess vs Mr Dotun</h1>
+        <div id="status">Starting Game...</div>
+        <div id="player-tag">Waiting for player...</div>
+    </div>
+
+    <div id="board-container">
+        <div id="myBoard"></div>
+    </div>
 
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
 
     <script>
-        var board = null, game = new Chess(), selectedSquare = null;
+        var board = null;
+        var game = new Chess();
+        var selectedSquare = null;
+        var playerName = prompt("Please enter your name:", "Challenger");
+        $('#player-tag').text(`${playerName} (White) vs Mr Dotun (Black)`);
 
-        // THE MASTER TABLES (The "N, B, R, Q" logic you asked for)
+        // --- Engine Weights (1800 Elo PST) ---
+        const weights = { p: 10, n: 32, b: 33, r: 50, q: 90, k: 900 };
         const pst = {
-            p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
-            n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
-            b: [[-20,-10,-10,-10,-10,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,10,10,5,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,10,10,10,10,0,-10],[-10,10,10,10,10,10,10,-10],[-10,5,0,0,0,0,5,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
-            r: [[0,0,0,0,0,0,0,0],[5,10,10,10,10,10,10,5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[0,0,0,5,5,0,0,0]],
-            q: [[-20,-10,-10,-5,-5,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,5,5,5,0,-10],[-5,0,5,5,5,5,0,-5],[0,0,5,5,5,5,0,-5],[-10,5,5,5,5,5,0,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
-            k: [[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[20,30,10,0,0,10,30,20]]
+            p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,27,27,10,5,5],[0,0,0,22,22,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
+            n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,5,5,0,-20,-40],[-30,5,10,15,15,10,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,10,15,15,10,0,-30],[-40,-20,0,0,0,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]]
         };
 
         function evaluateBoard(g) {
-            let total = 0, b = g.board();
-            const w = {p:100, n:320, b:330, r:500, q:900, k:20000};
-            for (let i=0; i<8; i++) {
-                for (let j=0; j<8; j++) {
-                    let p = b[i][j];
-                    if (p) {
-                        let v = w[p.type] + pst[p.type][p.color==='w' ? 7-i : i][j];
-                        total += (p.color==='w' ? v : -v);
+            let total = 0;
+            g.board().forEach((row, i) => {
+                row.forEach((piece, j) => {
+                    if (piece) {
+                        let val = weights[piece.type] + (pst[piece.type] ? pst[piece.type][i][j] : 0);
+                        total += (piece.color === 'w' ? val : -val);
                     }
-                }
-            }
+                });
+            });
             return total;
         }
 
-        // Alpha-Beta Pruning (Deep Thinking)
         function minimax(g, depth, alpha, beta, isMax) {
             if (depth === 0) return -evaluateBoard(g);
             let moves = g.moves();
-            let v = isMax ? -99999 : 99999;
-            for (let m of moves) {
-                g.move(m);
-                let res = minimax(g, depth-1, alpha, beta, !isMax);
-                g.undo();
-                v = isMax ? Math.max(v, res) : Math.min(v, res);
-                if (isMax) alpha = Math.max(alpha, v); else beta = Math.min(beta, v);
-                if (beta <= alpha) break;
+            if (isMax) {
+                let best = -9999;
+                for (let m of moves) {
+                    g.move(m);
+                    best = Math.max(best, minimax(g, depth-1, alpha, beta, !isMax));
+                    g.undo();
+                    alpha = Math.max(alpha, best);
+                    if (beta <= alpha) break;
+                }
+                return best;
+            } else {
+                let best = 9999;
+                for (let m of moves) {
+                    g.move(m);
+                    best = Math.min(best, minimax(g, depth-1, alpha, beta, !isMax));
+                    g.undo();
+                    beta = Math.min(beta, best);
+                    if (beta <= alpha) break;
+                }
+                return best;
             }
-            return v;
         }
 
-        function makeBestMove() {
+        function makeAiMove() {
             let moves = game.moves();
-            if (game.game_over()) return;
-            let bestMove = null, bestVal = 99999;
+            if (game.game_over()) return updateStatus();
+            
+            let bestMove = null;
+            let bestVal = -9999;
+            moves.sort(() => Math.random() - 0.5);
+
             for (let m of moves) {
                 game.move(m);
-                let val = minimax(game, 3, -100000, 100000, true);
+                let val = minimax(game, 3, -10000, 10000, false);
                 game.undo();
-                if (val < bestVal) { bestVal = val; bestMove = m; }
+                if (val > bestVal) { bestVal = val; bestMove = m; }
             }
             game.move(bestMove);
             board.position(game.fen());
-            $("#status").text("Your Turn");
+            updateStatus("Mr Dotun moved. Your turn.");
         }
 
-        function onSquareClick() {
-            var square = $(this).attr('data-square');
-            var piece = game.get(square);
+        // --- Click-to-Move Handler ---
+        function onSquareClick(square) {
+            if (game.turn() === 'b' || game.game_over()) return;
 
             if (selectedSquare === null) {
+                let piece = game.get(square);
                 if (piece && piece.color === 'w') {
                     selectedSquare = square;
-                    $(this).addClass('highlight-active');
+                    highlight(square);
                 }
             } else {
-                var move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
-                $('.square-adfc7').removeClass('highlight-active');
-                
-                if (move === null) {
-                    // Switch selection if clicking another white piece
+                let move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
+                removeHighlights();
+                selectedSquare = null;
+
+                if (move) {
+                    board.position(game.fen());
+                    updateStatus("Thinking...");
+                    setTimeout(makeAiMove, 600);
+                } else {
+                    let piece = game.get(square);
                     if (piece && piece.color === 'w') {
                         selectedSquare = square;
-                        $(this).addClass('highlight-active');
-                    } else { selectedSquare = null; }
-                } else {
-                    selectedSquare = null;
-                    board.position(game.fen());
-                    $("#status").text("Thinking...");
-                    setTimeout(makeBestMove, 250);
+                        highlight(square);
+                    }
                 }
             }
         }
 
-        board = ChessBoard('board', { position: 'start', draggable: false, pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
-        $('#board').on('click', '.square-adfc7', onSquareClick);
+        function highlight(sq) {
+            $('.square-' + sq).addClass('highlight-white');
+            game.moves({square: sq, verbose: true}).forEach(m => {
+                $('.square-' + m.to).append('<div class="highlight-hint"></div>');
+            });
+        }
+
+        function removeHighlights() {
+            $('#myBoard [class*="square-"]').removeClass('highlight-white');
+            $('.highlight-hint').remove();
+        }
+
+        function updateStatus(msg) {
+            let status = msg || (game.turn() === 'w' ? "Your turn" : "Calculating...");
+            if (game.in_checkmate()) status = "Checkmate. Mr Dotun wins.";
+            else if (game.in_draw()) status = "Draw.";
+            $('#status').text(status);
+        }
+
+        board = Chessboard('myBoard', { 
+            position: 'start', 
+            onSquareClick: onSquareClick,
+            draggable: false // Strict click-to-move
+        });
+        updateStatus("Mr Dotun is ready.");
     </script>
 </body>
 </html>
