@@ -239,8 +239,26 @@
     function mrDotunRemarks(type) {
         var remarks = {
             illegal: "I'll reduce your score if you make an illegal move!",
-            bad: ["Control the center!", "Every pawn move creates a weakness.", "Is this what I taught you?", "Hahahha. Nursery 1 moves.", "Castle early, stay safe!"],
-            good: ["You're learning!", "Strong move.", "You're going to be world champion!", "Now you're playing real chess.", "Beautiful!"]
+            bad: [
+                "Control the center!", "Every pawn move creates a weakness.", "Is this what I taught you?", 
+                "Hahahha. Nursery 1 moves.", "Castle early, stay safe!", "Don't bring your Queen out too early!",
+                "You're playing like you want to lose.", "Think twice, move once!", "Focus! Chess is discipline.",
+                "Are you giving me that piece for free?", "You are playing with fire.", "Don't just move, have a plan!",
+                "That piece was crying for help.", "Are we playing chess or checkers?", "Check your back rank!",
+                "You're walking into a trap.", "Stop reacting and start anticipating!", "Blunder alert!",
+                "You're making it too easy for me.", "Is your King safe? I don't think so.", "Study your openings again.",
+                "That was a wasted tempo.", "You're letting me dictate the game.", "Look at the whole board!",
+                "Even a beginner knows better than that."
+            ],
+            good: [
+                "You're learning!", "Strong move.", "You're going to be world champion!", "Now you're playing real chess.", 
+                "Beautiful!", "That's a master-level sequence.", "I didn't see that one coming!", "Excellent vision.",
+                "You've got me on the ropes now.", "Keep that pressure up!", "A very mature decision.", "Strategic brilliance!",
+                "You found the best move.", "That's how a Grandmaster plays.", "Solid defense.", "Great counter-play!",
+                "You're controlling the rhythm now.", "Sharp as a razor!", "I like your style.", "Textbook execution.",
+                "Thinking three steps ahead!", "Impressive calculation.", "You've improved since our last game.",
+                "Perfectly timed!", "You're making me work for this!"
+            ]
         };
         if (type === 'illegal') $remark.text(remarks.illegal);
         else if (type === 'good') $remark.text(remarks.good[Math.floor(Math.random() * remarks.good.length)]);
@@ -254,63 +272,34 @@
         }
 
         var moves = game.moves({ verbose: true });
-        
-        // --- 1. PRE-MOVE ANALYSIS: IDENTIFY WHAT PLAYER (WHITE) IS THREATENING ---
-        var currentThreats = [];
         var playerMoves = new Chess(game.fen()).moves({ verbose: true });
-        
-        playerMoves.forEach(m => { 
-            if(m.captured) {
-                var target = game.get(m.to);
-                currentThreats.push({
-                    square: m.to,
-                    targetVal: pieceValues[target.type]
-                });
-            }
-        });
+        var squaresAttackedByPlayer = playerMoves.map(m => m.to);
 
         var scoredMoves = moves.map(function(move) {
-            var score = Math.random() * 10; 
-
-            // Rule 1: Instant Victory
+            var score = Math.random() * 5; 
             if (move.san.includes('#')) return { move: move, score: 100000 };
-            
-            // Rule 2: DEFENSIVE PRIORITY - If this piece is currently being attacked, move it!
-            var threat = currentThreats.find(t => t.square === move.from);
-            if (threat) {
-                // Massive priority to save pieces, especially high value ones
-                score += (threat.targetVal * 150); 
+            var currentPiece = game.get(move.from);
+            var currentPieceVal = pieceValues[currentPiece.type];
+            if (squaresAttackedByPlayer.includes(move.from)) {
+                score += (currentPieceVal * 120); 
             }
-
-            // Rule 3: Exchange Evaluation
             if (move.captured) {
                 var valGained = pieceValues[move.captured];
                 var valLost = pieceValues[move.piece];
-                
                 game.move(move);
-                var recaptures = game.moves({ verbose: true }).filter(m => m.to === move.to);
+                var canBeRecaptured = game.moves({ verbose: true }).some(m => m.to === move.to);
                 game.undo();
-
-                if (recaptures.length > 0) {
-                    // Only capture if we win material or trade equally
+                if (canBeRecaptured) {
                     if (valGained >= valLost) score += (valGained * 50); 
-                    else score -= (valLost * 60); 
+                    else score -= (valLost * 70); 
                 } else {
                     score += (valGained * 85); 
                 }
             }
-
-            // Rule 4: DESTINATION SAFETY (Don't move into a trap)
             game.move(move);
             var opponentResponses = game.moves({ verbose: true });
-            var landingSquareAttacked = opponentResponses.find(m => m.to === move.to);
-            
-            if (landingSquareAttacked) {
-                // If moving here means being captured immediately, penalize heavily
-                score -= (pieceValues[move.piece] * 130);
-            }
-
-            // Rule 5: Blunder Prevention (Checkmate Lookahead)
+            var landingSquareAttacked = opponentResponses.some(m => m.to === move.to);
+            if (landingSquareAttacked) score -= (pieceValues[move.piece] * 100);
             var walkIntoMate = false;
             for (var i = 0; i < opponentResponses.length; i++) {
                 game.move(opponentResponses[i]);
@@ -318,18 +307,13 @@
                 game.undo();
                 if (walkIntoMate) break;
             }
-            if (walkIntoMate) score -= 99000;
-
+            if (walkIntoMate) score -= 90000;
             game.undo();
-
-            // Rule 6: General Development
-            if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) score += 20;
-            if (move.san.includes('+')) score += 30;
-
+            if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) score += 15;
+            if (move.san.includes('+')) score += 25;
             return { move: move, score: score };
         });
 
-        // Execute the smartest move
         scoredMoves.sort(function(a, b) { return b.score - a.score; });
         game.move(scoredMoves[0].move);
         board.position(game.fen());
@@ -347,7 +331,6 @@
 
     function onSquareClick(square) {
         if (game.game_over()) return;
-
         if (sourceSquare === null) {
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
@@ -357,11 +340,9 @@
             }
             return;
         }
-
         var testGame = new Chess(game.fen());
         var moveAttempt = { from: sourceSquare, to: square, promotion: 'q' };
         var valid = testGame.move(moveAttempt);
-        
         if (valid) {
             var responses = testGame.moves();
             for (var i = 0; i < responses.length; i++) {
@@ -376,7 +357,6 @@
                 testGame.undo();
             }
         }
-
         var move = game.move(moveAttempt);
         if (move === null) {
             var piece = game.get(square);
@@ -391,13 +371,10 @@
             }
             return;
         }
-
         board.position(game.fen());
         sourceSquare = null;
         removeHighlights();
-
         if (move.captured) totalScore += pieceValues[move.captured];
-
         if (game.in_checkmate()) {
             totalScore = 250; 
             updateGrade();
@@ -406,7 +383,6 @@
             updateGrade();
             if (move.captured || move.san.includes('+')) mrDotunRemarks('good');
             else if(Math.random() > 0.7) mrDotunRemarks('bad');
-            
             var history = game.history();
             $status.html("Thinking... <br><small>History: " + history.slice(-6).join(' ') + "</small>");
             window.setTimeout(makeAIMove, 500);
