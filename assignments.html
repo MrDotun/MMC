@@ -251,7 +251,7 @@
             return;
         }
         document.getElementById('welcome-overlay').style.display = 'none';
-        document.getElementById('game-container').style.display = 'block';
+        docuI ent.getElementById('game-container').style.display = 'block';
         board.resize();
     }
 
@@ -263,11 +263,9 @@
     var $remark = $('#remark');
     var sourceSquare = null; 
 
-    // Piece weights for Evaluation
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
     var totalScore = 0;
 
-    // Piece-Square Tables (Positional awareness)
     const pst = {
         p: [
             [0,  0,  0,  0,  0,  0,  0,  0], [50, 50, 50, 50, 50, 50, 50, 50],
@@ -285,30 +283,34 @@
 
     function evaluateBoard(game) {
         let totalEvaluation = 0;
-        const board = game.board();
+        const b = game.board();
         for (let i = 0; i < 8; i++) {
             for (let j = 0; j < 8; j++) {
-                totalEvaluation += getPieceValue(board[i][j], i, j);
+                if (b[i][j]) totalEvaluation += getPieceValue(b[i][j], i, j);
             }
         }
         return totalEvaluation;
     }
 
     function getPieceValue(piece, x, y) {
-        if (piece === null) return 0;
         const isWhite = piece.color === 'w';
         const type = piece.type;
         let val = weights[type];
         if (pst[type]) {
             val += isWhite ? pst[type][7 - x][y] : pst[type][x][y];
         }
-        return isWhite ? -val : val; // AI is Black (positive is good for AI)
+        return isWhite ? -val : val; 
     }
 
-    // Minimax with Alpha-Beta Pruning
+    // Minimax with optimized Move Ordering for speed
     function minimax(game, depth, alpha, beta, isMaximizing) {
         if (depth === 0) return evaluateBoard(game);
-        let moves = game.moves();
+
+        // Sorting moves: Captures first to trigger Alpha-Beta pruning faster
+        let moves = game.moves({ verbose: true }).sort((a, b) => {
+            return (b.captured ? 1 : 0) - (a.captured ? 1 : 0);
+        });
+
         if (isMaximizing) {
             let bestScore = -99999;
             for (let move of moves) {
@@ -364,24 +366,40 @@
     function makeAIMove() {
         if (game.game_over()) return;
 
-        let moves = game.moves();
+        let moves = game.moves({ verbose: true });
+        
+        // Immediate play if only one legal move
+        if (moves.length === 1) {
+            game.move(moves[0]);
+            finalizeAIMove();
+            return;
+        }
+
+        // Sort moves before evaluating top-level
+        moves.sort((a, b) => (b.captured ? 1 : 0) - (a.captured ? 1 : 0));
+
         let bestMove = null;
         let bestValue = -99999;
+        let alpha = -100000;
+        let beta = 100000;
 
-        // Depth 3 search - Professional club level strength
-        moves.forEach(m => {
-            game.move(m);
-            let boardValue = minimax(game, 2, -100000, 100000, false);
+        for (let move of moves) {
+            game.move(move);
+            let boardValue = minimax(game, 2, alpha, beta, false);
             game.undo();
             if (boardValue > bestValue) {
                 bestValue = boardValue;
-                bestMove = m;
+                bestMove = move;
             }
-        });
+            alpha = Math.max(alpha, bestValue);
+        }
 
         game.move(bestMove);
-        board.position(game.fen());
+        finalizeAIMove();
+    }
 
+    function finalizeAIMove() {
+        board.position(game.fen());
         var history = game.history();
         var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
 
@@ -397,7 +415,7 @@
         if (game.game_over()) return;
         if (sourceSquare === null) {
             var piece = game.get(square);
-            if (piece && piece.color === 'w') {
+            if (piece && piece.color === 'w') {k
                 sourceSquare = square;
                 removeHighlights();
                 addHighlight(square);
@@ -436,9 +454,8 @@
             updateGrade();
             if (move.captured || move.san.includes('+')) mrDotunRemarks('good');
             else if(Math.random() > 0.7) mrDotunRemarks('bad');
-            var history = game.history();
             $status.html("Thinking...");
-            window.setTimeout(makeAIMove, 300);
+            window.setTimeout(makeAIMove, 250);
         }
     }
 
