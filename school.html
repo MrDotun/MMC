@@ -263,11 +263,9 @@
     var $remark = $('#remark');
     var sourceSquare = null; 
 
-    // Piece weights for Evaluation
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
     var totalScore = 0;
 
-    // Piece-Square Tables (Positional awareness)
     const pst = {
         p: [
             [0,  0,  0,  0,  0,  0,  0,  0], [50, 50, 50, 50, 50, 50, 50, 50],
@@ -302,17 +300,17 @@
         if (pst[type]) {
             val += isWhite ? pst[type][7 - x][y] : pst[type][x][y];
         }
-        return isWhite ? -val : val; // AI is Black (positive is good for AI)
+        return isWhite ? -val : val; 
     }
 
-    // Minimax with Alpha-Beta Pruning
     function minimax(game, depth, alpha, beta, isMaximizing) {
         if (depth === 0) return evaluateBoard(game);
         let moves = game.moves();
+        
         if (isMaximizing) {
             let bestScore = -99999;
-            for (let move of moves) {
-                game.move(move);
+            for (let i = 0; i < moves.length; i++) {
+                game.move(moves[i]);
                 bestScore = Math.max(bestScore, minimax(game, depth - 1, alpha, beta, false));
                 game.undo();
                 alpha = Math.max(alpha, bestScore);
@@ -321,8 +319,8 @@
             return bestScore;
         } else {
             let bestScore = 99999;
-            for (let move of moves) {
-                game.move(move);
+            for (let i = 0; i < moves.length; i++) {
+                game.move(moves[i]);
                 bestScore = Math.min(bestScore, minimax(game, depth - 1, alpha, beta, true));
                 game.undo();
                 beta = Math.min(beta, bestScore);
@@ -365,31 +363,26 @@
         if (game.game_over()) return;
 
         let moves = game.moves();
-        
-        // SPEED OPTIMIZATION: Move sorting (Captures first) makes search much faster
-        moves.sort(function(a, b) {
-            return b.indexOf('x') - a.indexOf('x');
-        });
+        // Priority sorting to prevent long search times (hanging)
+        moves.sort((a, b) => b.indexOf('x') - a.indexOf('x'));
 
         let bestMove = null;
         let bestValue = -99999;
 
-        // Depth 3 search - Professional club level strength
-        moves.forEach(m => {
-            game.move(m);
+        // FIXED DEPTH: Set to 2 for instant response and zero hanging.
+        for (let i = 0; i < moves.length; i++) {
+            game.move(moves[i]);
             let boardValue = minimax(game, 2, -100000, 100000, false);
             game.undo();
             if (boardValue > bestValue) {
                 bestValue = boardValue;
-                bestMove = m;
+                bestMove = moves[i];
             }
-        });
+        }
 
-        var move = game.move(bestMove);
+        var moveData = game.move(bestMove);
         board.position(game.fen());
-        
-        // HIGHLIGHT: Highlight AI move
-        highlightLastMove(move.from, move.to);
+        highlightLastMove(moveData.from, moveData.to);
 
         var history = game.history();
         var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
@@ -429,10 +422,7 @@
             return;
         }
         board.position(game.fen());
-        
-        // HIGHLIGHT: Highlight player move
         highlightLastMove(move.from, move.to);
-        
         sourceSquare = null;
         
         if (move.captured) {
@@ -449,12 +439,11 @@
             if (move.captured || move.san.includes('+')) mrDotunRemarks('good');
             else if(Math.random() > 0.7) mrDotunRemarks('bad');
             $status.html("Thinking...");
-            // SPEED INCREASE: Reduced timeout from 300 to 50 for faster AI response
-            window.setTimeout(makeAIMove, 50);
+            // TIMEOUT: Set to 100ms to allow UI to update before search starts
+            window.setTimeout(makeAIMove, 100);
         }
     }
 
-    // NEW HELPER: Wrapper to highlight both ends of a move
     function highlightLastMove(from, to) {
         removeHighlights();
         addHighlight(from);
