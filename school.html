@@ -255,10 +255,8 @@
 
         var moves = game.moves({ verbose: true });
         
-        // --- 1. PRE-MOVE ANALYSIS: WHAT IS CURRENTLY THREATENED? ---
-        var threatenedByPlayer = [];
+        // --- PRE-MOVE ANALYSIS: WHAT IS CURRENTLY THREATENED? ---
         var playerMoves = game.moves({ verbose: true });
-        playerMoves.forEach(m => { if(m.captured) threatenedByPlayer.push(m.to); });
 
         var scoredMoves = moves.map(function(move) {
             var score = Math.random() * 5; 
@@ -267,9 +265,19 @@
             if (move.san.includes('#')) return { move: move, score: 100000 };
             
             // Rule 2: Protect Threatened Pieces (Self-Preservation)
-            if (threatenedByPlayer.includes(move.from)) {
-                score += (pieceValues[move.piece] * 60); // Strong incentive to move away
-            }
+            // Prioritize pieces targeted by White, especially by smaller pieces
+            playerMoves.forEach(function(pm) {
+                if (pm.to === move.from) {
+                    var targetValue = pieceValues[move.piece];
+                    var attacker = game.get(pm.from);
+                    var attackerValue = attacker ? pieceValues[attacker.type] : 10;
+                    
+                    score += (targetValue * 60); 
+                    if (attackerValue < targetValue) {
+                        score += (targetValue - attackerValue) * 150; 
+                    }
+                }
+            });
 
             // Rule 3: Exchange Evaluation (No Bad Trades)
             if (move.captured) {
@@ -282,9 +290,9 @@
 
                 if (recaptures.length > 0) {
                     if (valGained >= valLost) score += (valGained * 45); 
-                    else score -= (valLost * 100); // Block bad trades
+                    else score -= (valLost * 120); 
                 } else {
-                    score += (valGained * 70); // Free capture
+                    score += (valGained * 70); 
                 }
             }
 
@@ -293,10 +301,15 @@
             var responses = game.moves({ verbose: true });
             var canBeRecaptured = responses.find(m => m.to === move.to);
             if (canBeRecaptured) {
-                score -= (pieceValues[move.piece] * 80);
+                var movingPieceValue = pieceValues[move.piece];
+                var defender = game.get(canBeRecaptured.from);
+                var defenderValue = defender ? pieceValues[defender.type] : 10;
+                
+                score -= (movingPieceValue * 80);
+                if (defenderValue < movingPieceValue) score -= 600; 
             }
 
-            // Rule 5: Blunder Prevention (Checkmate Lookahead)
+            // Rule 5: Blunder Prevention
             var walkIntoMate = false;
             for (var i = 0; i < responses.length; i++) {
                 game.move(responses[i]);
@@ -308,16 +321,16 @@
 
             game.undo();
 
-            // Rule 6: General Strategy
+            // Rule 6: Strategy (Center Control + Castling)
             if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) score += 20;
             if (move.san.includes('+')) score += 35;
+            if (move.san.includes('O-O')) score += 150; 
 
             return { move: move, score: score };
         });
 
         scoredMoves.sort(function(a, b) { return b.score - a.score; });
         
-        // Execute move
         game.move(scoredMoves[0].move);
         board.position(game.fen());
         
