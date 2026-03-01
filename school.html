@@ -278,28 +278,49 @@
         var scoredMoves = moves.map(function(move) {
             var score = Math.random() * 5; 
             if (move.san.includes('#')) return { move: move, score: 100000 };
+            
             var currentPiece = game.get(move.from);
             var currentPieceVal = pieceValues[currentPiece.type];
+            
+            // ESCAPE LOGIC: If a piece is already under attack, moving it is prioritized
             if (squaresAttackedByPlayer.includes(move.from)) {
-                score += (currentPieceVal * 120); 
+                score += (currentPieceVal * 10); 
             }
+
+            // CAPTURE EVALUATION
             if (move.captured) {
                 var valGained = pieceValues[move.captured];
                 var valLost = pieceValues[move.piece];
                 game.move(move);
                 var canBeRecaptured = game.moves({ verbose: true }).some(m => m.to === move.to);
                 game.undo();
+                
                 if (canBeRecaptured) {
                     if (valGained >= valLost) score += (valGained * 50); 
-                    else score -= (valLost * 70); 
+                    else score -= (valLost * 100); // Avoid bad trades
                 } else {
                     score += (valGained * 85); 
                 }
             }
+
             game.move(move);
             var opponentResponses = game.moves({ verbose: true });
+            
+            // PROTECTION CHECK: Ensure the landing square isn't "hanging"
             var landingSquareAttacked = opponentResponses.some(m => m.to === move.to);
-            if (landingSquareAttacked) score -= (pieceValues[move.piece] * 100);
+            if (landingSquareAttacked) {
+                // Check if the piece is defended by another black piece
+                var pieceOnSquare = game.remove(move.to);
+                var isDefendedByBlack = game.moves({verbose: true}).some(m => m.to === move.to);
+                game.put(pieceOnSquare, move.to);
+
+                if (!isDefendedByBlack) {
+                    score -= (pieceValues[move.piece] * 150); // Massive penalty for hanging a piece
+                } else if (pieceValues[move.piece] > 10) {
+                    score -= (pieceValues[move.piece] * 15); // Slight penalty for risky trades
+                }
+            }
+
             var walkIntoMate = false;
             for (var i = 0; i < opponentResponses.length; i++) {
                 game.move(opponentResponses[i]);
@@ -308,9 +329,12 @@
                 if (walkIntoMate) break;
             }
             if (walkIntoMate) score -= 90000;
+            
             game.undo();
+            
             if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) score += 15;
             if (move.san.includes('+')) score += 25;
+            
             return { move: move, score: score };
         });
 
