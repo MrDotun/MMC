@@ -215,7 +215,7 @@
     var $remark = $('#remark');
     var sourceSquare = null; 
 
-    var pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 0 };
+    var pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 1000 };
     var totalScore = 0;
 
     function updateGrade() {
@@ -254,49 +254,73 @@
         }
 
         var moves = game.moves({ verbose: true });
+        
+        // --- 1. PRE-MOVE ANALYSIS: WHAT IS CURRENTLY THREATENED? ---
+        var threatenedByPlayer = [];
+        var playerMoves = game.moves({ verbose: true });
+        playerMoves.forEach(m => { if(m.captured) threatenedByPlayer.push(m.to); });
+
         var scoredMoves = moves.map(function(move) {
-            var score = Math.random() * 2; 
+            var score = Math.random() * 5; 
 
-            // 1. Instant Victory
-            if (move.san.includes('#')) return { move: move, score: 50000 };
+            // Rule 1: Instant Victory
+            if (move.san.includes('#')) return { move: move, score: 100000 };
             
-            // 2. Aggressive Target: f7 (Weakest point)
-            if (move.to === 'f7') score += 150;
-            if (move.san.includes('xf7')) score += 200;
-
-            // 3. Early Attack Setup (Scholar's Mate pieces)
-            if (['c4', 'h5', 'f3'].includes(move.to)) score += 50;
-
-            // 4. Aggressive Checks
-            if (move.san.includes('+')) score += 80;
-
-            // 5. Lookahead Safety
-            game.move(move);
-            if (game.in_checkmate()) score -= 30000;
-            var responses = game.moves({ verbose: true });
-            
-            // 6. Capture Logic
-            if (move.captured) score += (pieceValues[move.captured] * 40);
-
-            // 7. Defensive Safety
-            var isCapturedByPlayer = responses.find(function(m) { return m.to === move.to; });
-            if (isCapturedByPlayer) {
-                var val = pieceValues[move.piece] || 10;
-                score -= (val * 35);
+            // Rule 2: Protect Threatened Pieces (Self-Preservation)
+            if (threatenedByPlayer.includes(move.from)) {
+                score += (pieceValues[move.piece] * 60); // Strong incentive to move away
             }
+
+            // Rule 3: Exchange Evaluation (No Bad Trades)
+            if (move.captured) {
+                var valGained = pieceValues[move.captured];
+                var valLost = pieceValues[move.piece];
+                
+                game.move(move);
+                var recaptures = game.moves({ verbose: true }).filter(m => m.to === move.to);
+                game.undo();
+
+                if (recaptures.length > 0) {
+                    if (valGained >= valLost) score += (valGained * 45); 
+                    else score -= (valLost * 100); // Block bad trades
+                } else {
+                    score += (valGained * 70); // Free capture
+                }
+            }
+
+            // Rule 4: Square Safety (Don't move into fire)
+            game.move(move);
+            var responses = game.moves({ verbose: true });
+            var canBeRecaptured = responses.find(m => m.to === move.to);
+            if (canBeRecaptured) {
+                score -= (pieceValues[move.piece] * 80);
+            }
+
+            // Rule 5: Blunder Prevention (Checkmate Lookahead)
+            var walkIntoMate = false;
+            for (var i = 0; i < responses.length; i++) {
+                game.move(responses[i]);
+                if (game.in_checkmate()) walkIntoMate = true;
+                game.undo();
+                if (walkIntoMate) break;
+            }
+            if (walkIntoMate) score -= 95000;
+
             game.undo();
 
-            // 8. Center Control
-            if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) score += 30;
+            // Rule 6: General Strategy
+            if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) score += 20;
+            if (move.san.includes('+')) score += 35;
 
             return { move: move, score: score };
         });
 
         scoredMoves.sort(function(a, b) { return b.score - a.score; });
+        
+        // Execute move
         game.move(scoredMoves[0].move);
         board.position(game.fen());
         
-        // Update Status with History
         var history = game.history();
         var histText = history.length > 0 ? "<br><small>History: " + history.slice(-6).join(' ') + "</small>" : "";
         
@@ -321,7 +345,6 @@
             return;
         }
 
-        // --- BLUNDER DETECTOR ---
         var testGame = new Chess(game.fen());
         var moveAttempt = { from: sourceSquare, to: square, promotion: 'q' };
         var valid = testGame.move(moveAttempt);
