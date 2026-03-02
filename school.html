@@ -10,7 +10,7 @@
         body { font-family: sans-serif; background: var(--bg); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
         #board-container { width: 350px; max-width: 95vw; margin: 10px auto; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
         .hidden { display: none !important; }
-        .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: none; background: var(--primary); color: white; font-weight: bold; width: 100%; }
+        .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: none; background: var(--primary); color: white; font-weight: bold; width: 100%; max-width: 300px; }
         #results-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 12px; box-shadow: 0 0 30px rgba(0,0,0,0.5); z-index: 2000; width: 85%; max-height: 70vh; overflow-y: auto; }
         .leaderboard-entry { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ddd; }
         #task-text { background: #fff; padding: 12px; border-radius: 8px; border-left: 4px solid var(--secondary); margin-bottom: 10px; width: 90%; font-size: 14px; min-height: 40px; }
@@ -41,14 +41,14 @@
 
     <div id="post-game" class="hidden">
         <h2>Mission Accomplished! 🎉</h2>
-        <button class="btn" style="background:var(--secondary); margin-bottom:15px;" onclick="fetchLeaderboard()">🏆 Check Results & Leaderboard</button>
-        <button class="btn" onclick="location.reload()">🔄 Restart Missions</button>
+        <button class="btn" style="background:var(--secondary); margin-bottom:15px;" onclick="fetchLeaderboard()">🏆 Leaderboard</button>
+        <button class="btn" onclick="location.reload()">🔄 Restart</button>
     </div>
 
     <div id="results-modal" class="hidden">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h3 style="margin:0">Grade <span id="lbl-grade"></span> Leaderboard</h3>
-            <button onclick="document.getElementById('results-modal').classList.add('hidden')" style="padding:5px 10px;">Close</button>
+            <h3 style="margin:0">Grade <span id="lbl-grade"></span> Results</h3>
+            <button onclick="document.getElementById('results-modal').classList.add('hidden')">Close</button>
         </div>
         <hr>
         <div id="leaderboard-data"></div>
@@ -61,23 +61,18 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
 
-        // CONFIG UPDATED FROM SCREENSHOT
         const firebaseConfig = {
             apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
             authDomain: "assignments-de95a.firebaseapp.com",
-            databaseURL: "https://assignments-de95a-default-rtdb.firebaseio.com",
             projectId: "assignments-de95a",
             storageBucket: "assignments-de95a.firebasestorage.app",
             messagingSenderId: "1088073398299",
-            appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be",
-            measurementId: "G-61LNTVLFX9"
+            appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const analytics = getAnalytics(app);
 
         const allQuestions = [
             { grade: 1, fen: "8/8/8/4nn2/4P3/8/8/8 w - - 0 1", move: "e4f5", task: "Capture the Knight on f5 with your Pawn!" },
@@ -137,11 +132,10 @@
         }
 
         async function finishGame() {
-            // FIX: BUTTONS SHOW IMMEDIATELY
             document.getElementById("game-area").classList.add("hidden");
             document.getElementById("post-game").classList.remove("hidden");
 
-            const name = prompt("Mission Accomplished! Enter your name for the leaderboard:");
+            const name = prompt("Enter your name:");
             if (name && name.trim() !== "") {
                 try {
                     await addDoc(collection(db, "leaderboard"), {
@@ -150,13 +144,12 @@
                         score: score,
                         timestamp: serverTimestamp()
                     });
-                } catch (e) { console.error("Save Error:", e); }
+                } catch (e) { console.error(e); }
             }
         }
 
         window.fetchLeaderboard = async function() {
             try {
-                // QUERY MATCHES YOUR ENABLED INDEX
                 const q = query(
                     collection(db, "leaderboard"), 
                     where("gradeLevel", "==", myGrade), 
@@ -168,11 +161,11 @@
                     const d = doc.data();
                     html += `<div class="leaderboard-entry"><span>${d.studentName}</span><b>${d.score}/5</b></div>`;
                 });
-                document.getElementById("leaderboard-data").innerHTML = html || "No entries yet!";
+                document.getElementById("leaderboard-data").innerHTML = html || "No scores yet!";
                 document.getElementById("lbl-grade").innerText = myGrade;
                 document.getElementById("results-modal").classList.remove("hidden");
             } catch (err) {
-                alert("Leaderboard Error: " + err.message);
+                alert("Database Error: " + err.message);
             }
         };
     </script>
