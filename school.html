@@ -159,6 +159,9 @@
         window.initMission = function(grade) {
             myGrade = grade;
             gradeSet = allQuestions.filter(q => q.grade === grade);
+            currentIdx = 0; // Reset index
+            score = 0;      // Reset score
+            document.getElementById("current-score").innerText = score;
             document.getElementById("setup-area").classList.add("hidden");
             document.getElementById("game-area").classList.remove("hidden");
             loadQuestion();
@@ -175,12 +178,14 @@
             squareSelected = null;
             
             board = Chessboard('myBoard', {
-                draggable: false, // DRAG DISABLED
+                draggable: false, 
                 position: q.fen,
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             });
 
-            // Re-bind the click event and mouse events manually after board creation
+            // Clean previous listeners to avoid double firing
+            $('#myBoard .square-55d63').off('click mouseenter mouseleave');
+
             $('#myBoard .square-55d63').on('click', function() {
                 const square = $(this).attr('data-square');
                 onSquareClick(square);
@@ -226,7 +231,8 @@
 
         function handleMove(source, target) {
             const move = source + target;
-            const correct = gradeSet[currentIdx].move;
+            const q = gradeSet[currentIdx];
+            const correct = q.move;
             
             if (move === correct || (move + 'q' === correct) || (move + 'n' === correct)) {
                 score++;
@@ -269,17 +275,28 @@
             document.getElementById("post-game").classList.remove("hidden");
         }
 
+        // EXPOSE TO WINDOW FOR BUTTONS
         window.fetchLeaderboard = async function() {
-            const q = query(collection(db, "leaderboard"), where("gradeLevel", "==", myGrade), orderBy("score", "desc"), orderBy("timestamp", "asc"));
-            const snap = await getDocs(q);
-            let html = "";
-            snap.forEach(doc => {
-                const d = doc.data();
-                html += `<div class="leaderboard-entry"><span>${d.studentName}</span><span>${d.score} / 10</span></div>`;
-            });
-            document.getElementById("leaderboard-data").innerHTML = html || "No scores for this grade yet!";
-            document.getElementById("lbl-grade").innerText = myGrade;
-            document.getElementById("results-modal").classList.remove("hidden");
+            try {
+                const q = query(
+                    collection(db, "leaderboard"), 
+                    where("gradeLevel", "==", myGrade), 
+                    orderBy("score", "desc"), 
+                    orderBy("timestamp", "asc")
+                );
+                const snap = await getDocs(q);
+                let html = "";
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    html += `<div class="leaderboard-entry"><span>${d.studentName}</span><span>${d.score} / 10</span></div>`;
+                });
+                document.getElementById("leaderboard-data").innerHTML = html || "No scores for this grade yet!";
+                document.getElementById("lbl-grade").innerText = myGrade;
+                document.getElementById("results-modal").classList.remove("hidden");
+            } catch (err) {
+                console.error("Fetch Error:", err);
+                alert("Could not load leaderboard. Check Firebase console for Index requirements.");
+            }
         }
 
         window.filterLeaderboard = function() {
