@@ -2,64 +2,162 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Submission Successful | Dotun.Dev</title>
+    <title>Chess Assessment Builder</title>
     <style>
-        body {
-            background-color: #1a1a2e;
-            font-family: 'Segoe UI', sans-serif;
-            margin: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            text-align: center;
-        }
-        .success-card {
-            background: white;
-            padding: 40px;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            max-width: 400px;
-            width: 90%;
-        }
-        .icon {
-            font-size: 50px;
-            color: #4ade80;
-            margin-bottom: 20px;
-        }
-        h2 {
-            color: #2D1B4D;
-            margin-bottom: 10px;
-        }
-        p {
-            color: #666;
-            line-height: 1.6;
-            margin-bottom: 25px;
-        }
-        .btn {
-            display: inline-block;
-            background: #2D1B4D;
-            color: #4ade80;
-            padding: 12px 25px;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: bold;
-            transition: 0.3s;
-        }
-        .btn:hover {
-            background: #3d2666;
-        }
+        :root { --light: #eeeed2; --dark: #769656; --accent: #3498db; --success: #27ae60; }
+        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .layout { display: flex; gap: 40px; align-items: flex-start; }
+        #board { display: grid; grid-template-columns: repeat(8, 60px); grid-template-rows: repeat(8, 60px); border: 4px solid #333; cursor: crosshair; }
+        .square { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; font-size: 45px; user-select: none; }
+        .light { background-color: var(--light); color: #333; }
+        .dark { background-color: var(--dark); color: #333; }
+        .start-highlight { background-color: rgba(52, 152, 219, 0.7) !important; border: 2px solid white inset; }
+        .target-highlight { background-color: rgba(231, 76, 60, 0.7) !important; border: 2px solid white inset; }
+        
+        .sidebar { width: 380px; display: flex; flex-direction: column; gap: 10px; }
+        .palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-bottom: 10px; }
+        .p-piece { aspect-ratio: 1/1; background: #333; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 2px solid transparent; font-size: 28px; border-radius: 4px; }
+        .active-tool { border-color: #ffcf40; background: #444; }
+        
+        textarea { width: 100%; height: 200px; background: #000; color: #00ff41; font-family: monospace; border-radius: 5px; margin-top: 10px; padding: 10px; box-sizing: border-box; }
+        button { padding: 10px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; transition: 0.2s; }
+        .btn-main { background: var(--success); color: white; margin-top: 5px; }
+        .btn-download { background: var(--accent); color: white; }
+        input { padding: 10px; background: #333; border: 1px solid #555; color: white; border-radius: 4px; }
+        .counter { font-size: 1.2em; color: var(--success); font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <div class="success-card">
-        <div class="icon">✔</div>
-        <h2>Submission Received!</h2>
-        <p>Thank you for reaching out. The school admissions office has been notified and will contact you shortly.</p>
-        <a href="index.html" class="btn">Return to Home</a>
-    </div>
+<h1>Chess Assessment Book Builder</h1>
+<p>Current Puzzles in Batch: <span id="count" class="counter">0</span></p>
 
+<div class="layout">
+    <div id="board"></div>
+    
+    <div class="sidebar">
+        <div class="palette">
+            <div class="p-piece" id="tool-P" onclick="setTool('P')">♙</div>
+            <div class="p-piece" id="tool-N" onclick="setTool('N')">♘</div>
+            <div class="p-piece" id="tool-B" onclick="setTool('B')">♗</div>
+            <div class="p-piece" id="tool-R" onclick="setTool('R')">♖</div>
+            <div class="p-piece" id="tool-Q" onclick="setTool('Q')">♕</div>
+            <div class="p-piece" id="tool-K" onclick="setTool('K')">♔</div>
+            <div class="p-piece" id="tool-p" onclick="setTool('p')">♟</div>
+            <div class="p-piece" id="tool-n" onclick="setTool('n')">♞</div>
+            <div class="p-piece" id="tool-b" onclick="setTool('b')">♝</div>
+            <div class="p-piece" id="tool-r" onclick="setTool('r')">♜</div>
+            <div class="p-piece" id="tool-q" onclick="setTool('q')">♛</div>
+            <div class="p-piece" id="tool-k" onclick="setTool('k')">♚</div>
+        </div>
+
+        <button onclick="setTool('')" style="background:#444; color:white;">Eraser (Remove Piece)</button>
+        <button onclick="setTool('START')" style="background:#3498db; color:white;">1. Mark Starting Square</button>
+        <button onclick="setTool('TARGET')" style="background:#e74c3c; color:white;">2. Mark Target Square</button>
+        
+        <hr style="width:100%; border:0.5px solid #444; margin:10px 0;">
+        
+        <input type="text" id="solution" placeholder="Notes: 'White to move', 'Mate in 3', etc.">
+        <button class="btn-main" onclick="addToBatch()">Add to My Collection</button>
+        
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+            <button class="btn-download" onclick="downloadJSON()">Download .json File</button>
+            <button onclick="copyText()" style="background:#9b59b6; color:white;">Copy to Clipboard</button>
+        </div>
+        <button onclick="clearBoard()" style="background:#c0392b; color:white; margin-top:5px;">Clear Board</button>
+
+        <textarea id="output" readonly></textarea>
+    </div>
+</div>
+
+<script>
+    let board = Array(64).fill('');
+    let tool = 'P';
+    let start = null;
+    let target = null;
+    let puzzles = [];
+    const glyphs = { 'P':'♙','N':'♘','B':'♗','R':'♖','Q':'♕','K':'♔','p':'♟','n':'♞','b':'♝','r':'♜','q':'♛','k':'♚','':'' };
+
+    function init() {
+        const boardEl = document.getElementById('board');
+        for (let i = 0; i < 64; i++) {
+            const sq = document.createElement('div');
+            sq.className = `square ${(Math.floor(i/8) + (i%8)) % 2 === 0 ? 'light' : 'dark'}`;
+            sq.id = `s${i}`;
+            sq.onclick = () => {
+                if (tool === 'START') start = i;
+                else if (tool === 'TARGET') target = i;
+                else board[i] = tool;
+                draw();
+            };
+            boardEl.appendChild(sq);
+        }
+        setTool('P');
+    }
+
+    function setTool(t) {
+        tool = t;
+        document.querySelectorAll('.p-piece').forEach(el => el.classList.remove('active-tool'));
+        if(document.getElementById('tool-'+t)) document.getElementById('tool-'+t).classList.add('active-tool');
+    }
+
+    function draw() {
+        for (let i = 0; i < 64; i++) {
+            const s = document.getElementById(`s${i}`);
+            s.innerText = glyphs[board[i]];
+            s.classList.toggle('start-highlight', i === start);
+            s.classList.toggle('target-highlight', i === target);
+        }
+    }
+
+    function getFEN() {
+        let rows = [];
+        for (let r = 0; r < 8; r++) {
+            let s = "", empty = 0;
+            for (let c = 0; c < 8; c++) {
+                let p = board[r*8+c];
+                if (!p) empty++;
+                else { if(empty) s+=empty; s+=p; empty=0; }
+            }
+            if(empty) s+=empty;
+            rows.push(s);
+        }
+        return rows.join('/') + " w - - 0 1";
+    }
+
+    function coord(i) { return 'abcdefgh'[i%8] + (8-Math.floor(i/8)); }
+
+    function addToBatch() {
+        puzzles.push({
+            fen: getFEN(),
+            start: start !== null ? coord(start) : "none",
+            target: target !== null ? coord(target) : "none",
+            note: document.getElementById('solution').value
+        });
+        document.getElementById('output').value = JSON.stringify(puzzles, null, 2);
+        document.getElementById('count').innerText = puzzles.length;
+        document.getElementById('solution').value = "";
+        start = null; target = null; draw();
+    }
+
+    function downloadJSON() {
+        const blob = new Blob([JSON.stringify(puzzles, null, 2)], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = "chess_puzzles.json"; a.click();
+    }
+
+    function copyText() {
+        const txt = document.getElementById('output');
+        txt.select(); document.execCommand('copy');
+        alert("Copied to clipboard!");
+    }
+
+    function clearBoard() {
+        board.fill(''); start = null; target = null; draw();
+    }
+
+    init();
+</script>
 </body>
 </html>
