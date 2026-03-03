@@ -17,11 +17,12 @@
         body { font-family: sans-serif; background: var(--bg); color: white; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
         #board-container { width: 350px; max-width: 95vw; margin: 10px auto; border: 2px solid var(--secondary); border-radius: 8px; overflow: hidden; }
         .hidden { display: none !important; }
-        .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; max-width: 300px; }
-        #results-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2D1B4D; padding: 20px; border-radius: 12px; border: 2px solid var(--secondary); z-index: 2000; width: 85%; max-height: 70vh; overflow-y: auto; }
-        .leaderboard-entry { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #4ade8044; color: var(--secondary); }
-        #task-text { background: #2D1B4D; padding: 12px; border-radius: 8px; border-left: 4px solid var(--secondary); margin-bottom: 10px; width: 90%; color: white; }
-        .highlight-selected { background-color: rgba(250, 204, 21, 0.6) !important; }
+        .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; max-width: 300px; transition: 0.3s; }
+        .btn:hover { background: var(--secondary); color: var(--bg); }
+        #results-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2D1B4D; padding: 20px; border-radius: 12px; border: 2px solid var(--secondary); z-index: 2000; width: 85%; max-height: 70vh; overflow-y: auto; box-shadow: 0 0 20px rgba(0,0,0,0.7); }
+        .leaderboard-entry { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #4ade8044; color: var(--secondary); }
+        #task-text { background: #2D1B4D; padding: 12px; border-radius: 8px; border-left: 4px solid var(--secondary); margin-bottom: 10px; width: 90%; color: white; text-align: center; font-weight: bold; }
+        .highlight-selected { background-color: rgba(250, 204, 21, 0.7) !important; }
     </style>
 </head>
 <body>
@@ -29,9 +30,8 @@
     <h1 style="color: var(--secondary);">♟️ Weekly Missions</h1>
 
     <div id="setup-area">
-        <h3 style="text-align:center;">Enter Details & Select Grade:</h3>
-        <input type="text" id="studentName" placeholder="Full Name" style="width:100%; padding:12px; margin-bottom:10px; border-radius:5px; border:1px solid #4ade80; background:#1a1a2e; color:white; box-sizing: border-box;">
-        <input type="text" id="studentClass" placeholder="Class (e.g. Grade 1A)" style="width:100%; padding:12px; margin-bottom:15px; border-radius:5px; border:1px solid #4ade80; background:#1a1a2e; color:white; box-sizing: border-box;">
+        <h3 style="text-align:center;">Enter Name & Select Grade:</h3>
+        <input type="text" id="studentName" placeholder="Your Full Name" style="width:100%; padding:12px; margin-bottom:15px; border-radius:5px; border:1px solid #4ade80; background:#1a1a2e; color:white; box-sizing: border-box;">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
             <button class="btn" onclick="initMission(1)">Grade 1</button>
             <button class="btn" onclick="initMission(2)">Grade 2</button>
@@ -43,28 +43,29 @@
     </div>
 
     <div id="game-area" class="hidden">
-        <div id="task-text">Loading...</div>
+        <div id="task-text">Loading Mission...</div>
         <div id="board-container"><div id="myBoard"></div></div>
-        <h3 style="color:var(--secondary)">Score: <span id="current-score">0</span> / 5</h3>
+        <h3 style="color:var(--secondary); text-align: center;">Solved: <span id="current-score">0</span> / 5</h3>
     </div>
 
-    <div id="post-game" class="hidden">
+    <div id="post-game" class="hidden" style="text-align: center;">
         <h2 style="color:var(--secondary)">Mission Accomplished! 🎉</h2>
+        <p>Your score has been saved to the database.</p>
         <button class="btn" style="background:var(--secondary); color:black;" onclick="fetchLeaderboard()">🏆 View Leaderboard</button>
-        <button class="btn" onclick="location.reload()">🔄 Try Again</button>
+        <button class="btn" onclick="location.reload()">🔄 Try Another Grade</button>
     </div>
 
     <div id="results-modal" class="hidden">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h3 style="margin:0; color:var(--secondary);">Leaderboard</h3>
-            <button onclick="document.getElementById('results-modal').classList.add('hidden')" style="background:none; border:1px solid #4ade80; color:#4ade80; border-radius:4px; padding: 5px 10px;">Close</button>
+            <h3 style="margin:0; color:var(--secondary);">Grade <span id="lbl-grade"></span> Best Scores</h3>
+            <button onclick="document.getElementById('results-modal').classList.add('hidden')" style="background:none; border:1px solid #4ade80; color:#4ade80; border-radius:4px; padding: 5px 10px; cursor: pointer;">X</button>
         </div>
-        <hr style="border:0; border-top:1px solid #4ade8044; margin:10px 0;">
-        <div id="leaderboard-data"></div>
+        <hr style="border:0; border-top:1px solid #4ade8044; margin:15px 0;">
+        <div id="leaderboard-data">Loading rankings...</div>
     </div>
 
     <script>
-        // YOUR EXACT WORKING CONFIG
+        // FIREBASE INITIALIZATION
         const firebaseConfig = {
           apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
           authDomain: "assignments-de95a.firebaseapp.com",
@@ -76,6 +77,7 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
+        // MISSIONS DATA
         const allQuestions = [
             { grade: 1, fen: "8/8/8/4nn2/4P3/8/8/8 w - - 0 1", move: "e4f5", task: "Capture the Knight on f5 with your Pawn!" },
             { grade: 1, fen: "8/8/8/1r3r2/8/8/8/1r3B2 w - - 0 1", move: "f1b5", task: "Capture the Rook on b5 with your Bishop!" },
@@ -92,32 +94,39 @@
         let score = 0;
         let squareSelected = null;
         let pName = "";
-        let pClass = "";
 
+        // START MISSION
         window.initMission = function(grade) {
             pName = document.getElementById('studentName').value;
-            pClass = document.getElementById('studentClass').value;
-            if(!pName || !pClass) { alert("Please enter your name and class!"); return; }
-            
+            if(!pName) { alert("Please enter your name first!"); return; }
             myGrade = grade;
             gradeSet = allQuestions.filter(q => q.grade === grade);
-            if(gradeSet.length === 0) { alert("Missions for this grade are coming soon!"); return; }
+            
+            if(gradeSet.length === 0) {
+                alert("Missions for Grade " + grade + " are not loaded yet!");
+                return;
+            }
 
             document.getElementById("setup-area").classList.add("hidden");
             document.getElementById("game-area").classList.remove("hidden");
             loadQuestion();
         };
 
+        // LOAD CURRENT PUZZLE
         function loadQuestion() {
             if (currentIdx >= gradeSet.length) { finishGame(); return; }
             const q = gradeSet[currentIdx];
             document.getElementById("task-text").innerText = "Mission " + (currentIdx + 1) + ": " + q.task;
             game.load(q.fen);
+            
             board = ChessBoard('myBoard', {
-                draggable: false, position: q.fen,
+                draggable: false, 
+                position: q.fen,
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             });
-            $('#myBoard .square-55d63').off('click').on('click', function() {
+
+            // CLICK TO MOVE LOGIC
+            $('.square-55d63').off('click').on('click', function() {
                 const sq = $(this).attr('data-square');
                 if (squareSelected === null) {
                     if (game.get(sq)) {
@@ -131,42 +140,53 @@
                         score++;
                         currentIdx++;
                         document.getElementById("current-score").innerText = score;
-                        if (currentIdx >= gradeSet.length) finishGame();
-                        else setTimeout(loadQuestion, 300);
+                        squareSelected = null;
+                        setTimeout(loadQuestion, 300);
+                    } else {
+                        squareSelected = null;
                     }
-                    squareSelected = null;
                 }
             });
         }
 
+        // SAVE TO DATABASE
         function finishGame() {
             document.getElementById("game-area").classList.add("hidden");
             document.getElementById("post-game").classList.remove("hidden");
 
-            // USING THE EXACT SAME COLLECTION NAME AS YOUR WORKING PAGE
-            db.collection("grandmasters").add({
+            db.collection("weekly_missions").add({
                 name: pName,
-                class: pClass + " (Grade " + myGrade + ")",
+                grade: myGrade,
+                score: score,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp()
-            }).catch(e => console.error("Save Error:", e));
+            }).then(() => {
+                console.log("Database entry created successfully.");
+            }).catch(e => alert("Database Error: " + e.message));
         }
 
+        // FETCH LEADERBOARD (Index-Free Version)
         window.fetchLeaderboard = function() {
-            // REMOVED 'WHERE' AND 'ORDERBY' TO AVOID THE INDEX ERROR
-            // This will show the latest winners just like your working page does
-            db.collection("grandmasters")
-              .orderBy("timestamp", "desc")
-              .limit(50)
-              .get().then((querySnapshot) => {
+            document.getElementById("results-modal").classList.remove("hidden");
+            document.getElementById("leaderboard-data").innerHTML = "Loading...";
+
+            db.collection("weekly_missions")
+              .where("grade", "==", myGrade)
+              .get().then((snap) => {
+                let entries = [];
+                snap.forEach(doc => entries.push(doc.data()));
+                
+                // Manual sort to avoid needing Firebase Index creation
+                entries.sort((a, b) => b.score - a.score);
+
                 let html = "";
-                querySnapshot.forEach((doc) => {
-                    const d = doc.data();
-                    html += `<div class="leaderboard-entry"><span>${d.name}</span><b>${d.class}</b></div>`;
+                entries.slice(0, 15).forEach((d) => {
+                    html += `<div class="leaderboard-entry"><span>${d.name}</span><b>${d.score}/5</b></div>`;
                 });
-                document.getElementById("leaderboard-data").innerHTML = html || "No winners yet!";
-                document.getElementById("results-modal").classList.remove("hidden");
+                
+                document.getElementById("leaderboard-data").innerHTML = html || "No records for this grade yet.";
+                document.getElementById("lbl-grade").innerText = myGrade;
             }).catch(err => {
-                alert("Database Error: " + err.message);
+                document.getElementById("leaderboard-data").innerHTML = "Error: " + err.message;
             });
         };
     </script>
