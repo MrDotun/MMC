@@ -17,12 +17,13 @@
         body { font-family: sans-serif; background: var(--bg); color: white; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
         #board-container { width: 350px; max-width: 95vw; margin: 10px auto; border: 2px solid var(--secondary); border-radius: 8px; overflow: hidden; }
         .hidden { display: none !important; }
-        .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; max-width: 300px; transition: 0.3s; }
+        .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; transition: 0.3s; }
         .btn:hover { background: var(--secondary); color: var(--bg); }
         #results-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2D1B4D; padding: 20px; border-radius: 12px; border: 2px solid var(--secondary); z-index: 2000; width: 85%; max-height: 70vh; overflow-y: auto; box-shadow: 0 0 20px rgba(0,0,0,0.7); }
         .leaderboard-entry { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #4ade8044; color: var(--secondary); }
         #task-text { background: #2D1B4D; padding: 12px; border-radius: 8px; border-left: 4px solid var(--secondary); margin-bottom: 10px; width: 90%; color: white; text-align: center; font-weight: bold; min-height: 40px; display: flex; align-items: center; justify-content: center; }
         .highlight-selected { background-color: rgba(250, 204, 21, 0.7) !important; }
+        .grade-label { grid-column: span 3; color: var(--secondary); text-align: center; margin-top: 15px; font-weight: bold; border-bottom: 1px solid #4ade8044; }
     </style>
 </head>
 <body>
@@ -30,12 +31,24 @@
     <h1 style="color: var(--secondary);">♟️ Weekly Missions</h1>
 
     <div id="setup-area">
-        <h3 style="text-align:center;">Enter Name & Select Grade:</h3>
+        <h3 style="text-align:center;">Enter Name & Select Term:</h3>
         <input type="text" id="studentName" placeholder="Your Full Name" style="width:100%; padding:12px; margin-bottom:15px; border-radius:5px; border:1px solid #4ade80; background:#1a1a2e; color:white; box-sizing: border-box;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-            <button class="btn" onclick="initMission(1)">Grade 1</button>
-            <button class="btn" onclick="initMission(2)">Grade 2</button>
-            <button class="btn" onclick="initMission(3)">Grade 3</button>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+            <div class="grade-label">GRADE 1</div>
+            <button class="btn" onclick="initMission(1, 1)">Term 1</button>
+            <button class="btn" onclick="initMission(1, 2)">Term 2</button>
+            <button class="btn" onclick="initMission(1, 3)">Term 3</button>
+
+            <div class="grade-label">GRADE 2</div>
+            <button class="btn" onclick="initMission(2, 1)">Term 1</button>
+            <button class="btn" onclick="initMission(2, 2)">Term 2</button>
+            <button class="btn" onclick="initMission(2, 3)">Term 3</button>
+
+            <div class="grade-label">GRADE 3</div>
+            <button class="btn" onclick="initMission(3, 1)">Term 1</button>
+            <button class="btn" onclick="initMission(3, 2)">Term 2</button>
+            <button class="btn" onclick="initMission(3, 3)">Term 3</button>
         </div>
     </div>
 
@@ -69,53 +82,45 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
+        // Question Factory to generate empty slots
+        function createTermSlots(grade, term) {
+            return Array.from({ length: 50 }, (_, i) => ({
+                grade: grade,
+                term: term,
+                week: Math.floor(i / 10) + 1,
+                fen: "8/8/8/8/8/8/8/8 w - - 0 1", // Placeholder empty FEN
+                move: "", // Placeholder correct move
+                task: `Grade ${grade} - Term ${term} - Question ${i + 1}`
+            }));
+        }
+
+        // FULL DATABASE STRUCTURE
         const allQuestions = [
-            // GRADE 1
-            { grade: 1, fen: "8/8/8/4nn2/4P3/8/8/8 w - - 0 1", move: "e4f5", task: "Capture the Knight on f5 with your Pawn!" },
-            { grade: 1, fen: "8/8/8/1r3r2/8/8/8/1r3B2 w - - 0 1", move: "f1b5", task: "Capture the Rook on b5 with your Bishop!" },
-            { grade: 1, fen: "8/8/8/3ppp2/8/3p1N2/8/8 w - - 0 1", move: "f3e5", task: "Capture the Pawn on e5 with your Knight!" },
-            { grade: 1, fen: "8/7b/8/3b2b1/8/8/1b6/7R w - - 0 1", move: "h1h7", task: "Capture the Bishop on h7 with your Rook!" },
-            { grade: 1, fen: "3r4/8/8/6r1/1r6/8/7r/3Q4 w - - 0 1", move: "d1d8", task: "Capture the Rook on d8 with your Queen!" },
-
-            // GRADE 2 (Integrated JSON)
-            { grade: 2, fen: "8/8/8/8/8/4b1b1/4b1b1/4b1K1 w - - 0 1", move: "g1g2", task: "Make a capture with your King" },
-            { grade: 2, fen: "6n1/8/2n3B1/8/8/2n5/2n3n1/4n3 w - - 0 1", move: "g6c2", task: "Make a capture with your Bishop" },
-            { grade: 2, fen: "8/8/8/3n4/3nn3/3P4/8/8 w - - 0 1", move: "d3e4", task: "Make a capture with your pawn" },
-            { grade: 2, fen: "8/8/8/8/8/5rr1/5rP1/8 w - - 0 1", move: "g2f3", task: "Make a capture with your pawn" },
-            { grade: 2, fen: "8/8/8/8/8/8/2P5/8 w - - 0 1", move: "c2c4", task: "Move your pawn" },
-            { grade: 2, fen: "8/8/8/8/8/5P2/8/8 w - - 0 1", move: "f3f4", task: "Move your pawn" },
-            { grade: 2, fen: "8/8/8/8/2P5/8/8/8 w - - 0 1", move: "c4c5", task: "Move your pawn" },
-            { grade: 2, fen: "8/8/4R3/8/8/7q/q7/4q3 w - - 0 1", move: "e6e1", task: "Make a capture with your Rook" },
-            { grade: 2, fen: "3q4/8/q6R/8/8/2q5/5q2/8 w - - 0 1", move: "h6a6", task: "Make a capture with your rook" },
-            { grade: 2, fen: "1B3p2/8/8/8/1p3p2/8/8/8 w - - 0 1", move: "b8f4", task: "Make a capture with your Bishop" },
-
-            // GRADE 3 (RESTORED ORIGINAL DATA)
-            { grade: 3, fen: "4k3/p4pp1/1pn1p2p/8/8/7P/PP2BPP1/4K3 w - - 0 1", move: "e2b5", task: "Pin the black Knight to the King " },
-            { grade: 3, fen: "4k3/p4pp1/1pn1p2p/8/8/7P/PP2BPP1/4K3 w - - 0 1", move: "e2h5", task: "Pin the black pawn to the King " },
-            { grade: 3, fen: "2k5/p4pp1/1pn1p2p/8/6R1/7P/PP3PP1/4K3 w - - 0 1", move: "g4c4", task: "Pin the black knight " },
-            { grade: 3, fen: "r2k4/pq3ppQ/1p2p2p/8/1N1b4/7P/PP3PP1/4K2R w - - 0 1", move: "h7d3", task: "Pin the black bishop " },
-            { grade: 3, fen: "r3k2r/p4pp1/1p2p2p/3N4/8/7P/PP3PP1/4K2R w - - 0 1", move: "d5c7", task: "Play out the knight fork" },
-            { grade: 3, fen: "r3k2r/p4pp1/1p2p2p/5N2/2q5/7P/PP3PP1/4K2R w - - 0 1", move: "f5d6", task: "What is white supposed to do here" },
-            { grade: 3, fen: "r3k2r/p4pp1/1p2p2p/2p5/8/7P/PP3PP1/R3K2R w - - 0 1", move: "a1d1", task: "Occupy the open file with your rook" },
-            { grade: 3, fen: "r4rk1/p4pp1/1p2p2p/2p5/8/3Q3P/PPB2PP1/R3K2R w - - 0 1", move: "d3h7", task: "How can white checkmate the black King?" },
-            { grade: 3, fen: "r4rk1/p4pp1/1p1qp2p/2p3N1/8/3Q3P/PP3PP1/R3K2R w - - 0 1", move: "d3h7", task: "What is white's best move" },
-            { grade: 3, fen: "r4rk1/p4pp1/1p1qp3/2p5/8/3Q4/PP3PP1/R3K2R w - - 0 1", move: "d3h7", task: "What is white's best move?" }
+            ...createTermSlots(1, 1), ...createTermSlots(1, 2), ...createTermSlots(1, 3),
+            ...createTermSlots(2, 1), ...createTermSlots(2, 2), ...createTermSlots(2, 3),
+            ...createTermSlots(3, 1), ...createTermSlots(3, 2), ...createTermSlots(3, 3)
         ];
 
         let game = new Chess();
         let board = null;
         let myGrade = 0;
+        let myTerm = 0;
         let gradeSet = [];
         let currentIdx = 0;
         let score = 0;
         let squareSelected = null;
         let pName = "";
 
-        window.initMission = function(grade) {
+        window.initMission = function(grade, term) {
             pName = document.getElementById('studentName').value;
             if(!pName) { alert("Please enter your name!"); return; }
+            
             myGrade = grade;
-            gradeSet = allQuestions.filter(q => q.grade === grade);
+            myTerm = term;
+
+            // Filter questions based on Grade and Term selected
+            gradeSet = allQuestions.filter(q => q.grade === grade && q.term === term);
+            
             document.getElementById("setup-area").classList.add("hidden");
             document.getElementById("game-area").classList.remove("hidden");
             currentIdx = 0; score = 0;
@@ -126,6 +131,12 @@
             if (currentIdx >= gradeSet.length) { finishGame(); return; }
             const q = gradeSet[currentIdx];
             document.getElementById("task-text").innerText = q.task;
+            
+            // Check if FEN is empty before loading
+            if(q.fen === "8/8/8/8/8/8/8/8 w - - 0 1") {
+                document.getElementById("task-text").innerText = "Question coming soon! (Empty FEN)";
+            }
+
             game.load(q.fen);
             board = ChessBoard('myBoard', {
                 draggable: false, 
@@ -143,7 +154,7 @@
                 } else {
                     const moveAttempt = squareSelected + sq;
                     $('.square-55d63').removeClass('highlight-selected');
-                    if (moveAttempt === gradeSet[currentIdx].move) {
+                    if (moveAttempt === gradeSet[currentIdx].move && moveAttempt !== "") {
                         score++;
                         currentIdx++;
                         document.getElementById("current-score").innerText = score;
@@ -162,6 +173,7 @@
             db.collection("weekly_missions").add({
                 name: pName,
                 grade: myGrade,
+                term: myTerm,
                 score: score,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp()
             });
@@ -169,7 +181,10 @@
 
         window.fetchLeaderboard = function() {
             document.getElementById("results-modal").classList.remove("hidden");
-            db.collection("weekly_missions").where("grade", "==", myGrade).get().then((snap) => {
+            db.collection("weekly_missions")
+              .where("grade", "==", myGrade)
+              .where("term", "==", myTerm)
+              .get().then((snap) => {
                 let html = "";
                 let data = [];
                 snap.forEach(doc => data.push(doc.data()));
@@ -177,7 +192,7 @@
                 data.forEach(d => {
                     html += `<div class="leaderboard-entry"><span>${d.name}</span><b>${d.score} solved</b></div>`;
                 });
-                document.getElementById("leaderboard-data").innerHTML = html || "No records yet.";
+                document.getElementById("leaderboard-data").innerHTML = html || "No records for this term yet.";
             });
         };
     </script>
