@@ -33,8 +33,8 @@
         
         #results-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2D1B4D; padding: 20px; border-radius: 12px; border: 2px solid var(--secondary); z-index: 2000; width: 85%; max-height: 80vh; overflow-y: auto; box-shadow: 0 0 30px rgba(0,0,0,1); }
         .leaderboard-entry { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #4ade8044; align-items: center; }
-        .name-tag { font-weight: bold; text-transform: capitalize; color: #fff; flex: 1; margin-right: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .score-tag { color: var(--secondary); font-family: monospace; font-size: 1.1em; white-space: nowrap; }
+        .name-tag { font-weight: bold; text-transform: capitalize; color: #fff; flex: 1; }
+        .score-tag { color: var(--secondary); font-weight: bold; }
     </style>
 </head>
 <body>
@@ -66,7 +66,7 @@
 
     <div id="results-modal" class="hidden">
         <h3 style="color:var(--secondary); text-align: center; margin-top: 0;">🏆 Top Students</h3>
-        <div id="leaderboard-data" style="min-height: 100px; text-align: center;">Loading...</div>
+        <div id="leaderboard-data" style="text-align: center; padding: 20px;">Gathering Hall of Fame...</div>
         <button class="btn" onclick="document.getElementById('results-modal').classList.add('hidden')" style="margin-top: 15px;">Close</button>
     </div>
 
@@ -193,37 +193,48 @@
                         }
                     }
                 });
-            } catch (e) { console.error("Database sync issue:", e); }
+            } catch (e) { console.error("Database error:", e); }
         }
 
         window.fetchLeaderboard = function() {
             const listArea = document.getElementById('leaderboard-data');
-            listArea.innerHTML = "Loading Hall of Fame...";
+            listArea.innerHTML = "Gathering Hall of Fame...";
             document.getElementById("results-modal").classList.remove("hidden");
             
+            // "Sort-in-Code" method: works without needing a database index
             db.collection("student_progress")
-              .orderBy("totalScore", "desc")
-              .limit(15)
+              .limit(50) 
               .get()
               .then(snap => {
+                let students = [];
+                snap.forEach(d => {
+                    let data = d.data();
+                    students.push({
+                        name: data.name || d.id,
+                        score: data.totalScore || 0
+                    });
+                });
+
+                // Sort largest score to smallest in the app's memory
+                students.sort((a, b) => b.score - a.score);
+
                 let h = "";
-                if (snap.empty) {
-                    h = "No legends in the Hall of Fame yet!";
+                if (students.length === 0) {
+                    h = "No scores yet. Be the first!";
                 } else {
-                    snap.forEach(d => {
-                       const item = d.data();
-                       const displayName = item.name || d.id; // Fallback to ID if name is missing
+                    students.slice(0, 10).forEach(s => {
                        h += `<div class="leaderboard-entry">
-                                <span class="name-tag">${displayName}</span>
-                                <span class="score-tag">${item.totalScore} Pts</span>
+                                <span class="name-tag" style="font-weight:bold; color:white;">${s.name}</span>
+                                <span class="score-tag" style="color:#4ade80;">${s.score} Pts</span>
                              </div>`;
                     });
                 }
                 listArea.innerHTML = h;
-            }).catch(err => {
-                console.error("Leaderboard error:", err);
-                listArea.innerHTML = "Error loading hall of fame. Check connection.";
-            });
+              })
+              .catch(err => {
+                listArea.innerHTML = "Connection issue. Please try again.";
+                console.error(err);
+              });
         };
     </script>
 </body>
