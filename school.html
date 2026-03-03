@@ -18,7 +18,6 @@
         #board-container { width: 350px; max-width: 95vw; margin: 10px auto; border: 2px solid var(--secondary); border-radius: 8px; overflow: hidden; }
         .hidden { display: none !important; }
         .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; max-width: 300px; }
-        .btn:hover { background: var(--secondary); color: var(--bg); }
         #results-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2D1B4D; padding: 20px; border-radius: 12px; border: 2px solid var(--secondary); z-index: 2000; width: 85%; max-height: 70vh; overflow-y: auto; }
         .leaderboard-entry { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #4ade8044; color: var(--secondary); }
         #task-text { background: #2D1B4D; padding: 12px; border-radius: 8px; border-left: 4px solid var(--secondary); margin-bottom: 10px; width: 90%; color: white; }
@@ -30,8 +29,9 @@
     <h1 style="color: var(--secondary);">♟️ Weekly Missions</h1>
 
     <div id="setup-area">
-        <h3 style="text-align:center;">Select Your Grade:</h3>
-        <input type="text" id="studentName" placeholder="Full Name" style="width:100%; padding:10px; margin-bottom:10px; border-radius:5px; border:1px solid #4ade80; background:#1a1a2e; color:white;">
+        <h3 style="text-align:center;">Enter Details & Select Grade:</h3>
+        <input type="text" id="studentName" placeholder="Full Name" style="width:100%; padding:12px; margin-bottom:10px; border-radius:5px; border:1px solid #4ade80; background:#1a1a2e; color:white; box-sizing: border-box;">
+        <input type="text" id="studentClass" placeholder="Class (e.g. Grade 1A)" style="width:100%; padding:12px; margin-bottom:15px; border-radius:5px; border:1px solid #4ade80; background:#1a1a2e; color:white; box-sizing: border-box;">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
             <button class="btn" onclick="initMission(1)">Grade 1</button>
             <button class="btn" onclick="initMission(2)">Grade 2</button>
@@ -43,7 +43,7 @@
     </div>
 
     <div id="game-area" class="hidden">
-        <div id="task-text">Loading Mission...</div>
+        <div id="task-text">Loading...</div>
         <div id="board-container"><div id="myBoard"></div></div>
         <h3 style="color:var(--secondary)">Score: <span id="current-score">0</span> / 5</h3>
     </div>
@@ -56,15 +56,15 @@
 
     <div id="results-modal" class="hidden">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h3 style="margin:0; color:var(--secondary);">Grade <span id="lbl-grade"></span> Top Scores</h3>
-            <button onclick="document.getElementById('results-modal').classList.add('hidden')" style="background:none; border:1px solid #4ade80; color:#4ade80; border-radius:4px;">X</button>
+            <h3 style="margin:0; color:var(--secondary);">Leaderboard</h3>
+            <button onclick="document.getElementById('results-modal').classList.add('hidden')" style="background:none; border:1px solid #4ade80; color:#4ade80; border-radius:4px; padding: 5px 10px;">Close</button>
         </div>
         <hr style="border:0; border-top:1px solid #4ade8044; margin:10px 0;">
         <div id="leaderboard-data"></div>
     </div>
 
     <script>
-        // --- SAME FIREBASE CONFIG & VERSION 8 STYLE ---
+        // YOUR EXACT WORKING CONFIG
         const firebaseConfig = {
           apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
           authDomain: "assignments-de95a.firebaseapp.com",
@@ -92,13 +92,17 @@
         let score = 0;
         let squareSelected = null;
         let pName = "";
+        let pClass = "";
 
         window.initMission = function(grade) {
             pName = document.getElementById('studentName').value;
-            if(!pName) { alert("Please enter your name first!"); return; }
+            pClass = document.getElementById('studentClass').value;
+            if(!pName || !pClass) { alert("Please enter your name and class!"); return; }
+            
             myGrade = grade;
             gradeSet = allQuestions.filter(q => q.grade === grade);
-            currentIdx = 0; score = 0;
+            if(gradeSet.length === 0) { alert("Missions for this grade are coming soon!"); return; }
+
             document.getElementById("setup-area").classList.add("hidden");
             document.getElementById("game-area").classList.remove("hidden");
             loadQuestion();
@@ -139,33 +143,30 @@
             document.getElementById("game-area").classList.add("hidden");
             document.getElementById("post-game").classList.remove("hidden");
 
-            // Using the same collection "grandmasters" or a new one? 
-            // I'll use "mission_scores" to keep it separate from Mr. Dotun's list.
-            db.collection("mission_scores").add({
+            // USING THE EXACT SAME COLLECTION NAME AS YOUR WORKING PAGE
+            db.collection("grandmasters").add({
                 name: pName,
-                grade: myGrade,
-                score: score,
+                class: pClass + " (Grade " + myGrade + ")",
                 timestamp: firebase.firestore.FieldValue.serverTimestamp()
-            });
+            }).catch(e => console.error("Save Error:", e));
         }
 
         window.fetchLeaderboard = function() {
-            db.collection("mission_scores")
-              .where("grade", "==", myGrade)
-              .orderBy("score", "desc")
-              .limit(20)
+            // REMOVED 'WHERE' AND 'ORDERBY' TO AVOID THE INDEX ERROR
+            // This will show the latest winners just like your working page does
+            db.collection("grandmasters")
+              .orderBy("timestamp", "desc")
+              .limit(50)
               .get().then((querySnapshot) => {
                 let html = "";
                 querySnapshot.forEach((doc) => {
                     const d = doc.data();
-                    html += `<div class="leaderboard-entry"><span>${d.name}</span><b>${d.score}/5</b></div>`;
+                    html += `<div class="leaderboard-entry"><span>${d.name}</span><b>${d.class}</b></div>`;
                 });
-                document.getElementById("leaderboard-data").innerHTML = html || "No scores yet!";
-                document.getElementById("lbl-grade").innerText = myGrade;
+                document.getElementById("leaderboard-data").innerHTML = html || "No winners yet!";
                 document.getElementById("results-modal").classList.remove("hidden");
             }).catch(err => {
-                alert("Wait! If you see an error, click the blue link in your console to enable the index.");
-                console.log(err.message);
+                alert("Database Error: " + err.message);
             });
         };
     </script>
