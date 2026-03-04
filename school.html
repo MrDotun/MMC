@@ -15,9 +15,10 @@
     <style>
         :root { --primary: #2D1B4D; --secondary: #4ade80; --bg: #1a1a2e; --danger: #ef4444; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: white; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
-        #board-container { width: 350px; max-width: 95vw; margin: 10px auto; border: 3px solid var(--secondary); border-radius: 8px; overflow: hidden; }
+        #board-container { width: 350px; max-width: 95vw; margin: 10px auto; border: 3px solid var(--secondary); border-radius: 8px; overflow: hidden; height: 350px; }
+        #myBoard { width: 100%; }
         .hidden { display: none !important; }
-        .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; transition: 0.2s; box-sizing: border-box; outline: none; }
+        .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; transition: 0.2s; box-sizing: border-box; outline: none; -webkit-tap-highlight-color: transparent; }
         .btn:hover { background: var(--secondary); color: var(--bg); }
         .btn-teacher { border-color: #fbbf24; color: #fbbf24; margin-top: 20px; font-size: 0.9em; }
         
@@ -27,7 +28,7 @@
         .status-correct { color: var(--secondary); font-weight: bold; }
         .status-incorrect { color: var(--danger); font-weight: bold; }
 
-        #task-text { background: #2D1B4D; padding: 15px; border-radius: 8px; border-left: 5px solid var(--secondary); margin-bottom: 10px; width: 350px; max-width: 90vw; text-align: center; font-weight: bold; box-sizing: border-box; }
+        #task-text { background: #2D1B4D; padding: 15px; border-radius: 8px; border-left: 5px solid var(--secondary); margin-bottom: 10px; width: 350px; max-width: 90vw; text-align: center; font-weight: bold; box-sizing: border-box; min-height: 60px; }
         .highlight-selected { background-color: rgba(250, 204, 21, 0.7) !important; }
         .section-label { color: var(--secondary); text-align: center; margin-top: 20px; font-weight: bold; font-size: 1.2em; border-top: 1px solid #ffffff22; padding-top: 10px; }
         .week-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 20px; width: 100%; max-width: 400px; }
@@ -160,16 +161,21 @@
 
         function loadQuestion() {
             if(currentIdx >= gradeSet.length) { finishGame(); return; }
-            lives = 3; updateLivesUI();
+            
+            lives = 3; 
+            updateLivesUI();
+            squareSelected = null;
+            
             const q = gradeSet[currentIdx];
             document.getElementById("topic-title").innerText = q.topic;
             document.getElementById("task-text").innerText = q.task;
             document.getElementById("current-score").innerText = score;
-            squareSelected = null; // Ensure fresh state
 
             game.load(q.fen);
             
-            // Added slight delay to ensure container is ready for rendering
+            // Re-initialize board object for every question to ensure redraw
+            if(board) { board.destroy(); }
+            
             setTimeout(() => {
                 board = ChessBoard('myBoard', {
                     draggable: false, 
@@ -178,9 +184,14 @@
                     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
                 });
                 
-                // Re-bind click handlers after board renders
-                $('.square-55d63').off('click').on('click', handleMove);
-            }, 100);
+                // Force piece rendering calculation
+                board.resize();
+                bindBoardEvents();
+            }, 250);
+        }
+
+        function bindBoardEvents() {
+            $('.square-55d63').off('click').on('click', handleMove);
         }
 
         function handleMove() {
@@ -203,7 +214,7 @@
                 } else {
                     lives--; 
                     updateLivesUI();
-                    squareSelected = null; // Important: reset selection on wrong move
+                    squareSelected = null; // Reset selection so player can try again
                     if(lives <= 0) {
                         missionResults.push({status: "Incorrect"});
                         currentIdx++; 
