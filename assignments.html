@@ -295,6 +295,7 @@
     var $remark = $('#remark');
     var sourceSquare = null; 
 
+    // IMPROVED ENGINE WEIGHTS
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
     
     // UPDATED PST: High priority on corners for King and center for Queen
@@ -303,9 +304,7 @@
         n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,5,5,0,-20,-40],[-30,5,10,15,15,10,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,10,15,15,10,0,-30],[-40,-20,0,0,0,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
         b: [[-20,-10,-10,-10,-10,-10,-10,-20],[-10,5,0,0,0,0,5,-10],[-10,10,10,10,10,10,10,-10],[-10,0,10,10,10,10,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,5,10,10,5,0,-10],[-10,0,0,0,0,0,0,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
         r: [[0,0,0,5,5,0,0,0],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[5,10,10,10,10,10,10,5],[0,0,0,0,0,0,0,0]],
-        // QUEEN AGGRESSION: High values in the center to hunt
         q: [[-20,-10,-10,-5,-5,-10,-10,-20],[-10,15,15,15,15,15,15,-10],[-10,15,25,25,25,25,15,-10],[-5,15,25,30,30,25,15,-5],[0,15,25,30,30,25,15,-5],[-10,15,20,20,20,15,10,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
-        // KING CASTLING: Massive reward for G8/C8 to force early castling
         k: [[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[70,80,30,-10,-10,30,80,70]]
     };
 
@@ -372,18 +371,19 @@
 
             if (!bestMove) {
                 let bestValue = -Infinity;
-                // DEPTH 2: Fast, awareness of good/bad captures
                 for (let moveObj of moves) {
                     let move = moveObj.san;
                     game.move(move);
                     
-                    // QUEEN BIAS: Encourages the AI to capture with the Queen specifically
-                    let queenBias = (moveObj.piece === 'q' && move.includes('x')) ? 30 : 0;
+                    // IMPROVED SELECTION: Penalty if move results in piece being hung
+                    let moveValue = minimax(game, 2, -100000, 100000, false);
                     
-                    let boardValue = minimax(game, 2, -100000, 100000, false) + queenBias;
+                    // Extra "Save Me" priority for the Queen
+                    let queenBias = (moveObj.piece === 'q' && move.includes('x')) ? 40 : 0;
+                    
                     game.undo();
-                    if (boardValue > bestValue) {
-                        bestValue = boardValue;
+                    if ((moveValue + queenBias) > bestValue) {
+                        bestValue = moveValue + queenBias;
                         bestMove = move;
                     }
                 }
@@ -392,7 +392,7 @@
             game.move(bestMove || moves[0].san);
             board.position(game.fen());
             updateStatus();
-        }, 150); // Snappy execution
+        }, 150); 
     }
 
     function updateStatus() {
@@ -467,6 +467,7 @@
         var move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
         
         if (move === null) {
+            // RESTORED: FUNNY REMARKS & ILLEGAL WARNINGS
             if (game.in_check()) {
                 let randomCheck = checkRemarks[Math.floor(Math.random() * checkRemarks.length)];
                 $status.html("<span class='danger-text'>Look out! Your King is in danger!</span>");
@@ -502,7 +503,7 @@
 
         if (!game.game_over()) {
             $status.html("Mr. Dotun is thinking...");
-            setTimeout(makeAIMove, 400); // Trigger AI faster
+            setTimeout(makeAIMove, 400); 
         } else {
             updateStatus();
         }
