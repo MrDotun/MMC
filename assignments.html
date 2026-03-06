@@ -137,8 +137,10 @@
             transform: translateY(-2px);
         }
 
-        .highlight-white { background-color: #f6f669 !important; }
-        .highlight-black { background-color: #e6e600 !important; }
+        /* UPDATED HIGHLIGHTS: Lower opacity for "faint" look */
+        .highlight-white { background-color: rgba(246, 246, 105, 0.5) !important; }
+        .highlight-black { background-color: rgba(230, 230, 0, 0.5) !important; }
+        
         .white-1e1d7 { background-color: #ebecd0 !important; }
         .black-3c85d { background-color: #779556 !important; }
         
@@ -151,6 +153,7 @@
             font-weight: 500;
         }
         #status { font-weight: bold; color: #cbd5e1; }
+        .illegal-move { color: #ff4d4d !important; } /* NEW CLASS FOR RED MESSAGE */
     </style>
 </head>
 <body>
@@ -281,7 +284,6 @@
         return totalEvaluation;
     }
 
-    // Faster Minimax (Depth 1 or 2 max for Mobile)
     function minimax(game, depth, alpha, beta, isMaximizing) {
         if (depth === 0 || game.game_over()) return evaluateBoard(game);
 
@@ -315,13 +317,11 @@
         let moves = game.moves();
         if (moves.length === 0) return;
 
-        // Shuffle moves to avoid repetitive AI patterns
         moves.sort(() => Math.random() - 0.5);
 
         let bestMove = moves[0];
         let bestValue = -Infinity;
 
-        // Using Depth 2 for a balance of speed and skill
         for (let move of moves) {
             game.move(move);
             let boardValue = minimax(game, 1, -100000, 100000, false);
@@ -340,6 +340,7 @@
     function updateStatus() {
         var history = game.history();
         var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
+        $status.removeClass('illegal-move'); // Clear red message on valid status update
 
         if (game.in_checkmate()) {
             $status.html("Game Over! Mr. Dotun wins." + histText);
@@ -369,8 +370,13 @@
         else $grade.text("Beginner");
     }
 
+    // --- MODIFIED CLICK LOGIC FOR ILLEGAL MOVES AND HIGHLIGHTS ---
     function onSquareClick(square) {
         if (game.game_over()) return;
+        
+        // Reset status color every click
+        $status.removeClass('illegal-move');
+
         if (sourceSquare === null) {
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
@@ -380,19 +386,26 @@
             }
             return;
         }
+
         var move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
+
         if (move === null) {
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
+                // User clicked another white piece, change selection
                 sourceSquare = square;
                 removeHighlights();
                 addHighlight(square);
             } else {
+                // ILLEGAL MOVE TRIGGER
+                $status.addClass('illegal-move').text("Illegal Move! Try again.");
                 sourceSquare = null;
                 removeHighlights();
             }
             return;
         }
+
+        // VALID MOVE
         board.position(game.fen());
         sourceSquare = null;
         removeHighlights();
