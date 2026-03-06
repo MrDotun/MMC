@@ -274,6 +274,12 @@
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
 
     function evaluateBoard(g) {
+        // Evaluate checkmates heavily to defend against mate-in-1
+        if (g.in_checkmate()) {
+            return g.turn() === 'w' ? 999999 : -999999; 
+        }
+        if (g.in_draw() || g.in_stalemate() || g.in_threefold_repetition()) return 0;
+
         let total = 0;
         const b = g.board();
         for (let i = 0; i < 8; i++) {
@@ -288,7 +294,7 @@
         return total;
     }
 
-    // Minimax focusing on immediate trade safety
+    // Minimax
     function minimax(g, depth, alpha, beta, isMax) {
         if (depth === 0 || g.game_over()) return evaluateBoard(g);
         let moves = g.moves();
@@ -320,27 +326,21 @@
             let moves = game.moves({ verbose: true });
             let bestMove = null;
             let bestValue = -Infinity;
+            let moveCount = game.history().length; 
 
-            // PREVENT LOSE PIECES: Look for captures and safe squares
             for (let mObj of moves) {
                 game.move(mObj.san);
                 
-                // Static Penalty if the move leaves ANY piece hanging to your next turn
-                let safetyScore = 0;
-                let opponentMoves = game.moves({ verbose: true });
-                for (let opM of opponentMoves) {
-                    if (opM.captured) {
-                        // Massive penalty if we just moved a piece into a death trap
-                        if (opM.to === mObj.to) safetyScore -= (weights[mObj.piece] * 2);
-                        // Penalty for leaving other pieces hanging
-                        else safetyScore -= (weights[opM.captured] * 0.5);
-                    }
-                }
-
-                let boardVal = minimax(game, 2, -100000, 100000, false) + safetyScore;
+                // Depth 2 natively covers safety against immediate threats and traps
+                let boardVal = minimax(game, 2, -Infinity, Infinity, false);
                 
                 // Aggression: Prefer winning trades
                 if (mObj.captured) boardVal += weights[mObj.captured];
+
+                // Prioritize castling early (before 6 moves / 12 plies)
+                if (moveCount < 12 && (mObj.san === 'O-O' || mObj.san === 'O-O-O')) {
+                    boardVal += 10000;
+                }
 
                 game.undo();
 
@@ -353,7 +353,7 @@
             game.move(bestMove || moves[0].san);
             board.position(game.fen());
             updateStatus();
-        }, 250);
+        }, 10); // Reduced delay to play much faster
     }
 
     function updateStatus() {
