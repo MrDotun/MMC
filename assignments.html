@@ -382,10 +382,9 @@
     var $remark = $('#remark');
     var sourceSquare = null; 
 
-    // --- ENHANCED AI LOGIC ---
+    // --- ENHANCED AI ENGINE (FIXED FOR HANGING) ---
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
     
-    // Piece-Square Tables (PST) to guide positioning
     const pst = {
         p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
         n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
@@ -404,7 +403,6 @@
                 let piece = b[i][j];
                 if (piece) {
                     let val = weights[piece.type];
-                    // Add positional bonus based on piece square
                     let pValue = (piece.color === 'w') ? pst[piece.type][i][j] : pst[piece.type][7-i][j];
                     let score = val + pValue;
                     totalEvaluation += (piece.color === aiColor ? score : -score);
@@ -414,7 +412,6 @@
         return totalEvaluation;
     }
 
-    // Move ordering: sorting captures first makes Alpha-Beta much faster
     function getSortedMoves(game) {
         let moves = game.moves();
         return moves.sort((a, b) => {
@@ -458,10 +455,10 @@
         let bestMove = moves[0];
         let bestValue = -Infinity;
 
-        // Increased efficiency allows depth 3 to feel faster than depth 2
+        // REDUCED DEPTH TO 1: Fixes "hanging" on mobile while keeping strength via PST
         for (let move of moves) {
             game.move(move);
-            let boardValue = minimax(game, 2, -100000, 100000, false);
+            let boardValue = minimax(game, 1, -100000, 100000, false);
             game.undo();
             if (boardValue > bestValue) {
                 bestValue = boardValue;
@@ -588,7 +585,8 @@
 
         updateGrade();
         $status.html("Thinking...");
-        window.setTimeout(makeAIMove, 150);
+        // Delay ensures the "Thinking..." status renders before the CPU-heavy AI move starts
+        window.setTimeout(makeAIMove, 300);
     }
 
     function addHighlight(square) {
