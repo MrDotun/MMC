@@ -295,15 +295,18 @@
     var $remark = $('#remark');
     var sourceSquare = null; 
 
-    // WEIGHTS AND PST UPDATED FOR BETTER CENTER CONTROL
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+    
+    // UPDATED PST: High priority on corners for King and center for Queen
     const pst = {
-        p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,25,45,45,25,5,5],[0,0,25,50,50,25,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
-        n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,5,5,0,-20,-40],[-30,5,15,20,20,15,5,-30],[-30,0,25,30,30,25,0,-30],[-30,5,25,30,30,25,5,-30],[-30,0,15,20,20,15,0,-30],[-40,-20,0,0,0,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
-        b: [[-20,-10,-10,-10,-10,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,10,10,5,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,10,10,10,10,0,-10],[-10,10,10,10,10,10,10,-10],[-10,5,0,0,0,0,5,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
-        r: [[0,0,0,0,0,0,0,0],[5,10,10,10,10,10,10,5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[0,0,0,5,5,0,0,0]],
-        q: [[-20,-10,-10,-5,-5,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,5,5,5,0,-10],[-5,0,5,5,5,5,0,-5],[0,0,5,5,5,5,0,-5],[-10,5,5,5,5,5,0,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
-        k: [[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[20,30,10,0,0,10,30,20]]
+        p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
+        n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,5,5,0,-20,-40],[-30,5,10,15,15,10,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,10,15,15,10,0,-30],[-40,-20,0,0,0,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
+        b: [[-20,-10,-10,-10,-10,-10,-10,-20],[-10,5,0,0,0,0,5,-10],[-10,10,10,10,10,10,10,-10],[-10,0,10,10,10,10,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,5,10,10,5,0,-10],[-10,0,0,0,0,0,0,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
+        r: [[0,0,0,5,5,0,0,0],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[5,10,10,10,10,10,10,5],[0,0,0,0,0,0,0,0]],
+        // QUEEN AGGRESSION: High values in the center to hunt
+        q: [[-20,-10,-10,-5,-5,-10,-10,-20],[-10,15,15,15,15,15,15,-10],[-10,15,25,25,25,25,15,-10],[-5,15,25,30,30,25,15,-5],[0,15,25,30,30,25,15,-5],[-10,15,20,20,20,15,10,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
+        // KING CASTLING: Massive reward for G8/C8 to force early castling
+        k: [[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[70,80,30,-10,-10,30,80,70]]
     };
 
     function evaluateBoard(game) {
@@ -353,33 +356,31 @@
     function makeAIMove() {
         if (game.game_over()) return;
         
-        // SPEED: Played set to 10ms for instant reaction
         setTimeout(() => {
-            let moves = game.moves();
+            let moves = game.moves({ verbose: true });
             if (moves.length === 0) return;
             
             let bestMove = null;
             let blackMoveCount = Math.floor(game.history().length / 2);
 
-            // TACTICAL AWARENESS: Check for immediate captures or threats
-            let captures = moves.filter(m => m.includes('x'));
-            let currentEval = evaluateBoard(game);
-            
-            // CASTLE SCRIPT: King's Indian style early castle (Safe check enabled)
-            if (captures.length === 0 && currentEval >= -50 && blackMoveCount < 10) {
-                if (blackMoveCount === 0 && moves.includes('Nf6')) bestMove = 'Nf6';
-                else if (blackMoveCount === 1 && moves.includes('g6')) bestMove = 'g6';
-                else if (blackMoveCount === 2 && moves.includes('Bg7')) bestMove = 'Bg7';
-                else if (blackMoveCount === 3 && moves.includes('O-O')) bestMove = 'O-O';
-            }
+            // RAPID DEVELOPMENT SCRIPT
+            const sanMoves = moves.map(m => m.san);
+            if (blackMoveCount === 0 && sanMoves.includes('Nf6')) bestMove = 'Nf6';
+            else if (blackMoveCount === 1 && sanMoves.includes('g6')) bestMove = 'g6';
+            else if (blackMoveCount === 2 && sanMoves.includes('Bg7')) bestMove = 'Bg7';
+            else if (blackMoveCount === 3 && sanMoves.includes('O-O')) bestMove = 'O-O';
 
-            // FALLBACK TO MINIMAX: For center control and safe tactical play
             if (!bestMove) {
                 let bestValue = -Infinity;
-                for (let move of moves) {
+                // DEPTH 2: Fast, awareness of good/bad captures
+                for (let moveObj of moves) {
+                    let move = moveObj.san;
                     game.move(move);
-                    // Depth 3 search for tactical safety
-                    let boardValue = minimax(game, 3, -100000, 100000, false);
+                    
+                    // QUEEN BIAS: Encourages the AI to capture with the Queen specifically
+                    let queenBias = (moveObj.piece === 'q' && move.includes('x')) ? 30 : 0;
+                    
+                    let boardValue = minimax(game, 2, -100000, 100000, false) + queenBias;
                     game.undo();
                     if (boardValue > bestValue) {
                         bestValue = boardValue;
@@ -388,10 +389,10 @@
                 }
             }
 
-            game.move(bestMove || moves[0]);
+            game.move(bestMove || moves[0].san);
             board.position(game.fen());
             updateStatus();
-        }, 10);
+        }, 150); // Snappy execution
     }
 
     function updateStatus() {
@@ -491,31 +492,42 @@
         board.position(game.fen());
         sourceSquare = null;
         removeHighlights();
-        updateStatus();
-        makeAIMove();
+        
+        if (move.captured) {
+            const pValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 0 };
+            totalScore += pValues[move.captured];
+        }
+
+        updateGrade();
+
+        if (!game.game_over()) {
+            $status.html("Mr. Dotun is thinking...");
+            setTimeout(makeAIMove, 400); // Trigger AI faster
+        } else {
+            updateStatus();
+        }
     }
 
     function addHighlight(square) {
-        $('#board .square-' + square).addClass('highlight-white');
+        var $el = $('#board .square-' + square);
+        if ($el.hasClass('black-3c85d')) $el.addClass('highlight-black');
+        else $el.addClass('highlight-white');
     }
 
     function removeHighlights() {
-        $('#board .square-55d63').removeClass('highlight-white');
+        $('#board [class*="square-"]').removeClass('highlight-white highlight-black');
     }
 
     var config = {
         draggable: false,
         position: 'start',
-        onSquareClick: onSquareClick
+        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
     };
-    board = Chessboard('board', config);
-    $(window).resize(board.resize);
-
-    $(document).on('click', '#board .square-55d63', function() {
-        var square = $(this).attr('data-square');
-        onSquareClick(square);
+    board = ChessBoard('board', config);
+    $('#board').on('click', '[class*="square-"]', function() {
+        onSquareClick($(this).attr('data-square'));
     });
-
+    $(window).resize(board.resize);
 </script>
 </body>
 </html>
