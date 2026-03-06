@@ -142,7 +142,6 @@
         .white-1e1d7 { background-color: #ebecd0 !important; }
         .black-3c85d { background-color: #779556 !important; }
         
-        /* 1. Updated Remark style to Red color as requested */
         #remark { 
             font-style: italic; 
             color: #ff4d4d; 
@@ -153,7 +152,6 @@
         }
         #status { font-weight: bold; color: #cbd5e1; }
         
-        /* Added a small helper for alerting king danger */
         .danger-text { color: #ff4d4d !important; text-shadow: 0 0 5px rgba(255, 77, 77, 0.5); }
     </style>
 </head>
@@ -208,7 +206,6 @@
     var currentClass = "";
     var hasSavedWin = false;
 
-    // 1. Array of many remarks for Mr. Dotun
     const dotunRemarks = [
         "If you don't win, I'll be disappointed",
         "Is that the best you can do?",
@@ -220,6 +217,21 @@
         "I'm almost feeling sorry for you.",
         "Nice try, but not good enough.",
         "Checkmate is coming soon, I can feel it."
+    ];
+
+    const funnyIllegalRemarks = [
+        "That's an illegal move... Did you forget how the pieces move, or are you inventing new rules?",
+        "That's an illegal move... Even my grandma moves faster than that piece just tried to!",
+        "That's an illegal move... Nice try! But pieces don't have wings to fly there.",
+        "That's an illegal move... You're playing Chess, not Checkers!",
+        "That's an illegal move... I saw that! You can't just jump over the whole board!"
+    ];
+
+    const checkRemarks = [
+        "Illegal move. Your King is in check! Save your King before he takes a nap!",
+        "Illegal move. Your King is in check! Red alert! The King needs a hero!",
+        "Illegal move. Your King is in check! You can't leave your boss in trouble!",
+        "Illegal move. Your King is in check! Even a King needs protection sometimes!"
     ];
 
     function subscribeToLeaderboard() {
@@ -273,7 +285,6 @@
         board.resize();
     }
 
-    // --- OPTIMIZED CHESS ENGINE LOGIC ---
     var board = null;
     var game = new Chess();
     var $status = $('#status');
@@ -282,7 +293,6 @@
     var sourceSquare = null; 
 
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
-    var totalScore = 0;
 
     function evaluateBoard(game) {
         let totalEvaluation = 0;
@@ -301,7 +311,6 @@
 
     function minimax(game, depth, alpha, beta, isMaximizing) {
         if (depth === 0 || game.game_over()) return evaluateBoard(game);
-
         let moves = game.moves();
         if (isMaximizing) {
             let bestScore = -Infinity;
@@ -328,15 +337,11 @@
 
     function makeAIMove() {
         if (game.game_over()) return;
-
         let moves = game.moves();
         if (moves.length === 0) return;
-
         moves.sort(() => Math.random() - 0.5);
-
         let bestMove = moves[0];
         let bestValue = -Infinity;
-
         for (let move of moves) {
             game.move(move);
             let boardValue = minimax(game, 1, -100000, 100000, false);
@@ -346,7 +351,6 @@
                 bestMove = move;
             }
         }
-
         game.move(bestMove);
         board.position(game.fen());
         updateStatus();
@@ -355,7 +359,6 @@
     function updateStatus() {
         var history = game.history();
         var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
-
         if (game.in_checkmate()) {
             $status.html("Game Over! Mr. Dotun wins." + histText);
             $remark.text("Checkmate! Better luck next time.");
@@ -363,12 +366,12 @@
             $status.html("Game Over! It's a draw." + histText);
         } else {
             $status.html("Mr. Dotun moved. Your turn!" + histText);
-            // 1. Picking a random remark from the new list
             var randomRemark = dotunRemarks[Math.floor(Math.random() * dotunRemarks.length)];
             $remark.text('"' + randomRemark + '"');
         }
     }
 
+    var totalScore = 0;
     function updateGrade() {
         if (totalScore >= 200) {
             $grade.text("Grandmaster! 🏆");
@@ -401,17 +404,19 @@
         
         var move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
         
-        // 2. Checking for illegal move or move that leaves King in danger
         if (move === null) {
-            // Check if the King is already in check
+            // Check if player is already in check
             if (game.in_check()) {
-                $status.html("<span class='danger-text'>Illegal! Your King is in danger, move him!</span>");
-                $remark.text('"Protect your King first!"');
+                let randomCheck = checkRemarks[Math.floor(Math.random() * checkRemarks.length)];
+                $status.html("<span class='danger-text'>Look out! Your King is in danger!</span>");
+                $remark.text(randomCheck);
             } else {
-                $status.html("<span class='danger-text'>Illegal move! That puts your King at risk.</span>");
-                $remark.text('"You can\'t play like that, it\'s illegal!"');
+                let randomIllegal = funnyIllegalRemarks[Math.floor(Math.random() * funnyIllegalRemarks.length)];
+                $status.html("<span class='danger-text'>Oops! You can't go there!</span>");
+                $remark.text(randomIllegal);
             }
             
+            // Allow them to pick another piece or re-try
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
                 sourceSquare = square;
