@@ -51,7 +51,7 @@
             width: 90%;
             max-width: 400px;
         }
-        .login-card input, .login-card select {
+        .login-card input {
             width: 100%;
             padding: 12px;
             margin: 10px 0;
@@ -117,28 +117,6 @@
         }
         h2 { margin: 0 0 10px 0; color: #4ade80; font-size: 1.4em; }
         .grade { font-size: 1.3em; font-weight: bold; color: #4ade80; }
-
-        /* Timer Styles */
-        .timer-container {
-            display: flex;
-            justify-content: space-around;
-            margin-bottom: 15px;
-            font-family: 'Courier New', Courier, monospace;
-            font-weight: bold;
-        }
-        .timer-box {
-            background: #1a1a2e;
-            padding: 5px 15px;
-            border: 1px solid #4ade80;
-            border-radius: 5px;
-            color: #4ade80;
-            min-width: 80px;
-        }
-        .active-timer {
-            background: #4ade80;
-            color: #1a1a2e;
-            box-shadow: 0 0 10px #4ade80;
-        }
         
         .submit-btn {
             background-color: #4ade80;
@@ -176,7 +154,6 @@
         
         .danger-text { color: #ff4d4d !important; text-shadow: 0 0 5px rgba(255, 77, 77, 0.5); }
         .super-gm { color: #facc15 !important; text-shadow: 0 0 10px #facc15; font-size: 1.5em; }
-        .win-text { color: #facc15 !important; text-shadow: 0 0 8px rgba(250, 204, 21, 0.6); }
     </style>
 </head>
 <body>
@@ -187,10 +164,6 @@
         <p>Welcome, Chess Champion! Please enter your details to start the match.</p>
         <input type="text" id="studentName" placeholder="Enter Your Full Name" required>
         <input type="text" id="studentClass" placeholder="Enter Your Class" required>
-        <select id="userColor">
-            <option value="w">Play as White (Goes First)</option>
-            <option value="b">Play as Black (Goes Second)</option>
-        </select>
         <button class="submit-btn" onclick="startGame()">START GAME</button>
 
         <div id="leaderboard-box">
@@ -206,18 +179,6 @@
 <div id="game-container">
     <div class="info-panel">
         <h2 id="welcome-msg">Match: <span id="displayName">Player</span> vs Mr. Dotun</h2>
-        
-        <div class="timer-container">
-            <div>
-                <small>Mr. Dotun</small>
-                <div id="ai-timer" class="timer-box">10:00</div>
-            </div>
-            <div>
-                <small>YOU</small>
-                <div id="user-timer" class="timer-box">10:00</div>
-            </div>
-        </div>
-
         <div id="board"></div>
         <p id="remark">"If you don't win, I'll be disappointed"</p>
         <p>Your Grade: <span id="grade" class="grade">Beginner</span></p>
@@ -244,12 +205,7 @@
 
     var currentName = "";
     var currentClass = "";
-    var userColorChoice = "w"; 
     var hasSavedWin = false;
-
-    // Timer Variables
-    var timerInterval = null;
-    var times = { w: 600, b: 600 }; // 10 minutes in seconds
 
     const dotunRemarks = [
         "If you don't win, I'll be disappointed",
@@ -319,74 +275,17 @@
         }
     }
 
-    function formatTime(s) {
-        let mins = Math.floor(s / 60);
-        let secs = s % 60;
-        return (mins < 10 ? "0" : "") + mins + ":" + (secs < 10 ? "0" : "") + secs;
-    }
-
-    function updateTimerUI() {
-        let userColor = userColorChoice;
-        let aiColor = (userColor === 'w' ? 'b' : 'w');
-        
-        document.getElementById('user-timer').textContent = formatTime(times[userColor]);
-        document.getElementById('ai-timer').textContent = formatTime(times[aiColor]);
-
-        // Highlight active turn
-        if (game.turn() === userColor) {
-            $('#user-timer').addClass('active-timer');
-            $('#ai-timer').removeClass('active-timer');
-        } else {
-            $('#ai-timer').addClass('active-timer');
-            $('#user-timer').removeClass('active-timer');
-        }
-    }
-
-    function startTimer() {
-        if (timerInterval) clearInterval(timerInterval);
-        timerInterval = setInterval(() => {
-            if (game.game_over()) {
-                clearInterval(timerInterval);
-                return;
-            }
-            
-            let turn = game.turn();
-            times[turn]--;
-
-            if (times[turn] <= 0) {
-                clearInterval(timerInterval);
-                let winner = (turn === 'w' ? 'Black' : 'White');
-                alert("TIME OUT! " + winner + " wins on time!");
-                $status.html("Game Over! Time ran out.");
-            }
-            updateTimerUI();
-        }, 1000);
-    }
-
     function startGame() {
         currentName = document.getElementById('studentName').value;
         currentClass = document.getElementById('studentClass').value;
-        userColorChoice = document.getElementById('userColor').value;
-        
         if (currentName.trim() === "" || currentClass.trim() === "") {
             alert("Please enter both your name and class.");
             return;
         }
-        
         document.getElementById('displayName').textContent = currentName;
         document.getElementById('welcome-overlay').style.display = 'none';
         document.getElementById('game-container').style.display = 'block';
-        
-        board.orientation(userColorChoice === 'w' ? 'white' : 'black');
         board.resize();
-        
-        updateTimerUI();
-        startTimer();
-
-        if (userColorChoice === 'b') {
-            $status.html("Mr. Dotun is thinking...");
-            window.setTimeout(makeAIMove, 500);
-        }
     }
 
     var board = null;
@@ -397,6 +296,14 @@
     var sourceSquare = null; 
 
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+    const pst = {
+        p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
+        n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
+        b: [[-20,-10,-10,-10,-10,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,10,10,5,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,10,10,10,10,0,-10],[-10,10,10,10,10,10,10,-10],[-10,5,0,0,0,0,5,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
+        r: [[0,0,0,0,0,0,0,0],[5,10,10,10,10,10,10,5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[0,0,0,5,5,0,0,0]],
+        q: [[-20,-10,-10,-5,-5,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,5,5,5,0,-10],[-5,0,5,5,5,5,0,-5],[0,0,5,5,5,5,0,-5],[-10,5,5,5,5,5,0,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
+        k: [[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[20,30,10,0,0,10,30,20]]
+    };
 
     function evaluateBoard(game) {
         let totalEvaluation = 0;
@@ -406,8 +313,8 @@
                 let piece = b[i][j];
                 if (piece) {
                     let val = weights[piece.type];
-                    let aiColor = (userColorChoice === 'w' ? 'b' : 'w');
-                    totalEvaluation += (piece.color === aiColor ? val : -val);
+                    let bonus = (piece.color === 'b') ? pst[piece.type][i][j] : pst[piece.type][7-i][j];
+                    totalEvaluation += (piece.color === 'w' ? -(val + bonus) : (val + bonus));
                 }
             }
         }
@@ -417,6 +324,8 @@
     function minimax(game, depth, alpha, beta, isMaximizing) {
         if (depth === 0 || game.game_over()) return evaluateBoard(game);
         let moves = game.moves();
+        moves.sort((a, b) => (a.includes('x') ? -1 : 1));
+
         if (isMaximizing) {
             let bestScore = -Infinity;
             for (let move of moves) {
@@ -442,23 +351,46 @@
 
     function makeAIMove() {
         if (game.game_over()) return;
-        let moves = game.moves();
-        if (moves.length === 0) return;
-        moves.sort(() => Math.random() - 0.5);
-        let bestMove = moves[0];
-        let bestValue = -Infinity;
-        for (let move of moves) {
-            game.move(move);
-            let boardValue = minimax(game, 1, -100000, 100000, false);
-            game.undo();
-            if (boardValue > bestValue) {
-                bestValue = boardValue;
-                bestMove = move;
+        
+        setTimeout(() => {
+            let moves = game.moves();
+            if (moves.length === 0) return;
+            
+            let bestMove = null;
+            let blackMoveCount = Math.floor(game.history().length / 2);
+
+            let captures = moves.filter(m => m.includes('x'));
+            let currentEval = evaluateBoard(game);
+            
+            if (captures.length === 0 && currentEval >= -50) {
+                if (blackMoveCount === 0 && moves.includes('Nf6')) {
+                    bestMove = 'Nf6';
+                } else if (blackMoveCount === 1 && moves.includes('g6')) {
+                    bestMove = 'g6';
+                } else if (blackMoveCount === 2 && moves.includes('Bg7')) {
+                    bestMove = 'Bg7';
+                } else if (blackMoveCount === 3 && moves.includes('O-O')) {
+                    bestMove = 'O-O';
+                }
             }
-        }
-        game.move(bestMove);
-        board.position(game.fen());
-        updateStatus();
+
+            if (!bestMove) {
+                let bestValue = -Infinity;
+                for (let move of moves) {
+                    game.move(move);
+                    let boardValue = minimax(game, 3, -100000, 100000, false);
+                    game.undo();
+                    if (boardValue > bestValue) {
+                        bestValue = boardValue;
+                        bestMove = move;
+                    }
+                }
+            }
+
+            game.move(bestMove || moves[0]);
+            board.position(game.fen());
+            updateStatus();
+        }, 50);
     }
 
     function updateStatus() {
@@ -466,35 +398,21 @@
         var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
         
         if (game.in_checkmate()) {
-            let winnerColor = (game.turn() === 'w' ? 'black' : 'white');
-            let userWon = (winnerColor === (userColorChoice === 'w' ? 'white' : 'black'));
-
-            if (userWon) {
-                // EXPLICIT CONGRATULATIONS FROM COMPUTER
-                $status.html("<span class='win-text'>CONGRATULATIONS! YOU BEAT MR. DOTUN!</span>" + histText);
-                $remark.text("Incredible! I've been outsmarted. You are a true Grandmaster!");
-                updateGrade(true);
-                setTimeout(function() { 
-                    alert("🏆 CHECKMATE! Congratulations " + currentName + ", you defeated Mr. Dotun! What a brilliant match!"); 
-                }, 250);
+            if (game.turn() === 'b') { // Mr. Dotun is checkmated
+                $status.html("Incredible! You beat Mr. Dotun!" + histText);
+                $remark.text("I... I can't believe I lost. You are a true master.");
+                updateGrade(true); 
             } else {
                 $status.html("Game Over! Mr. Dotun wins." + histText);
                 $remark.text("Checkmate! Better luck next time.");
-                setTimeout(function() { alert("CHECKMATE! Mr. Dotun wins. Better luck next time!"); }, 250);
             }
-        } else if (game.in_stalemate()) {
-            $status.html("Game Over! It's a Stalemate." + histText);
-            $remark.text("A stalemate? Neither of us wins this time.");
-            setTimeout(function() { alert("STALEMATE! The game is a draw."); }, 250);
         } else if (game.in_draw()) {
             $status.html("Game Over! It's a draw." + histText);
-            setTimeout(function() { alert("DRAW! The game ended in a tie."); }, 250);
         } else {
             $status.html("Mr. Dotun moved. Your turn!" + histText);
             var randomRemark = dotunRemarks[Math.floor(Math.random() * dotunRemarks.length)];
             $remark.text('"' + randomRemark + '"');
         }
-        updateTimerUI();
     }
 
     var totalScore = 0;
@@ -502,23 +420,30 @@
         let finalRank = "Beginner";
         let moveCount = game.history().length;
 
-        if (isWin && moveCount <= 20) {
-            finalRank = "Super Grandmaster";
-            $grade.html('<span class="super-gm">SUPER GRANDMASTER! 💎</span>');
+        // Force Grandmaster status if they win
+        if (isWin) {
+            if (moveCount <= 30) {
+                finalRank = "Super Grandmaster";
+            } else {
+                finalRank = "Grandmaster";
+            }
         } 
-        else if (totalScore >= 200 || isWin) {
-            finalRank = "Grandmaster";
-            $grade.text("Grandmaster! 🏆");
-        }
+        else if (totalScore >= 200) finalRank = "Grandmaster";
         else if (totalScore >= 120) finalRank = "Expert";
         else if (totalScore >= 70) finalRank = "Pro";
         else if (totalScore >= 30) finalRank = "Advanced";
 
-        if (finalRank !== "Beginner") {
-            $grade.text(finalRank + (finalRank === "Super Grandmaster" ? " 💎" : " 🏆"));
+        // Update UI
+        if (finalRank === "Super Grandmaster") {
+            $grade.html('<span class="super-gm">SUPER GRANDMASTER! 💎</span>');
+        } else if (finalRank === "Grandmaster") {
+            $grade.text("Grandmaster! 🏆");
+        } else if (finalRank !== "Beginner") {
+            $grade.text(finalRank);
         }
 
-        if ((isWin || totalScore >= 200) && !hasSavedWin && currentName) {
+        // Save win to Firebase
+        if (isWin && !hasSavedWin && currentName) {
             db.collection("grandmasters").add({
                 name: currentName,
                 class: currentClass,
@@ -532,11 +457,11 @@
 
     function onSquareClick(square) {
         if (game.game_over()) return;
-        if (game.turn() !== userColorChoice) return;
+        if (game.turn() === 'b') return;
 
         if (sourceSquare === null) {
             var piece = game.get(square);
-            if (piece && piece.color === userColorChoice) {
+            if (piece && piece.color === 'w') {
                 sourceSquare = square;
                 removeHighlights();
                 addHighlight(square);
@@ -558,7 +483,7 @@
             }
             
             var piece = game.get(square);
-            if (piece && piece.color === userColorChoice) {
+            if (piece && piece.color === 'w') {
                 sourceSquare = square;
                 removeHighlights();
                 addHighlight(square);
@@ -579,8 +504,13 @@
         }
 
         updateGrade();
-        $status.html("Thinking...");
-        window.setTimeout(makeAIMove, 250);
+
+        if (!game.game_over()) {
+            $status.html("Mr. Dotun is thinking...");
+            setTimeout(makeAIMove, 4000);
+        } else {
+            updateStatus();
+        }
     }
 
     function addHighlight(square) {
