@@ -144,13 +144,16 @@
         
         #remark { 
             font-style: italic; 
-            color: #facc15; 
+            color: #ff4d4d; 
             min-height: 1.5em; 
             display: block; 
             margin: 10px 0; 
-            font-weight: 500;
+            font-weight: bold;
         }
         #status { font-weight: bold; color: #cbd5e1; }
+        
+        .danger-text { color: #ff4d4d !important; text-shadow: 0 0 5px rgba(255, 77, 77, 0.5); }
+        .super-gm { color: #facc15 !important; text-shadow: 0 0 10px #facc15; font-size: 1.5em; }
     </style>
 </head>
 <body>
@@ -175,7 +178,7 @@
 
 <div id="game-container">
     <div class="info-panel">
-        <h2 id="welcome-msg">Playing against: <strong>Mr. Dotun</strong></h2>
+        <h2 id="welcome-msg">Match: <span id="displayName">Player</span> vs Mr. Dotun</h2>
         <div id="board"></div>
         <p id="remark">"If you don't win, I'll be disappointed"</p>
         <p>Your Grade: <span id="grade" class="grade">Beginner</span></p>
@@ -204,6 +207,34 @@
     var currentClass = "";
     var hasSavedWin = false;
 
+    const dotunRemarks = [
+        "If you don't win, I'll be disappointed",
+        "Is that the best you can do?",
+        "I've seen beginners play better than that.",
+        "Your king looks very exposed right now.",
+        "Are you sure you want to make that move?",
+        "Don't cry when you lose!",
+        "Focus! Chess is a game of the mind.",
+        "I'm almost feeling sorry for you.",
+        "Nice try, but not good enough.",
+        "Checkmate is coming soon, I can feel it."
+    ];
+
+    const funnyIllegalRemarks = [
+        "That's an illegal move... Did you forget how the pieces move, or are you inventing new rules?",
+        "That's an illegal move... Even my grandma moves faster than that piece just tried to!",
+        "That's an illegal move... Nice try! But pieces don't have wings to fly there.",
+        "That's an illegal move... You're playing Chess, not Checkers!",
+        "That's an illegal move... I saw that! You can't just jump over the whole board!"
+    ];
+
+    const checkRemarks = [
+        "Illegal move. Your King is in check! Save your King before he takes a nap!",
+        "Illegal move. Your King is in check! Red alert! The King needs a hero!",
+        "Illegal move. Your King is in check! You can't leave your boss in trouble!",
+        "Illegal move. Your King is in check! Even a King needs protection sometimes!"
+    ];
+
     function subscribeToLeaderboard() {
         return db.collection("grandmasters").orderBy("timestamp", "desc").limit(100)
           .onSnapshot((snapshot) => {
@@ -213,7 +244,8 @@
             snapshot.forEach((doc) => {
                 const data = doc.data();
                 const li = document.createElement('li');
-                li.textContent = `👑 ${data.name} (${data.class})`;
+                const title = data.rank === "Super Grandmaster" ? "💎" : "👑";
+                li.textContent = `${title} ${data.name} (${data.class})`;
                 list.prepend(li);
             });
         });
@@ -250,12 +282,12 @@
             alert("Please enter both your name and class.");
             return;
         }
+        document.getElementById('displayName').textContent = currentName;
         document.getElementById('welcome-overlay').style.display = 'none';
         document.getElementById('game-container').style.display = 'block';
         board.resize();
     }
 
-    // --- OPTIMIZED CHESS ENGINE LOGIC ---
     var board = null;
     var game = new Chess();
     var $status = $('#status');
@@ -264,7 +296,6 @@
     var sourceSquare = null; 
 
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
-    var totalScore = 0;
 
     function evaluateBoard(game) {
         let totalEvaluation = 0;
@@ -281,10 +312,8 @@
         return totalEvaluation;
     }
 
-    // Faster Minimax (Depth 1 or 2 max for Mobile)
     function minimax(game, depth, alpha, beta, isMaximizing) {
         if (depth === 0 || game.game_over()) return evaluateBoard(game);
-
         let moves = game.moves();
         if (isMaximizing) {
             let bestScore = -Infinity;
@@ -311,17 +340,11 @@
 
     function makeAIMove() {
         if (game.game_over()) return;
-
         let moves = game.moves();
         if (moves.length === 0) return;
-
-        // Shuffle moves to avoid repetitive AI patterns
         moves.sort(() => Math.random() - 0.5);
-
         let bestMove = moves[0];
         let bestValue = -Infinity;
-
-        // Using Depth 2 for a balance of speed and skill
         for (let move of moves) {
             game.move(move);
             let boardValue = minimax(game, 1, -100000, 100000, false);
@@ -331,7 +354,6 @@
                 bestMove = move;
             }
         }
-
         game.move(bestMove);
         board.position(game.fen());
         updateStatus();
@@ -340,33 +362,56 @@
     function updateStatus() {
         var history = game.history();
         var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
-
+        
         if (game.in_checkmate()) {
-            $status.html("Game Over! Mr. Dotun wins." + histText);
-            $remark.text("Checkmate! Better luck next time.");
+            if (game.turn() === 'b') {
+                $status.html("Incredible! You beat Mr. Dotun!" + histText);
+                $remark.text("I... I can't believe I lost. You are a true master.");
+                updateGrade(true);
+            } else {
+                $status.html("Game Over! Mr. Dotun wins." + histText);
+                $remark.text("Checkmate! Better luck next time.");
+            }
         } else if (game.in_draw()) {
             $status.html("Game Over! It's a draw." + histText);
         } else {
             $status.html("Mr. Dotun moved. Your turn!" + histText);
+            var randomRemark = dotunRemarks[Math.floor(Math.random() * dotunRemarks.length)];
+            $remark.text('"' + randomRemark + '"');
         }
     }
 
-    function updateGrade() {
-        if (totalScore >= 200) {
-            $grade.text("Grandmaster! 👑");
-            if (!hasSavedWin && currentName) {
-                db.collection("grandmasters").add({
-                    name: currentName,
-                    class: currentClass,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                hasSavedWin = true;
-            }
+    var totalScore = 0;
+    function updateGrade(isWin = false) {
+        let finalRank = "Beginner";
+        let moveCount = game.history().length;
+
+        if (isWin && moveCount <= 20) {
+            finalRank = "Super Grandmaster";
+            $grade.html('<span class="super-gm">SUPER GRANDMASTER! 💎</span>');
+        } 
+        else if (totalScore >= 200 || isWin) {
+            finalRank = "Grandmaster";
+            $grade.text("Grandmaster! 🏆");
         }
-        else if (totalScore >= 120) $grade.text("Expert 🌟");
-        else if (totalScore >= 70) $grade.text("Pro ⭐");
-        else if (totalScore >= 30) $grade.text("Advanced 📈");
-        else $grade.text("Beginner");
+        else if (totalScore >= 120) finalRank = "Expert";
+        else if (totalScore >= 70) finalRank = "Pro";
+        else if (totalScore >= 30) finalRank = "Advanced";
+
+        if (finalRank !== "Beginner") {
+            $grade.text(finalRank + (finalRank === "Super Grandmaster" ? " 💎" : " 🏆"));
+        }
+
+        if ((isWin || totalScore >= 200) && !hasSavedWin && currentName) {
+            db.collection("grandmasters").add({
+                name: currentName,
+                class: currentClass,
+                rank: finalRank,
+                moves: Math.ceil(moveCount / 2),
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            hasSavedWin = true;
+        }
     }
 
     function onSquareClick(square) {
@@ -380,8 +425,20 @@
             }
             return;
         }
+        
         var move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
+        
         if (move === null) {
+            if (game.in_check()) {
+                let randomCheck = checkRemarks[Math.floor(Math.random() * checkRemarks.length)];
+                $status.html("<span class='danger-text'>Look out! Your King is in danger!</span>");
+                $remark.text(randomCheck);
+            } else {
+                let randomIllegal = funnyIllegalRemarks[Math.floor(Math.random() * funnyIllegalRemarks.length)];
+                $status.html("<span class='danger-text'>Oops! You can't go there!</span>");
+                $remark.text(randomIllegal);
+            }
+            
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
                 sourceSquare = square;
@@ -393,6 +450,7 @@
             }
             return;
         }
+        
         board.position(game.fen());
         sourceSquare = null;
         removeHighlights();
