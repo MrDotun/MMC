@@ -382,27 +382,51 @@
     var $remark = $('#remark');
     var sourceSquare = null; 
 
+    // --- ENHANCED AI LOGIC ---
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+    
+    // Piece-Square Tables (PST) to guide positioning
+    const pst = {
+        p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
+        n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
+        b: [[-20,-10,-10,-10,-10,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,10,10,5,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,10,10,10,10,0,-10],[-10,10,10,10,10,10,10,-10],[-10,5,0,0,0,0,5,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
+        r: [[0,0,0,0,0,0,0,0],[5,10,10,10,10,10,10,5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,5,5,0,0,-5],[0,0,0,0,0,0,0,0]],
+        q: [[-20,-10,-10,-5,-5,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,5,5,5,0,-10],[-5,0,5,5,5,5,0,-5],[0,0,5,5,5,5,0,-5],[-10,5,5,5,5,5,0,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
+        k: [[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[20,30,10,0,0,10,30,20]]
+    };
 
     function evaluateBoard(game) {
         let totalEvaluation = 0;
         const b = game.board();
+        const aiColor = (userColorChoice === 'w' ? 'b' : 'w');
         for (let i = 0; i < 8; i++) {
             for (let j = 0; j < 8; j++) {
                 let piece = b[i][j];
                 if (piece) {
                     let val = weights[piece.type];
-                    let aiColor = (userColorChoice === 'w' ? 'b' : 'w');
-                    totalEvaluation += (piece.color === aiColor ? val : -val);
+                    // Add positional bonus based on piece square
+                    let pValue = (piece.color === 'w') ? pst[piece.type][i][j] : pst[piece.type][7-i][j];
+                    let score = val + pValue;
+                    totalEvaluation += (piece.color === aiColor ? score : -score);
                 }
             }
         }
         return totalEvaluation;
     }
 
+    // Move ordering: sorting captures first makes Alpha-Beta much faster
+    function getSortedMoves(game) {
+        let moves = game.moves();
+        return moves.sort((a, b) => {
+            if (a.includes('x') && !b.includes('x')) return -1;
+            if (!a.includes('x') && b.includes('x')) return 1;
+            return 0;
+        });
+    }
+
     function minimax(game, depth, alpha, beta, isMaximizing) {
         if (depth === 0 || game.game_over()) return evaluateBoard(game);
-        let moves = game.moves();
+        let moves = getSortedMoves(game);
         if (isMaximizing) {
             let bestScore = -Infinity;
             for (let move of moves) {
@@ -428,12 +452,13 @@
 
     function makeAIMove() {
         if (game.game_over()) return;
-        let moves = game.moves();
+        let moves = getSortedMoves(game);
         if (moves.length === 0) return;
-        moves.sort(() => Math.random() - 0.5);
+        
         let bestMove = moves[0];
         let bestValue = -Infinity;
-        // Increased AI depth to 3 to avoid early blunders like Scholar's Mate
+
+        // Increased efficiency allows depth 3 to feel faster than depth 2
         for (let move of moves) {
             game.move(move);
             let boardValue = minimax(game, 2, -100000, 100000, false);
@@ -556,8 +581,6 @@
             totalScore += pValues[move.captured];
         }
         
-        // --- THE CRITICAL FIX ---
-        // Immediately check if the user just ended the game (like a Scholar's Mate)
         if (game.game_over()) {
             updateStatus();
             return; 
@@ -565,7 +588,7 @@
 
         updateGrade();
         $status.html("Thinking...");
-        window.setTimeout(makeAIMove, 250);
+        window.setTimeout(makeAIMove, 150);
     }
 
     function addHighlight(square) {
