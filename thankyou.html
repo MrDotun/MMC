@@ -282,7 +282,6 @@
             alert("Please enter both your name and class.");
             return;
         }
-        // Update display name before starting
         document.getElementById('displayName').textContent = currentName;
         document.getElementById('welcome-overlay').style.display = 'none';
         document.getElementById('game-container').style.display = 'block';
@@ -296,10 +295,7 @@
     var $remark = $('#remark');
     var sourceSquare = null; 
 
-    // --- ENHANCED AI LOGIC ---
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
-    
-    // Piece-Square Tables (PST) to encourage better positioning
     const pst = {
         p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
         n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
@@ -325,13 +321,9 @@
         return totalEvaluation;
     }
 
-    
-
     function minimax(game, depth, alpha, beta, isMaximizing) {
         if (depth === 0 || game.game_over()) return evaluateBoard(game);
         let moves = game.moves();
-        
-        // Move Ordering: Check captures first to speed up Alpha-Beta pruning
         moves.sort((a, b) => (a.includes('x') ? -1 : 1));
 
         if (isMaximizing) {
@@ -360,7 +352,8 @@
     function makeAIMove() {
         if (game.game_over()) return;
         
-        // Small timeout ensures the UI/Status update renders before calculation starts
+        // Timeout within the AI logic prevents the browser from "hanging" 
+        // while calculating the best move.
         setTimeout(() => {
             let moves = game.moves();
             if (moves.length === 0) return;
@@ -368,7 +361,6 @@
             let bestMove = null;
             let bestValue = -Infinity;
             
-            // Depth 3: High strength, optimized for fast browser performance
             for (let move of moves) {
                 game.move(move);
                 let boardValue = minimax(game, 2, -100000, 100000, false);
@@ -411,7 +403,6 @@
         let finalRank = "Beginner";
         let moveCount = game.history().length;
 
-        // Super Grandmaster: Win in 15 full moves (30 plies)
         if (isWin && moveCount <= 30) {
             finalRank = "Super Grandmaster";
             $grade.html('<span class="super-gm">SUPER GRANDMASTER! 💎</span>');
@@ -442,6 +433,10 @@
 
     function onSquareClick(square) {
         if (game.game_over()) return;
+        
+        // Prevent clicking if it is the AI's turn
+        if (game.turn() === 'b') return;
+
         if (sourceSquare === null) {
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
@@ -487,8 +482,15 @@
         }
 
         updateGrade();
-        $status.html("Thinking...");
-        makeAIMove(); // Directly calls with internal timeout for speed
+
+        // Check for end of game after player move
+        if (!game.game_over()) {
+            $status.html("Mr. Dotun is thinking...");
+            // Trigger AI after 4 seconds
+            setTimeout(makeAIMove, 4000);
+        } else {
+            updateStatus();
+        }
     }
 
     function addHighlight(square) {
