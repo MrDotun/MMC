@@ -3,160 +3,514 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Decipher Chess Academy | Premium Chess Excellence</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <title>Play against Mr. Dotun</title>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Outfit:wght@300;400;600;800&display=swap');
-        
-        :root {
-            --gold: #D4AF37;
-            --dark-blue: #020617;
-            --glass: rgba(15, 23, 42, 0.7);
+        body, html {
+            margin: 0; 
+            padding: 0;
+            min-height: 100%; 
+            width: 100%;
+            overflow-y: auto; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex; 
+            flex-direction: column;
+            align-items: center; 
+            justify-content: flex-start;
+            background-color: #1a1a2e;
         }
 
-        body {
-            font-family: 'Outfit', sans-serif;
-            background-color: var(--dark-blue);
-            color: #f8fafc;
-            overflow-x: hidden;
+        #welcome-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            color: white;
+            text-align: center;
         }
-
-        h1, h2, .brand { font-family: 'Cinzel', serif; }
-
-        .glass-nav {
-            background: var(--glass);
-            backdrop-filter: blur(12px);
-            border-bottom: 1px solid rgba(212, 175, 55, 0.2);
-        }
-
-        .gold-gradient-text {
-            background: linear-gradient(to right, #BF953F, #FCF6BA, #B38728, #FBF5B7, #AA771C);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .hero-visual {
-            position: relative;
-            height: 60vh;
-            overflow: hidden;
-            border-radius: 0 0 50px 50px;
-        }
-
-        .chess-card {
-            background: rgba(30, 41, 59, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-
-        .chess-card:hover {
-            border-color: var(--gold);
-            transform: translateY(-10px) scale(1.02);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-        }
-
-        .img-container {
-            height: 200px; 
-            overflow: hidden;
+        .login-card {
+            background: #2D1B4D;
+            padding: 40px;
             border-radius: 15px;
+            border: 2px solid #4ade80;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            width: 90%;
+            max-width: 400px;
+        }
+        .login-card input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #4ade80;
+            background: #1a1a2e;
+            color: white;
+            box-sizing: border-box;
         }
 
-        .nav-logo {
-            height: 50px;
-            width: auto;
+        #leaderboard-box {
+            margin-top: 20px;
+            text-align: left;
+            background: rgba(0,0,0,0.2);
+            padding: 10px;
+            border-radius: 8px;
+            max-height: 200px; 
+            overflow-y: auto;
+            border: 1px solid #4ade8044;
+            position: relative;
         }
+        #leaderboard-box h3 { font-size: 0.9em; margin: 0 0 5px 0; color: #facc15; text-align: center; cursor: pointer; }
+        #leaderboardList { list-style: none; padding: 0; margin: 0; font-size: 0.85em; color: #4ade80; }
+        #leaderboardList li { border-bottom: 1px solid #ffffff11; padding: 3px 0; }
+
+        .admin-controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 5px;
+        }
+        .refresh-btn {
+            background: none;
+            border: 1px solid #4ade80;
+            color: #4ade80;
+            border-radius: 4px;
+            font-size: 0.7em;
+            cursor: pointer;
+            padding: 2px 8px;
+        }
+        .refresh-btn:hover { background: #4ade8022; }
+
+        #game-container {
+            display: none; 
+            width: 95vmin; 
+            max-width: 550px;
+            text-align: center;
+            padding: 20px 10px;
+        }
+
+        #board { 
+            width: 100%; 
+            margin-bottom: 15px; 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+        }
+        .info-panel {
+            background: #2D1B4D; 
+            padding: 20px;
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            border: 2px solid #4ade80;
+            color: white;
+        }
+        h2 { margin: 0 0 10px 0; color: #4ade80; font-size: 1.4em; }
+        .grade { font-size: 1.3em; font-weight: bold; color: #4ade80; }
+        
+        .submit-btn {
+            background-color: #4ade80;
+            color: #1a1a2e;
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 20px;
+            transition: transform 0.2s, background-color 0.2s;
+            box-shadow: 0 4px 10px rgba(74, 222, 128, 0.2);
+        }
+        .submit-btn:hover {
+            background-color: #22c55e;
+            transform: translateY(-2px);
+        }
+
+        .highlight-white { background-color: #f6f669 !important; }
+        .highlight-black { background-color: #e6e600 !important; }
+        .white-1e1d7 { background-color: #ebecd0 !important; }
+        .black-3c85d { background-color: #779556 !important; }
+        
+        #remark { 
+            font-style: italic; 
+            color: #ff4d4d; 
+            min-height: 1.5em; 
+            display: block; 
+            margin: 10px 0; 
+            font-weight: bold;
+        }
+        #status { font-weight: bold; color: #cbd5e1; }
+        
+        .danger-text { color: #ff4d4d !important; text-shadow: 0 0 5px rgba(255, 77, 77, 0.5); }
+        .super-gm { color: #facc15 !important; text-shadow: 0 0 10px #facc15; font-size: 1.5em; }
     </style>
 </head>
 <body>
 
-    <nav class="glass-nav sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-3">
-            <img src="IMG-20260303-WA0073.jpg" alt="Decipher Logo" class="nav-logo">
-            <div class="brand text-xl font-bold gold-gradient-text tracking-widest hidden md:block">DECIPHER CHESS</div>
-        </div>
-        <div class="hidden lg:flex space-x-8 text-sm uppercase tracking-widest font-semibold">
-            <a href="book.html" class="hover:text-yellow-500 transition">Books</a>
-            <a href="room.html" class="hover:text-yellow-500 transition">Classroom</a>
-            <a href="tac.html" class="hover:text-yellow-500 transition">Tactics</a>
-            <a href="engine.html" class="hover:text-yellow-500 transition">Engine</a>
-            <a href="coach.html" class="hover:text-yellow-500 transition">Coaching</a>
-        </div>
-        <a href="tel:+2348026527056" class="border border-yellow-600 px-5 py-2 rounded-full text-xs font-bold hover:bg-yellow-600 hover:text-black transition">
-            <i class="fas fa-phone-alt mr-2"></i> CONTACT
-        </a>
-    </nav>
+<div id="welcome-overlay">
+    <div class="login-card">
+        <h1 style="color: #4ade80;">Week One Task</h1>
+        <p>Welcome, Chess Champion! Please enter your details to start the match.</p>
+        <input type="text" id="studentName" placeholder="Enter Your Full Name" required>
+        <input type="text" id="studentClass" placeholder="Enter Your Class" required>
+        <button class="submit-btn" onclick="startGame()">START GAME</button>
 
-    <header class="relative px-6 py-12 lg:px-20 text-center">
-        <h1 class="text-4xl lg:text-6xl font-bold mb-4 uppercase tracking-tighter">Deciphering the <br><span class="gold-gradient-text">Art of Strategy</span></h1>
-        <p class="text-gray-400 max-w-xl mx-auto mb-10 text-lg font-light">The leading chess academy for modern schools and aspiring grandmasters in Nigeria.</p>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-6xl mx-auto">
-            <div class="img-container shadow-lg">
-                <img src="1772550640524.jpg" alt="Chess Activity" class="w-full h-full object-cover">
+        <div id="leaderboard-box">
+            <h3 ondblclick="adminResetLeaderboard()">🏆 Hall of Grandmasters</h3>
+            <div class="admin-controls">
+                <button class="refresh-btn" onclick="manualRefresh()">🔄 Refresh</button>
             </div>
-            <div class="img-container border-2 border-yellow-600/20">
-                <img src="https://images.unsplash.com/photo-1586165368502-1bad197a6461?auto=format&fit=crop&q=80&w=800" alt="Exotic Chess Board" class="w-full h-full object-cover">
-            </div>
-            <div class="img-container shadow-lg">
-                <img src="1772551122640.jpg" alt="Tournament Session" class="w-full h-full object-cover">
-            </div>
+            <ul id="leaderboardList"><li>Loading...</li></ul>
         </div>
-    </header>
+    </div>
+</div>
 
-    <main class="px-6 lg:px-20 py-16 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<div id="game-container">
+    <div class="info-panel">
+        <h2 id="welcome-msg">Match: <span id="displayName">Player</span> vs Mr. Dotun</h2>
+        <div id="board"></div>
+        <p id="remark">"If you don't win, I'll be disappointed"</p>
+        <p>Your Grade: <span id="grade" class="grade">Beginner</span></p>
+        <p id="status">Your turn! Click a piece to select it.</p>
         
-        <div class="chess-card p-8 rounded-3xl relative overflow-hidden group">
-            <div class="absolute -right-4 -top-4 opacity-10 group-hover:opacity-20 transition">
-                <i class="fas fa-puzzle-piece text-8xl text-yellow-500"></i>
-            </div>
-            <h3 class="text-xl font-bold mb-4 gold-gradient-text">Tactical Mastery</h3>
-            <p class="text-gray-400 text-sm mb-6">Sharpen your vision with world-class training modules.</p>
-            <div class="space-y-3">
-                <a href="https://lichess.org/training" class="block bg-white/5 p-3 rounded-xl hover:bg-white/10 transition text-sm flex justify-between items-center">
-                    Lichess Puzzles (Guest) <i class="fas fa-external-link-alt text-xs"></i>
-                </a>
-                <a href="tac.html" class="block bg-yellow-600/20 p-3 rounded-xl hover:bg-yellow-600/40 transition text-sm text-yellow-500 font-bold flex justify-between items-center border border-yellow-600/30">
-                    Decipher Puzzles <i class="fas fa-chess-knight"></i>
-                </a>
-            </div>
-        </div>
+        <hr style="border: 0; border-top: 1px solid #4ade80; margin: 20px 0; opacity: 0.3;">
+        
+        <a href="https://docs.google.com/forms/d/e/1FAIpQLSfduqoEyvRko9-TM2T1SU0WVkr2vCdg2sFPZUTtQLOwSnJbBA/viewform" class="submit-btn">SUBMIT TO MR. DOTUN</a>
+    </div>
+</div>
 
-        <a href="engine.html" class="chess-card p-8 rounded-3xl block">
-            <div class="mb-4 text-yellow-500"><i class="fas fa-microchip text-3xl"></i></div>
-            <h3 class="text-xl font-bold mb-2 uppercase tracking-wide">Weekly Tasks/Challenge</h3>
-            <p class="text-gray-400 text-sm">The students play against Decipher Chess engine to sharpen their skills.</p>
-        </a>
+<script>
+    // --- FIREBASE INTEGRATION ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+      authDomain: "assignments-de95a.firebaseapp.com",
+      projectId: "assignments-de95a",
+      storageBucket: "assignments-de95a.firebasestorage.app",
+      messagingSenderId: "1088073398299",
+      appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-        <a href="tourney.html" class="chess-card p-8 rounded-3xl block border-l-4 border-yellow-600">
-            <div class="mb-4 text-yellow-500"><i class="fas fa-chess-king text-3xl"></i></div>
-            <h3 class="text-xl font-bold mb-2 uppercase tracking-wide">Nigerian Masters</h3>
-            <p class="text-gray-400 text-sm">Play against the best Nigerian Masters in our elite academy tournaments.</p>
-        </a>
+    var currentName = "";
+    var currentClass = "";
+    var hasSavedWin = false;
 
-        <a href="lab.html" class="chess-card p-8 rounded-3xl block">
-            <div class="mb-4 text-yellow-500"><i class="fas fa-bolt text-3xl"></i></div>
-            <h3 class="text-xl font-bold mb-2 uppercase tracking-wide">Speed & Accuracy</h3>
-            <p class="text-gray-400 text-sm">Test your speed and Accuracy in Chess with our specialized lab modules.</p>
-        </a>
+    const dotunRemarks = [
+        "If you don't win, I'll be disappointed",
+        "Is that the best you can do?",
+        "I've seen beginners play better than that.",
+        "Your king looks very exposed right now.",
+        "Are you sure you want to make that move?",
+        "Don't cry when you lose!",
+        "Focus! Chess is a game of the mind.",
+        "I'm almost feeling sorry for you.",
+        "Nice try, but not good enough.",
+        "Checkmate is coming soon, I can feel it."
+    ];
 
-        <a href="quests.html" class="chess-card p-8 rounded-3xl block">
-            <div class="mb-4 text-yellow-500"><i class="fas fa-shield-halved text-3xl"></i></div>
-            <h3 class="text-xl font-bold mb-2 uppercase tracking-wide">Tactical Quests</h3>
-            <p class="text-gray-400 text-sm">Test your Tactics and Rescue Mikhail Tal in our interactive chess quests.</p>
-        </a>
+    const funnyIllegalRemarks = [
+        "That's an illegal move... Did you forget how the pieces move, or are you inventing new rules?",
+        "That's an illegal move... Even my grandma moves faster than that piece just tried to!",
+        "That's an illegal move... Nice try! But pieces don't have wings to fly there.",
+        "That's an illegal move... You're playing Chess, not Checkers!",
+        "That's an illegal move... I saw that! You can't just jump over the whole board!"
+    ];
 
-        <a href="book.html" class="chess-card p-8 rounded-3xl block">
-            <div class="mb-4 text-yellow-500"><i class="fas fa-book-journal-whills text-3xl"></i></div>
-            <h3 class="text-xl font-bold mb-2 uppercase tracking-wide">Academy Workbooks</h3>
-            <p class="text-gray-400 text-sm">Step-by-step guides from beginner to advanced tournament levels.</p>
-        </a>
-    </main>
+    const checkRemarks = [
+        "Illegal move. Your King is in check! Save your King before he takes a nap!",
+        "Illegal move. Your King is in check! Red alert! The King needs a hero!",
+        "Illegal move. Your King is in check! You can't leave your boss in trouble!",
+        "Illegal move. Your King is in check! Even a King needs protection sometimes!"
+    ];
 
-    <footer class="py-12 text-center border-t border-white/5">
-        <img src="IMG-20260303-WA0073.jpg" alt="Decipher Logo" class="h-16 mx-auto mb-4">
-        <div class="brand text-lg font-bold gold-gradient-text mb-4">DECIPHER CHESS ACADEMY</div>
-        <p class="text-gray-600 text-xs tracking-widest">&copy; 2026 PREMIUM STRATEGY EDUCATION. LAGOS, NIGERIA.</p>
-    </footer>
+    function subscribeToLeaderboard() {
+        return db.collection("grandmasters").orderBy("timestamp", "desc").limit(100)
+          .onSnapshot((snapshot) => {
+            const list = document.getElementById('leaderboardList');
+            list.innerHTML = "";
+            if (snapshot.empty) list.innerHTML = "<li>No Grandmasters yet. Win to be first!</li>";
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                const li = document.createElement('li');
+                const title = data.rank === "Super Grandmaster" ? "💎" : "👑";
+                li.textContent = `${title} ${data.name} (${data.class})`;
+                list.prepend(li);
+            });
+        });
+    }
 
+    let unsubscribe = subscribeToLeaderboard();
+
+    function manualRefresh() {
+        unsubscribe();
+        document.getElementById('leaderboardList').innerHTML = "<li>Refreshing...</li>";
+        unsubscribe = subscribeToLeaderboard();
+    }
+
+    function adminResetLeaderboard() {
+        const pass = prompt("Enter Admin Password to Clear Leaderboard:");
+        if (pass === "dotun123") {
+            if (confirm("Are you sure you want to wipe the leaderboard?")) {
+                db.collection("grandmasters").get().then((snapshot) => {
+                    snapshot.forEach((doc) => {
+                        db.collection("grandmasters").doc(doc.id).delete();
+                    });
+                    alert("Leaderboard Cleared.");
+                });
+            }
+        } else {
+            alert("Incorrect password.");
+        }
+    }
+
+    function startGame() {
+        currentName = document.getElementById('studentName').value;
+        currentClass = document.getElementById('studentClass').value;
+        if (currentName.trim() === "" || currentClass.trim() === "") {
+            alert("Please enter both your name and class.");
+            return;
+        }
+        // Update display name before starting
+        document.getElementById('displayName').textContent = currentName;
+        document.getElementById('welcome-overlay').style.display = 'none';
+        document.getElementById('game-container').style.display = 'block';
+        board.resize();
+    }
+
+    var board = null;
+    var game = new Chess();
+    var $status = $('#status');
+    var $grade = $('#grade');
+    var $remark = $('#remark');
+    var sourceSquare = null; 
+
+    // --- ENHANCED AI LOGIC ---
+    const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+    
+    // Piece-Square Tables (PST) to encourage better positioning
+    const pst = {
+        p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
+        n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
+        b: [[-20,-10,-10,-10,-10,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,10,10,5,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,10,10,10,10,0,-10],[-10,10,10,10,10,10,10,-10],[-10,5,0,0,0,0,5,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
+        r: [[0,0,0,0,0,0,0,0],[5,10,10,10,10,10,10,5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[0,0,0,5,5,0,0,0]],
+        q: [[-20,-10,-10,-5,-5,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,5,5,5,0,-10],[-5,0,5,5,5,5,0,-5],[0,0,5,5,5,5,0,-5],[-10,5,5,5,5,5,0,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
+        k: [[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[20,30,10,0,0,10,30,20]]
+    };
+
+    function evaluateBoard(game) {
+        let totalEvaluation = 0;
+        const b = game.board();
+        for (let i = 0; i < 8; i++) {
+            for (let j = 0; j < 8; j++) {
+                let piece = b[i][j];
+                if (piece) {
+                    let val = weights[piece.type];
+                    let bonus = (piece.color === 'b') ? pst[piece.type][i][j] : pst[piece.type][7-i][j];
+                    totalEvaluation += (piece.color === 'w' ? -(val + bonus) : (val + bonus));
+                }
+            }
+        }
+        return totalEvaluation;
+    }
+
+    
+
+    function minimax(game, depth, alpha, beta, isMaximizing) {
+        if (depth === 0 || game.game_over()) return evaluateBoard(game);
+        let moves = game.moves();
+        
+        // Move Ordering: Check captures first to speed up Alpha-Beta pruning
+        moves.sort((a, b) => (a.includes('x') ? -1 : 1));
+
+        if (isMaximizing) {
+            let bestScore = -Infinity;
+            for (let move of moves) {
+                game.move(move);
+                bestScore = Math.max(bestScore, minimax(game, depth - 1, alpha, beta, false));
+                game.undo();
+                alpha = Math.max(alpha, bestScore);
+                if (beta <= alpha) break;
+            }
+            return bestScore;
+        } else {
+            let bestScore = Infinity;
+            for (let move of moves) {
+                game.move(move);
+                bestScore = Math.min(bestScore, minimax(game, depth - 1, alpha, beta, true));
+                game.undo();
+                beta = Math.min(beta, bestScore);
+                if (beta <= alpha) break;
+            }
+            return bestScore;
+        }
+    }
+
+    function makeAIMove() {
+        if (game.game_over()) return;
+        
+        // Small timeout ensures the UI/Status update renders before calculation starts
+        setTimeout(() => {
+            let moves = game.moves();
+            if (moves.length === 0) return;
+            
+            let bestMove = null;
+            let bestValue = -Infinity;
+            
+            // Depth 3: High strength, optimized for fast browser performance
+            for (let move of moves) {
+                game.move(move);
+                let boardValue = minimax(game, 2, -100000, 100000, false);
+                game.undo();
+                if (boardValue > bestValue) {
+                    bestValue = boardValue;
+                    bestMove = move;
+                }
+            }
+            game.move(bestMove || moves[0]);
+            board.position(game.fen());
+            updateStatus();
+        }, 50);
+    }
+
+    function updateStatus() {
+        var history = game.history();
+        var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
+        
+        if (game.in_checkmate()) {
+            if (game.turn() === 'b') {
+                $status.html("Incredible! You beat Mr. Dotun!" + histText);
+                $remark.text("I... I can't believe I lost. You are a true master.");
+                updateGrade(true); 
+            } else {
+                $status.html("Game Over! Mr. Dotun wins." + histText);
+                $remark.text("Checkmate! Better luck next time.");
+            }
+        } else if (game.in_draw()) {
+            $status.html("Game Over! It's a draw." + histText);
+        } else {
+            $status.html("Mr. Dotun moved. Your turn!" + histText);
+            var randomRemark = dotunRemarks[Math.floor(Math.random() * dotunRemarks.length)];
+            $remark.text('"' + randomRemark + '"');
+        }
+    }
+
+    var totalScore = 0;
+    function updateGrade(isWin = false) {
+        let finalRank = "Beginner";
+        let moveCount = game.history().length;
+
+        // Super Grandmaster: Win in 15 full moves (30 plies)
+        if (isWin && moveCount <= 30) {
+            finalRank = "Super Grandmaster";
+            $grade.html('<span class="super-gm">SUPER GRANDMASTER! 💎</span>');
+        } 
+        else if (totalScore >= 200 || isWin) {
+            finalRank = "Grandmaster";
+            $grade.text("Grandmaster! 🏆");
+        }
+        else if (totalScore >= 120) finalRank = "Expert";
+        else if (totalScore >= 70) finalRank = "Pro";
+        else if (totalScore >= 30) finalRank = "Advanced";
+
+        if (finalRank !== "Beginner") {
+            $grade.text(finalRank + (finalRank === "Super Grandmaster" ? " 💎" : " 🏆"));
+        }
+
+        if ((isWin || totalScore >= 200) && !hasSavedWin && currentName) {
+            db.collection("grandmasters").add({
+                name: currentName,
+                class: currentClass,
+                rank: finalRank,
+                moves: Math.ceil(moveCount / 2),
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            hasSavedWin = true;
+        }
+    }
+
+    function onSquareClick(square) {
+        if (game.game_over()) return;
+        if (sourceSquare === null) {
+            var piece = game.get(square);
+            if (piece && piece.color === 'w') {
+                sourceSquare = square;
+                removeHighlights();
+                addHighlight(square);
+            }
+            return;
+        }
+        
+        var move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
+        
+        if (move === null) {
+            if (game.in_check()) {
+                let randomCheck = checkRemarks[Math.floor(Math.random() * checkRemarks.length)];
+                $status.html("<span class='danger-text'>Look out! Your King is in danger!</span>");
+                $remark.text(randomCheck);
+            } else {
+                let randomIllegal = funnyIllegalRemarks[Math.floor(Math.random() * funnyIllegalRemarks.length)];
+                $status.html("<span class='danger-text'>Oops! You can't go there!</span>");
+                $remark.text(randomIllegal);
+            }
+            
+            var piece = game.get(square);
+            if (piece && piece.color === 'w') {
+                sourceSquare = square;
+                removeHighlights();
+                addHighlight(square);
+            } else {
+                sourceSquare = null;
+                removeHighlights();
+            }
+            return;
+        }
+        
+        board.position(game.fen());
+        sourceSquare = null;
+        removeHighlights();
+        
+        if (move.captured) {
+            const pValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 0 };
+            totalScore += pValues[move.captured];
+        }
+
+        updateGrade();
+        $status.html("Thinking...");
+        makeAIMove(); // Directly calls with internal timeout for speed
+    }
+
+    function addHighlight(square) {
+        var $el = $('#board .square-' + square);
+        if ($el.hasClass('black-3c85d')) $el.addClass('highlight-black');
+        else $el.addClass('highlight-white');
+    }
+
+    function removeHighlights() {
+        $('#board [class*="square-"]').removeClass('highlight-white highlight-black');
+    }
+
+    var config = {
+        draggable: false,
+        position: 'start',
+        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+    };
+    board = ChessBoard('board', config);
+    $('#board').on('click', '[class*="square-"]', function() {
+        onSquareClick($(this).attr('data-square'));
+    });
+    $(window).resize(board.resize);
+</script>
 </body>
 </html>
