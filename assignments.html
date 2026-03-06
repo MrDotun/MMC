@@ -153,6 +153,7 @@
         #status { font-weight: bold; color: #cbd5e1; }
         
         .danger-text { color: #ff4d4d !important; text-shadow: 0 0 5px rgba(255, 77, 77, 0.5); }
+        .super-gm { color: #facc15 !important; text-shadow: 0 0 10px #facc15; font-size: 1.5em; }
     </style>
 </head>
 <body>
@@ -177,7 +178,7 @@
 
 <div id="game-container">
     <div class="info-panel">
-        <h2 id="welcome-msg">Playing against: <strong>Mr. Dotun</strong></h2>
+        <h2 id="welcome-msg">Match: <span id="displayName">Player</span> vs Mr. Dotun</h2>
         <div id="board"></div>
         <p id="remark">"If you don't win, I'll be disappointed"</p>
         <p>Your Grade: <span id="grade" class="grade">Beginner</span></p>
@@ -243,7 +244,8 @@
             snapshot.forEach((doc) => {
                 const data = doc.data();
                 const li = document.createElement('li');
-                li.textContent = `👑 ${data.name} (${data.class})`;
+                const title = data.rank === "Super Grandmaster" ? "💎" : "👑";
+                li.textContent = `${title} ${data.name} (${data.class})`;
                 list.prepend(li);
             });
         });
@@ -280,6 +282,8 @@
             alert("Please enter both your name and class.");
             return;
         }
+        // Update display name before starting
+        document.getElementById('displayName').textContent = currentName;
         document.getElementById('welcome-overlay').style.display = 'none';
         document.getElementById('game-container').style.display = 'block';
         board.resize();
@@ -359,9 +363,16 @@
     function updateStatus() {
         var history = game.history();
         var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
+        
         if (game.in_checkmate()) {
-            $status.html("Game Over! Mr. Dotun wins." + histText);
-            $remark.text("Checkmate! Better luck next time.");
+            if (game.turn() === 'b') {
+                $status.html("Incredible! You beat Mr. Dotun!" + histText);
+                $remark.text("I... I can't believe I lost. You are a true master.");
+                updateGrade(true); // Signal a win
+            } else {
+                $status.html("Game Over! Mr. Dotun wins." + histText);
+                $remark.text("Checkmate! Better luck next time.");
+            }
         } else if (game.in_draw()) {
             $status.html("Game Over! It's a draw." + histText);
         } else {
@@ -372,22 +383,38 @@
     }
 
     var totalScore = 0;
-    function updateGrade() {
-        if (totalScore >= 200) {
+    function updateGrade(isWin = false) {
+        let finalRank = "Beginner";
+        let moveCount = game.history().length;
+
+        // Check for Super Grandmaster (Win in 10 full moves = 20 plies)
+        if (isWin && moveCount <= 20) {
+            finalRank = "Super Grandmaster";
+            $grade.html('<span class="super-gm">SUPER GRANDMASTER! 💎</span>');
+        } 
+        else if (totalScore >= 200 || isWin) {
+            finalRank = "Grandmaster";
             $grade.text("Grandmaster! 🏆");
-            if (!hasSavedWin && currentName) {
-                db.collection("grandmasters").add({
-                    name: currentName,
-                    class: currentClass,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                hasSavedWin = true;
-            }
         }
-        else if (totalScore >= 120) $grade.text("Expert 🏆");
-        else if (totalScore >= 70) $grade.text("Pro 🎖️");
-        else if (totalScore >= 30) $grade.text("Advanced 🏅");
-        else $grade.text("Beginner");
+        else if (totalScore >= 120) finalRank = "Expert";
+        else if (totalScore >= 70) finalRank = "Pro";
+        else if (totalScore >= 30) finalRank = "Advanced";
+
+        if (finalRank !== "Beginner") {
+            $grade.text(finalRank + (finalRank === "Super Grandmaster" ? " 💎" : " 🏆"));
+        }
+
+        // Save to Firebase if player wins or reaches Grandmaster score
+        if ((isWin || totalScore >= 200) && !hasSavedWin && currentName) {
+            db.collection("grandmasters").add({
+                name: currentName,
+                class: currentClass,
+                rank: finalRank,
+                moves: Math.ceil(moveCount / 2),
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            hasSavedWin = true;
+        }
     }
 
     function onSquareClick(square) {
@@ -405,7 +432,6 @@
         var move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
         
         if (move === null) {
-            // Check if player is already in check
             if (game.in_check()) {
                 let randomCheck = checkRemarks[Math.floor(Math.random() * checkRemarks.length)];
                 $status.html("<span class='danger-text'>Look out! Your King is in danger!</span>");
@@ -416,7 +442,6 @@
                 $remark.text(randomIllegal);
             }
             
-            // Allow them to pick another piece or re-try
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
                 sourceSquare = square;
