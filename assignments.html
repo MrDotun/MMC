@@ -51,7 +51,7 @@
             width: 90%;
             max-width: 400px;
         }
-        .login-card input {
+        .login-card input, .login-card select {
             width: 100%;
             padding: 12px;
             margin: 10px 0;
@@ -117,6 +117,28 @@
         }
         h2 { margin: 0 0 10px 0; color: #4ade80; font-size: 1.4em; }
         .grade { font-size: 1.3em; font-weight: bold; color: #4ade80; }
+
+        /* Timer Styles */
+        .timer-container {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 15px;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+        }
+        .timer-box {
+            background: #1a1a2e;
+            padding: 5px 15px;
+            border: 1px solid #4ade80;
+            border-radius: 5px;
+            color: #4ade80;
+            min-width: 80px;
+        }
+        .active-timer {
+            background: #4ade80;
+            color: #1a1a2e;
+            box-shadow: 0 0 10px #4ade80;
+        }
         
         .submit-btn {
             background-color: #4ade80;
@@ -164,6 +186,10 @@
         <p>Welcome, Chess Champion! Please enter your details to start the match.</p>
         <input type="text" id="studentName" placeholder="Enter Your Full Name" required>
         <input type="text" id="studentClass" placeholder="Enter Your Class" required>
+        <select id="userColor">
+            <option value="w">Play as White (Goes First)</option>
+            <option value="b">Play as Black (Goes Second)</option>
+        </select>
         <button class="submit-btn" onclick="startGame()">START GAME</button>
 
         <div id="leaderboard-box">
@@ -179,6 +205,18 @@
 <div id="game-container">
     <div class="info-panel">
         <h2 id="welcome-msg">Match: <span id="displayName">Player</span> vs Mr. Dotun</h2>
+        
+        <div class="timer-container">
+            <div>
+                <small>Mr. Dotun</small>
+                <div id="ai-timer" class="timer-box">10:00</div>
+            </div>
+            <div>
+                <small>YOU</small>
+                <div id="user-timer" class="timer-box">10:00</div>
+            </div>
+        </div>
+
         <div id="board"></div>
         <p id="remark">"If you don't win, I'll be disappointed"</p>
         <p>Your Grade: <span id="grade" class="grade">Beginner</span></p>
@@ -205,7 +243,12 @@
 
     var currentName = "";
     var currentClass = "";
+    var userColorChoice = "w"; 
     var hasSavedWin = false;
+
+    // Timer Variables
+    var timerInterval = null;
+    var times = { w: 600, b: 600 }; // 10 minutes in seconds
 
     const dotunRemarks = [
         "If you don't win, I'll be disappointed",
@@ -275,17 +318,74 @@
         }
     }
 
+    function formatTime(s) {
+        let mins = Math.floor(s / 60);
+        let secs = s % 60;
+        return (mins < 10 ? "0" : "") + mins + ":" + (secs < 10 ? "0" : "") + secs;
+    }
+
+    function updateTimerUI() {
+        let userColor = userColorChoice;
+        let aiColor = (userColor === 'w' ? 'b' : 'w');
+        
+        document.getElementById('user-timer').textContent = formatTime(times[userColor]);
+        document.getElementById('ai-timer').textContent = formatTime(times[aiColor]);
+
+        // Highlight active turn
+        if (game.turn() === userColor) {
+            $('#user-timer').addClass('active-timer');
+            $('#ai-timer').removeClass('active-timer');
+        } else {
+            $('#ai-timer').addClass('active-timer');
+            $('#user-timer').removeClass('active-timer');
+        }
+    }
+
+    function startTimer() {
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            if (game.game_over()) {
+                clearInterval(timerInterval);
+                return;
+            }
+            
+            let turn = game.turn();
+            times[turn]--;
+
+            if (times[turn] <= 0) {
+                clearInterval(timerInterval);
+                let winner = (turn === 'w' ? 'Black' : 'White');
+                alert("TIME OUT! " + winner + " wins on time!");
+                $status.html("Game Over! Time ran out.");
+            }
+            updateTimerUI();
+        }, 1000);
+    }
+
     function startGame() {
         currentName = document.getElementById('studentName').value;
         currentClass = document.getElementById('studentClass').value;
+        userColorChoice = document.getElementById('userColor').value;
+        
         if (currentName.trim() === "" || currentClass.trim() === "") {
             alert("Please enter both your name and class.");
             return;
         }
+        
         document.getElementById('displayName').textContent = currentName;
         document.getElementById('welcome-overlay').style.display = 'none';
         document.getElementById('game-container').style.display = 'block';
+        
+        board.orientation(userColorChoice === 'w' ? 'white' : 'black');
         board.resize();
+        
+        updateTimerUI();
+        startTimer();
+
+        if (userColorChoice === 'b') {
+            $status.html("Mr. Dotun is thinking...");
+            window.setTimeout(makeAIMove, 500);
+        }
     }
 
     var board = null;
@@ -305,7 +405,8 @@
                 let piece = b[i][j];
                 if (piece) {
                     let val = weights[piece.type];
-                    totalEvaluation += (piece.color === 'w' ? -val : val);
+                    let aiColor = (userColorChoice === 'w' ? 'b' : 'w');
+                    totalEvaluation += (piece.color === aiColor ? val : -val);
                 }
             }
         }
@@ -364,21 +465,32 @@
         var histText = "<br><small>History: " + history.slice(-6).join(' ') + "</small>";
         
         if (game.in_checkmate()) {
-            if (game.turn() === 'b') {
+            let winnerColor = (game.turn() === 'w' ? 'black' : 'white');
+            let userWon = (winnerColor === (userColorChoice === 'w' ? 'white' : 'black'));
+
+            if (userWon) {
                 $status.html("Incredible! You beat Mr. Dotun!" + histText);
                 $remark.text("I... I can't believe I lost. You are a true master.");
                 updateGrade(true);
+                setTimeout(function() { alert("CHECKMATE! Congratulations " + currentName + ", you defeated Mr. Dotun!"); }, 250);
             } else {
                 $status.html("Game Over! Mr. Dotun wins." + histText);
                 $remark.text("Checkmate! Better luck next time.");
+                setTimeout(function() { alert("CHECKMATE! Mr. Dotun wins. Better luck next time!"); }, 250);
             }
+        } else if (game.in_stalemate()) {
+            $status.html("Game Over! It's a Stalemate." + histText);
+            $remark.text("A stalemate? Neither of us wins this time.");
+            setTimeout(function() { alert("STALEMATE! The game is a draw."); }, 250);
         } else if (game.in_draw()) {
             $status.html("Game Over! It's a draw." + histText);
+            setTimeout(function() { alert("DRAW! The game ended in a tie."); }, 250);
         } else {
             $status.html("Mr. Dotun moved. Your turn!" + histText);
             var randomRemark = dotunRemarks[Math.floor(Math.random() * dotunRemarks.length)];
             $remark.text('"' + randomRemark + '"');
         }
+        updateTimerUI();
     }
 
     var totalScore = 0;
@@ -416,9 +528,11 @@
 
     function onSquareClick(square) {
         if (game.game_over()) return;
+        if (game.turn() !== userColorChoice) return;
+
         if (sourceSquare === null) {
             var piece = game.get(square);
-            if (piece && piece.color === 'w') {
+            if (piece && piece.color === userColorChoice) {
                 sourceSquare = square;
                 removeHighlights();
                 addHighlight(square);
@@ -440,7 +554,7 @@
             }
             
             var piece = game.get(square);
-            if (piece && piece.color === 'w') {
+            if (piece && piece.color === userColorChoice) {
                 sourceSquare = square;
                 removeHighlights();
                 addHighlight(square);
