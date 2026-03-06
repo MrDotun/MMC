@@ -295,10 +295,11 @@
     var $remark = $('#remark');
     var sourceSquare = null; 
 
+    // WEIGHTS AND PST UPDATED FOR BETTER CENTER CONTROL
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
     const pst = {
-        p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
-        n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
+        p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,25,45,45,25,5,5],[0,0,25,50,50,25,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
+        n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,5,5,0,-20,-40],[-30,5,15,20,20,15,5,-30],[-30,0,25,30,30,25,0,-30],[-30,5,25,30,30,25,5,-30],[-30,0,15,20,20,15,0,-30],[-40,-20,0,0,0,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
         b: [[-20,-10,-10,-10,-10,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,10,10,5,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,10,10,10,10,0,-10],[-10,10,10,10,10,10,10,-10],[-10,5,0,0,0,0,5,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
         r: [[0,0,0,0,0,0,0,0],[5,10,10,10,10,10,10,5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[0,0,0,5,5,0,0,0]],
         q: [[-20,-10,-10,-5,-5,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,5,5,5,0,-10],[-5,0,5,5,5,5,0,-5],[0,0,5,5,5,5,0,-5],[-10,5,5,5,5,5,0,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
@@ -352,6 +353,7 @@
     function makeAIMove() {
         if (game.game_over()) return;
         
+        // SPEED: Played set to 10ms for instant reaction
         setTimeout(() => {
             let moves = game.moves();
             if (moves.length === 0) return;
@@ -359,32 +361,24 @@
             let bestMove = null;
             let blackMoveCount = Math.floor(game.history().length / 2);
 
-            // --- TACTICAL OVERRIDE ---
-            // If there's a capture available or the computer is losing material, 
-            // skip the script and use Minimax to find the best defensive/offensive move.
+            // TACTICAL AWARENESS: Check for immediate captures or threats
             let captures = moves.filter(m => m.includes('x'));
             let currentEval = evaluateBoard(game);
             
-            // Only follow the opening script if there are no immediate captures 
-            // and no pieces are currently "hanging" (Eval < -50 means Black is losing piece value)
-            if (captures.length === 0 && currentEval >= -50) {
-                if (blackMoveCount === 0 && moves.includes('Nf6')) {
-                    bestMove = 'Nf6';
-                } else if (blackMoveCount === 1 && moves.includes('g6')) {
-                    bestMove = 'g6';
-                } else if (blackMoveCount === 2 && moves.includes('Bg7')) {
-                    bestMove = 'Bg7';
-                } else if (blackMoveCount === 3 && moves.includes('O-O')) {
-                    bestMove = 'O-O';
-                }
+            // CASTLE SCRIPT: King's Indian style early castle (Safe check enabled)
+            if (captures.length === 0 && currentEval >= -50 && blackMoveCount < 10) {
+                if (blackMoveCount === 0 && moves.includes('Nf6')) bestMove = 'Nf6';
+                else if (blackMoveCount === 1 && moves.includes('g6')) bestMove = 'g6';
+                else if (blackMoveCount === 2 && moves.includes('Bg7')) bestMove = 'Bg7';
+                else if (blackMoveCount === 3 && moves.includes('O-O')) bestMove = 'O-O';
             }
 
-            // Fallback to Minimax AI if sequence is finished, blocked, or a threat is detected
+            // FALLBACK TO MINIMAX: For center control and safe tactical play
             if (!bestMove) {
                 let bestValue = -Infinity;
-                // Deeper search (depth 3) ensures he sees the pawn threat before castling
                 for (let move of moves) {
                     game.move(move);
+                    // Depth 3 search for tactical safety
                     let boardValue = minimax(game, 3, -100000, 100000, false);
                     game.undo();
                     if (boardValue > bestValue) {
@@ -397,7 +391,7 @@
             game.move(bestMove || moves[0]);
             board.position(game.fen());
             updateStatus();
-        }, 50);
+        }, 10);
     }
 
     function updateStatus() {
@@ -457,8 +451,6 @@
 
     function onSquareClick(square) {
         if (game.game_over()) return;
-        
-        // Prevent clicking if it is the AI's turn
         if (game.turn() === 'b') return;
 
         if (sourceSquare === null) {
@@ -499,44 +491,31 @@
         board.position(game.fen());
         sourceSquare = null;
         removeHighlights();
-        
-        if (move.captured) {
-            const pValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 0 };
-            totalScore += pValues[move.captured];
-        }
-
-        updateGrade();
-
-        // Check for end of game after player move
-        if (!game.game_over()) {
-            $status.html("Mr. Dotun is thinking...");
-            // Trigger AI after 4 seconds
-            setTimeout(makeAIMove, 4000);
-        } else {
-            updateStatus();
-        }
+        updateStatus();
+        makeAIMove();
     }
 
     function addHighlight(square) {
-        var $el = $('#board .square-' + square);
-        if ($el.hasClass('black-3c85d')) $el.addClass('highlight-black');
-        else $el.addClass('highlight-white');
+        $('#board .square-' + square).addClass('highlight-white');
     }
 
     function removeHighlights() {
-        $('#board [class*="square-"]').removeClass('highlight-white highlight-black');
+        $('#board .square-55d63').removeClass('highlight-white');
     }
 
     var config = {
         draggable: false,
         position: 'start',
-        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+        onSquareClick: onSquareClick
     };
-    board = ChessBoard('board', config);
-    $('#board').on('click', '[class*="square-"]', function() {
-        onSquareClick($(this).attr('data-square'));
-    });
+    board = Chessboard('board', config);
     $(window).resize(board.resize);
+
+    $(document).on('click', '#board .square-55d63', function() {
+        var square = $(this).attr('data-square');
+        onSquareClick(square);
+    });
+
 </script>
 </body>
 </html>
