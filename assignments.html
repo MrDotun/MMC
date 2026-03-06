@@ -282,7 +282,6 @@
             alert("Please enter both your name and class.");
             return;
         }
-        // Update display name before starting
         document.getElementById('displayName').textContent = currentName;
         document.getElementById('welcome-overlay').style.display = 'none';
         document.getElementById('game-container').style.display = 'block';
@@ -297,6 +296,14 @@
     var sourceSquare = null; 
 
     const weights = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+    const pst = {
+        p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
+        n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
+        b: [[-20,-10,-10,-10,-10,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,10,10,5,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,10,10,10,10,0,-10],[-10,10,10,10,10,10,10,-10],[-10,5,0,0,0,0,5,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
+        r: [[0,0,0,0,0,0,0,0],[5,10,10,10,10,10,10,5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[0,0,0,5,5,0,0,0]],
+        q: [[-20,-10,-10,-5,-5,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,5,5,5,0,-10],[-5,0,5,5,5,5,0,-5],[0,0,5,5,5,5,0,-5],[-10,5,5,5,5,5,0,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
+        k: [[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[20,30,10,0,0,10,30,20]]
+    };
 
     function evaluateBoard(game) {
         let totalEvaluation = 0;
@@ -306,7 +313,8 @@
                 let piece = b[i][j];
                 if (piece) {
                     let val = weights[piece.type];
-                    totalEvaluation += (piece.color === 'w' ? -val : val);
+                    let bonus = (piece.color === 'b') ? pst[piece.type][i][j] : pst[piece.type][7-i][j];
+                    totalEvaluation += (piece.color === 'w' ? -(val + bonus) : (val + bonus));
                 }
             }
         }
@@ -316,6 +324,8 @@
     function minimax(game, depth, alpha, beta, isMaximizing) {
         if (depth === 0 || game.game_over()) return evaluateBoard(game);
         let moves = game.moves();
+        moves.sort((a, b) => (a.includes('x') ? -1 : 1));
+
         if (isMaximizing) {
             let bestScore = -Infinity;
             for (let move of moves) {
@@ -341,23 +351,44 @@
 
     function makeAIMove() {
         if (game.game_over()) return;
-        let moves = game.moves();
-        if (moves.length === 0) return;
-        moves.sort(() => Math.random() - 0.5);
-        let bestMove = moves[0];
-        let bestValue = -Infinity;
-        for (let move of moves) {
-            game.move(move);
-            let boardValue = minimax(game, 1, -100000, 100000, false);
-            game.undo();
-            if (boardValue > bestValue) {
-                bestValue = boardValue;
-                bestMove = move;
+        
+        setTimeout(() => {
+            let moves = game.moves();
+            if (moves.length === 0) return;
+            
+            let bestMove = null;
+            
+            // --- FORCED OPENING SEQUENCE FOR BLACK ---
+            let blackMoveCount = Math.floor(game.history().length / 2);
+
+            if (blackMoveCount === 0 && moves.includes('Nf6')) {
+                bestMove = 'Nf6'; // King's Knight first
+            } else if (blackMoveCount === 1 && moves.includes('g6')) {
+                bestMove = 'g6'; // Prepare King's Bishop
+            } else if (blackMoveCount === 2 && moves.includes('Bg7')) {
+                bestMove = 'Bg7'; // King's Bishop out
+            } else if (blackMoveCount === 3 && moves.includes('O-O')) {
+                bestMove = 'O-O'; // Castle kingside
             }
-        }
-        game.move(bestMove);
-        board.position(game.fen());
-        updateStatus();
+
+            // Fallback to Minimax AI if sequence is finished or blocked
+            if (!bestMove) {
+                let bestValue = -Infinity;
+                for (let move of moves) {
+                    game.move(move);
+                    let boardValue = minimax(game, 2, -100000, 100000, false);
+                    game.undo();
+                    if (boardValue > bestValue) {
+                        bestValue = boardValue;
+                        bestMove = move;
+                    }
+                }
+            }
+
+            game.move(bestMove || moves[0]);
+            board.position(game.fen());
+            updateStatus();
+        }, 50);
     }
 
     function updateStatus() {
@@ -368,7 +399,7 @@
             if (game.turn() === 'b') {
                 $status.html("Incredible! You beat Mr. Dotun!" + histText);
                 $remark.text("I... I can't believe I lost. You are a true master.");
-                updateGrade(true); // Signal a win
+                updateGrade(true); 
             } else {
                 $status.html("Game Over! Mr. Dotun wins." + histText);
                 $remark.text("Checkmate! Better luck next time.");
@@ -387,8 +418,7 @@
         let finalRank = "Beginner";
         let moveCount = game.history().length;
 
-        // Check for Super Grandmaster (Win in 10 full moves = 20 plies)
-        if (isWin && moveCount <= 20) {
+        if (isWin && moveCount <= 30) {
             finalRank = "Super Grandmaster";
             $grade.html('<span class="super-gm">SUPER GRANDMASTER! 💎</span>');
         } 
@@ -404,7 +434,6 @@
             $grade.text(finalRank + (finalRank === "Super Grandmaster" ? " 💎" : " 🏆"));
         }
 
-        // Save to Firebase if player wins or reaches Grandmaster score
         if ((isWin || totalScore >= 200) && !hasSavedWin && currentName) {
             db.collection("grandmasters").add({
                 name: currentName,
@@ -419,6 +448,10 @@
 
     function onSquareClick(square) {
         if (game.game_over()) return;
+        
+        // Prevent clicking if it is the AI's turn
+        if (game.turn() === 'b') return;
+
         if (sourceSquare === null) {
             var piece = game.get(square);
             if (piece && piece.color === 'w') {
@@ -464,8 +497,15 @@
         }
 
         updateGrade();
-        $status.html("Thinking...");
-        window.setTimeout(makeAIMove, 250);
+
+        // Check for end of game after player move
+        if (!game.game_over()) {
+            $status.html("Mr. Dotun is thinking...");
+            // Trigger AI after 4 seconds
+            setTimeout(makeAIMove, 4000);
+        } else {
+            updateStatus();
+        }
     }
 
     function addHighlight(square) {
