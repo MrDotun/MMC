@@ -357,26 +357,35 @@
             if (moves.length === 0) return;
             
             let bestMove = null;
-            
-            // --- FORCED OPENING SEQUENCE FOR BLACK ---
             let blackMoveCount = Math.floor(game.history().length / 2);
 
-            if (blackMoveCount === 0 && moves.includes('Nf6')) {
-                bestMove = 'Nf6'; // King's Knight first
-            } else if (blackMoveCount === 1 && moves.includes('g6')) {
-                bestMove = 'g6'; // Prepare King's Bishop
-            } else if (blackMoveCount === 2 && moves.includes('Bg7')) {
-                bestMove = 'Bg7'; // King's Bishop out
-            } else if (blackMoveCount === 3 && moves.includes('O-O')) {
-                bestMove = 'O-O'; // Castle kingside
+            // --- TACTICAL OVERRIDE ---
+            // If there's a capture available or the computer is losing material, 
+            // skip the script and use Minimax to find the best defensive/offensive move.
+            let captures = moves.filter(m => m.includes('x'));
+            let currentEval = evaluateBoard(game);
+            
+            // Only follow the opening script if there are no immediate captures 
+            // and no pieces are currently "hanging" (Eval < -50 means Black is losing piece value)
+            if (captures.length === 0 && currentEval >= -50) {
+                if (blackMoveCount === 0 && moves.includes('Nf6')) {
+                    bestMove = 'Nf6';
+                } else if (blackMoveCount === 1 && moves.includes('g6')) {
+                    bestMove = 'g6';
+                } else if (blackMoveCount === 2 && moves.includes('Bg7')) {
+                    bestMove = 'Bg7';
+                } else if (blackMoveCount === 3 && moves.includes('O-O')) {
+                    bestMove = 'O-O';
+                }
             }
 
-            // Fallback to Minimax AI if sequence is finished or blocked
+            // Fallback to Minimax AI if sequence is finished, blocked, or a threat is detected
             if (!bestMove) {
                 let bestValue = -Infinity;
+                // Deeper search (depth 3) ensures he sees the pawn threat before castling
                 for (let move of moves) {
                     game.move(move);
-                    let boardValue = minimax(game, 2, -100000, 100000, false);
+                    let boardValue = minimax(game, 3, -100000, 100000, false);
                     game.undo();
                     if (boardValue > bestValue) {
                         bestValue = boardValue;
