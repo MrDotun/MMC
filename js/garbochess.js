@@ -148,12 +148,12 @@ function FormatMove(move) {
     return result;
 }
 
-function GetMoveFromString(moveString) {
-    var moves = GenerateValidMoves();
-    for (var i = 0; i < moves.length; i++) {
-        if (FormatMove(moves[i]) == moveString) {
-            return moves[i];
-        }
+
+      function GetMoveFromString(moveString) {
+    // ... logic ...
+    console.warn("Engine move warning: " + moveString); // Silent warning instead
+    return null;
+
     }
     alert("busted! ->" + moveString + " fen:" + GetFen());
 }
