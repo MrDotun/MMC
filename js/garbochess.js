@@ -155,8 +155,7 @@ function FormatMove(move) {
     return null;
 
     }
-    alert("busted! ->" + moveString + " fen:" + GetFen());
-}
+    console.warn("Invalid move attempt: " + moveString);
 
 function PVFromHash(move, ply) {
     if (ply == 0) 
