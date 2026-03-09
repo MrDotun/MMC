@@ -25,12 +25,11 @@
         #remark { color: #ff4d4d; font-weight: bold; font-style: italic; margin: 10px 0; min-height: 1.2em;}
         .highlight-white { background: rgba(255, 255, 0, 0.5) !important; }
 
-        /* --- LEADERBOARD STYLES --- */
         .leaderboard-section { width: 100%; margin-top: 30px; background: #2D1B4D; border-radius: 12px; border: 1px solid #4ade80; padding: 15px; box-sizing: border-box; }
-        .leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
-        .leaderboard-table th { border-bottom: 2px solid #4ade80; padding: 10px; text-align: left; color: #4ade80; }
-        .leaderboard-table td { padding: 10px; border-bottom: 1px solid rgba(74, 222, 128, 0.2); }
-        .rank-1 { color: #ffd700; font-weight: bold; } /* Gold */
+        .leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85em; }
+        .leaderboard-table th { border-bottom: 2px solid #4ade80; padding: 8px; text-align: left; color: #4ade80; }
+        .leaderboard-table td { padding: 8px; border-bottom: 1px solid rgba(74, 222, 128, 0.1); }
+        .rank-1 { background: rgba(255, 215, 0, 0.1); color: #ffd700; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -49,27 +48,22 @@
     <div class="info-panel">
         <h3><span id="displayName" style="color:#4ade80"></span> vs Mr. Dotun</h3>
         <div id="board"></div>
-        <p id="remark">Welcome to the Academy.</p>
-        <p>Rank: <span id="grade" class="grade">Loading...</span></p>
+        <p id="remark">Connecting to Academy Records...</p>
+        <p>Rank: <span id="grade" class="grade">Awaiting Connection...</span></p>
         <div id="status">Your turn! Select a piece.</div>
         
         <div class="leaderboard-section">
-            <h3 style="margin-top:0; color:#4ade80;">Top 10 Academy Ranks</h3>
+            <h3 style="margin-top:0; color:#4ade80;">Academy Wall of Fame</h3>
             <table class="leaderboard-table">
                 <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Class</th>
-                        <th>Rating</th>
-                    </tr>
+                    <tr><th>Name</th><th>Class</th><th>Elo</th></tr>
                 </thead>
                 <tbody id="leaderboard-body">
-                    <tr><td colspan="3">Loading rankings...</td></tr>
+                    <tr><td colspan="3">Waiting for Firebase...</td></tr>
                 </tbody>
             </table>
         </div>
-
-        <a href="https://docs.google.com/forms/d/e/1FAIpQLSfduqoEyvRko9-TM2T1SU0WVkr2vCdg2sFPZUTtQLOwSnJbBA/viewform" class="submit-btn" style="text-decoration:none; display:block; text-align:center;">SUBMIT SCORE</a>
+        <a href="https://docs.google.com/forms/d/e/1FAIpQLSfduqoEyvRko9-TM2T1SU0WVkr2vCdg2sFPZUTtQLOwSnJbBA/viewform" class="submit-btn" style="text-decoration:none; display:block; text-align:center; margin-top:20px;">SUBMIT SCORE</a>
     </div>
 </div>
 
@@ -83,37 +77,35 @@ const db = firebase.firestore();
 var game = new Chess(), board = null, sourceSquare = null;
 var currentName = "", currentClass = "", docId = "", currentRating = 1000;
 
-// --- LEADERBOARD FETCH ---
-async function displayLeaderboard() {
-    try {
-        const snapshot = await db.collection("leaderboard")
-            .orderBy("rating", "desc")
-            .limit(10)
-            .get();
-        
-        let html = "";
-        snapshot.forEach((doc, index) => {
-            const data = doc.data();
-            const rankClass = index === 0 ? 'class="rank-1"' : '';
-            html += `<tr ${rankClass}>
-                <td>${data.name}</td>
-                <td>${data.class}</td>
-                <td>${data.rating}</td>
-            </tr>`;
+// --- REAL-TIME LEADERBOARD ---
+function startLeaderboardListener() {
+    db.collection("leaderboard")
+        .orderBy("rating", "desc")
+        .limit(10)
+        .onSnapshot((snapshot) => {
+            let html = "";
+            snapshot.forEach((doc, index) => {
+                const data = doc.data();
+                const isTop = index === 0 ? 'class="rank-1"' : '';
+                html += `<tr ${isTop}>
+                    <td>${data.name}</td>
+                    <td>${data.class}</td>
+                    <td>${data.rating}</td>
+                </tr>`;
+            });
+            $('#leaderboard-body').html(html || "<tr><td colspan='3'>No players yet!</td></tr>");
+        }, (error) => {
+            console.error("Firebase Error:", error);
+            $('#leaderboard-body').html(`<tr><td colspan="3" style="color:red">Error: ${error.message}</td></tr>`);
         });
-        $('#leaderboard-body').html(html || "<tr><td colspan='3'>No data yet</td></tr>");
-    } catch (e) {
-        console.error("Leaderboard error:", e);
-    }
 }
 
-// --- RATING SYSTEM ---
 function getTitle(rating) {
     if (rating < 1200) return "Beginner";
     if (rating < 1600) return "Intermediate";
     if (rating < 2000) return "Advanced";
     if (rating < 2400) return "Master";
-    return "Legendary Grandmaster";
+    return "Grandmaster";
 }
 
 function updateGradeUI() {
@@ -130,25 +122,30 @@ async function startGame() {
 
     docId = currentName + "_" + currentClass;
     const docRef = db.collection("leaderboard").doc(docId);
-    const docSnap = await docRef.get();
     
-    if (docSnap.exists) {
-        if (docSnap.data().password !== password) return alert("Incorrect password!");
-        currentRating = docSnap.data().rating;
-    } else {
-        currentRating = 1000; 
-        await docRef.set({ name: currentName, class: currentClass, password: password, rating: currentRating, gamesPlayed: 0 });
-    }
+    try {
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+            if (docSnap.data().password !== password) return alert("Incorrect password!");
+            currentRating = docSnap.data().rating;
+        } else {
+            currentRating = 1000; 
+            await docRef.set({ name: currentName, class: currentClass, password: password, rating: 1000, gamesPlayed: 0 });
+        }
 
-    $('#displayName').text(currentName);
-    updateGradeUI();
-    displayLeaderboard(); // Load names when game starts
-    $('#welcome-overlay').hide();
-    $('#game-container').show();
-    board.resize();
+        $('#displayName').text(currentName);
+        updateGradeUI();
+        $('#remark').text("Connected to Academy Database.");
+        startLeaderboardListener(); // Start the live updates
+        $('#welcome-overlay').hide();
+        $('#game-container').show();
+        board.resize();
+    } catch (e) {
+        alert("FIREBASE ERROR: " + e.message + "\nCheck your Firestore Rules!");
+    }
 }
 
-// --- ENGINE HANDLER ---
+// --- ENGINE & GAME LOGIC ---
 chessWorker.onmessage = function(e) {
     const move = e.data;
     game.move({ from: move.substring(0, 2), to: move.substring(2, 4), promotion: 'q' });
@@ -171,7 +168,6 @@ async function updateStatus() {
             gamesPlayed: firebase.firestore.FieldValue.increment(1),
             lastPlayed: firebase.firestore.Timestamp.now()
         });
-        displayLeaderboard(); // Refresh ranks after game
         setTimeout(() => alert(msg), 300);
     } else {
         $('#status').text("Your turn!");
@@ -188,7 +184,7 @@ function onSquareClick(square) {
     let m = game.move({ from: sourceSquare, to: square, promotion: 'q' });
     $('.highlight-white').removeClass('highlight-white');
     sourceSquare = null;
-    if (!m) { $('#remark').text("Illegal move! Try again."); return; }
+    if (!m) { $('#remark').text("Illegal move! Piece returned."); return; }
     
     $('#remark').text("");
     board.position(game.fen());
