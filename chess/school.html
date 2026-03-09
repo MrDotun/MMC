@@ -41,6 +41,7 @@
         #remark { color: #f87171; font-weight: bold; font-style: italic; min-height: 1.5em; margin: 10px 0; }
         .school-tag { font-size: 0.75em; color: #94a3b8; display: block; }
         .highlight-white { background: rgba(251, 191, 36, 0.5) !important; }
+        .view-pgn-btn { background: #334155; color: #4ade80; border: 1px solid #4ade80; padding: 2px 6px; border-radius: 4px; font-size: 10px; cursor: pointer; margin-left: 5px; }
     </style>
 </head>
 <body>
@@ -80,7 +81,7 @@
             <h3 style="color: #4ade80;">Full Student Masterlist</h3>
             <table class="league-table" style="font-size: 0.75em;">
                 <thead>
-                    <tr><th>Name</th><th>School</th><th>Class</th><th>Password</th><th>Elo</th></tr>
+                    <tr><th>Name</th><th>School</th><th>Class</th><th>Password</th><th>Elo / History (5)</th></tr>
                 </thead>
                 <tbody id="teacher-body"></tbody>
             </table>
@@ -108,6 +109,7 @@ const db = firebase.firestore();
 
 var game = new Chess(), board = null, sourceSquare = null;
 var currentName = "", currentClass = "", currentSchool = "", docId = "", currentRating = 1000;
+var gameHistory = []; // Local cache of the student's game history
 
 function initLeagues() {
     db.collection("leaderboard").onSnapshot((snap) => {
@@ -150,20 +152,36 @@ async function refreshMasterlist() {
     let html = "";
     snap.forEach(doc => {
         const d = doc.data();
-        html += `<tr><td>${d.name}</td><td>${d.school}</td><td>${d.class}</td><td style="color:#4ade80">${d.password}</td><td>${d.rating}</td></tr>`;
+        // Convert history array to a displayable string
+        let historyString = "";
+        if (d.history && Array.isArray(d.history)) {
+            d.history.forEach((pgn, idx) => {
+                historyString += `GAME ${idx + 1}:\\n${pgn.replace(/'/g, "\\'")}\\n\\n`;
+            });
+        } else {
+            historyString = "No history available.";
+        }
+
+        html += `<tr>
+            <td>${d.name}</td>
+            <td>${d.school}</td>
+            <td>${d.class}</td>
+            <td style="color:#4ade80">${d.password}</td>
+            <td>${d.rating} <button class="view-pgn-btn" onclick="alert('${historyString}')">VIEW HISTORY</button></td>
+        </tr>`;
     });
     $('#teacher-body').html(html || "<tr><td colspan='5'>No students found.</td></tr>");
 }
 
 async function resetSeason() {
-    if(!confirm("Are you sure? This will set EVERY student back to 1000 points!")) return;
+    if(!confirm("Are you sure? This will set EVERY student back to 1000 and CLEAR history!")) return;
     const snap = await db.collection("leaderboard").get();
     const batch = db.batch();
     snap.forEach(doc => {
-        batch.update(doc.ref, { rating: 1000 });
+        batch.update(doc.ref, { rating: 1000, history: [] });
     });
     await batch.commit();
-    alert("Season Reset! Everyone is back to 1000.");
+    alert("Season Reset!");
     refreshMasterlist();
 }
 
@@ -187,9 +205,11 @@ async function startGame() {
         if (doc.exists) {
             if (doc.data().password !== pass) return alert("Wrong password!");
             currentRating = doc.data().rating;
+            gameHistory = doc.data().history || [];
         } else {
             currentRating = 1000;
-            await docRef.set({ name: currentName, class: currentClass, school: currentSchool, password: pass, rating: 1000 });
+            gameHistory = [];
+            await docRef.set({ name: currentName, class: currentClass, school: currentSchool, password: pass, rating: 1000, history: [] });
         }
         $('#displayName').text(currentName);
         $('#displaySchool').text(currentSchool);
@@ -207,12 +227,21 @@ async function updateStatus() {
             if (game.turn() === 'b') { msg = "VICTORY! +200 Elo!"; change = 200; }
             else { msg = "DEFEAT! -1 Elo."; change = -1; }
         } else { msg = "DRAW! +50 Elo."; change = 50; }
+        
         currentRating = Math.max(1000, currentRating + change);
         $('#grade').text(getTitle(currentRating) + " (" + currentRating + ")");
-        await db.collection("leaderboard").doc(docId).update({ rating: currentRating });
+
+        // Update History: Add to top, keep only latest 5
+        gameHistory.unshift(game.pgn());
+        if (gameHistory.length > 5) gameHistory = gameHistory.slice(0, 5);
+
+        await db.collection("leaderboard").doc(docId).update({ 
+            rating: currentRating,
+            history: gameHistory
+        });
+        
         setTimeout(() => alert(msg), 300);
     } else {
-        // Reset status text when the computer is done
         $('#status').text("Your turn!");
     }
 }
@@ -244,10 +273,7 @@ function onSquareClick(sq) {
     updateStatus();
     
     if (!game.game_over()) {
-        // Updated text here
         $('#status').text("Decipher Chess is analyzing...");
-        
-        // 2 second delay for slower play, depth 1 for weaker play
         setTimeout(() => {
             chessWorker.postMessage("search 1");
             chessWorker.postMessage("position " + game.fen());
