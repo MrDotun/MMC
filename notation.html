@@ -14,34 +14,43 @@
     <style>
         :root { --primary: #4ade80; --accent: #fbbf24; --bg: #0f172a; --card: #1e293b; --danger: #ef4444; }
         body { margin: 0; padding: 20px 10px; font-family: 'Segoe UI', sans-serif; background: var(--bg); color: white; display: flex; flex-direction: column; align-items: center; }
-        .card { background: var(--card); padding: 25px; border-radius: 15px; border: 2px solid var(--primary); width: 100%; max-width: 500px; text-align: center; margin-bottom: 20px; box-sizing: border-box; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+        .card { background: var(--card); padding: 25px; border-radius: 15px; border: 2px solid var(--primary); width: 100%; max-width: 500px; text-align: center; margin-bottom: 20px; box-sizing: border-box; }
         .league-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .league-table th { color: #94a3b8; font-size: 0.8em; text-transform: uppercase; padding: 10px; border-bottom: 1px solid #334155; }
         .league-table td { padding: 12px 10px; border-bottom: 1px solid #334155; text-align: left; }
         #board { width: 100%; border: 4px solid var(--primary); border-radius: 8px; background: #1e293b; }
         .input-move { width: 100%; padding: 15px; font-size: 1.5em; text-align: center; border-radius: 8px; border: 2px solid var(--primary); background: #0f172a; color: var(--primary); font-weight: bold; margin: 15px 0; box-sizing: border-box; }
-        .submit-btn { background: var(--primary); color: #0f172a; padding: 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1.1em; transition: 0.2s; }
-        #quiz-section { display: none; width: 100%; max-width: 500px; }
+        .submit-btn { background: var(--primary); color: #0f172a; padding: 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1.1em; }
+        
+        /* Highlight Classes */
+        .highlight-sq { background: rgba(251, 191, 36, 0.8) !important; } /* Yellow */
+        .highlight-start { background: rgba(74, 222, 128, 0.7) !important; } /* Green */
+        .highlight-target { background: rgba(239, 68, 68, 0.7) !important; } /* Red */
+        
+        #quiz-section, #example-section { display: none; width: 100%; max-width: 500px; }
     </style>
 </head>
 <body>
 
 <div class="card" style="border-color: var(--accent);">
-    <h2 style="color: var(--accent); margin: 0 0 10px 0;">📜 School Result List</h2>
-    <table class="league-table">
-        <thead>
-            <tr><th>Student</th><th>Class</th><th style="text-align:center;">Time</th><th style="text-align:right;">Score</th></tr>
-        </thead>
-        <tbody id="results-body"></tbody>
-    </table>
-    <button onclick="adminPanel()" style="margin-top:15px; background:transparent; border:none; color:#64748b; cursor:pointer; font-size:0.8em; text-decoration: underline;">Teacher Admin</button>
+    <h2 style="color: var(--accent); margin: 0;">📜 School Result List</h2>
+    <table class="league-table"><tbody id="results-body"></tbody></table>
+    <button onclick="adminPanel()" style="margin-top:10px; background:transparent; border:none; color:#64748b; cursor:pointer; font-size:0.8em; text-decoration: underline;">Teacher Admin</button>
 </div>
 
 <div id="setup-section" class="card">
     <h1 style="color: var(--primary); margin-top:0;">Notation Master</h1>
-    <input type="text" id="sName" class="input-move" style="font-size: 1.1em;" placeholder="Full Name">
-    <input type="text" id="sClass" class="input-move" style="font-size: 1.1em;" placeholder="Class">
-    <button class="submit-btn" onclick="startTest()">START 20-QUESTION TEST</button>
+    <input type="text" id="sName" class="input-move" placeholder="Full Name">
+    <input type="text" id="sClass" class="input-move" placeholder="Class">
+    <button class="submit-btn" onclick="showExamples()">START LESSON & TEST</button>
+</div>
+
+<div id="example-section" class="card">
+    <h2 style="color:var(--accent)">How to Play</h2>
+    <div style="text-align:left; font-size:0.9em; line-height:1.4;">
+        <p>1. <b>Square ID:</b> Name the <span style="color:var(--accent)">Yellow</span> square (e.g., <b>e4</b>).</p>
+        <p>2. <b>Moves:</b> A piece moves from <span style="color:var(--primary)">Green</span> to <span style="color:var(--danger)">Red</span>. Record the move (e.g., <b>Nf3</b>).</p>
+    </div>
+    <button class="submit-btn" onclick="startTest()">START TEST</button>
 </div>
 
 <div id="quiz-section">
@@ -56,6 +65,7 @@
 </div>
 
 <script>
+// Firebase Config
 const firebaseConfig = { apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw", authDomain: "assignments-de95a.firebaseapp.com", projectId: "assignments-de95a", storageBucket: "assignments-de95a.firebasestorage.app", messagingSenderId: "1088073398299", appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be" };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
@@ -63,85 +73,94 @@ const db = firebase.firestore();
 let board, game = new Chess(), studentId, startTime, currentQ = 0, score = 0;
 
 const challenges = [
-    // Phase A: Square Identification (5 Questions)
     { type: 'sq', target: 'e4', text: 'Identify the highlighted square:' },
     { type: 'sq', target: 'c5', text: 'Identify the highlighted square:' },
     { type: 'sq', target: 'd6', text: 'Identify the highlighted square:' },
     { type: 'sq', target: 'g8', text: 'Identify the highlighted square:' },
     { type: 'sq', target: 'h7', text: 'Identify the highlighted square:' },
-    // Phase B: Move Recording (15 Questions using provided FENs)
-    { type: 'mv', fen: 'r3k2r/p1p1p1p1/1p2n2p/4P3/3P3P/5NP1/PPPN1PBR/4K3 w - - 0 1', move: 'Ng5', target: 'Ng5', text: 'Record the discovered attack Knight move:' },
-    { type: 'mv', fen: '4k3/p4pp1/1pnp1npp/4p3/4P3/2P2N1P/PP2BPP1/5RK1 w - - 0 1', move: 'Bb5', target: 'Bb5', text: 'Record the absolute pin move:' },
-    { type: 'mv', fen: 'r3k2r/ppp1ppp1/2n2p2/1N6/1p2q3/2P3QP/PP3PP1/R4RK1 w - - 0 1', move: 'Nc7+', target: 'Nc7+', text: 'Record the Knight fork (add + for check):' },
-    { type: 'mv', fen: 'r2qk2r/p2b1ppp/1pnp1n2/4p3/4P3/2P1BN1P/PP2BPP1/3Q1RK1 w - - 0 1', move: 'Bg5', target: 'Bg5', text: 'Record the pin on the f6 Knight:' },
-    { type: 'mv', fen: 'r2qk2r/ppp2pp1/3b1nP1/3p4/2PPP3/5N1P/P1B1QPP1/R4RK1 w - - 0 1', move: 'e5', target: 'e5', text: 'Record the pawn fork:' },
-    { type: 'mv', fen: '3rk2r/p1p2pp1/1p5q/3PN3/4Q3/2P3P1/PP3P2/3R2K1 w - - 0 1', move: 'Ng4+', target: 'Ng4+', text: 'Record the discovered attack (add +):' },
-    { type: 'mv', fen: '2rqk2r/p4ppp/1pnp1n2/4p3/4P1b1/2NBBNP1/PP3P2/3Q1RK1 w - - 0 1', move: 'Be2', target: 'Be2', text: 'Record the unpinning move:' },
-    { type: 'mv', fen: '4k3/ppp1ppp1/2r2p2/8/4r3/1BP4P/PP3PP1/R5K1 w - - 0 1', move: 'Bd5', target: 'Bd5', text: 'Record the double attack on the Rooks:' },
-    { type: 'mv', fen: '2rqk2r/p4p1p/1pnp4/4p3/4P3/2N5/PP2BP2/3Q1RK1 w - - 0 1', move: 'Bh5', target: 'Bh5', text: 'Record the pin on the f7 pawn:' },
-    { type: 'mv', fen: '3rkr2/p1pp1pp1/1p5q/3PB3/4Q3/2P3P1/PP3P2/3R2K1 w - - 0 1', move: 'Bf6#', target: 'Bf6#', text: 'Record the discovered checkmate (add #):' },
-    { type: 'mv', fen: 'r6r/p5p1/2n3k1/8/8/7P/P4PP1/4RRK1 w - - 0 1', move: 'Re6+', target: 'Re6+', text: 'Record the Rook check:' },
-    { type: 'mv', fen: 'r3k2r/p1p1p1p1/1p2np1p/8/3PP2P/2P3P1/PP1N1PB1/3RK3 w - - 0 1', move: 'e5', target: 'e5', text: 'How does white create a discovered attack?' },
-    { type: 'mv', fen: '3r3k/p1pp1p1p/1p6/2qPR2n/1P1B4/2P3P1/PP3P2/6K1 w - - 0 1', move: 'Re8#', target: 'Re8#', text: 'What is white\'s best move (Checkmate)?' },
-    { type: 'mv', fen: '2rq2kr/p4p1p/1pnp4/4p1n1/4P3/2N5/PP2BP1P/3Q1R1K w - - 0 1', move: 'Rg1', target: 'Rg1', text: 'Pin one of black\'s pieces:' },
-    { type: 'mv', fen: '4k2r/ppp1ppp1/r1n2p2/8/1p2q3/2PN2QP/PP3PP1/R4RK1 w - - 0 1', move: 'Nc5', target: 'Nc5', text: 'What is white\'s best move (Fork)?' }
+    // Moves from your puzzles
+    { type: 'mv', fen: 'r3k2r/p1p1p1p1/1p2n2p/4P3/3P3P/5NP1/PPPN1PBR/4K3 w - - 0 1', start: 'f3', target: 'g5', move: 'Ng5', text: 'Record the discovered attack Knight move:' },
+    { type: 'mv', fen: '4k3/p4pp1/1pnp1npp/4p3/4P3/2P2N1P/PP2BPP1/5RK1 w - - 0 1', start: 'e2', target: 'b5', move: 'Bb5', text: 'Record the absolute pin move:' },
+    { type: 'mv', fen: 'r3k2r/ppp1ppp1/2n2p2/1N6/1p2q3/2P3QP/PP3PP1/R4RK1 w - - 0 1', start: 'b5', target: 'c7', move: 'Nc7+', text: 'Record the Knight fork:' },
+    { type: 'mv', fen: 'r2qk2r/p2b1ppp/1pnp1n2/4p3/4P3/2P1BN1P/PP2BPP1/3Q1RK1 w - - 0 1', start: 'e3', target: 'g5', move: 'Bg5', text: 'Pin the black Knight:' },
+    { type: 'mv', fen: 'r2qk2r/ppp2pp1/3b1nP1/3p4/2PPP3/5N1P/P1B1QPP1/R4RK1 w - - 0 1', start: 'e4', target: 'e5', move: 'e5', text: 'Record the pawn fork:' },
+    { type: 'mv', fen: '3rk2r/p1p2pp1/1p5q/3PN3/4Q3/2P3P1/PP3P2/3R2K1 w - - 0 1', start: 'e5', target: 'g4', move: 'Ng4+', text: 'Record the discovered attack check:' },
+    { type: 'mv', fen: '2rqk2r/p4ppp/1pnp1n2/4p3/4P1b1/2NBBNP1/PP3P2/3Q1RK1 w - - 0 1', start: 'd3', target: 'e2', move: 'Be2', text: 'Record the unpinning move:' },
+    { type: 'mv', fen: '4k3/ppp1ppp1/2r2p2/8/4r3/1BP4P/PP3PP1/R5K1 w - - 0 1', start: 'b3', target: 'd5', move: 'Bd5', text: 'Attack both Rooks:' },
+    { type: 'mv', fen: '2rqk2r/p4p1p/1pnp4/4p3/4P3/2N5/PP2BP2/3Q1RK1 w - - 0 1', start: 'e2', target: 'h5', move: 'Bh5', text: 'Pin the f7 pawn:' },
+    { type: 'mv', fen: '3rkr2/p1pp1pp1/1p5q/3PB3/4Q3/2P3P1/PP3P2/3R2K1 w - - 0 1', start: 'e5', target: 'f6', move: 'Bf6#', text: 'Record the discovered checkmate:' },
+    { type: 'mv', fen: 'r6r/p5p1/2n3k1/8/8/7P/P4PP1/4RRK1 w - - 0 1', start: 'e1', target: 'e6', move: 'Re6+', text: 'Record the best check:' },
+    { type: 'mv', fen: 'r3k2r/p1p1p1p1/1p2np1p/8/3PP2P/2P3P1/PP1N1PB1/3RK3 w - - 0 1', start: 'e4', target: 'e5', move: 'e5', text: 'How does white create a discovered attack?' },
+    { type: 'mv', fen: '3r3k/p1pp1p1p/1p6/2qPR2n/1P1B4/2P3P1/PP3P2/6K1 w - - 0 1', start: 'e5', target: 'e8', move: 'Re8#', text: 'Record the best move (Checkmate):' },
+    { type: 'mv', fen: '2rq2kr/p4p1p/1pnp4/4p1n1/4P3/2N5/PP2BP1P/3Q1R1K w - - 0 1', start: 'f1', target: 'g1', move: 'Rg1', text: 'Pin one of black\'s pieces:' },
+    { type: 'mv', fen: '4k2r/ppp1ppp1/r1n2p2/8/1p2q3/2PN2QP/PP3PP1/R4RK1 w - - 0 1', start: 'd3', target: 'c5', move: 'Nc5', text: 'What is white\'s best move (Fork)?' }
 ];
 
+function showExamples() { $('#setup-section').hide(); $('#example-section').show(); }
+
 function startTest() {
-    const name = $('#sName').val().trim(), cls = $('#sClass').val().trim();
-    if(!name || !cls) return alert("Enter name and class!");
-    studentId = name + "_" + cls;
+    studentId = $('#sName').val() + "_" + $('#sClass').val();
     startTime = Date.now();
-    $('#setup-section').hide(); $('#quiz-section').show();
+    $('#example-section').hide(); $('#quiz-section').show();
     board = ChessBoard('board', { position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
     loadQuestion();
 }
 
-function loadQuestion() {
-    if(currentQ >= 20) return finishTest();
-    $('.square-55d6d').css('background', ''); // CLEAR PREVIOUS HIGHLIGHT
-    const q = challenges[currentQ];
-    $('#q-count').text(`Question ${currentQ + 1} of 20`);
-    $('#instruction').html(q.text); $('#userInput').val("").focus(); $('#feedback').text("");
-    if(q.type === 'sq') { 
-        board.clear(false); // REMOVE PIECES
-        setTimeout(() => highlight(q.target), 200); 
-    }
-    else { 
-        const startFen = q.fen === 'start' ? 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' : q.fen;
-        game.load(startFen);
-        board.position(game.fen());
-        setTimeout(() => { game.move(q.move); board.position(game.fen()); }, 800); 
-    }
+function clearHighlights() {
+    $('.square-55d6d').removeClass('highlight-sq highlight-start highlight-target');
 }
 
-function highlight(sq) { 
-    $('.square-55d6d').css('background', ''); // DOUBLE CLEAR
-    $('.square-' + sq).css('background', 'rgba(251, 191, 36, 0.8)'); 
+function loadQuestion() {
+    if(currentQ >= 20) return finishTest();
+    clearHighlights(); // Ensure board is fresh
+    
+    const q = challenges[currentQ];
+    $('#q-count').text(`Question ${currentQ + 1} of 20`);
+    $('#instruction').html(q.text); $('#userInput').val("").focus();
+
+    if(q.type === 'sq') {
+        board.clear(false);
+        setTimeout(() => $('.square-' + q.target).addClass('highlight-sq'), 200);
+    } else {
+        game.load(q.fen); board.position(game.fen());
+        setTimeout(() => {
+            $('.square-' + q.start).addClass('highlight-start');
+            $('.square-' + q.target).addClass('highlight-target');
+            game.move(q.move); board.position(game.fen());
+        }, 800);
+    }
 }
 
 async function processAnswer() {
-    const ans = $('#userInput').val().trim(), target = challenges[currentQ].target;
+    const ans = $('#userInput').val().trim(), target = challenges[currentQ].move || challenges[currentQ].target;
     if(ans.toLowerCase() === target.toLowerCase() || ans === target) {
         score++;
-        const timeSpent = Math.floor((Date.now() - startTime) / 1000);
-        await db.collection("leaderboard").doc(studentId).set({ name: $('#sName').val(), class: $('#sClass').val(), notationScore: score, totalTime: timeSpent, hasTakenTest: true }, { merge: true });
-        currentQ++; setTimeout(loadQuestion, 800);
-    } else { $('#feedback').text("Try again! Check your notation.").css('color', '#f87171'); }
+        clearHighlights(); // IMMEDIATE CLEAR ON ANSWER
+        await db.collection("leaderboard").doc(studentId).set({ 
+            name: $('#sName').val(), 
+            class: $('#sClass').val(), 
+            notationScore: score, 
+            totalTime: Math.floor((Date.now() - startTime)/1000), 
+            hasTakenTest: true 
+        }, { merge: true });
+        currentQ++; 
+        setTimeout(loadQuestion, 500);
+    } else { 
+        $('#feedback').text("Try again!").css('color', '#f87171'); 
+    }
 }
 
-function finishTest() { $('#quiz-section').html("<div class='card'><h1>🎉 20/20 FINISHED!</h1><button class='submit-btn' onclick='location.reload()'>VIEW RESULTS</button></div>"); }
+function finishTest() { 
+    $('#quiz-section').html("<div class='card'><h1>🎉 20/20 FINISHED!</h1><button class='submit-btn' onclick='location.reload()'>VIEW RESULTS</button></div>"); 
+}
 
 db.collection("leaderboard").orderBy("notationScore", "desc").onSnapshot(snap => {
     let html = "";
     snap.forEach(doc => {
         const d = doc.data();
-        if(d.hasTakenTest) {
-            const m = Math.floor(d.totalTime / 60), s = d.totalTime % 60;
-            html += `<tr><td><b>${d.name}</b></td><td>${d.class}</td><td style="text-align:center; color:#94a3b8;">${m}m ${s}s</td><td style="text-align:right; font-weight:bold; color:var(--primary);">${d.notationScore} / 20</td></tr>`;
-        }
+        if(d.hasTakenTest) html += `<tr><td><b>${d.name}</b></td><td>${d.class}</td><td style="text-align:right;"><b>${d.notationScore} / 20</b></td></tr>`;
     });
-    $('#results-body').html(html || "<tr><td colspan='4'>No results yet</td></tr>");
+    $('#results-body').html(html);
 });
 
 async function adminPanel() {
@@ -149,16 +168,12 @@ async function adminPanel() {
     const snap = await db.collection("leaderboard").get();
     let students = [];
     snap.forEach(doc => { if(doc.data().hasTakenTest) students.push({ id: doc.id, name: doc.data().name }); });
-    if(students.length === 0) return alert("No results to manage.");
     let promptMsg = "ADMIN MENU:\nType the Number to DELETE student forever:\n\n";
     students.forEach((s, i) => { promptMsg += `${i+1}. ${s.name}\n`; });
     const choice = prompt(promptMsg);
     if(choice && students[choice-1]) {
-        const target = students[choice-1];
-        if(confirm(`PERMANENTLY REMOVE ${target.name}?`)) {
-            await db.collection("leaderboard").doc(target.id).delete();
-            alert("Student Deleted.");
-        }
+        await db.collection("leaderboard").doc(students[choice-1].id).delete();
+        alert("Student Deleted.");
     }
 }
 </script>
