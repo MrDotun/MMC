@@ -1,4 +1,3 @@
-
 'use strict';
 
 const INITIAL_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -78,7 +77,6 @@ function appendMove(entry) {
     if (bSpan) {
       bSpan.textContent = entry.san;
     } else {
-      // Rare case: black move without a preceding white row
       const n   = Math.floor(entry.idx / 2) + 1;
       const row = document.createElement('div');
       row.className = 'hist-row';
@@ -186,7 +184,8 @@ function submitMove() {
 
 // ── Socket setup ──────────────────────────────────────────────────────────────
 function initSocket() {
-  socket = io();
+  // UPDATED: Points to your Render server for multiplayer logic
+  socket = io("https://mmc-a0de.onrender.com");
 
   socket.on('room_created', ({ roomId, color }) => {
     S.roomId = roomId;
@@ -200,7 +199,6 @@ function initSocket() {
 
   socket.on('room_joined', (data) => setupGame(data));
 
-  // White's handler when black connects
   socket.on('opponent_joined', () =>
     setupGame({ roomId: S.roomId, color: S.color, history: [], fen: INITIAL_FEN })
   );
@@ -256,7 +254,6 @@ const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 document.addEventListener('DOMContentLoaded', () => {
   initSocket();
 
-  // Pre-fill room code from ?room=XXXXXX in the URL
   const roomParam = new URLSearchParams(location.search).get('room');
   if (roomParam) $('input-room-code').value = roomParam;
 
