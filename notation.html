@@ -43,7 +43,6 @@
         .league-table th { color: var(--accent); padding-bottom: 10px; text-align: left; }
         .league-table td { padding: 8px 0; border-bottom: 1px solid #334155; }
         
-        /* Style for the student name to indicate it's clickable for admin */
         .admin-name { cursor: pointer; transition: color 0.2s; }
         .admin-name:hover { color: var(--accent); }
 
@@ -68,7 +67,13 @@
                 <button onclick="location.reload()" style="background:none; border: 1px solid var(--accent); color: var(--accent); border-radius: 5px; cursor: pointer; font-size: 0.7em; padding: 2px 5px;">Refresh List</button>
             </div>
             <table class="league-table">
-                <thead><tr><th>Student</th><th style="text-align:right;">Score</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>Student</th>
+                        <th>Class</th>
+                        <th style="text-align:right;">Score</th>
+                    </tr>
+                </thead>
                 <tbody id="results-body"></tbody>
             </table>
             <p style="font-size: 0.6em; color: #64748b; margin-top: 10px; text-align: center;">Admin: Click name to remove entry</p>
@@ -118,7 +123,7 @@ const challenges = [
 
 function startTest() {
     studentId = $('#sName').val() + "_" + $('#sClass').val();
-    if($('#sName').val() == "") return alert("Please enter your name");
+    if($('#sName').val() == "" || $('#sClass').val() == "") return alert("Please enter name and class");
     $('#setup-section').hide(); $('#quiz-section').show();
     board = ChessBoard('board', { position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', moveSpeed: 'slow' });
     loadQuestion();
@@ -163,11 +168,13 @@ async function processAnswer() {
 
 async function updateDB() {
     await db.collection("leaderboard").doc(studentId).set({ 
-        name: $('#sName').val(), notationScore: score, hasTakenTest: true 
+        name: $('#sName').val(), 
+        class: $('#sClass').val(), // Added class here
+        notationScore: score, 
+        hasTakenTest: true 
     }, { merge: true });
 }
 
-// Admin deletion function
 async function adminRemove(docId) {
     const pass = prompt("Enter Admin Password to remove this entry:");
     if (pass === "decipher1234") {
@@ -186,7 +193,12 @@ db.collection("leaderboard").orderBy("notationScore", "desc").onSnapshot(snap =>
     let h = ""; 
     snap.forEach(doc => { 
         const d = doc.data();
-        h += `<tr><td class="admin-name" onclick="adminRemove('${doc.id}')"><b>${d.name}</b></td><td style="text-align:right;"><b>${d.notationScore}</b></td></tr>`; 
+        // Added the <td> for class here
+        h += `<tr>
+                <td class="admin-name" onclick="adminRemove('${doc.id}')"><b>${d.name}</b></td>
+                <td>${d.class || 'N/A'}</td>
+                <td style="text-align:right;"><b>${d.notationScore}</b></td>
+              </tr>`; 
     });
     $('#results-body').html(h);
 });
