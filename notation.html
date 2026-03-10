@@ -21,7 +21,7 @@
         .input-move { width: 100%; padding: 15px; font-size: 1.5em; text-align: center; border-radius: 8px; border: 2px solid var(--primary); background: #0f172a; color: var(--primary); font-weight: bold; margin: 15px 0; box-sizing: border-box; }
         .submit-btn { background: var(--primary); color: #0f172a; padding: 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1.1em; }
         
-        /* Highlight Classes */
+        /* Highlight Classes - Using !important to override library defaults */
         .highlight-sq { background: rgba(251, 191, 36, 0.8) !important; } 
         .highlight-start { background: rgba(74, 222, 128, 0.7) !important; } 
         .highlight-target { background: rgba(239, 68, 68, 0.7) !important; } 
@@ -71,28 +71,32 @@ const db = firebase.firestore();
 
 let board, game = new Chess(), studentId, startTime, currentQ = 0, score = 0;
 
+// Challenges strictly using your uploaded JSON data
 const challenges = [
     { type: 'sq', target: 'e4', text: 'Identify the highlighted square:' },
     { type: 'sq', target: 'c5', text: 'Identify the highlighted square:' },
     { type: 'sq', target: 'd6', text: 'Identify the highlighted square:' },
     { type: 'sq', target: 'g8', text: 'Identify the highlighted square:' },
     { type: 'sq', target: 'h7', text: 'Identify the highlighted square:' },
-    // Moves using your uploaded FENs
+    // Moves from chess_puzzles (7).json
     { type: 'mv', fen: 'r3k2r/p1p1p1p1/1p2n2p/4P3/3P3P/5NP1/PPPN1PBR/4K3 w - - 0 1', start: 'f3', target: 'g5', move: 'Ng5', text: 'Record the discovered attack Knight move:' },
-    { type: 'mv', fen: '4k3/p4pp1/1pnp1npp/4p3/4P3/2P2N1P/PP2BPP1/5RK1 w - - 0 1', start: 'e2', target: 'b5', move: 'Bb5', text: 'Record the absolute pin move:' },
-    { type: 'mv', fen: 'r3k2r/ppp1ppp1/2n2p2/1N6/1p2q3/2P3QP/PP3PP1/R4RK1 w - - 0 1', start: 'b5', target: 'c7', move: 'Nc7+', text: 'Record the Knight fork:' },
-    { type: 'mv', fen: 'r2qk2r/p2b1ppp/1pnp1n2/4p3/4P3/2P1BN1P/PP2BPP1/3Q1RK1 w - - 0 1', start: 'e3', target: 'g5', move: 'Bg5', text: 'Pin the black Knight:' },
-    { type: 'mv', fen: 'r2qk2r/ppp2pp1/3b1nP1/3p4/2PPP3/5N1P/P1B1QPP1/R4RK1 w - - 0 1', start: 'e4', target: 'e5', move: 'e5', text: 'Record the pawn fork:' },
     { type: 'mv', fen: '3rk2r/p1p2pp1/1p5q/3PN3/4Q3/2P3P1/PP3P2/3R2K1 w - - 0 1', start: 'e5', target: 'g4', move: 'Ng4+', text: 'Record the discovered attack check:' },
-    { type: 'mv', fen: '2rqk2r/p4ppp/1pnp1n2/4p3/4P1b1/2NBBNP1/PP3P2/3Q1RK1 w - - 0 1', start: 'd3', target: 'e2', move: 'Be2', text: 'Record the unpinning move:' },
-    { type: 'mv', fen: '4k3/ppp1ppp1/2r2p2/8/4r3/1BP4P/PP3PP1/R5K1 w - - 0 1', start: 'b3', target: 'd5', move: 'Bd5', text: 'Attack both Rooks:' },
-    { type: 'mv', fen: '2rqk2r/p4p1p/1pnp4/4p3/4P3/2N5/PP2BP2/3Q1RK1 w - - 0 1', start: 'e2', target: 'h5', move: 'Bh5', text: 'Pin the f7 pawn:' },
     { type: 'mv', fen: '3rkr2/p1pp1pp1/1p5q/3PB3/4Q3/2P3P1/PP3P2/3R2K1 w - - 0 1', start: 'e5', target: 'f6', move: 'Bf6#', text: 'Record the discovered checkmate:' },
-    { type: 'mv', fen: 'r6r/p5p1/2n3k1/8/8/7P/P4PP1/4RRK1 w - - 0 1', start: 'e1', target: 'e6', move: 'Re6+', text: 'Record the best check:' },
-    { type: 'mv', fen: 'r3k2r/p1p1p1p1/1p2np1p/8/3PP2P/2P3P1/PP1N1PB1/3RK3 w - - 0 1', start: 'e4', target: 'e5', move: 'e5', text: 'How does white create a discovered attack?' },
-    { type: 'mv', fen: '3r3k/p1pp1p1p/1p6/2qPR2n/1P1B4/2P3P1/PP3P2/6K1 w - - 0 1', start: 'e5', target: 'e8', move: 'Re8#', text: 'Record the best move (Checkmate):' },
-    { type: 'mv', fen: '2rq2kr/p4p1p/1pnp4/4p1n1/4P3/2N5/PP2BP1P/3Q1R1K w - - 0 1', start: 'f1', target: 'g1', move: 'Rg1', text: 'Pin one of black\'s pieces:' },
-    { type: 'mv', fen: '4k2r/ppp1ppp1/r1n2p2/8/1p2q3/2PN2QP/PP3PP1/R4RK1 w - - 0 1', start: 'd3', target: 'c5', move: 'Nc5', text: 'What is white\'s best move (Fork)?' }
+    // Moves from chess_puzzles (6).json
+    { type: 'mv', fen: '4k3/p4pp1/1pnp1npp/4p3/4P3/2P2N1P/PP2BPP1/5RK1 w - - 0 1', start: 'e2', target: 'b5', move: 'Bb5', text: 'Record the absolute pin move:' },
+    { type: 'mv', fen: 'r2qk2r/p2b1ppp/1pnp1n2/4p3/4P3/2P1BN1P/PP2BPP1/3Q1RK1 w - - 0 1', start: 'e3', target: 'g5', move: 'Bg5', text: 'Pin the black Knight:' },
+    { type: 'mv', fen: '2rqk2r/p4p1p/1pnp4/4p3/4P3/2N5/PP2BP2/3Q1RK1 w - - 0 1', start: 'e2', target: 'h5', move: 'Bh5', text: 'Pin the f7 pawn:' },
+    // Moves from chess_puzzles (5).json
+    { type: 'mv', fen: 'r3k2r/ppp1ppp1/2n2p2/1N6/1p2q3/2P3QP/PP3PP1/R4RK1 w - - 0 1', start: 'b5', target: 'c7', move: 'Nc7+', text: 'Record the Knight fork:' },
+    { type: 'mv', fen: '4k3/ppp1ppp1/2r2p2/8/4r3/1BP4P/PP3PP1/R5K1 w - - 0 1', start: 'b3', target: 'd5', move: 'Bd5', text: 'Attack both Rooks:' },
+    { type: 'mv', fen: 'r2qk2r/ppp2pp1/3b1nP1/3p4/2PPP3/5N1P/P1B1QPP1/R4RK1 w - - 0 1', start: 'e4', target: 'e5', move: 'e5', text: 'Record the pawn fork:' },
+    { type: 'mv', fen: 'r6r/p5p1/2n3k1/8/8/7P/P4PP1/4RRK1 w - - 0 1', start: 'e1', target: 'e6', move: 'Re6+', text: 'Record the best Rook check:' },
+    // Add 5 more logic-based variations from the same files to reach 20
+    { type: 'mv', fen: 'r3k2r/p1p1p1p1/1p2np1p/8/3PP2P/2P3P1/PP1N1PB1/3RK3 w - - 0 1', start: 'e4', target: 'e5', move: 'e5', text: 'Create a discovered attack:' },
+    { type: 'mv', fen: '3r3k/p1pp1p1p/1p6/2qPR2n/1P1B4/2P3P1/PP3P2/6K1 w - - 0 1', start: 'e5', target: 'e8', move: 'Re8#', text: 'Find the checkmate move:' },
+    { type: 'mv', fen: '2rq2kr/p4p1p/1pnp4/4p1n1/4P3/2N5/PP2BP1P/3Q1R1K w - - 0 1', start: 'f1', target: 'g1', move: 'Rg1', text: 'Pin the piece on the g-file:' },
+    { type: 'mv', fen: '4k2r/ppp1ppp1/r1n2p2/8/1p2q3/2PN2QP/PP3PP1/R4RK1 w - - 0 1', start: 'd3', target: 'c5', move: 'Nc5', text: 'Find the Knight fork move:' },
+    { type: 'mv', fen: '2rqk2r/p4ppp/1pnp1n2/4p3/4P1b1/2NBBNP1/PP3P2/3Q1RK1 w - - 0 1', start: 'd3', target: 'e2', move: 'Be2', text: 'How do you unpin your Knight?' }
 ];
 
 function showExamples() { $('#setup-section').hide(); $('#example-section').show(); }
@@ -105,36 +109,46 @@ function startTest() {
     loadQuestion();
 }
 
-function clearHighlights() {
-    $('.square-55d6d').removeClass('highlight-sq highlight-start highlight-target');
+// THE NUCLEAR CLEAR FUNCTION
+function clearEverything() {
+    $('.square-55d6d').removeClass('highlight-sq highlight-start highlight-target'); // Remove all CSS classes
+    $('.square-55d6d').css('background', ''); // Manually strip inline background colors
+    board.clear(false); // Remove all pieces from board
 }
 
 function loadQuestion() {
     if(currentQ >= 20) return finishTest();
-    clearHighlights(); 
+    clearEverything(); // Wipe fresh at the start of every question
     
     const q = challenges[currentQ];
     $('#q-count').text(`Question ${currentQ + 1} of 20`);
-    $('#instruction').html(q.text); $('#userInput').val("").focus();
+    $('#instruction').html(q.text); 
+    $('#userInput').val("").focus();
+    $('#feedback').text("");
 
     if(q.type === 'sq') {
-        board.clear(false);
-        setTimeout(() => $('.square-' + q.target).addClass('highlight-sq'), 200);
+        // Mode A: Pure square identification
+        setTimeout(() => $('.square-' + q.target).addClass('highlight-sq'), 150);
     } else {
-        game.load(q.fen); board.position(game.fen());
+        // Mode B: Moving pieces based on FEN
+        game.load(q.fen); 
+        board.position(game.fen());
         setTimeout(() => {
             $('.square-' + q.start).addClass('highlight-start');
             $('.square-' + q.target).addClass('highlight-target');
-            game.move(q.move); board.position(game.fen());
-        }, 800);
+            game.move(q.move); 
+            board.position(game.fen());
+        }, 600);
     }
 }
 
 async function processAnswer() {
     const ans = $('#userInput').val().trim(), target = challenges[currentQ].move || challenges[currentQ].target;
+    
     if(ans.toLowerCase() === target.toLowerCase() || ans === target) {
         score++;
-        clearHighlights(); // IMMEDIATE WIPE
+        clearEverything(); // Wipe fresh IMMEDIATELY upon correct answer
+        
         await db.collection("leaderboard").doc(studentId).set({ 
             name: $('#sName').val(), 
             class: $('#sClass').val(), 
@@ -142,15 +156,16 @@ async function processAnswer() {
             totalTime: Math.floor((Date.now() - startTime)/1000), 
             hasTakenTest: true 
         }, { merge: true });
+        
         currentQ++; 
-        setTimeout(loadQuestion, 500);
+        setTimeout(loadQuestion, 400); // Short delay before next question
     } else { 
-        $('#feedback').text("Try again!").css('color', '#f87171'); 
+        $('#feedback').text("Incorrect notation. Try again!").css('color', '#f87171'); 
     }
 }
 
 function finishTest() { 
-    $('#quiz-section').html("<div class='card'><h1>🎉 20/20 FINISHED!</h1><button class='submit-btn' onclick='location.reload()'>VIEW RESULTS</button></div>"); 
+    $('#quiz-section').html("<div class='card'><h1>🎉 20/20 FINISHED!</h1><p>Your results are saved.</p><button class='submit-btn' onclick='location.reload()'>VIEW LEADERBOARD</button></div>"); 
 }
 
 db.collection("leaderboard").orderBy("notationScore", "desc").onSnapshot(snap => {
@@ -167,12 +182,12 @@ async function adminPanel() {
     const snap = await db.collection("leaderboard").get();
     let students = [];
     snap.forEach(doc => { if(doc.data().hasTakenTest) students.push({ id: doc.id, name: doc.data().name }); });
-    let promptMsg = "ADMIN MENU:\nType the Number to DELETE student forever:\n\n";
+    let promptMsg = "ADMIN: Type Number to DELETE:\n\n";
     students.forEach((s, i) => { promptMsg += `${i+1}. ${s.name}\n`; });
     const choice = prompt(promptMsg);
     if(choice && students[choice-1]) {
         await db.collection("leaderboard").doc(students[choice-1].id).delete();
-        alert("Student Deleted.");
+        alert("Deleted.");
     }
 }
 </script>
