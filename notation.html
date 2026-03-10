@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Notation Master | Grade 3</title>
+    <title>Notation Master | Bonus Mode</title>
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
@@ -12,7 +12,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
     <style>
-        :root { --primary: #4ade80; --accent: #fbbf24; --bg: #0f172a; --card: #1e293b; }
+        :root { --primary: #4ade80; --accent: #fbbf24; --bg: #0f172a; --card: #1e293b; --bonus: #8b5cf6; }
         body { margin: 0; padding: 20px 10px; font-family: 'Segoe UI', sans-serif; background: var(--bg); color: white; display: flex; flex-direction: column; align-items: center; }
         .card { background: var(--card); padding: 20px; border-radius: 15px; border: 2px solid var(--primary); width: 100%; max-width: 500px; text-align: center; margin-bottom: 20px; box-sizing: border-box; }
         .league-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
@@ -22,9 +22,9 @@
         .input-move { width: 100%; padding: 15px; font-size: 1.5em; text-align: center; border-radius: 8px; border: 2px solid var(--primary); background: #0f172a; color: var(--primary); font-weight: bold; margin: 15px 0; box-sizing: border-box; }
         .submit-btn { background: var(--primary); color: #0f172a; padding: 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1.1em; }
         #quiz-section { display: none; width: 100%; max-width: 500px; }
-        
-        /* Ensure NO highlights ever appear */
         .square-55d6d { background-color: transparent !important; }
+        .bonus-text { color: var(--bonus); font-weight: bold; animation: pop 0.5s ease-out; }
+        @keyframes pop { 0% { transform: scale(1); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
     </style>
 </head>
 <body>
@@ -41,21 +41,24 @@
 
 <div id="setup-section" class="card">
     <h1 style="color: var(--primary); margin:0;">Notation Master</h1>
-    <p>Watch the piece move, then record it.</p>
+    <p>Record the move. Use <b>+</b> or <b>#</b> for Bonus Points!</p>
     <input type="text" id="sName" class="input-move" placeholder="Full Name">
     <input type="text" id="sClass" class="input-move" placeholder="Class">
     <button class="submit-btn" onclick="startTest()">START TEST</button>
 </div>
 
 <div id="quiz-section">
-    <div class="card" style="padding:15px; margin-bottom:10px;"><h3 id="q-count" style="margin:0; color:var(--primary);">Question 1 of 15</h3></div>
+    <div class="card" style="padding:15px; margin-bottom:10px; display: flex; justify-content: space-between; align-items: center;">
+        <h3 id="q-count" style="margin:0; color:var(--primary);">Question 1</h3>
+        <h3 id="live-score" style="margin:0; color:var(--accent);">Score: 0</h3>
+    </div>
     <div id="board"></div>
     <div class="card" style="margin-top:10px;">
         <p id="instruction" style="font-weight:bold; margin-bottom:10px;">Record the move played:</p>
-        <input type="text" id="userInput" class="input-move" placeholder="Example: Nf3">
+        <input type="text" id="userInput" class="input-move" placeholder="e.g. Ng4">
         <button class="submit-btn" onclick="processAnswer()">SUBMIT MOVE</button>
-        <p id="feedback" style="margin-top:10px; font-weight:bold;"></p>
-        <button onclick="loadQuestion()" style="background:none; border:none; color:var(--accent); text-decoration:underline; cursor:pointer; font-size:0.9em;">Watch Move Again</button>
+        <p id="feedback" style="margin-top:10px; font-weight:bold; min-height: 1.5em;"></p>
+        <button onclick="loadQuestion()" style="background:none; border:none; color:var(--accent); text-decoration:underline; cursor:pointer; font-size:0.9em; margin-top:10px;">Watch Move Again</button>
     </div>
 </div>
 
@@ -64,9 +67,8 @@ const firebaseConfig = { apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw", auth
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-let board, game = new Chess(), studentId, currentQ = 0, score = 0;
+let board, game = new Chess(), studentId, currentQ = 0, score = 0, attempts = 0;
 
-// All puzzles from your JSON files, simplified to just "Record the move played"
 const challenges = [
     { fen: 'r3k2r/p1p1p1p1/1p2n2p/4P3/3P3P/5NP1/PPPN1PBR/4K3 w - - 0 1', move: 'Ng5' },
     { fen: '3rk2r/p1p2pp1/1p5q/3PN3/4Q3/2P3P1/PP3P2/3R2K1 w - - 0 1', move: 'Ng4+' },
@@ -94,55 +96,75 @@ function startTest() {
 
 function loadQuestion() {
     if(currentQ >= challenges.length) return finishTest();
-    
+    attempts = 0;
     const q = challenges[currentQ];
     $('#q-count').text(`Question ${currentQ + 1} of 15`);
+    $('#live-score').text(`Score: ${score}`);
     $('#userInput').val("").focus();
     $('#feedback').text("");
-
     game.load(q.fen);
-    board.position(q.fen, false); // Instant reset to starting pos
-
+    board.position(q.fen, false); 
     setTimeout(() => {
         game.move(q.move);
-        board.position(game.fen()); // Piece slides, NO highlights appear
-    }, 1200);
+        board.position(game.fen());
+    }, 1000);
 }
 
 async function processAnswer() {
-    const ans = $('#userInput').val().trim();
-    const target = challenges[currentQ].move;
+    const rawInput = $('#userInput').val().trim();
+    const userInputClean = rawInput.toLowerCase().replace(/[+#x]/g, '');
+    const correctMove = challenges[currentQ].move;
+    const correctClean = correctMove.toLowerCase().replace(/[+#x]/g, '');
     
-    if(ans === target || ans.toLowerCase() === target.toLowerCase()) {
-        score++;
-        $('#feedback').text("Correct! Next...").css('color', '#4ade80');
-        
-        await db.collection("leaderboard").doc(studentId).set({ 
-            name: $('#sName').val(), 
-            class: $('#sClass').val(), 
-            notationScore: score, 
-            hasTakenTest: true 
-        }, { merge: true });
-        
+    // Check if basic move (Piece + Square) is correct
+    if (userInputClean === correctClean) {
+        let questionPoints = 1;
+        let bonusMsg = "";
+
+        // Give Bonus Point for special signs if they are required in the original move
+        if (correctMove.includes('+') || correctMove.includes('#')) {
+            if (rawInput.includes('+') || rawInput.includes('#')) {
+                questionPoints = 2; // Double points!
+                bonusMsg = " <span class='bonus-text'>+ BONUS POINT!</span>";
+            }
+        }
+
+        score += questionPoints;
+        $('#feedback').html("Correct!" + bonusMsg).css('color', '#4ade80');
+        await updateScore();
         currentQ++; 
-        setTimeout(loadQuestion, 1000); 
-    } else { 
-        $('#feedback').text("Try again! Record the piece move.").css('color', '#f87171'); 
+        setTimeout(loadQuestion, 1200);
+    } else {
+        attempts++;
+        if (attempts >= 3) {
+            $('#feedback').html(`The answer was: <b>${correctMove}</b>.`).css('color', '#fbbf24');
+            await updateScore();
+            currentQ++;
+            setTimeout(loadQuestion, 3000);
+        } else {
+            $('#feedback').text(`Incorrect. Try again! (${3 - attempts} left)`).css('color', '#f87171');
+        }
     }
 }
 
-function finishTest() { 
-    $('#quiz-section').html("<div class='card'><h1>🎉 Finished!</h1><button class='submit-btn' onclick='location.reload()'>RESTART</button></div>"); 
+async function updateScore() {
+    await db.collection("leaderboard").doc(studentId).set({ 
+        name: $('#sName').val(), 
+        class: $('#sClass').val(), 
+        notationScore: score, 
+        hasTakenTest: true 
+    }, { merge: true });
 }
 
-// LEADERBOARD UPDATER
+function finishTest() { 
+    $('#quiz-section').html("<div class='card'><h1>🎉 Test Complete!</h1><p>Final Score: " + score + "</p><button class='submit-btn' onclick='location.reload()'>VIEW LEADERBOARD</button></div>"); 
+}
+
 db.collection("leaderboard").orderBy("notationScore", "desc").onSnapshot(snap => {
     let html = "";
     snap.forEach(doc => {
         const d = doc.data();
-        if(d.hasTakenTest) {
-            html += `<tr><td><b>${d.name}</b></td><td>${d.class}</td><td style="text-align:right;"><b>${d.notationScore}</b></td></tr>`;
-        }
+        if(d.hasTakenTest) html += `<tr><td><b>${d.name}</b></td><td>${d.class}</td><td style="text-align:right;"><b>${d.notationScore}</b></td></tr>`;
     });
     $('#results-body').html(html);
 });
