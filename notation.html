@@ -42,6 +42,10 @@
         .league-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
         .league-table th { color: var(--accent); padding-bottom: 10px; text-align: left; }
         .league-table td { padding: 8px 0; border-bottom: 1px solid #334155; }
+        
+        /* Style for the student name to indicate it's clickable for admin */
+        .admin-name { cursor: pointer; transition: color 0.2s; }
+        .admin-name:hover { color: var(--accent); }
 
         .square-55d6d { background-color: transparent !important; }
     </style>
@@ -59,11 +63,15 @@
         </div>
 
         <div class="result-section">
-            <h3 style="color: var(--accent); margin: 0 0 10px 0; text-align: center;">📜 School Result List</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 style="color: var(--accent); margin: 0;">📜 School Results</h3>
+                <button onclick="location.reload()" style="background:none; border: 1px solid var(--accent); color: var(--accent); border-radius: 5px; cursor: pointer; font-size: 0.7em; padding: 2px 5px;">Refresh List</button>
+            </div>
             <table class="league-table">
                 <thead><tr><th>Student</th><th style="text-align:right;">Score</th></tr></thead>
                 <tbody id="results-body"></tbody>
             </table>
+            <p style="font-size: 0.6em; color: #64748b; margin-top: 10px; text-align: center;">Admin: Click name to remove entry</p>
         </div>
     </div>
 
@@ -95,7 +103,6 @@ const challenges = [
     { fen: '3rk2r/p1p2pp1/1p5q/3PN3/4Q3/2P3P1/PP3P2/3R2K1 w - - 0 1', move: 'Ng4+' },
     { fen: '3rkr2/p1pp1pp1/1p5q/3PB3/4Q3/2P3P1/PP3P2/3R2K1 w - - 0 1', move: 'Bf6#' },
     { fen: '4k3/p4pp1/1pnp1npp/4p3/4P3/2P2N1P/PP2BPP1/5RK1 w - - 0 1', move: 'Bb5' },
-    /* Corrected Question 5: Knight on b5 captures Black Pawn on c7 */
     { fen: 'r3k2r/pppbppp1/2n2p2/1N6/1p2q3/2P3QP/PP3PP1/R4RK1 w - - 0 1', move: 'Nxc7+' }, 
     { fen: 'r2qk2r/p2b1ppp/1pnp1n2/4p3/4P3/2P1BN1P/PP2BPP1/3Q1RK1 w - - 0 1', move: 'Bg5' },
     { fen: '2rqk2r/p4p1p/1pnp4/4p3/4P3/2N5/PP2BP2/3Q1RK1 w - - 0 1', move: 'Bh5' },
@@ -160,6 +167,17 @@ async function updateDB() {
     }, { merge: true });
 }
 
+// Admin deletion function
+async function adminRemove(docId) {
+    const pass = prompt("Enter Admin Password to remove this entry:");
+    if (pass === "decipher1234") {
+        await db.collection("leaderboard").doc(docId).delete();
+        alert("Entry removed.");
+    } else if (pass !== null) {
+        alert("Incorrect Password.");
+    }
+}
+
 function finishTest() {
     $('#quiz-section').html("<div class='central-card'><h2>🎉 Well Done!</h2><h3>Final Score: "+score+"</h3><button class='submit-btn' onclick='location.reload()'>FINISH</button></div>");
 }
@@ -167,7 +185,8 @@ function finishTest() {
 db.collection("leaderboard").orderBy("notationScore", "desc").onSnapshot(snap => {
     let h = ""; 
     snap.forEach(doc => { 
-        h += `<tr><td><b>${doc.data().name}</b></td><td style="text-align:right;"><b>${doc.data().notationScore}</b></td></tr>`; 
+        const d = doc.data();
+        h += `<tr><td class="admin-name" onclick="adminRemove('${doc.id}')"><b>${d.name}</b></td><td style="text-align:right;"><b>${d.notationScore}</b></td></tr>`; 
     });
     $('#results-body').html(h);
 });
