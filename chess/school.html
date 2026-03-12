@@ -110,6 +110,7 @@ const db = firebase.firestore();
 var game = new Chess(), board = null, sourceSquare = null;
 var currentName = "", currentClass = "", currentSchool = "", docId = "", currentRating = 1500;
 var gameHistory = []; 
+var playerColor = 'w'; // Color choice
 
 function initLeagues() {
     db.collection("leaderboard").onSnapshot((snap) => {
@@ -125,14 +126,7 @@ function initLeagues() {
         players.sort((a, b) => b.rating - a.rating);
         let pHTML = "";
         players.slice(0, 10).forEach((p, i) => {
-            // Updated labeling logic: Numbering + Title for top 4
-            let label = "";
-            if (i === 0) label = "1. GM ";
-            else if (i === 1) label = "2. IM ";
-            else if (i === 2) label = "3. FM ";
-            else if (i === 3) label = "4. CM ";
-            else label = (i + 1) + ". ";
-
+            let label = (i === 0) ? "1. GM " : (i === 1) ? "2. IM " : (i === 2) ? "3. FM " : (i === 3) ? "4. CM " : (i + 1) + ". ";
             pHTML += `<tr class="${i === 0 ? 'rank-1' : ''}"><td><b>${label}${p.name}</b><span class="school-tag">${p.school}</span></td><td>${p.class}</td><td style="text-align:right">${p.rating}</td></tr>`;
         });
         $('#player-body').html(pHTML);
@@ -164,30 +158,19 @@ async function refreshMasterlist() {
             d.history.forEach((pgn, idx) => {
                 historyString += `GAME ${idx + 1}:\\n${pgn.replace(/'/g, "\\'")}\\n\\n`;
             });
-        } else {
-            historyString = "No history available.";
         }
-
-        html += `<tr>
-            <td>${d.name}</td>
-            <td>${d.school}</td>
-            <td>${d.class}</td>
-            <td style="color:#4ade80">${d.password}</td>
-            <td>${d.rating} <button class="view-pgn-btn" onclick="alert('${historyString}')">VIEW HISTORY</button></td>
-        </tr>`;
+        html += `<tr><td>${d.name}</td><td>${d.school}</td><td>${d.class}</td><td style="color:#4ade80">${d.password}</td><td>${d.rating} <button class="view-pgn-btn" onclick="alert('${historyString}')">VIEW HISTORY</button></td></tr>`;
     });
     $('#teacher-body').html(html || "<tr><td colspan='5'>No students found.</td></tr>");
 }
 
 async function resetSeason() {
-    if(!confirm("Are you sure? This will set EVERY student to 1500 and CLEAR history!")) return;
+    if(!confirm("Are you sure?")) return;
     const snap = await db.collection("leaderboard").get();
     const batch = db.batch();
-    snap.forEach(doc => {
-        batch.update(doc.ref, { rating: 1500, history: [] });
-    });
+    snap.forEach(doc => { batch.update(doc.ref, { rating: 1500, history: [] }); });
     await batch.commit();
-    alert("Database Reset to 1500!");
+    alert("Reset Complete!");
     refreshMasterlist();
 }
 
@@ -204,6 +187,11 @@ async function startGame() {
     currentSchool = $('#studentSchool').val().trim();
     const pass = $('#studentPass').val().trim();
     if (!currentName || !currentClass || !currentSchool || !pass) return alert("Fill all fields!");
+    
+    // Color choice logic
+    let choice = prompt("Choose your side: Type 'White' or 'Black'").toLowerCase();
+    playerColor = (choice === 'black' || choice === 'b') ? 'b' : 'w';
+
     docId = currentName + "_" + currentClass;
     const docRef = db.collection("leaderboard").doc(docId);
     try {
@@ -214,7 +202,6 @@ async function startGame() {
             gameHistory = doc.data().history || [];
         } else {
             currentRating = 1500;
-            gameHistory = [];
             await docRef.set({ name: currentName, class: currentClass, school: currentSchool, password: pass, rating: 1500, history: [] });
         }
         $('#displayName').text(currentName);
@@ -222,7 +209,10 @@ async function startGame() {
         $('#grade').text(getTitle(currentRating) + " (" + currentRating + ")");
         $('#welcome-overlay').hide();
         $('#game-container').show();
+        
+        board.orientation(playerColor === 'w' ? 'white' : 'black');
         board.resize();
+        if (playerColor === 'b') { makeAiMove(); }
     } catch (e) { alert("Error: " + e.message); }
 }
 
@@ -230,24 +220,16 @@ async function updateStatus() {
     if (game.game_over()) {
         let change = 0, msg = "";
         if (game.in_checkmate()) {
-            if (game.turn() === 'b') { msg = "VICTORY! +100 Elo!"; change = 100; }
+            if (game.turn() !== playerColor) { msg = "VICTORY! +100 Elo!"; change = 100; }
             else { msg = "DEFEAT! -20 Elo."; change = -20; }
         } else { msg = "DRAW! +10 Elo."; change = 10; }
         
         currentRating = Math.max(1000, currentRating + change);
-        $('#grade').text(getTitle(currentRating) + " (" + currentRating + ")");
-
         gameHistory.unshift(game.pgn());
-        if (gameHistory.length > 5) gameHistory = gameHistory.slice(0, 5);
-
-        await db.collection("leaderboard").doc(docId).update({ 
-            rating: currentRating,
-            history: gameHistory
-        });
-        
+        await db.collection("leaderboard").doc(docId).update({ rating: currentRating, history: gameHistory.slice(0, 5) });
         setTimeout(() => alert(msg), 300);
     } else {
-        $('#status').text("Your turn!");
+        $('#status').text(game.turn() === playerColor ? "Your turn!" : "AI is thinking...");
     }
 }
 
@@ -257,42 +239,51 @@ chessWorker.onmessage = function(e) {
     updateStatus();
 };
 
-function onSquareClick(sq) {
+function makeAiMove() {
     if (game.game_over()) return;
+    $('#status').text("Decipher Chess is analyzing...");
+    setTimeout(() => {
+        let moves = game.moves();
+        // 4% Blunder Logic
+        if (Math.random() < 0.04 && moves.length > 0) {
+            game.move(moves[Math.floor(Math.random() * moves.length)]);
+            board.position(game.fen());
+            updateStatus();
+            return;
+        }
+
+        // Opening Book (e4, d4, c4, Nf3)
+        let openings = ['e4', 'd4', 'c4', 'Nf3'];
+        if (game.history().length < 2) {
+            let bookMove = openings[Math.floor(Math.random() * openings.length)];
+            let result = game.move(bookMove);
+            if (result) {
+                board.position(game.fen());
+                updateStatus();
+                return;
+            }
+        }
+
+        chessWorker.postMessage("position " + game.fen());
+        chessWorker.postMessage("go depth 1");
+    }, 1000);
+}
+
+function onSquareClick(sq) {
+    if (game.game_over() || game.turn() !== playerColor) return;
     if (!sourceSquare) {
         let p = game.get(sq);
-        if (p && p.color === 'w') { sourceSquare = sq; $('.square-' + sq).addClass('highlight-white'); }
+        if (p && p.color === playerColor) { sourceSquare = sq; $('.square-' + sq).addClass('highlight-white'); }
         return;
     }
     let m = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
     $('.highlight-white').removeClass('highlight-white');
     sourceSquare = null;
-    
-    if (!m) { 
-        $('#remark').text("Illegal move!"); 
-        return; 
-    }
-    
+    if (!m) { $('#remark').text("Illegal move!"); return; }
     $('#remark').text("");
     board.position(game.fen());
     updateStatus();
-    
-    if (!game.game_over()) {
-        $('#status').text("Decipher Chess is analyzing...");
-        setTimeout(() => {
-            // UPDATED: 10% blunder chance and depth 1 for simpler play
-            let moves = game.moves();
-            if (Math.random() < 0.10 && moves.length > 0) {
-                let randomMove = moves[Math.floor(Math.random() * moves.length)];
-                game.move(randomMove);
-                board.position(game.fen());
-                updateStatus();
-            } else {
-                chessWorker.postMessage("position " + game.fen());
-                chessWorker.postMessage("go depth 1");
-            }
-        }, 1200); 
-    }
+    if (!game.game_over()) makeAiMove();
 }
 
 board = ChessBoard('board', { draggable: false, position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
