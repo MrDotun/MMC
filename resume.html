@@ -25,6 +25,8 @@
         .top-performer-card { background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%); color: #0f172a; padding: 15px; border-radius: 12px; margin-bottom: 20px; text-align: center; width: 85%; border: 2px solid white; box-shadow: 0 0 20px rgba(251, 191, 36, 0.4); }
         .school-tag { font-size: 0.75em; color: #94a3b8; display: block; }
         .admin-link { color: #64748b; font-size: 0.75em; display: block; margin-top: 15px; cursor: pointer; text-decoration: underline; }
+        /* Certificate Display Style */
+        #certCanvas { width: 100%; max-width: 400px; border-radius: 8px; margin-top: 15px; box-shadow: 0 0 15px rgba(0,0,0,0.5); display: none; }
     </style>
 </head>
 <body>
@@ -59,7 +61,7 @@
         <div id="board"></div>
         <p id="remark">Loading pieces...</p>
         <div id="status" style="font-size:0.8em; color:#94a3b8; font-weight: bold;"></div>
-        <canvas id="certCanvas" style="display:none;"></canvas>
+        <canvas id="certCanvas"></canvas>
     </div>
 </div>
 
@@ -100,7 +102,6 @@ const quizData = [
     { text: "Sicilian Challenge: White plays d4 to open the center. Move d4.", fen: "r1bqkbnr/pp1ppppp/2n5/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3", correctMove: "d4" },
     { text: "Counter: Capture the d4 pawn with your c-pawn.", fen: "r1bqkbnr/pp1ppppp/2n5/2p5/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 0 3", correctMove: "cxd4" },
     { text: "King Safety: Black is ready to castle. Move O-O.", fen: "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R b KQkq - 5 4", correctMove: "O-O" },
-    // Question 29 Updated: Black Knight on c6, Black Bishop on f8
     { text: "Development: Move your Bishop to b4 to put pressure on the c3 Knight and get ready to castle.", fen: "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R b KQkq - 5 4", correctMove: "Bb4" },
     { text: "Final Goal: Move e4 to dominate the center!", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", correctMove: "e4" }
 ];
@@ -200,13 +201,32 @@ async function checkAnswer(moveSan) {
 }
 
 function showFinalResults() {
-    let certBtn = score >= 20 ? `<button class="submit-btn" style="background:#fbbf24;" onclick="generateCertificate()">📜 DOWNLOAD CERTIFICATE</button>` : "";
+    // Modify existing results logic to show canvas automatically if passing
     let retakeBtn = score < 20 ? `<button class="submit-btn" style="background:#f87171; color:white;" onclick="retakeTask()">🔄 RETAKE TASK</button>` : "";
-    $('#game-container').html(`<div class="info-panel"><h2>Task Complete</h2><div style="font-size:3.5em; margin:15px 0;">${score}/30</div>${certBtn}${retakeBtn}<button class="submit-btn" onclick="location.reload()">HOME</button></div>`);
+    
+    $('#game-container').html(`
+        <div class="info-panel">
+            <h2>Task Complete</h2>
+            <div style="font-size:3.5em; margin:10px 0;">${score}/30</div>
+            <canvas id="certCanvas" style="display: block; margin: 15px auto;"></canvas>
+            <button class="submit-btn" onclick="downloadCert()">💾 SAVE IMAGE</button>
+            ${retakeBtn}
+            <button class="submit-btn" onclick="location.reload()">HOME</button>
+        </div>
+    `);
+    
+    if (score >= 20) {
+        // Run generation logic immediately
+        setTimeout(generateCertificate, 100); 
+    } else {
+        $('#certCanvas').hide();
+    }
 }
 
 function generateCertificate() {
-    const canvas = document.getElementById('certCanvas'); const ctx = canvas.getContext('2d');
+    const canvas = document.getElementById('certCanvas'); 
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
     canvas.width = 800; canvas.height = 600;
     ctx.fillStyle = '#fff'; ctx.fillRect(0,0,800,600);
     ctx.strokeStyle = '#d97706'; ctx.lineWidth = 15; ctx.strokeRect(20,20,760,560);
@@ -221,7 +241,14 @@ function generateCertificate() {
     ctx.beginPath(); ctx.arc(400, 480, 50, 0, Math.PI * 2); ctx.fillStyle = '#fbbf24'; ctx.fill();
     ctx.fillStyle = '#0f172a'; ctx.font = 'bold 25px Arial'; ctx.fillText(`${score}/30`, 400, 485);
     ctx.font = '12px Arial'; ctx.fillText('SCORE', 400, 505);
-    const link = document.createElement('a'); link.download = 'Opening_Principles_Certificate.png'; link.href = canvas.toDataURL(); link.click();
+}
+
+function downloadCert() {
+    const canvas = document.getElementById('certCanvas');
+    const link = document.createElement('a'); 
+    link.download = 'Opening_Principles_Certificate.png'; 
+    link.href = canvas.toDataURL(); 
+    link.click();
 }
 
 board = ChessBoard('board', { draggable: false, position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
