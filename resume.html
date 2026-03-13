@@ -24,6 +24,7 @@
         .league-table td { padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); }
         .top-performer-card { background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%); color: #0f172a; padding: 15px; border-radius: 12px; margin-bottom: 20px; text-align: center; width: 85%; border: 2px solid white; box-shadow: 0 0 20px rgba(251, 191, 36, 0.4); }
         .school-tag { font-size: 0.75em; color: #94a3b8; display: block; }
+        .admin-link { color: #64748b; font-size: 0.75em; display: block; margin-top: 15px; cursor: pointer; text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -38,6 +39,7 @@
         <input type="text" id="studentSchool" placeholder="School">
         <input type="password" id="studentPass" placeholder="Secret Password">
         <button class="submit-btn" onclick="startGame()">START TASK</button>
+        <span class="admin-link" onclick="adminAccess()">Admin: Clear Standings</span>
     </div>
     <div class="league-grid">
         <div class="table-container">
@@ -53,7 +55,7 @@
 <div id="game-container">
     <div class="info-panel">
         <div id="displayName" style="color:#4ade80; font-weight:bold;"></div>
-        <div id="grade">Time: 15s | Score: 0</div>
+        <div id="grade">Time: 30s | Score: 0</div>
         <div id="board"></div>
         <p id="remark">Loading pieces...</p>
         <div id="status" style="font-size:0.8em; color:#94a3b8; font-weight: bold;"></div>
@@ -71,13 +73,12 @@
 // --- DATABASE: OPENING PRINCIPLES (30 Qs) ---
 const quizData = [
     { text: "Principle 1: Control the Center. What is White's best first move?", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", correctMove: "e4" },
-    // FIXED Q2: Knight at g1 and g8
     { text: "Principle 2: Develop Pieces. Attack the e5 pawn and develop your Knight!", fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", correctMove: "Nf3" },
     { text: "Principle 3: King Safety. You are ready to castle. Secure the King!", fen: "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4", correctMove: "O-O" },
     { text: "Don't bring the Queen out too early! Black played d5. Capture the pawn with your e4 pawn!", fen: "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", correctMove: "exd5" },
     { text: "Italian Game: Develop your light-squared bishop to attack the weak f7 square.", fen: "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 3 3", correctMove: "Bc4" },
     { text: "Defense: White's Queen is aiming at f7. Block with your pawn!", fen: "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3", correctMove: "g6" },
-    { text: "Fried Liver: White's Knight is attacking f7. Develop Nf6 to prepare.", fen: "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 6 4", correctMove: "Ng5" },
+    { text: "use the f3 knight to attack f7.", fen: "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 6 4", correctMove: "Ng5" },
     { text: "Sicilian Defense: Fight for the center using your c-pawn.", fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", correctMove: "c5" },
     { text: "French Defense: Support your center challenge by moving e6.", fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1", correctMove: "e6" },
     { text: "The Queen's Gambit: Offer the c-pawn to control d5.", fen: "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 2", correctMove: "c4" },
@@ -110,7 +111,7 @@ const db = firebase.firestore();
 const collectionName = "opening_principles_week3"; 
 
 var game = new Chess(), board = null, sourceSquare = null;
-var currentQuestionIdx = 0, score = 0, docId = "", timeLeft = 15, timerInterval = null;
+var currentQuestionIdx = 0, score = 0, docId = "", timeLeft = 30, timerInterval = null;
 
 function initLeagues() {
     db.collection(collectionName).onSnapshot((snap) => {
@@ -128,15 +129,18 @@ function initLeagues() {
 }
 initLeagues();
 
-async function clearStudentList() {
-    if (confirm("Are you sure you want to delete ALL students and scores for this task?")) {
-        const snapshot = await db.collection(collectionName).get();
-        const batch = db.batch();
-        snapshot.docs.forEach((doc) => batch.delete(doc.ref));
-        await batch.commit();
-        alert("League Standings Cleared Successfully!");
-        location.reload();
-    }
+// ADMIN LOGIC
+function adminAccess() {
+    let code = prompt("Enter Admin Code to clear standings:");
+    if (code === "decipher1234") {
+        if (confirm("Delete all student data for this task?")) {
+            db.collection(collectionName).get().then((querySnapshot) => {
+                querySnapshot.forEach((doc) => { doc.ref.delete(); });
+                alert("Standings Cleared.");
+                location.reload();
+            });
+        }
+    } else if (code !== null) { alert("Wrong Code."); }
 }
 
 async function startGame() {
@@ -144,17 +148,12 @@ async function startGame() {
     const sClass = $('#studentClass').val().trim();
     const school = $('#studentSchool').val().trim();
     const pass = $('#studentPass').val().trim();
-
-    if (pass === "decipher1234") return clearStudentList();
     if (!name || !sClass || !school || !pass) return alert("Fill all fields!");
-    
     docId = name + "_" + sClass;
     const docRef = db.collection(collectionName).doc(docId);
     const doc = await docRef.get();
-    
     if (doc.exists && doc.data().password !== pass) return alert("Wrong password!");
     if (!doc.exists) await docRef.set({ name, class: sClass, school, password: pass, totalPoints: 0 });
-
     $('#displayName').text(name); $('#welcome-overlay').hide(); $('#game-container').show();
     board.resize(); loadQuestion();
 }
@@ -168,14 +167,21 @@ function loadQuestion() {
 }
 
 function startTimer() {
-    clearInterval(timerInterval); timeLeft = 15;
+    clearInterval(timerInterval); timeLeft = 30; // 30 SECOND TIMER
     timerInterval = setInterval(() => {
         timeLeft--; $('#grade').text(`Time: ${timeLeft}s | Score: ${score}`);
         if (timeLeft <= 0) { clearInterval(timerInterval); currentQuestionIdx++; loadQuestion(); }
     }, 1000);
 }
 
-$('#board').on('click', '[class*="square-"]', function() {
+// RETAKE TASK LOGIC
+async function retakeTask() {
+    score = 0; currentQuestionIdx = 0;
+    await db.collection(collectionName).doc(docId).update({ totalPoints: 0 });
+    location.reload(); // Simplest way to reset all states correctly
+}
+
+$(document).on('click', '#board [class*="square-"]', function() {
     let sq = $(this).attr('data-square');
     if (!sourceSquare) {
         let p = game.get(sq); if (p && p.color === game.turn()) { sourceSquare = sq; $('.square-' + sq).addClass('highlight-white'); }
@@ -196,7 +202,8 @@ async function checkAnswer(moveSan) {
 
 function showFinalResults() {
     let certBtn = score >= 20 ? `<button class="submit-btn" style="background:#fbbf24;" onclick="generateCertificate()">📜 DOWNLOAD CERTIFICATE</button>` : "";
-    $('#game-container').html(`<div class="info-panel"><h2>Week 3 Task Complete</h2><div style="font-size:3.5em; margin:15px 0;">${score}/30</div>${certBtn}<button class="submit-btn" onclick="location.reload()">HOME</button></div>`);
+    let retakeBtn = score < 20 ? `<button class="submit-btn" style="background:#f87171; color:white;" onclick="retakeTask()">🔄 RETAKE TASK</button>` : "";
+    $('#game-container').html(`<div class="info-panel"><h2>Task Complete</h2><div style="font-size:3.5em; margin:15px 0;">${score}/30</div>${certBtn}${retakeBtn}<button class="submit-btn" onclick="location.reload()">HOME</button></div>`);
 }
 
 function generateCertificate() {
