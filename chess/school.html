@@ -113,21 +113,33 @@ function getTitle(r) {
 
 function initLeagues() {
     db.collection("leaderboard").onSnapshot((snap) => {
-        let players = [];
+        let rawPlayers = [];
         let schools = {};
         
         snap.forEach(doc => {
             try {
                 const d = doc.data();
                 if (d.name && d.rating !== undefined) {
-                    players.push(d);
+                    rawPlayers.push(d);
                     const sName = d.school || "Independent";
                     schools[sName] = (schools[sName] || 0) + Number(d.rating);
                 }
-            } catch (e) { console.error("Error processing student:", e); }
+            } catch (e) { console.error("Error processing document:", e); }
         });
 
-        players.sort((a, b) => Number(b.rating) - Number(a.rating));
+        // Sort first so the highest rated version of a duplicate name is kept
+        rawPlayers.sort((a, b) => Number(b.rating) - Number(a.rating));
+
+        let players = [];
+        let seenNames = new Set();
+
+        rawPlayers.forEach(p => {
+            let nameKey = p.name.toLowerCase().trim();
+            if (!seenNames.has(nameKey)) {
+                players.push(p);
+                seenNames.add(nameKey);
+            }
+        });
         
         let pHTML = "";
         players.slice(0, 20).forEach((p, i) => {
