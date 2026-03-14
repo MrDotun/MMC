@@ -127,9 +127,7 @@ function initLeagues() {
             } catch (e) { console.error("Error processing document:", e); }
         });
 
-        // Sort first so the highest rated version of a duplicate name is kept
         rawPlayers.sort((a, b) => Number(b.rating) - Number(a.rating));
-
         let players = [];
         let seenNames = new Set();
 
@@ -176,10 +174,13 @@ async function refreshMasterlist() {
             let historyString = "";
             if (d.history && Array.isArray(d.history)) {
                 d.history.forEach((pgn, idx) => {
-                    if (pgn) historyString += `GAME ${idx + 1}:\\n${pgn.replace(/'/g, "\\'").replace(/\\n/g, " ")}\\n\\n`;
+                    if (pgn) {
+                        // Formatting for prompt copy-paste
+                        historyString += `GAME ${idx + 1}: ${pgn.replace(/\n/g, " ")}\\n\\n`;
+                    }
                 });
             }
-            html += `<tr><td>${d.name}</td><td>${d.school}</td><td>${d.class}</td><td style="color:#4ade80">${d.password}</td><td>${d.rating} <button class="view-pgn-btn" onclick="alert('${historyString}')">VIEW HISTORY</button></td></tr>`;
+            html += `<tr><td>${d.name}</td><td>${d.school}</td><td>${d.class}</td><td style="color:#4ade80">${d.password}</td><td>${d.rating} <button class="view-pgn-btn" onclick="window.prompt('Copy Player History:', '${historyString}')">VIEW HISTORY</button></td></tr>`;
         } catch (e) { console.error("Masterlist error:", e); }
     });
     $('#teacher-body').html(html || "<tr><td colspan='5'>No students found.</td></tr>");
@@ -265,12 +266,18 @@ async function updateStatus() {
             change = 0; 
         }
         currentRating = Math.max(1000, currentRating + change);
-        gameHistory.unshift(game.pgn());
+        const pgn = game.pgn();
+        gameHistory.unshift(pgn);
         await db.collection("leaderboard").doc(docId).update({ rating: currentRating, history: gameHistory.slice(0, 5) });
+        
         $('#playAgainBtn').show();
         let title = getTitle(currentRating);
         $('#grade').html((title ? title + " " : "") + "(" + currentRating + ")");
-        setTimeout(() => alert(msg), 300);
+        
+        setTimeout(() => {
+            alert(msg);
+            window.prompt("Copy PGN to Clipboard:", pgn);
+        }, 300);
     } else {
         $('#status').text(game.turn() === playerColor ? "Your turn!" : "AI is thinking...");
     }
@@ -287,7 +294,8 @@ function makeAiMove() {
     $('#status').text("Decipher Chess is analyzing...");
     setTimeout(() => {
         let moves = game.moves({ verbose: true });
-        if (Math.random() < 0.20 && moves.length > 0) {
+        // Blunder rate set to 10%
+        if (Math.random() < 0.10 && moves.length > 0) {
             let safeBlunders = moves.filter(m => m.piece !== 'q' && m.piece !== 'r');
             let finalMove = safeBlunders.length > 0 ? safeBlunders[Math.floor(Math.random() * safeBlunders.length)] : moves[Math.floor(Math.random() * moves.length)];
             game.move(finalMove);
