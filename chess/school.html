@@ -101,13 +101,12 @@ var currentName = "", currentClass = "", currentSchool = "", docId = "", current
 var gameHistory = []; 
 var playerColor = 'w';
 
-// Helper to get title based on rating - UPDATED with Red Color and Crown Emoji
 function getTitle(r) {
     if (r >= 2700) return '👑 <span style="color: red;">Grandmaster</span>';
     if (r >= 2400) return '👑 <span style="color: red;">International Master</span>';
     if (r >= 2000) return '👑 <span style="color: red;">FIDE Master</span>';
     if (r >= 1700) return '👑 <span style="color: red;">Candidate Master</span>';
-    return ""; // No title or crown for lower ratings
+    return ""; 
 }
 
 function initLeagues() {
@@ -204,7 +203,6 @@ async function startGame() {
         $('#displaySchool').text(currentSchool);
         
         let title = getTitle(currentRating);
-        // Using .html() to allow the <span> and crown emoji to render correctly
         $('#grade').html((title ? title + " " : "") + "(" + currentRating + ")");
         
         $('#welcome-overlay').hide();
@@ -218,13 +216,24 @@ async function startGame() {
 async function updateStatus() {
     if (game.game_over()) {
         let change = 0, msg = "";
+        
         if (game.in_checkmate()) {
             if (game.turn() !== playerColor) { 
-                change = Math.floor(Math.random() * (119 - 99 + 1)) + 99;
+                // Win: +9 to +14
+                change = Math.floor(Math.random() * (14 - 9 + 1)) + 9;
                 msg = `VICTORY! +${change} Elo!`; 
             }
-            else { msg = "DEFEAT! -20 Elo."; change = -20; }
-        } else { msg = "DRAW! +10 Elo."; change = 10; }
+            else { 
+                // Loss: -20 to -24
+                change = -(Math.floor(Math.random() * (24 - 20 + 1)) + 20);
+                msg = `DEFEAT! ${change} Elo.`; 
+            }
+        } else { 
+            // Draw: 0
+            msg = "DRAW! +0 Elo."; 
+            change = 0; 
+        }
+
         currentRating = Math.max(1000, currentRating + change);
         gameHistory.unshift(game.pgn());
         await db.collection("leaderboard").doc(docId).update({ rating: currentRating, history: gameHistory.slice(0, 5) });
@@ -243,14 +252,23 @@ chessWorker.onmessage = function(e) {
 function makeAiMove() {
     if (game.game_over()) return;
     $('#status').text("Decipher Chess is analyzing...");
+    
     setTimeout(() => {
-        let moves = game.moves();
-        if (Math.random() < 0.15 && moves.length > 0) {
-            game.move(moves[Math.floor(Math.random() * moves.length)]);
+        let moves = game.moves({ verbose: true });
+        
+        // 20% Blunder Logic (excluding Queen and Rook)
+        if (Math.random() < 0.20 && moves.length > 0) {
+            let safeBlunders = moves.filter(m => m.piece !== 'q' && m.piece !== 'r');
+            let finalMove = safeBlunders.length > 0 
+                ? safeBlunders[Math.floor(Math.random() * safeBlunders.length)] 
+                : moves[Math.floor(Math.random() * moves.length)];
+            
+            game.move(finalMove);
             board.position(game.fen());
             updateStatus();
             return;
         }
+
         let openings = ['a3', 'h3', 'e3', 'd3', 'b3', 'g3'];
         if (game.history().length < 2) {
             let bookMove = openings[Math.floor(Math.random() * openings.length)];
