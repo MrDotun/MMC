@@ -36,6 +36,7 @@
         .school-tag { font-size: 0.75em; color: #94a3b8; display: block; }
         .highlight-white { background: rgba(251, 191, 36, 0.5) !important; }
         .view-pgn-btn { background: #334155; color: #4ade80; border: 1px solid #4ade80; padding: 2px 6px; border-radius: 4px; font-size: 10px; cursor: pointer; margin-left: 5px; }
+        .play-again-btn { background: #fbbf24; color: #0f172a; padding: 10px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; display: none;}
     </style>
 </head>
 <body>
@@ -86,6 +87,7 @@
         <p id="remark">Play your best move!</p>
         <div class="grade-text" id="grade">...</div>
         <div id="status" style="margin-bottom: 15px; font-weight: bold;">Your turn!</div>
+        <button id="playAgainBtn" class="play-again-btn" onclick="resetGame()">PLAY AGAIN</button>
         <button class="submit-btn" onclick="location.reload()" style="background: #334155; color: white;">LOGOUT</button>
     </div>
 </div>
@@ -213,19 +215,34 @@ async function startGame() {
     } catch (e) { alert("Error: " + e.message); }
 }
 
+// Function to handle the play again logic
+function resetGame() {
+    game = new Chess();
+    board.position('start');
+    $('#playAgainBtn').hide();
+    $('#remark').text("Play your best move!");
+    $('#status').text("Your turn!");
+    
+    let choice = prompt("Choose your side for this game: Type 'White' or 'Black'").toLowerCase();
+    playerColor = (choice === 'black' || choice === 'b') ? 'b' : 'w';
+    board.orientation(playerColor === 'w' ? 'white' : 'black');
+    
+    if (playerColor === 'b') { makeAiMove(); }
+}
+
 async function updateStatus() {
     if (game.game_over()) {
         let change = 0, msg = "";
         
         if (game.in_checkmate()) {
             if (game.turn() !== playerColor) { 
-                // Win: +9 to +14
-                change = Math.floor(Math.random() * (14 - 9 + 1)) + 9;
+                // Win: +40 to +50
+                change = Math.floor(Math.random() * (50 - 40 + 1)) + 40;
                 msg = `VICTORY! +${change} Elo!`; 
             }
             else { 
-                // Loss: -20 to -24
-                change = -(Math.floor(Math.random() * (24 - 20 + 1)) + 20);
+                // Loss: -30 to -35
+                change = -(Math.floor(Math.random() * (35 - 30 + 1)) + 30);
                 msg = `DEFEAT! ${change} Elo.`; 
             }
         } else { 
@@ -237,6 +254,13 @@ async function updateStatus() {
         currentRating = Math.max(1000, currentRating + change);
         gameHistory.unshift(game.pgn());
         await db.collection("leaderboard").doc(docId).update({ rating: currentRating, history: gameHistory.slice(0, 5) });
+        
+        // Show Play Again button
+        $('#playAgainBtn').show();
+        
+        let title = getTitle(currentRating);
+        $('#grade').html((title ? title + " " : "") + "(" + currentRating + ")");
+        
         setTimeout(() => alert(msg), 300);
     } else {
         $('#status').text(game.turn() === playerColor ? "Your turn!" : "AI is thinking...");
