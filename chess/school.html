@@ -52,7 +52,7 @@
     </div>
     <div class="league-grid">
         <div class="table-container">
-            <h3 style="text-align: center; color: #4ade80; margin-top: 0;">🏆 Top 10 Players</h3>
+            <h3 style="text-align: center; color: #4ade80; margin-top: 0;">🏆 Top Players</h3>
             <table class="league-table">
                 <thead><tr><th>Player</th><th>Class</th><th style="text-align: right;">Elo</th></tr></thead>
                 <tbody id="player-body"></tbody>
@@ -115,27 +115,35 @@ function initLeagues() {
     db.collection("leaderboard").onSnapshot((snap) => {
         let players = [];
         let schools = {};
+        
         snap.forEach(doc => {
-            const d = doc.data();
-            players.push(d);
-            const sName = d.school || "Independent";
-            schools[sName] = (schools[sName] || 0) + (d.rating || 1500);
+            try {
+                const d = doc.data();
+                if (d.name && d.rating !== undefined) {
+                    players.push(d);
+                    const sName = d.school || "Independent";
+                    schools[sName] = (schools[sName] || 0) + Number(d.rating);
+                }
+            } catch (e) { console.error("Error processing student:", e); }
         });
-        players.sort((a, b) => b.rating - a.rating);
+
+        players.sort((a, b) => Number(b.rating) - Number(a.rating));
+        
         let pHTML = "";
-        players.slice(0, 10).forEach((p, i) => {
+        players.slice(0, 20).forEach((p, i) => {
             let title = getTitle(p.rating);
             let prefix = title ? title + " " : "";
             let label = (i + 1) + ". ";
-            pHTML += `<tr class="${i === 0 ? 'rank-1' : ''}"><td><b>${label}${prefix}${p.name}</b><span class="school-tag">${p.school}</span></td><td>${p.class}</td><td style="text-align:right">${p.rating}</td></tr>`;
+            pHTML += `<tr class="${i === 0 ? 'rank-1' : ''}"><td><b>${label}${prefix}${p.name}</b><span class="school-tag">${p.school || 'Independent'}</span></td><td>${p.class}</td><td style="text-align:right">${p.rating}</td></tr>`;
         });
-        $('#player-body').html(pHTML);
+        $('#player-body').html(pHTML || "<tr><td colspan='3'>No players found</td></tr>");
+
         let sSorted = Object.keys(schools).map(name => ({name, pts: schools[name]})).sort((a,b) => b.pts - a.pts);
         let sHTML = "";
         sSorted.slice(0, 5).forEach((s, i) => {
             sHTML += `<tr class="${i === 0 ? 'rank-1' : ''}"><td>${i === 0 ? '🏆 ' : (i + 1) + '. '}${s.name}</td><td style="text-align:right;">${s.pts.toLocaleString()}</td></tr>`;
         });
-        $('#school-body').html(sHTML);
+        $('#school-body').html(sHTML || "<tr><td colspan='2'>No schools found</td></tr>");
     });
 }
 initLeagues();
@@ -151,14 +159,16 @@ async function refreshMasterlist() {
     const snap = await db.collection("leaderboard").orderBy("name", "asc").get();
     let html = "";
     snap.forEach(doc => {
-        const d = doc.data();
-        let historyString = "";
-        if (d.history && Array.isArray(d.history)) {
-            d.history.forEach((pgn, idx) => {
-                historyString += `GAME ${idx + 1}:\\n${pgn.replace(/'/g, "\\'")}\\n\\n`;
-            });
-        }
-        html += `<tr><td>${d.name}</td><td>${d.school}</td><td>${d.class}</td><td style="color:#4ade80">${d.password}</td><td>${d.rating} <button class="view-pgn-btn" onclick="alert('${historyString}')">VIEW HISTORY</button></td></tr>`;
+        try {
+            const d = doc.data();
+            let historyString = "";
+            if (d.history && Array.isArray(d.history)) {
+                d.history.forEach((pgn, idx) => {
+                    if (pgn) historyString += `GAME ${idx + 1}:\\n${pgn.replace(/'/g, "\\'").replace(/\\n/g, " ")}\\n\\n`;
+                });
+            }
+            html += `<tr><td>${d.name}</td><td>${d.school}</td><td>${d.class}</td><td style="color:#4ade80">${d.password}</td><td>${d.rating} <button class="view-pgn-btn" onclick="alert('${historyString}')">VIEW HISTORY</button></td></tr>`;
+        } catch (e) { console.error("Masterlist error:", e); }
     });
     $('#teacher-body').html(html || "<tr><td colspan='5'>No students found.</td></tr>");
 }
@@ -194,7 +204,7 @@ async function startGame() {
         const doc = await docRef.get();
         if (doc.exists) {
             if (doc.data().password !== pass) return alert("Wrong password!");
-            currentRating = doc.data().rating;
+            currentRating = Number(doc.data().rating) || 1500;
             gameHistory = doc.data().history || [];
             if(doc.data().school !== currentSchool) await docRef.update({ school: currentSchool });
         } else {
@@ -215,52 +225,39 @@ async function startGame() {
     } catch (e) { alert("Error: " + e.message); }
 }
 
-// Function to handle the play again logic
 function resetGame() {
     game = new Chess();
     board.position('start');
     $('#playAgainBtn').hide();
     $('#remark').text("Play your best move!");
     $('#status').text("Your turn!");
-    
     let choice = prompt("Choose your side for this game: Type 'White' or 'Black'").toLowerCase();
     playerColor = (choice === 'black' || choice === 'b') ? 'b' : 'w';
     board.orientation(playerColor === 'w' ? 'white' : 'black');
-    
     if (playerColor === 'b') { makeAiMove(); }
 }
 
 async function updateStatus() {
     if (game.game_over()) {
         let change = 0, msg = "";
-        
         if (game.in_checkmate()) {
             if (game.turn() !== playerColor) { 
-                // Win: +40 to +50
                 change = Math.floor(Math.random() * (50 - 40 + 1)) + 40;
                 msg = `VICTORY! +${change} Elo!`; 
-            }
-            else { 
-                // Loss: -30 to -35
+            } else { 
                 change = -(Math.floor(Math.random() * (35 - 30 + 1)) + 30);
                 msg = `DEFEAT! ${change} Elo.`; 
             }
         } else { 
-            // Draw: 0
             msg = "DRAW! +0 Elo."; 
             change = 0; 
         }
-
         currentRating = Math.max(1000, currentRating + change);
         gameHistory.unshift(game.pgn());
         await db.collection("leaderboard").doc(docId).update({ rating: currentRating, history: gameHistory.slice(0, 5) });
-        
-        // Show Play Again button
         $('#playAgainBtn').show();
-        
         let title = getTitle(currentRating);
         $('#grade').html((title ? title + " " : "") + "(" + currentRating + ")");
-        
         setTimeout(() => alert(msg), 300);
     } else {
         $('#status').text(game.turn() === playerColor ? "Your turn!" : "AI is thinking...");
@@ -276,32 +273,15 @@ chessWorker.onmessage = function(e) {
 function makeAiMove() {
     if (game.game_over()) return;
     $('#status').text("Decipher Chess is analyzing...");
-    
     setTimeout(() => {
         let moves = game.moves({ verbose: true });
-        
-        // 20% Blunder Logic (excluding Queen and Rook)
         if (Math.random() < 0.20 && moves.length > 0) {
             let safeBlunders = moves.filter(m => m.piece !== 'q' && m.piece !== 'r');
-            let finalMove = safeBlunders.length > 0 
-                ? safeBlunders[Math.floor(Math.random() * safeBlunders.length)] 
-                : moves[Math.floor(Math.random() * moves.length)];
-            
+            let finalMove = safeBlunders.length > 0 ? safeBlunders[Math.floor(Math.random() * safeBlunders.length)] : moves[Math.floor(Math.random() * moves.length)];
             game.move(finalMove);
             board.position(game.fen());
             updateStatus();
             return;
-        }
-
-        let openings = ['a3', 'h3', 'e3', 'd3', 'b3', 'g3'];
-        if (game.history().length < 2) {
-            let bookMove = openings[Math.floor(Math.random() * openings.length)];
-            let result = game.move(bookMove);
-            if (result) {
-                board.position(game.fen());
-                updateStatus();
-                return;
-            }
         }
         chessWorker.postMessage("position " + game.fen());
         chessWorker.postMessage("go depth 0.9");
