@@ -26,7 +26,8 @@
         #teacher-data { display: none; margin-top: 20px; background: #020617; border-radius: 10px; padding: 20px; overflow-x: auto; }
         .teacher-btn { background: none; border: 1px solid #334155; color: #64748b; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 0.8em; }
         .teacher-btn:hover { color: #4ade80; border-color: #4ade80; }
-        .reset-btn { background: #ef4444; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 20px; }
+        .reset-btn { background: #ef4444; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 20px; margin-right: 10px; }
+        .export-btn { background: #4ade80; color: #0f172a; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 20px; }
         #game-container { display: none; width: 95vmin; max-width: 500px; padding: 20px 10px; }
         #board { width: 100%; border: 3px solid #4ade80; border-radius: 8px; }
         .info-panel { background: #1e293b; padding: 15px; border-radius: 12px; border: 1px solid #4ade80; text-align: center; }
@@ -69,7 +70,8 @@
     <div id="teacher-section">
         <button class="teacher-btn" onclick="openTeacherDashboard()">Teacher Dashboard</button>
         <div id="teacher-data">
-            <button class="reset-btn" onclick="resetSeason()">⚠️ RESET ALL SCORES TO 1500</button>
+            <button class="reset-btn" onclick="resetSeason()">⚠️ RESET ALL SCORES</button>
+            <button class="export-btn" onclick="exportAllGames()">📊 EXPORT ALL GAMES</button>
             <h3 style="color: #4ade80;">Full Student Masterlist</h3>
             <table class="league-table" style="font-size: 0.75em;">
                 <thead><tr><th>Name</th><th>School</th><th>Class</th><th>Password</th><th>Elo / History (5)</th></tr></thead>
@@ -165,6 +167,22 @@ async function openTeacherDashboard() {
     refreshMasterlist();
 }
 
+async function exportAllGames() {
+    const snap = await db.collection("leaderboard").get();
+    let exportText = "--- DECIPHER CHESS ACADEMY LEAGUE MASTER PGN EXPORT ---\\n\\n";
+    snap.forEach(doc => {
+        const d = doc.data();
+        if (d.history && d.history.length > 0) {
+            exportText += `PLAYER: ${d.name} (${d.school})\\n`;
+            d.history.forEach((pgn, idx) => {
+                exportText += `Game ${idx + 1}: ${pgn}\\n`;
+            });
+            exportText += "\\n--------------------------\\n\\n";
+        }
+    });
+    window.prompt("Select All and Copy (Ctrl+C) for Analysis:", exportText);
+}
+
 async function refreshMasterlist() {
     const snap = await db.collection("leaderboard").orderBy("name", "asc").get();
     let html = "";
@@ -174,10 +192,7 @@ async function refreshMasterlist() {
             let historyString = "";
             if (d.history && Array.isArray(d.history)) {
                 d.history.forEach((pgn, idx) => {
-                    if (pgn) {
-                        // Formatting for prompt copy-paste
-                        historyString += `GAME ${idx + 1}: ${pgn.replace(/\n/g, " ")}\\n\\n`;
-                    }
+                    if (pgn) historyString += `GAME ${idx + 1}: ${pgn.replace(/\n/g, " ")}\\n\\n`;
                 });
             }
             html += `<tr><td>${d.name}</td><td>${d.school}</td><td>${d.class}</td><td style="color:#4ade80">${d.password}</td><td>${d.rating} <button class="view-pgn-btn" onclick="window.prompt('Copy Player History:', '${historyString}')">VIEW HISTORY</button></td></tr>`;
@@ -244,7 +259,7 @@ function resetGame() {
     $('#playAgainBtn').hide();
     $('#remark').text("Play your best move!");
     $('#status').text("Your turn!");
-    let choice = prompt("Choose your side for this game: Type 'White' or 'Black'").toLowerCase();
+    let choice = prompt("Choose your side: Type 'White' or 'Black'").toLowerCase();
     playerColor = (choice === 'black' || choice === 'b') ? 'b' : 'w';
     board.orientation(playerColor === 'w' ? 'white' : 'black');
     if (playerColor === 'b') { makeAiMove(); }
@@ -294,8 +309,8 @@ function makeAiMove() {
     $('#status').text("Decipher Chess is analyzing...");
     setTimeout(() => {
         let moves = game.moves({ verbose: true });
-        // Blunder rate set to 10%
-        if (Math.random() < 0.10 && moves.length > 0) {
+        // Blunder rate set to 7% (0.07)
+        if (Math.random() < 0.07 && moves.length > 0) {
             let safeBlunders = moves.filter(m => m.piece !== 'q' && m.piece !== 'r');
             let finalMove = safeBlunders.length > 0 ? safeBlunders[Math.floor(Math.random() * safeBlunders.length)] : moves[Math.floor(Math.random() * moves.length)];
             game.move(finalMove);
