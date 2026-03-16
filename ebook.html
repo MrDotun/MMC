@@ -5,149 +5,208 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mind Masters Academy | Master Study E-Book</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
     <style>
         :root { --bg: #0f172a; --purple: #a855f7; --deep: #6b21a8; --gold: #d4af37; --text: #ffffff; --card-bg: rgba(255,255,255,0.03); --move-bg: #1e293b; }
         body.light-mode { --bg: #f8fafc; --purple: #7e22ce; --deep: #581c87; --gold: #b45309; --text: #1e293b; --card-bg: #ffffff; --move-bg: #f1f5f9; }
         
-        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Plus Jakarta Sans', sans-serif; line-height: 1.6; transition: background 0.3s, color 0.3s; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Plus Jakarta Sans', sans-serif; line-height: 1.6; transition: background 0.3s; }
         .ebook-header { background: var(--deep); padding: 25px 20px; text-align: center; border-bottom: 4px solid var(--gold); position: sticky; top: 0; z-index: 100; }
         .ebook-header h1 { margin: 0 0 10px; color: var(--gold); font-size: 22px; letter-spacing: 2px; }
         
-        .progress-bar { font-size: 11px; font-weight: 800; color: #4ade80; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
-        
+        .progress-bar { font-size: 11px; font-weight: 800; color: #4ade80; margin-bottom: 15px; text-transform: uppercase; }
         .controls-area { max-width: 800px; margin: 0 auto; display: grid; grid-template-columns: 2fr 1fr 0.6fr 0.6fr 0.6fr; gap: 8px; }
-        #masterSearch, #jumpTo, .ui-btn { padding: 12px; border-radius: 12px; border: 2px solid var(--purple); background: var(--bg); color: var(--text); font-family: inherit; font-size: 13px; box-sizing: border-box; }
-        
-        #jumpTo { cursor: pointer; color: var(--gold); font-weight: 600; }
-        .ui-btn { border-color: var(--gold); color: var(--gold); font-weight: 800; cursor: pointer; text-transform: uppercase; white-space: nowrap; }
-        .ui-btn:hover { background: var(--gold); color: white; }
+        #masterSearch, #jumpTo, .ui-btn { padding: 12px; border-radius: 12px; border: 2px solid var(--purple); background: var(--bg); color: var(--text); font-family: inherit; font-size: 13px; }
         
         .container { max-width: 800px; margin: 0 auto; padding: 20px; }
-        .lesson-card { background: var(--card-bg); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 20px; padding: 25px; margin-bottom: 30px; scroll-margin-top: 200px; position: relative; transition: transform 0.3s; }
-        .lesson-card.completed { border-color: #4ade80; opacity: 0.8; }
+        .lesson-card, .quiz-card { background: var(--card-bg); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 20px; padding: 25px; margin-bottom: 30px; scroll-margin-top: 200px; }
+        .lesson-card.completed { border-color: #4ade80; }
         
-        .lesson-num { color: var(--purple); font-weight: 800; font-size: 12px; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
-        .check-box { width: 18px; height: 18px; accent-color: #4ade80; cursor: pointer; }
+        .lesson-title { color: var(--gold); margin: 5px 0 5px; font-size: 20px; }
+        .master-quote { font-size: 13px; color: var(--purple); font-style: italic; margin-bottom: 15px; display: block; border-bottom: 1px solid rgba(212, 175, 55, 0.1); padding-bottom: 10px; }
         
-        .lesson-title { color: var(--gold); margin: 5px 0 15px; font-size: 20px; border-bottom: 1px solid rgba(212, 175, 55, 0.2); padding-bottom: 10px; }
-        .lesson-header { display: flex; justify-content: space-between; align-items: flex-start; }
+        .board-wrapper { display: none; margin: 20px 0; background: var(--move-bg); padding: 20px; border-radius: 15px; border: 1px solid var(--gold); }
+        .board-container { width: 300px; margin: 0 auto; border: 2px solid #fff; }
+        .hint-box { background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-top: 15px; border-left: 4px solid var(--gold); font-size: 13px; color: #e2e8f0; }
+
+        .quiz-card { border-color: var(--gold); background: rgba(212, 175, 55, 0.05); text-align: center; }
+        .quiz-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        .quiz-btn { padding: 15px; border-radius: 12px; border: 1px solid var(--purple); background: var(--bg); color: white; cursor: pointer; }
+
+        .move-list { background: var(--move-bg); border-radius: 12px; padding: 15px; font-family: monospace; display: flex; flex-wrap: wrap; gap: 6px; }
+        .move-item { background: rgba(168, 85, 247, 0.1); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.4); color: #4ade80; }
         
-        .copy-btn { background: none; border: 1px solid var(--purple); color: var(--purple); padding: 5px 12px; border-radius: 8px; font-size: 10px; font-weight: 800; cursor: pointer; }
-        .lesson-story { font-style: italic; color: var(--text); opacity: 0.8; margin-bottom: 20px; font-size: 14px; }
-        .move-list { background: var(--move-bg); border-radius: 12px; padding: 15px; font-family: monospace; font-size: 14px; color: #10b981; display: flex; flex-wrap: wrap; gap: 6px; }
-        .move-item { background: rgba(168, 85, 247, 0.1); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.4); }
-        
-        .back-btn { display: inline-block; margin: 15px 20px; color: var(--gold); text-decoration: none; font-weight: 800; font-size: 13px; }
-        
-        @media (max-width: 800px) { .controls-area { grid-template-columns: 1fr 1fr; } }
-        @media print {
-            .back-btn, .controls-area, .check-box, .progress-bar { display: none !important; }
-            body { background: white !important; color: black !important; }
-            .lesson-card { border: 1px solid #ccc !important; page-break-inside: avoid; background: none !important; }
-        }
+        @media (max-width: 600px) { .controls-area { grid-template-columns: 1fr 1fr; } .board-container { width: 100%; } .quiz-options { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
 
-<a href="javascript:history.back()" class="back-btn">← BACK TO ACADEMY</a>
-
 <div class="ebook-header">
     <h1>MASTER STUDY E-BOOK</h1>
-    <div class="progress-bar" id="progressText">Study Progress: 0 / 20 Lessons</div>
+    <div class="progress-bar" id="progressText">Progress: 0 / 20</div>
     <div class="controls-area">
-        <input type="text" id="masterSearch" placeholder="Filter..." onkeyup="filterLessons()">
-        <select id="jumpTo" onchange="jumpTo(this.value)">
-            <option value="">Jump...</option>
-        </select>
+        <input type="text" id="masterSearch" placeholder="Search Master..." onkeyup="filterLessons()">
+        <select id="jumpTo" onchange="jumpTo(this.value)"><option value="">Jump...</option></select>
         <button class="ui-btn" onclick="pickRandom()">Random</button>
         <button class="ui-btn" onclick="toggleTheme()">Theme</button>
         <button class="ui-btn" onclick="window.print()">PDF</button>
     </div>
 </div>
 
-<div class="container" id="ebook-content"></div>
+<div class="container">
+    <div id="ebook-content"></div>
+    
+    <div class="quiz-card" id="quiz-section">
+        <h2 style="color:var(--gold)">🏆 MASTER QUIZ</h2>
+        <p id="quiz-story" style="font-style: italic; margin: 20px 0;"></p>
+        <div class="quiz-options" id="quiz-options"></div>
+        <div id="quiz-feedback" style="margin-top:15px; font-weight:800"></div>
+        <button class="ui-btn" style="margin-top:20px; width:100%" onclick="generateQuestion()">New Question</button>
+    </div>
+</div>
 
 <script>
 const games = [
-    { id: "l1", title: "1. Morphy's Opera Trap", story: "Paul Morphy won this game during a music show!", moves: ["e4", "e5", "Nf3", "d6", "d4", "Bg4", "dxe5", "Bxf3", "Qxf3", "dxe5", "Bc4", "Nf6", "Qb3", "Qe7", "Nc3", "c6", "Bg5", "b5", "Nxb5", "cxb5", "Bxb5+", "Nbd7", "O-O-O", "Rd8", "Rxd7", "Rxd7", "Rd1", "Qe6", "Bxd7+", "Nxd7", "Qb8+", "Nxb8", "Rd8#"] },
-    { id: "l2", title: "2. The Magician Tal", story: "Mikhail Tal used 'Magic' to confuse his enemies!", moves: ["e4", "c6", "d4", "d5", "Nc3", "dxe4", "Nxe4", "Nd7", "Bc4", "Ngf6", "Ng5", "e6", "Qe2", "Nb6", "Bb3", "h6", "N5f3", "c5", "dxc5", "Bxc5", "Ne5", "O-O", "Ngf3"] },
-    { id: "l3", title: "3. Fischer's Giant Attack", story: "Bobby Fischer played with perfect logic.", moves: ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O", "Be7", "Re1", "b5", "Bb3", "d6", "c3", "O-O", "h3", "Na5", "Bc2", "c5", "d4"] },
-    { id: "l4", title: "4. Kasparov's Power", story: "Garry Kasparov used raw power and calculation!", moves: ["d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6", "Nf3", "O-O", "Be2", "e5", "O-O", "Nc6", "d5", "Ne7", "Ne1", "Nd7", "f3", "f5"] },
-    { id: "l5", title: "5. Capablanca's Machine", story: "Capablanca played like a perfect computer!", moves: ["d4", "d5", "c4", "e6", "Nc3", "Nf6", "Bg5", "Be7", "e3", "O-O", "Nf3", "Nbd7", "Rc1", "c6", "Bd3", "dxc4", "Bxc4", "Nd5"] },
-    { id: "l6", title: "6. Alekhine's Fire", story: "Alekhine loved messy games with imagination!", moves: ["e4", "Nf6", "e5", "Nd5", "d4", "d6", "c4", "Nb6", "exd6", "cxd6", "Nc3", "g6", "Be3", "Bg7", "Rc1", "O-O"] },
-    { id: "l7", title: "7. Karpov's Squeeze", story: "Karpov squeezed until there was no room left!", moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "a6", "Be3", "e6", "f3", "b5", "Qd2", "Nbd7", "g4"] },
-    { id: "l8", title: "8. Carlsen's Viking Spirit", story: "Magnus Carlsen never gives up!", moves: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "O-O", "Nf6", "d3", "d6", "c3", "a6", "a4", "Ba7", "Re1", "O-O", "h3"] },
-    { id: "l9", title: "9. Polgar's Strike", story: "Judit Polgar attacked from the first move!", moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "Nc6", "Bg5", "e6", "Qd2", "a6", "O-O-O", "Bd7"] },
-    { id: "l10", title: "10. Anand's Lightning Kid", story: "Vishy Anand played faster than anyone!", moves: ["e4", "e5", "Nf3", "Nc6", "Bb5", "Nf6", "d3", "Bc5", "c3", "O-O", "O-O", "d6", "Nbd2", "Ne7", "d4"] },
-    { id: "l11", title: "11. Botvinnik's Science", story: "Botvinnik treated chess like science!", moves: ["c4", "e5", "Nc3", "Nf6", "g3", "d5", "cxd5", "Nxd5", "Bg2", "Nb6", "Nf3", "Nc6", "O-O", "Be7", "a3", "O-O"] },
-    { id: "l12", title: "12. Petrosian's Shield", story: "Petrosian had the strongest shield!", moves: ["d4", "Nf6", "c4", "e6", "Nf3", "d5", "Nc3", "Be7", "Bg5", "O-O", "e3", "h6", "Bh4", "b6", "cxd5"] },
-    { id: "l13", title: "13. Spassky's Beauty", story: "Spassky played beautiful chess!", moves: ["e4", "e5", "f4", "exf4", "Nf3", "g5", "Bc4", "Bg7", "d4", "d6", "O-O", "h6", "c3", "Nc6", "g3"] },
-    { id: "l14", title: "14. Kramnik's Wall", story: "Kramnik beat the unbeatable with a 'Berlin Wall.'", moves: ["e4", "e5", "Nf3", "Nc6", "Bb5", "Nf6", "O-O", "Nxe4", "d4", "Nd6", "Bxc6", "dxc6", "dxe5", "Nf5", "Qxd8+", "Kxd8"] },
-    { id: "l15", title: "15. Lasker's Mind", story: "Lasker played with the person's mind!", moves: ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Bxc6", "dxc6", "d4", "exd4", "Qxd4", "Qxd4", "Nxd4", "Bd7", "Nc3", "O-O-O"] },
-    { id: "l16", title: "16. Steinitz's Rules", story: "Steinitz wrote the rules we use!", moves: ["e4", "e5", "Nc3", "Nc6", "f4", "exf4", "d4", "Qh4+", "Ke2", "d6", "Nf3", "Bg4", "Bxf4", "O-O-O"] },
-    { id: "l17", title: "17. Smyslov's Harmony", story: "Smyslov made pieces work like music!", moves: ["e4", "c5", "Nf3", "Nc6", "Bb5", "g6", "O-O", "Bg7", "c3", "Nf6", "Re1", "O-O", "d4", "cxd4", "cxd4"] },
-    { id: "l18", title: "18. Euwe's Strategy", story: "A math teacher who showed anyone can be a champ!", moves: ["d4", "Nf6", "c4", "e6", "Nc3", "Bb4", "e3", "c5", "Bd3", "Nc6", "Nf3", "Bxc3+", "bxc3", "d6", "e4", "e5"] },
-    { id: "l19", title: "19. Nakamura's Speed", story: "Hikaru is the king of speed!", moves: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "b4", "Bxb4", "c3", "Ba5", "d4", "exd4", "O-O", "Nge7", "cxd4", "d5"] },
-    { id: "l20", title: "20. Topalov's Aggression", story: "Topalov always attacks!", moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "a6", "Be3", "e5", "Nb3", "Be6", "f3", "Nbd7", "g4"] }
+    { id: "l1", name: "Morphy", title: "1. Morphy's Opera Trap", quote: "Help your pieces so they can help you.", story: "Morphy shows how to develop pieces with threats!", moves: ["e4", "e5", "Nf3", "d6", "d4", "Bg4", "dxe5", "Bxf3", "Qxf3", "dxe5", "Bc4", "Nf6", "Qb3", "Qe7", "Nc3", "c6", "Bg5", "b5", "Nxb5", "cxb5", "Bxb5+", "Nbd7", "O-O-O", "Rd8", "Rxd7", "Rxd7", "Rd1", "Qe6", "Bxd7+", "Nxd7", "Qb8+", "Nxb8", "Rd8#"] },
+    { id: "l2", name: "Tal", title: "2. The Magician Tal", quote: "You must take your opponent into a deep dark forest...", story: "Tal's legendary sacrifice game!", moves: ["e4", "c6", "d4", "d5", "Nc3", "dxe4", "Nxe4", "Nd7", "Bc4", "Ngf6", "Ng5", "e6", "Qe2", "Nb6", "Bb3", "h6", "N5f3", "c5", "dxc5", "Bxc5", "Ne5", "O-O", "Ngf3"] },
+    { id: "l3", name: "Fischer", title: "3. Fischer's Logic", quote: "I don't believe in psychology. I believe in good moves.", story: "Bobby Fischer's clinical precision.", moves: ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O", "Be7", "Re1", "b5", "Bb3", "d6", "c3", "O-O", "h3", "Na5", "Bc2", "c5", "d4"] },
+    { id: "l4", name: "Kasparov", title: "4. Kasparov's Power", quote: "Chess is mental torture.", story: "King of the King's Indian Defense.", moves: ["d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6", "Nf3", "O-O", "Be2", "e5", "O-O", "Nc6", "d5", "Ne7", "Ne1", "Nd7", "f3", "f5"] },
+    { id: "l5", name: "Capablanca", title: "5. Capablanca's Clarity", quote: "You may learn much more from a game you lose...", story: "The 'Chess Machine' simplifies the game.", moves: ["d4", "d5", "c4", "e6", "Nc3", "Nf6", "Bg5", "Be7", "e3", "O-O", "Nf3", "Nbd7", "Rc1", "c6", "Bd3", "dxc4", "Bxc4", "Nd5"] },
+    { id: "l6", name: "Alekhine", title: "6. Alekhine's Attack", quote: "Chess is not only knowledge and logic!", story: "Alekhine loved messy games with imagination.", moves: ["e4", "Nf6", "e5", "Nd5", "d4", "d6", "c4", "Nb6", "exd6", "cxd6", "Nc3", "g6", "Be3", "Bg7", "Rc1", "O-O"] },
+    { id: "l7", name: "Karpov", title: "7. Karpov's Strategy", quote: "Let us say that the game is a continuation of life.", story: "Deep positional squeezing.", moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "a6", "Be3", "e6", "f3", "b5", "Qd2", "Nbd7", "g4"] },
+    { id: "l8", name: "Carlsen", title: "8. Carlsen's Viking Spirit", quote: "Some people think that if their opponent plays a beautiful game, it’s OK to lose. I don’t.", story: "Turning a draw into a win.", moves: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "O-O", "Nf6", "d3", "d6", "c3", "a6", "a4", "Ba7", "Re1", "O-O", "h3"] },
+    { id: "l9", name: "Polgar", title: "9. Polgar's Strike", quote: "Chess is 30 to 40% psychology. You don't have this when you play a computer.", story: "The strongest female player in history.", moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "Nc6", "Bg5", "e6", "Qd2", "a6", "O-O-O", "Bd7"] },
+    { id: "l10", name: "Anand", title: "10. Anand's Speed", quote: "Confidence is very important - even pretending to be confident.", story: "Rapid intuition from the Tiger of Madras.", moves: ["e4", "e5", "Nf3", "Nc6", "Bb5", "Nf6", "d3", "Bc5", "c3", "O-O", "O-O", "d6", "Nbd2", "Ne7", "d4"] },
+    { id: "l11", name: "Botvinnik", title: "11. Botvinnik's Method", quote: "Chess is the art which expresses the science of logic.", story: "The Patriarch's scientific approach.", moves: ["c4", "e5", "Nc3", "Nf6", "g3", "d5", "cxd5", "Nxd5", "Bg2", "Nb6", "Nf3", "Nc6", "O-O", "Be7", "a3", "O-O"] },
+    { id: "l12", name: "Petrosian", title: "12. Petrosian's Shield", quote: "They say my games should be more 'interesting'. I could be more 'interesting'—and lose.", story: "The Iron Tigran's prophylaxis.", moves: ["d4", "Nf6", "c4", "e6", "Nf3", "d5", "Nc3", "Be7", "Bg5", "O-O", "e3", "h6", "Bh4", "b6", "cxd5"] },
+    { id: "l13", name: "Spassky", title: "13. Spassky's Beauty", quote: "I like to attack. But it is better to have a solid foundation.", story: "Classical harmony on the board.", moves: ["e4", "e5", "f4", "exf4", "Nf3", "g5", "Bc4", "Bg7", "d4", "d6", "O-O", "h6", "c3", "Nc6", "g3"] },
+    { id: "l14", name: "Kramnik", title: "14. Kramnik's Berlin", quote: "I am not a person who is afraid of losing.", story: "The wall that stopped Kasparov.", moves: ["e4", "e5", "Nf3", "Nc6", "Bb5", "Nf6", "O-O", "Nxe4", "d4", "Nd6", "Bxc6", "dxc6", "dxe5", "Nf5", "Qxd8+", "Kxd8"] },
+    { id: "l15", name: "Lasker", title: "15. Lasker's Mind", quote: "The hardest thing in chess is to win a won game.", story: "Playing the man, not the board.", moves: ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Bxc6", "dxc6", "d4", "exd4", "Qxd4", "Qxd4", "Nxd4", "Bd7", "Nc3", "O-O-O"] },
+    { id: "l16", name: "Steinitz", title: "16. Steinitz's Rules", quote: "Only the player with the initiative has the right to attack.", story: "The father of modern strategy.", moves: ["e4", "e5", "Nc3", "Nc6", "f4", "exf4", "d4", "Qh4+", "Ke2", "d6", "Nf3", "Bg4", "Bxf4", "O-O-O"] },
+    { id: "l17", name: "Smyslov", title: "17. Smyslov's Harmony", quote: "I will play 40 good moves; if you play 40 good moves, we'll draw.", story: "Finding harmony in the pieces.", moves: ["e4", "c5", "Nf3", "Nc6", "Bb5", "g6", "O-O", "Bg7", "c3", "Nf6", "Re1", "O-O", "d4", "cxd4", "cxd4"] },
+    { id: "l18", name: "Euwe", title: "18. Euwe's Strategy", quote: "Strategy requires thought, tactics require observation.", story: "Euwe's mathematical winning style.", moves: ["d4", "Nf6", "c4", "e6", "Nc3", "Bb4", "e3", "c5", "Bd3", "Nc6", "Nf3", "Bxc3+", "bxc3", "d6", "e4", "e5"] },
+    { id: "l19", name: "Nakamura", title: "19. Nakamura's Attack", quote: "I just like to play fast. It’s more fun.", story: "Aggressive blitz-style masterclass.", moves: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "b4", "Bxb4", "c3", "Ba5", "d4", "exd4", "O-O", "Nge7", "cxd4", "d5"] },
+    { id: "l20", name: "Topalov", title: "20. Topalov's Fire", quote: "I am a fighter. I always play for a win.", story: "Uncompromising attacking chess.", moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "a6", "Be3", "e5", "Nb3", "Be6", "f3", "Nbd7", "g4"] }
 ];
 
-function toggleTheme() { document.body.classList.toggle('light-mode'); }
-function jumpTo(id) { if(id) document.getElementById(id).scrollIntoView({behavior:'smooth'}); }
+const boards = {};
 
-function pickRandom() {
-    const randomIdx = Math.floor(Math.random() * games.length);
-    jumpTo(games[randomIdx].id);
+function toggleBoard(id, moves) {
+    const el = document.getElementById(`board-wrapper-${id}`);
+    const isVisible = el.style.display === 'block';
+    el.style.display = isVisible ? 'none' : 'block';
+    if (!isVisible && !boards[id]) {
+        boards[id] = { game: new Chess(), board: Chessboard(`board-${id}`, 'start'), idx: 0, moves: moves };
+        updateHint(id);
+    }
 }
 
-function copyToClipboard(btn, moves) {
-    navigator.clipboard.writeText(moves.join(' ')).then(() => {
-        const old = btn.innerText; btn.innerText = "COPIED";
-        setTimeout(() => { btn.innerText = old; }, 1500);
-    });
+function getHint(move, idx) {
+    if (move.includes("#")) return "Checkmate! Mastery achieved.";
+    if (move.includes("x")) return "A capture! Notice how the master gains material.";
+    if (idx < 6) return "Opening phase: Controlling the center.";
+    return "Annotations: Analyzing the Master's path...";
 }
 
-function updateProgress() {
-    const checked = document.querySelectorAll('.check-box:checked').length;
-    document.getElementById('progressText').innerText = `Study Progress: ${checked} / 20 Lessons`;
-    const status = Array.from(document.querySelectorAll('.check-box')).map(cb => cb.checked);
-    localStorage.setItem('mma_progress', JSON.stringify(status));
+function step(id, dir) {
+    const s = boards[id];
+    if (dir === 1 && s.idx < s.moves.length) {
+        s.game.move(s.moves[s.idx]);
+        s.idx++;
+    } else if (dir === -1 && s.idx > 0) {
+        s.game.undo();
+        s.idx--;
+    }
+    s.board.position(s.game.fen());
+    updateHint(id);
+}
+
+function updateHint(id) {
+    const s = boards[id];
+    const hintText = s.idx === 0 ? "White to move." : getHint(s.moves[s.idx-1], s.idx);
+    document.getElementById(`hint-${id}`).innerText = `Annotation: ${hintText}`;
+}
+
+function generateQuestion() {
+    const feedback = document.getElementById('quiz-feedback');
+    feedback.innerText = "";
+    const correct = games[Math.floor(Math.random() * games.length)];
+    document.getElementById('quiz-story').innerText = `"${correct.story}"`;
+    
+    let opts = [correct.name];
+    while(opts.length < 4) {
+        let r = games[Math.floor(Math.random()*games.length)].name;
+        if(!opts.includes(r)) opts.push(r);
+    }
+    opts.sort(() => Math.random() - 0.5);
+    document.getElementById('quiz-options').innerHTML = opts.map(o => `<button class="quiz-btn" onclick="checkAns('${o}','${correct.name}')">${o}</button>`).join('');
+}
+
+function checkAns(s, c) {
+    const f = document.getElementById('quiz-feedback');
+    if(s === c) { f.innerText = "Correct! 🏆"; f.style.color="#4ade80"; }
+    else { f.innerText = `Incorrect. It was ${c}.`; f.style.color="#f87171"; }
 }
 
 function render() {
     const list = document.getElementById('ebook-content');
     const select = document.getElementById('jumpTo');
-    const savedProgress = JSON.parse(localStorage.getItem('mma_progress') || '[]');
+    const progress = JSON.parse(localStorage.getItem('mma_progress') || '[]');
 
-    list.innerHTML = games.map((g, i) => {
-        const isChecked = savedProgress[i] ? 'checked' : '';
-        const completedClass = savedProgress[i] ? 'completed' : '';
-        return `
-        <div class="lesson-card ${completedClass}" id="${g.id}">
+    list.innerHTML = games.map((g, i) => `
+        <div class="lesson-card ${progress[i]?'completed':''}" id="${g.id}">
             <div class="lesson-header">
-                <div>
-                    <div class="lesson-num">
-                        <input type="checkbox" class="check-box" onchange="this.parentElement.parentElement.parentElement.parentElement.classList.toggle('completed'); updateProgress()" ${isChecked}>
-                        MASTER LESSON
-                    </div>
-                    <h2 class="lesson-title">${g.title}</h2>
+                <div style="font-size:11px; font-weight:800; color:var(--purple)">
+                    <input type="checkbox" onchange="toggleComplete('${g.id}', ${i})" ${progress[i]?'checked':''}> MASTER LESSON
                 </div>
-                <button class="copy-btn" onclick='copyToClipboard(this, ${JSON.stringify(g.moves)})'>COPY PGN</button>
+                <div class="action-btns">
+                    <button class="view-btn" onclick='toggleBoard("${g.id}", ${JSON.stringify(g.moves)})'>BOARD</button>
+                    <button class="copy-btn" onclick='copyToClipboard(this, ${JSON.stringify(g.moves)})'>COPY</button>
+                </div>
             </div>
-            <p class="lesson-story">${g.story}</p>
+            <h2 class="lesson-title">${g.title}</h2>
+            <span class="master-quote">"${g.quote}"</span>
+            <p style="font-size:14px; opacity:0.8">${g.story}</p>
+            <div class="board-wrapper" id="board-wrapper-${g.id}">
+                <div id="board-${g.id}" class="board-container"></div>
+                <div class="hint-box" id="hint-${g.id}">Annotation: Focus on center.</div>
+                <div class="board-controls">
+                    <button class="ui-btn" onclick="step('${g.id}', -1)">Back</button>
+                    <button class="ui-btn" onclick="step('${g.id}', 1)">Next</button>
+                </div>
+            </div>
             <div class="move-list">${g.moves.map(m => `<span class="move-item">${m}</span>`).join('')}</div>
-        </div>`}).join('');
+        </div>`).join('');
     
-    select.innerHTML = '<option value="">Jump...</option>' + 
-        games.map(g => `<option value="${g.id}">Lesson ${g.id.replace('l','')}</option>`).join('');
-    updateProgress();
+    select.innerHTML = '<option value="">Jump...</option>' + games.map(g => `<option value="${g.id}">${g.title.split('.')[0]}</option>`).join('');
+    updateProgressText();
+    generateQuestion();
 }
 
+function toggleComplete(id, idx) {
+    document.getElementById(id).classList.toggle('completed');
+    const p = JSON.parse(localStorage.getItem('mma_progress') || '[]');
+    p[idx] = !p[idx];
+    localStorage.setItem('mma_progress', JSON.stringify(p));
+    updateProgressText();
+}
+
+function updateProgressText() {
+    const count = document.querySelectorAll('input[type="checkbox"]:checked').length;
+    document.getElementById('progressText').innerText = `Progress: ${count} / 20`;
+}
+
+function toggleTheme() { document.body.classList.toggle('light-mode'); }
+function jumpTo(id) { if(id) document.getElementById(id).scrollIntoView({behavior:'smooth'}); }
+function pickRandom() { jumpTo(games[Math.floor(Math.random()*games.length)].id); }
+function copyToClipboard(btn, m) { navigator.clipboard.writeText(m.join(' ')); btn.innerText="COPIED"; setTimeout(()=>btn.innerText="COPY", 1000); }
 function filterLessons() {
-    const term = document.getElementById('masterSearch').value.toLowerCase();
-    const cards = document.getElementsByClassName('lesson-card');
-    Array.from(cards).forEach(card => {
-        card.style.display = card.innerText.toLowerCase().includes(term) ? "block" : "none";
-    });
+    const t = document.getElementById('masterSearch').value.toLowerCase();
+    Array.from(document.getElementsByClassName('lesson-card')).forEach(c => c.style.display = c.innerText.toLowerCase().includes(t) ? "block" : "none");
 }
 
 render();
