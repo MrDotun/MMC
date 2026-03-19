@@ -29,7 +29,7 @@
 </head>
 <body>
 
-    <h1 style="color: var(--secondary); margin-bottom: 20px; italic">♟️ ARENA</h1>
+    <h1 style="color: var(--secondary); margin-bottom: 20px; font-style: italic;">♟️ ARENA</h1>
 
     <div id="section-register" class="container">
         <h2>Student Access</h2>
@@ -46,13 +46,13 @@
     <div id="section-lobby" class="container hidden">
         <div id="user-welcome" style="text-align:center; margin-bottom:15px;"></div>
         
-        <h3>Leaderboard</h3>
+        <h3>🏆 Leaderboard</h3>
         <div id="leaderboard-list" style="margin-bottom: 25px; border-bottom: 1px solid #444; padding-bottom: 15px;"></div>
 
-        <h3>Active Matches</h3>
+        <h3>⚔️ Active Matches</h3>
         <div id="match-list" style="margin-bottom: 20px;"></div>
 
-        <h3>Challenge a Friend</h3>
+        <h3>🤝 Challenge a Friend</h3>
         <div id="available-players">Searching for students...</div>
     </div>
 
@@ -82,36 +82,48 @@
         let game = new Chess();
         let board = null, myId = null, myData = null, activeMatchId = null, selectedSq = null;
 
-        function handleRegister() {
+        async function handleRegister() {
             const name = document.getElementById('reg-name').value.trim();
             const school = document.getElementById('reg-school').value.trim();
-            const pass = prompt("Enter Academy Password:");
+            if(!name || !school) return alert("Please enter your name and school!");
 
-            if (pass === "decipher1234") {
+            const enteredPass = prompt("Enter your Private Academy PIN (4 digits) or Admin Code:");
+            if (!enteredPass) return;
+
+            // Admin Access Logic
+            if (enteredPass === "decipher1234") {
                 myId = "admin_" + name.toLowerCase().replace(/\s/g, '_');
-                myData = { name: name, school: "Admin", avatar: "👑", rating: 1500, role: "admin" };
-            } else if (pass === "chess2026") {
-                if(!name || !school) return alert("Enter details!");
-                myId = name.toLowerCase().replace(/\s/g, '_');
-                // Check if player exists to keep their rating, otherwise set to 1500
-                db.collection("academy_players").doc(myId).get().then(doc => {
-                    if (doc.exists) {
-                        myData = doc.data();
-                        showLobby();
-                    } else {
-                        myData = { 
-                            name: name, school: school, 
-                            avatar: document.getElementById('reg-avatar').value, 
-                            rating: 1500, role: "student" 
-                        };
-                        db.collection("academy_players").doc(myId).set(myData).then(showLobby);
-                    }
-                });
+                myData = { name: name, school: "Academy Admin", avatar: "👑", rating: 1500, role: "admin" };
+                await db.collection("academy_players").doc(myId).set(myData, {merge: true});
+                showLobby();
                 return;
-            } else {
-                return alert("Access Denied.");
             }
-            db.collection("academy_players").doc(myId).set(myData, {merge: true}).then(showLobby);
+
+            // Student Impersonation Protection Logic
+            myId = name.toLowerCase().replace(/\s/g, '_');
+            const userRef = db.collection("academy_players").doc(myId);
+            const doc = await userRef.get();
+
+            if (doc.exists) {
+                if (doc.data().pin === enteredPass) {
+                    myData = doc.data();
+                    showLobby();
+                } else {
+                    alert("Incorrect PIN! If you forgot it, ask your instructor to reset it.");
+                }
+            } else {
+                // Initial Registration with Default Rating 1500
+                myData = {
+                    name: name,
+                    school: school,
+                    avatar: document.getElementById('reg-avatar').value,
+                    rating: 1500,
+                    pin: enteredPass,
+                    role: "student"
+                };
+                await userRef.set(myData);
+                showLobby();
+            }
         }
 
         function showLobby() {
@@ -122,7 +134,7 @@
         }
 
         function loadLobbyData() {
-            // Leaderboard: Sort by rating
+            // Live Leaderboard sorted by rating
             db.collection("academy_players").orderBy("rating", "desc").limit(10).onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
@@ -135,27 +147,27 @@
                 document.getElementById('leaderboard-list').innerHTML = html;
             });
 
-            // Available Players
+            // Available Challengers
             db.collection("academy_players").limit(20).get().then(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     if(doc.id !== myId) {
                         html += `<div class="item-row" onclick="createMatch('${doc.id}')">
-                            <span>${doc.data().name}</span>
+                            <span>${doc.data().name} (${doc.data().school})</span>
                             <span class="rating-badge" style="background:transparent; border: 1px solid var(--secondary); color: var(--secondary)">${doc.data().rating}</span>
                         </div>`;
                     }
                 });
-                document.getElementById('available-players').innerHTML = html || "No other students.";
+                document.getElementById('available-players').innerHTML = html || "No other students online.";
             });
 
-            // Matches
+            // Match List
             db.collection("academy_matches").where("players", "array-contains", myId).where("status", "==", "active").onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     const m = doc.data();
                     const opp = m.white === myId ? m.black : m.white;
-                    html += `<button class="btn" style="font-size: 12px;" onclick="loadGame('${doc.id}')">VS ${opp.toUpperCase()}</button>`;
+                    html += `<button class="btn" style="font-size: 11px;" onclick="loadGame('${doc.id}')">VS ${opp.toUpperCase()}</button>`;
                 });
                 document.getElementById('match-list').innerHTML = html || "No active games.";
             });
@@ -214,7 +226,7 @@
 
             if (game.in_checkmate()) {
                 status = "finished";
-                winner = game.turn() === 'w' ? 'black' : 'white'; // The one who didn't just move lost
+                winner = game.turn() === 'w' ? 'black' : 'white';
             } else if (game.in_draw()) {
                 status = "finished";
                 winner = "draw";
@@ -242,14 +254,15 @@
 
             let wChange = 0, bChange = 0;
 
+            // Rating logic: 10-15 for wins/losses, +2/+3 for draws
             if (result === "white") {
-                wChange = Math.floor(Math.random() * 6) + 10; // 10-15
+                wChange = Math.floor(Math.random() * 6) + 10;
                 bChange = -wChange;
             } else if (result === "black") {
-                bChange = Math.floor(Math.random() * 6) + 10; // 10-15
+                bChange = Math.floor(Math.random() * 6) + 10;
                 wChange = -bChange;
-            } else { // Draw
-                wChange = wR < bR ? 3 : 2; // +3 if weaker, +2 if stronger
+            } else if (result === "draw") {
+                wChange = wR < bR ? 3 : 2;
                 bChange = bR < wR ? 3 : 2;
             }
 
@@ -258,7 +271,6 @@
                 blackRef.update({ rating: bR + bChange })
             ]);
             
-            // Update local state for immediate welcome screen update
             if (myId === m.white) myData.rating += wChange;
             if (myId === m.black) myData.rating += bChange;
         }
