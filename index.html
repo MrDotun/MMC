@@ -19,7 +19,6 @@
         }
         .main-bg { background-color: #f8fafc; min-height: 100vh; }
         
-        /* IMPROVED: Lighter gradient at the top so the chess image is visible */
         .header-bg {
             background: linear-gradient(to bottom, rgba(15, 23, 42, 0.4), rgba(248, 250, 252, 1)), 
                         url('https://images.unsplash.com/photo-1529699211952-734e80c4d42b?auto=format&fit=crop&q=80&w=1600');
@@ -27,11 +26,21 @@
             background-position: center;
         }
         
-        /* Hamburger Logic */
         #menu-toggle:checked ~ #nav-overlay { transform: translateX(0); opacity: 1; }
         #menu-toggle:checked ~ .hamburger div:nth-child(1) { transform: translateY(10px) rotate(45deg); background-color: white; }
         #menu-toggle:checked ~ .hamburger div:nth-child(2) { opacity: 0; }
         #menu-toggle:checked ~ .hamburger div:nth-child(3) { transform: translateY(-10px) rotate(-45deg); background-color: white; }
+
+        /* Animation for Live Indicator */
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #4ade80;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            box-shadow: 0 0 8px #4ade80;
+        }
     </style>
 </head>
 <body class="main-bg text-slate-900 overflow-x-hidden">
@@ -57,7 +66,7 @@
                     <li><a href="index.html">HOME</a></li>
                     <li><a href="assignments.html">WEEKLY TASKS</a></li>
                     <li><a href="https://lichess.org/training" target="_blank">LICHESS PUZZLES</a></li>
-                    <li><a href="chess/school.html" class="text-blue-300">SCHOOL LEAGUE</a></li>
+                    <li><a href="correspondence.html" class="text-blue-300">CHALLENGE A FRIEND</a></li>
                     <li><a href="https://wa.me/2348025028105" class="text-lg not-italic font-bold opacity-80">SUPPORT</a></li>
                 </ul>
             </div>
@@ -76,6 +85,27 @@
 
     <main class="px-5 max-w-5xl mx-auto pb-24 space-y-6 -mt-12 relative z-10">
         
+        <div data-aos="fade-up" class="block bg-blue-950 p-8 rounded-[3rem] relative overflow-hidden group shadow-2xl border-b-4 border-blue-400">
+            <div class="relative z-10">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h3 class="text-2xl font-black italic uppercase leading-none text-white">Live Match Arena</h3>
+                        <p class="text-[9px] text-blue-300 font-bold uppercase tracking-[0.3em] mt-2">Correspondence Battles</p>
+                    </div>
+                    <div class="text-5xl group-hover:scale-110 transition duration-300">⚔️</div>
+                </div>
+
+                <div id="live-matches-feed" class="space-y-3 min-h-[60px]">
+                    <p class="text-blue-200 text-[10px] font-bold uppercase animate-pulse">Scanning schools for active games...</p>
+                </div>
+
+                <a href="correspondence.html" class="block w-full mt-6 bg-blue-600 hover:bg-blue-500 text-white text-center py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg">
+                    Challenge a Friend
+                </a>
+            </div>
+            <div class="absolute -right-10 -bottom-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl"></div>
+        </div>
+
         <div data-aos="fade-up" class="glass-card p-6 rounded-[2.5rem] border-t-4 border-t-blue-600 flex flex-col md:flex-row items-center justify-between gap-6">
             <div class="flex items-center gap-4">
                 <div class="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center text-3xl">🧩</div>
@@ -154,7 +184,53 @@
         </div>
     </footer>
 
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
     <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
-    <script>AOS.init({ duration: 1000, once: true });</script>
+
+    <script>
+        AOS.init({ duration: 1000, once: true });
+
+        // --- FIREBASE INITIALIZATION ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+          authDomain: "assignments-de95a.firebaseapp.com",
+          projectId: "assignments-de95a",
+          storageBucket: "assignments-de95a.firebasestorage.app",
+          messagingSenderId: "1088073398299",
+          appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
+        };
+        
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
+        // --- LIVE MATCH FEED LOGIC ---
+        db.collection("academy_matches").orderBy("updated", "desc").limit(3).onSnapshot((snap) => {
+            const container = document.getElementById('live-matches-feed');
+            let html = "";
+            
+            snap.forEach(doc => {
+                const game = doc.data();
+                const turn = game.fen.split(' ')[1] === 'w' ? 'White' : 'Black';
+                
+                html += `
+                <div class="flex items-center justify-between bg-white/5 border border-white/10 p-4 rounded-2xl">
+                    <div class="flex items-center gap-3">
+                        <span class="live-dot animate-pulse"></span>
+                        <span class="text-[11px] font-black text-white uppercase tracking-tighter">
+                            ${game.white} <span class="text-blue-400 italic">VS</span> ${game.black}
+                        </span>
+                    </div>
+                    <span class="text-[9px] font-black bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full uppercase">
+                        ${turn}'s Turn
+                    </span>
+                </div>`;
+            });
+
+            container.innerHTML = html || `<p class="text-blue-300/50 text-[10px] font-bold uppercase text-center italic">No active matches yet. Be the first to play!</p>`;
+        });
+    </script>
 </body>
 </html>
