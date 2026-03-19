@@ -26,11 +26,8 @@
         .btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; padding: 12px; font-size: 12px; width: 100%; margin-bottom: 10px; text-transform: uppercase; font-weight: bold; }
         .btn-danger:hover { background: var(--danger); color: white; }
 
-        /* Scrollable Lists */
-        #match-list, #available-players, #spectate-match-list, #admin-player-list, #leaderboard { 
-            max-height: 200px; 
-            overflow-y: auto; 
-            margin-bottom: 15px; 
+        #match-list, #available-players, #spectate-match-list, #leaderboard, #admin-player-list { 
+            max-height: 200px; overflow-y: auto; margin-bottom: 15px; 
         }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-thumb { background: var(--secondary); border-radius: 10px; }
@@ -65,11 +62,11 @@
         <h3>⚔️ Active Matches</h3>
         <div id="match-list"></div>
 
-        <h3>🏆 Academy Leaderboard</h3>
+        <h3>🏆 Leaderboard</h3>
         <div id="leaderboard"></div>
 
         <h3>🤝 Challenge Students</h3>
-        <div id="available-players">Searching...</div>
+        <div id="available-players">Searching for players...</div>
 
         <h3>👁️ Spectate Arena</h3>
         <div id="spectate-match-list"></div>
@@ -114,17 +111,21 @@
             if(!rawName || !school || !pin) return alert("Fill all fields!");
 
             const userId = rawName.toLowerCase().replace(/\s/g, '_');
+            const isAdmin = (pin === "decipher1234"); 
+            
             const docRef = db.collection("academy_players").doc(userId);
             const doc = await docRef.get();
             
-            const isAdmin = (pin === "decipher1234"); 
-            if(doc.exists && !isAdmin && doc.data().pin !== pin) return alert("Wrong PIN!");
+            if(doc.exists && !isAdmin && doc.data().pin !== pin) {
+                return alert("Incorrect PIN for this name.");
+            }
             
             myData = doc.exists ? doc.data() : { 
                 name: rawName, school, avatar: $('#reg-avatar').val(), 
                 rating: 0, pin, role: isAdmin ? "admin" : "student"
             };
             
+            // This line ensures the collection is properly initialized
             await docRef.set(myData, { merge: true });
             myId = userId;
             showLobby();
@@ -143,28 +144,14 @@
         }
 
         function loadLobbyData() {
-            // Leaderboard (Ranked by Points)
+            // Leaderboard
             db.collection("academy_players").orderBy("rating", "desc").limit(10).onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     const p = doc.data();
-                    html += `<div class="item-row" style="cursor:default; border-left: 2px solid var(--secondary);">
-                        <span>${p.name}</span>
-                        <span class="rating-badge">${p.rating}</span>
-                    </div>`;
+                    html += `<div class="item-row" style="cursor:default;"><span>${p.name}</span><span class="rating-badge">${p.rating}</span></div>`;
                 });
                 document.getElementById('leaderboard').innerHTML = html;
-            });
-
-            // My Games
-            db.collection("academy_matches").where("players", "array-contains", myId).where("status", "==", "active").onSnapshot(snap => {
-                let html = "";
-                snap.forEach(doc => {
-                    const d = doc.data();
-                    const opp = d.white === myId ? d.black : d.white;
-                    html += `<button class="btn" onclick="loadGame('${doc.id}')">VS ${opp.replace('_',' ').toUpperCase()}</button>`;
-                });
-                document.getElementById('match-list').innerHTML = html || "No active games.";
             });
 
             // Player List
@@ -179,16 +166,24 @@
                         </div>`;
                     }
                 });
-                document.getElementById('available-players').innerHTML = html;
+                document.getElementById('available-players').innerHTML = html || "Waiting for students...";
+            });
+
+            // My Games
+            db.collection("academy_matches").where("players", "array-contains", myId).where("status", "==", "active").onSnapshot(snap => {
+                let html = "";
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    const opp = d.white === myId ? d.black : d.white;
+                    html += `<button class="btn" onclick="loadGame('${doc.id}')">VS ${opp.replace('_',' ').toUpperCase()}</button>`;
+                });
+                document.getElementById('match-list').innerHTML = html || "No active games.";
             });
         }
 
         function updatePoints(winnerId, loserId, type) {
-            const winAmt = 20;
-            const lossAmt = type === 'resign' ? 10 : 5;
-
-            db.collection("academy_players").doc(winnerId).update({ rating: firebase.firestore.FieldValue.increment(winAmt) });
-            db.collection("academy_players").doc(loserId).update({ rating: firebase.firestore.FieldValue.increment(-lossAmt) });
+            db.collection("academy_players").doc(winnerId).update({ rating: firebase.firestore.FieldValue.increment(20) });
+            db.collection("academy_players").doc(loserId).update({ rating: firebase.firestore.FieldValue.increment(type === 'resign' ? -10 : -5) });
         }
 
         function loadGame(id) {
@@ -201,20 +196,13 @@
             }
             db.collection("academy_matches").doc(id).onSnapshot(doc => {
                 const d = doc.data();
-                if(!d) return;
-                
-                // Handle Game Over
-                if(d.status !== "active") {
-                    alert("Game Over! " + d.status.toUpperCase());
-                    return showLobby();
-                }
+                if(!d || d.status !== "active") return showLobby();
 
                 game.load(d.fen); board.position(d.fen);
                 
-                // Checkmate detection
                 if(game.in_checkmate()) {
-                    const loser = game.turn() === 'w' ? d.white : d.black;
                     const winner = game.turn() === 'w' ? d.black : d.white;
+                    const loser = game.turn() === 'w' ? d.white : d.black;
                     db.collection("academy_matches").doc(id).update({ status: "checkmate" });
                     updatePoints(winner, loser, 'mate');
                     return;
