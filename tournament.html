@@ -5,20 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Mind Masters League | Tournament Edition</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    <script src="chess/garbochess.js"></script>
     <style>
         :root {
-            --bg: #030712; --panel: #111827; --accent: #4ade80;
+            --bg: #030712; --panel: #0f172a; --accent: #4ade80;
             --sq-l: #eeeed2; --sq-d: #769656;
         }
-        body { margin: 0; background: var(--bg); color: #f9fafb; font-family: 'Inter', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        #app { width: 95%; max-width: 450px; background: var(--panel); padding: 20px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); }
-        .header { text-align: center; font-size: 18px; font-weight: 900; color: var(--accent); text-transform: uppercase; margin-bottom: 15px; }
+        body { margin: 0; background: var(--bg); color: white; font-family: system-ui; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        #app { width: 95%; max-width: 450px; background: var(--panel); padding: 20px; border-radius: 20px; border: 1px solid rgba(74, 222, 128, 0.2); box-sizing: border-box; }
         
-        .screen { display: none; flex-direction: column; }
-        .active-screen { display: flex; }
-
-        /* FIXED SQUARE BOARD */
+        /* PERFECT 1:1 SQUARE BOARD */
         #board {
             width: 100%; aspect-ratio: 1/1; display: grid; 
             grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
@@ -26,89 +21,71 @@
         }
         .sq { display: flex; justify-content: center; align-items: center; cursor: pointer; }
         .l { background-color: var(--sq-l); } .d { background-color: var(--sq-d); }
-        .sel { background-color: rgba(255, 255, 0, 0.5) !important; }
+        .sel { background-color: rgba(251, 191, 36, 0.6) !important; }
         .sq img { width: 88%; height: 88%; object-fit: contain; pointer-events: none; }
 
-        .card { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 12px; margin: 10px 0; }
-        .timer { font-family: monospace; font-size: 24px; font-weight: bold; color: var(--accent); }
-        
-        button { background: var(--accent); color: #000; padding: 16px; border: none; border-radius: 12px; font-weight: 800; cursor: pointer; text-transform: uppercase; margin-top: 10px; }
-        input { padding: 15px; background: #1f2937; border: 1px solid #374151; border-radius: 10px; color: white; margin-bottom: 15px; }
-        table { width: 100%; color: #9ca3af; border-collapse: collapse; font-size: 14px; }
-        td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .card { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 12px; margin: 8px 0; border: 1px solid rgba(255,255,255,0.05); }
+        .timer { font-family: monospace; font-size: 24px; font-weight: bold; color: #38bdf8; }
+        #status { font-size: 11px; color: var(--accent); font-weight: bold; height: 14px; text-transform: uppercase; }
+        .round-tag { background: var(--accent); color: black; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 900; }
     </style>
 </head>
 <body>
 
 <div id="app">
-    <div class="header">Mind Masters League</div>
-
-    <div id="intro-screen" class="screen active-screen">
-        <input type="text" id="kid-name" placeholder="Candidate Name">
-        <button onclick="startTournament()">Join Tournament</button>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+        <span class="round-tag" id="round-label">ROUND 1</span>
+        <span style="font-weight:900; color:var(--accent); letter-spacing:1px;">DECIPHER LEAGUE</span>
+    </div>
+    
+    <div class="card">
+        <div>
+            <div id="m-name" style="font-weight: 800;">IM ODION AIKHOJE</div>
+            <div id="m-rating" style="font-size:12px; color:#94a3b8;">Elo 2351</div>
+            <div id="status">Your Turn</div>
+        </div>
+        <div id="t-opp" class="timer">05:00</div>
     </div>
 
-    <div id="game-screen" class="screen">
-        <div class="card">
-            <div>
-                <div id="opp-display" style="font-weight: 800;">MASTER</div>
-                <div id="engine-status" style="font-size: 10px; color: var(--accent); visibility: hidden;">THINKING...</div>
-            </div>
-            <div id="timer-opp" class="timer">05:00</div>
-        </div>
-        <div id="board"></div>
-        <div class="card">
-            <div id="user-display" style="font-weight: 800;">YOU</div>
-            <div id="timer-user" class="timer">05:00</div>
-        </div>
-    </div>
+    <div id="board"></div>
 
-    <div id="rankings-screen" class="screen">
-        <h3 style="text-align:center; color: var(--accent);">Round Standings</h3>
-        <table><tbody id="ranking-tbody"></tbody></table>
-        <button id="next-btn" onclick="nextRound()">Start Next Round</button>
+    <div class="card">
+        <div>
+            <div id="u-name" style="font-weight: 800;">CANDIDATE</div>
+            <div id="u-rating" style="font-size:12px; color:#94a3b8;">Elo 1500</div>
+        </div>
+        <div id="t-user" class="timer">05:00</div>
     </div>
 </div>
 
 <script>
-    const masters = [
-        { name: "IM Odion Aikhoje", rating: 2351, pts: 0 }, { name: "IM Bunmi Olape", rating: 2306, pts: 0 },
-        { name: "FM Bomo Kigigha", rating: 2334, pts: 0 }, { name: "IM Adu Oladapo", rating: 2321, pts: 0 },
-        { name: "FM Adebayo Adegboyega", rating: 2312, pts: 0 }, { name: "IM Oluwafemi Balogun", rating: 2291, pts: 0 },
-        { name: "IM Anwuli Daniel", rating: 2365, pts: 0 }
+    // FULL TOURNAMENT MASTER DATA
+    const mastersData = [
+        { name: "IM Odion Aikhoje", rating: 2351 },
+        { name: "IM Bunmi Olape", rating: 2306 },
+        { name: "FM Bomo Kigigha", rating: 2334 },
+        { name: "IM Adu Oladapo", rating: 2321 },
+        { name: "FM Adebayo Adegboyega", rating: 2312 },
+        { name: "IM Oluwafemi Balogun", rating: 2291 },
+        { name: "IM Anwuli Daniel", rating: 2365 }
     ];
 
-    let kid = { name: "", rating: 1500, pts: 0, isKid: true };
-    let game = new Chess(), currentRound = 1, userColor = 'w', selectedSq = null;
+    let currentRound = 0; 
+    let game = new Chess();
+    let selectedSq = null;
+    let kidRating = 1500; 
     
+    // DECIPHER WORKER INITIALIZATION
+    const worker = new Worker('chess/chess-worker.js');
+
     const pieces = {
-        p: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg', n: 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
-        b: 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg', r: 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
-        q: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg', k: 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
-        P: 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg', N: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
-        B: 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg', R: 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
-        Q: 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg', K: 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg'
+        p:'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',n:'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+        b:'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',r:'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+        q:'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',k:'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
+        P:'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',N:'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+        B:'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',R:'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+        Q:'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',K:'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg'
     };
-
-    function startTournament() {
-        kid.name = document.getElementById('kid-name').value || "Candidate";
-        document.getElementById('intro-screen').classList.remove('active-screen');
-        nextRound();
-    }
-
-    function nextRound() {
-        if (currentRound > 7) return alert("Tournament finished!");
-        game = new Chess();
-        userColor = currentRound % 2 === 0 ? 'b' : 'w';
-        let opp = masters[currentRound - 1];
-        document.getElementById('opp-display').innerText = opp.name;
-        document.getElementById('user-display').innerText = kid.name;
-        
-        document.getElementById('rankings-screen').classList.remove('active-screen');
-        document.getElementById('game-screen').classList.add('active-screen');
-        draw();
-        if (userColor === 'b') setTimeout(masterMove, 600);
-    }
 
     function draw() {
         const boardEl = document.getElementById('board');
@@ -123,75 +100,71 @@
                 const p = state[r][c];
                 if (p) {
                     const img = document.createElement('img');
-                    img.src = pieces[p.color === 'w' ? p.type.toUpperCase() : p.type];
+                    img.src = pieces[p.color==='w'?p.type.toUpperCase():p.type];
                     cell.appendChild(img);
                 }
-                cell.onclick = () => handleInput(sq);
+                cell.onclick = () => { if(game.turn()==='w') handleInput(sq); };
                 boardEl.appendChild(cell);
             }
         }
     }
 
     function handleInput(sq) {
-        if (game.turn() !== userColor) return;
         if (selectedSq === sq) { selectedSq = null; }
         else if (selectedSq) {
             const m = game.move({ from: selectedSq, to: sq, promotion: 'q' });
-            if (m) { selectedSq = null; draw(); if(!game.game_over()) masterMove(); else endMatch(); }
+            if (m) { selectedSq = null; draw(); engineResponse(); }
             else { selectedSq = sq; }
         } else {
             const p = game.get(sq);
-            if (p && p.color === userColor) selectedSq = sq;
+            if (p && p.color === 'w') selectedSq = sq;
         }
         draw();
     }
 
-    function masterMove() {
-        document.getElementById('engine-status').style.visibility = 'visible';
-        let blunderRate = 0.10 - ((Math.min(Math.max(kid.rating, 1500), 2700) - 1500) / 1200) * 0.09;
-        
-        setTimeout(() => {
-            if (Math.random() < blunderRate) {
+    function engineResponse() {
+        if (game.game_over()) return;
+        document.getElementById('status').innerText = "MASTER THINKING...";
+
+        // ADAPTIVE BLUNDER RATE: 1-10% based on Kid Rating
+        let blunderChance = 0.10 - ((Math.min(Math.max(kidRating, 1500), 2700) - 1500) / 1200) * 0.09;
+
+        if (Math.random() < blunderChance) {
+            setTimeout(() => {
                 const moves = game.moves();
                 game.move(moves[Math.floor(Math.random() * moves.length)]);
-            } else {
-                if (typeof InitializeFromFen === 'function') {
-                    InitializeFromFen(game.fen());
-                    let move = Search(1000);
-                    if (move) game.move(FormatMove(move));
-                }
-            }
-            document.getElementById('engine-status').style.visibility = 'hidden';
-            draw();
-            if (game.game_over()) endMatch();
-        }, 500);
+                finalizeMove();
+            }, 600);
+        } else {
+            worker.postMessage("position " + game.fen());
+            worker.postMessage("go depth 14");
+        }
     }
 
-    function endMatch() {
-        let res = game.in_checkmate() ? (game.turn() !== userColor ? 1 : 0) : 0.5;
-        kid.pts += res;
-        masters[currentRound-1].pts += (1 - res);
-        kid.rating += (res === 1 ? 25 : (res === 0 ? -15 : 5));
-        
-        // Simulate other master games
-        masters.forEach((m, idx) => {
-            if (idx !== currentRound-1) m.pts += (Math.random() > 0.5 ? 1 : 0.5);
-        });
+    worker.onmessage = function(e) {
+        if (e.data.includes('bestmove')) {
+            const move = e.data.split(' ')[1];
+            game.move({ from: move.substring(0,2), to: move.substring(2,4), promotion: 'q' });
+            finalizeMove();
+        }
+    };
 
-        showRankings();
+    function finalizeMove() {
+        document.getElementById('status').innerText = "YOUR TURN";
+        draw();
+        if (game.game_over()) alert("Tournament Game Over!");
     }
 
-    function showRankings() {
-        currentRound++;
-        const tbody = document.getElementById('ranking-tbody');
-        tbody.innerHTML = '';
-        let list = [...masters, kid].sort((a,b) => b.pts - a.pts);
-        list.forEach((p, i) => {
-            tbody.innerHTML += `<tr ${p.isKid ? 'style="color:var(--accent)"':''}><td>${i+1}. ${p.name}</td><td style="text-align:right">${p.pts}</td></tr>`;
-        });
-        document.getElementById('game-screen').classList.remove('active-screen');
-        document.getElementById('rankings-screen').classList.add('active-screen');
+    // LOAD TOURNAMENT DETAILS
+    function loadRound() {
+        const m = mastersData[currentRound];
+        document.getElementById('m-name').innerText = m.name;
+        document.getElementById('m-rating').innerText = `Elo ${m.rating}`;
+        document.getElementById('round-label').innerText = `ROUND ${currentRound + 1}`;
+        draw();
     }
+
+    loadRound();
 </script>
 </body>
 </html>
