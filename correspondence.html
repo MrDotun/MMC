@@ -26,11 +26,23 @@
         .btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; padding: 12px; font-size: 12px; width: 100%; margin-bottom: 10px; text-transform: uppercase; font-weight: bold; }
         .btn-danger:hover { background: var(--danger); color: white; }
 
-        #match-list, #available-players, #spectate-match-list { max-height: 180px; overflow-y: auto; margin-bottom: 15px; }
+        /* --- Scroll Logic --- */
+        #match-list, #available-players, #spectate-match-list { 
+            max-height: 200px; /* Fixed height for mobile */
+            overflow-y: auto; 
+            margin-bottom: 15px; 
+            padding-right: 5px;
+        }
+
+        /* Custom Scrollbar for better UI */
+        #match-list::-webkit-scrollbar, #available-players::-webkit-scrollbar { width: 4px; }
+        #match-list::-webkit-scrollbar-thumb, #available-players::-webkit-scrollbar-thumb { 
+            background: var(--secondary); 
+            border-radius: 10px; 
+        }
+
         .item-row { background: var(--primary); padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #333; cursor: pointer; }
         .rating-badge { background: var(--secondary); color: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: 800; }
-        
-        /* Highlight for selected piece */
         .highlight-sq { background: rgba(74, 222, 128, 0.5) !important; }
     </style>
 </head>
@@ -90,22 +102,41 @@
         const db = firebase.firestore();
 
         let game = new Chess(), board = null, myId = null, myData = null, activeMatchId = null;
-        let sourceSquare = null; // Used for click-to-move logic
+        let sourceSquare = null;
 
+        // --- Anti-Duplicate Account Logic ---
         async function handleRegister() {
-            const name = document.getElementById('reg-name').value.trim();
+            const rawName = document.getElementById('reg-name').value.trim();
             const school = document.getElementById('reg-school').value.trim();
             const pin = document.getElementById('reg-password').value.trim();
-            if(!name || !school || !pin) return alert("Fill all fields!");
+            
+            if(!rawName || !school || !pin) return alert("Fill all fields!");
 
-            myId = name.toLowerCase().replace(/\s/g, '_');
-            const doc = await db.collection("academy_players").doc(myId).get();
+            // Normalize ID to prevent slight name variations creating new accounts
+            const userId = rawName.toLowerCase().replace(/\s/g, '_');
+            const docRef = db.collection("academy_players").doc(userId);
+            const doc = await docRef.get();
             
-            if(doc.exists && doc.data().pin !== pin) return alert("Wrong PIN!");
+            if(doc.exists) {
+                // If account exists, verify the school or PIN to prevent duplicates
+                const existingData = doc.data();
+                if(existingData.pin !== pin) {
+                    return alert("This name is already registered. Please use the correct PIN or a different name.");
+                }
+                myData = existingData;
+            } else {
+                // New Account Creation
+                myData = { 
+                    name: rawName, 
+                    school: school, 
+                    avatar: $('#reg-avatar').val(), 
+                    rating: 1200, 
+                    pin: pin 
+                };
+                await docRef.set(myData);
+            }
             
-            myData = doc.exists ? doc.data() : { name, school, avatar: $('#reg-avatar').val(), rating: 1200, pin };
-            if(!doc.exists) await db.collection("academy_players").doc(myId).set(myData);
-            
+            myId = userId;
             showLobby();
         }
 
@@ -117,7 +148,6 @@
         }
 
         function loadLobbyData() {
-            // My Active Games
             db.collection("academy_matches").where("players", "array-contains", myId).where("status", "==", "active").onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
@@ -128,8 +158,7 @@
                 document.getElementById('match-list').innerHTML = html || "No active games.";
             });
 
-            // Spectate Arena
-            db.collection("academy_matches").where("status", "==", "active").limit(5).onSnapshot(snap => {
+            db.collection("academy_matches").where("status", "==", "active").limit(10).onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     const d = doc.data();
@@ -141,8 +170,8 @@
                 document.getElementById('spectate-match-list').innerHTML = html || "No live games.";
             });
 
-            // Challenge List
-            db.collection("academy_players").limit(20).get().then(snap => {
+            // Increased limit to 50 to test the new scroll feature
+            db.collection("academy_players").limit(50).get().then(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     if(doc.id !== myId) {
@@ -174,17 +203,12 @@
             db.collection("academy_matches").doc(id).onSnapshot(doc => {
                 const d = doc.data();
                 if(!d || d.status !== "active") return showLobby();
-                
                 game.load(d.fen);
                 board.position(d.fen);
-                
-                // Update Opponent Names
                 document.getElementById('label-white').innerText = `White: ${d.white.replace('_',' ')}`;
                 document.getElementById('label-black').innerText = `Black: ${d.black.replace('_',' ')}`;
-                
                 const isWhite = (myId === d.white);
                 const isBlack = (myId === d.black);
-                
                 if(isWhite || isBlack) {
                     board.orientation(isWhite ? 'white' : 'black');
                     const myTurn = (game.turn() === (isWhite ? 'w' : 'b'));
@@ -201,29 +225,19 @@
         function onSquareClick() {
             if (!activeMatchId) return;
             const square = $(this).attr('data-square');
-            
             db.collection("academy_matches").doc(activeMatchId).get().then(doc => {
                 const d = doc.data();
-                const isWhite = (myId === d.white);
-                const isBlack = (myId === d.black);
-                
-                // Security: Turn check
-                if (game.turn() === 'w' && !isWhite) return;
-                if (game.turn() === 'b' && !isBlack) return;
-
+                if (game.turn() === 'w' && myId !== d.white) return;
+                if (game.turn() === 'b' && myId !== d.black) return;
                 if (sourceSquare === null) {
-                    // Click 1: Selection
                     if (game.get(square) && game.get(square).color === game.turn()) {
                         sourceSquare = square;
                         $('.square-55d63').removeClass('highlight-sq');
                         $(this).addClass('highlight-sq');
                     }
                 } else {
-                    // Click 2: Movement
                     const move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
-                    
                     if (move === null) {
-                        // Switch selection if clicking another of your pieces
                         if (game.get(square) && game.get(square).color === game.turn()) {
                             sourceSquare = square;
                             $('.square-55d63').removeClass('highlight-sq');
@@ -233,7 +247,6 @@
                             $('.square-55d63').removeClass('highlight-sq');
                         }
                     } else {
-                        // Success
                         sourceSquare = null;
                         $('.square-55d63').removeClass('highlight-sq');
                         db.collection("academy_matches").doc(activeMatchId).update({
