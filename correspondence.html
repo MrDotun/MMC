@@ -13,20 +13,33 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
     <style>
-        :root { --primary: #2D1B4D; --secondary: #4ade80; --bg: #1a1a2e; --text: #ffffff; --card: #24243e; --danger: #ef4444; }
+        :root { --primary: #2D1B4D; --secondary: #4ade80; --bg: #1a1a2e; --text: #ffffff; --card: #24243e; --danger: #ef4444; --accent: #3b82f6; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 400px; background: var(--card); padding: 20px; border-radius: 12px; box-sizing: border-box; margin-bottom: 20px; border: 1px solid #333; }
         .hidden { display: none !important; }
-        h2, h3 { color: var(--secondary); text-align: center; margin-top: 0; text-transform: uppercase; letter-spacing: 1px; }
+        h2, h3 { color: var(--secondary); text-align: center; margin-top: 0; text-transform: uppercase; letter-spacing: 1px; font-size: 1.1em; }
         input, select { width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 8px; border: 2px solid var(--secondary); background: var(--bg); color: white; box-sizing: border-box; font-size: 16px; }
-        .btn { padding: 14px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; margin-bottom: 10px; text-transform: uppercase; transition: 0.3s; font-size: 14px; outline: none; border: 1px solid var(--secondary); }
+        
+        .btn { padding: 14px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; margin-bottom: 10px; text-transform: uppercase; transition: 0.3s; font-size: 14px; outline: none; }
         .btn:hover { background: var(--secondary); color: var(--bg); }
-        .btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; padding: 5px 10px; font-size: 10px; width: auto; margin: 0; }
+        
+        .btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; padding: 12px; font-size: 12px; width: 100%; margin-bottom: 10px; text-transform: uppercase; font-weight: bold; }
         .btn-danger:hover { background: var(--danger); color: white; }
-        #board-container { width: 100%; border: 3px solid var(--secondary); border-radius: 8px; overflow: hidden; margin-bottom: 15px; }
+
+        /* Scrollable Lists */
+        #match-list, #available-players, #admin-player-list, #spectate-match-list {
+            max-height: 160px; 
+            overflow-y: auto;
+            padding-right: 8px;
+            margin-bottom: 15px;
+        }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: var(--secondary); border-radius: 10px; }
+
         .item-row { background: var(--primary); padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #333; }
         .rating-badge { background: var(--secondary); color: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: 800; }
-        .admin-controls { margin-top: 5px; display: flex; gap: 5px; }
+        .admin-controls { display: flex; gap: 5px; }
+        .mini-btn { padding: 4px 8px; font-size: 10px; border-radius: 4px; cursor: pointer; border: 1px solid var(--danger); color: var(--danger); background: transparent; }
     </style>
 </head>
 <body>
@@ -51,18 +64,21 @@
         <div id="user-welcome" style="text-align:center; margin-bottom:15px;"></div>
         
         <div id="admin-panel" class="hidden" style="border: 1px dashed var(--secondary); padding: 10px; border-radius: 8px; margin-bottom: 20px;">
-            <h3 style="font-size: 0.8em;">🛠️ Instructor Tools</h3>
+            <h3 style="font-size: 0.8em; color: var(--danger);">🛠️ Instructor Tools</h3>
             <div id="admin-player-list"></div>
         </div>
 
-        <h3>🏆 Leaderboard</h3>
-        <div id="leaderboard-list" style="margin-bottom: 25px; border-bottom: 1px solid #444; padding-bottom: 15px;"></div>
+        <h3>⚔️ Your Active Matches</h3>
+        <div id="match-list"></div>
 
-        <h3>⚔️ Active Matches</h3>
-        <div id="match-list" style="margin-bottom: 20px;"></div>
+        <h3>👁️ Spectate Arena</h3>
+        <div id="spectate-match-list"></div>
 
         <h3>🤝 Challenge a Friend</h3>
-        <div id="available-players">Searching for students...</div>
+        <div id="available-players">Searching...</div>
+
+        <h3 style="margin-top: 20px;">🏆 Top 10 Masters</h3>
+        <div id="leaderboard-list"></div>
     </div>
 
     <div id="section-game" class="container hidden">
@@ -71,8 +87,12 @@
             <span style="color:var(--secondary)">VS</span>
             <span id="label-black">Black</span>
         </div>
-        <div id="board-container"><div id="myBoard"></div></div>
+        <div id="board-container" style="width: 100%; border: 3px solid var(--secondary); border-radius: 8px; overflow: hidden; margin-bottom: 15px;">
+            <div id="myBoard"></div>
+        </div>
         <div id="game-status" style="text-align:center; font-weight:bold; color:var(--secondary); margin-bottom:15px;">Your Turn</div>
+        
+        <button class="btn-danger" id="resign-btn" onclick="confirmResign()">🏳️ Resign Match</button>
         <button class="btn" onclick="showLobby()">Back to Lobby</button>
     </div>
 
@@ -98,18 +118,16 @@
 
             if (enteredPass === "decipher1234") {
                 myId = "admin_" + name.toLowerCase().replace(/\s/g, '_');
-                myData = { name: name, school: "Admin", avatar: "👑", rating: 1500, role: "admin" };
+                myData = { name: name, school: "Admin", avatar: "👑", rating: 2000, role: "admin" };
                 await db.collection("academy_players").doc(myId).set(myData, {merge: true});
-                showLobby();
             } else {
                 myId = name.toLowerCase().replace(/\s/g, '_');
                 const doc = await db.collection("academy_players").doc(myId).get();
                 if (doc.exists && doc.data().pin !== enteredPass) return alert("Wrong PIN!");
-                
                 myData = doc.exists ? doc.data() : { name, school, avatar: $('#reg-avatar').val(), rating: 1500, pin: enteredPass, role: "student" };
                 if (!doc.exists) await db.collection("academy_players").doc(myId).set(myData);
-                showLobby();
             }
+            showLobby();
         }
 
         function showLobby() {
@@ -121,86 +139,102 @@
         }
 
         function loadLobbyData() {
-            // Admin: Fetch all players for management
+            // Your Matches
+            db.collection("academy_matches").where("players", "array-contains", myId).where("status", "==", "active").onSnapshot(snap => {
+                let html = "";
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    const opp = d.white === myId ? d.black : d.white;
+                    html += `<button class="btn" style="font-size: 11px;" onclick="loadGame('${doc.id}')">PLAY VS ${opp.toUpperCase()}</button>`;
+                });
+                document.getElementById('match-list').innerHTML = html || "No active games.";
+            });
+
+            // Spectate ALL Matches
+            db.collection("academy_matches").where("status", "==", "active").limit(10).onSnapshot(snap => {
+                let html = "";
+                snap.forEach(doc => {
+                    const d = doc.data();
+                    html += `<div class="item-row" onclick="loadGame('${doc.id}')" style="cursor:pointer; border-left: 3px solid var(--accent);">
+                        <span style="font-size: 10px;">${d.white} vs ${d.black}</span>
+                        <span class="rating-badge" style="background: var(--accent);">WATCH</span>
+                    </div>`;
+                });
+                document.getElementById('spectate-match-list').innerHTML = html || "No live games.";
+            });
+
+            // Admin List
             if (myData.role === "admin") {
                 db.collection("academy_players").onSnapshot(snap => {
                     let h = "";
                     snap.forEach(doc => {
-                        const p = doc.data();
-                        if (p.role !== 'admin') {
-                            h += `<div class="item-row" style="font-size: 11px;">
-                                <span>${p.name}</span>
-                                <div class="admin-controls">
-                                    <button class="btn-danger" onclick="adminResetPin('${doc.id}')">Reset PIN</button>
-                                    <button class="btn-danger" onclick="adminDeletePlayer('${doc.id}')">Delete</button>
-                                </div>
-                            </div>`;
-                        }
+                        if(doc.data().role !== 'admin') h += `<div class="item-row" style="font-size: 10px;"><span>${doc.data().name}</span><div class="admin-controls"><button class="mini-btn" onclick="adminDelete('${doc.id}')">DEL</button></div></div>`;
                     });
                     document.getElementById('admin-player-list').innerHTML = h;
                 });
             }
 
-            // Leaderboard
-            db.collection("academy_players").orderBy("rating", "desc").limit(10).onSnapshot(snap => {
-                let html = "";
-                snap.forEach(doc => html += `<div class="item-row"><span>${doc.data().avatar} ${doc.data().name}</span><span class="rating-badge">${doc.data().rating}</span></div>`);
-                document.getElementById('leaderboard-list').innerHTML = html;
-            });
-
-            // Available Challengers
-            db.collection("academy_players").limit(20).get().then(snap => {
+            // Challenge List
+            db.collection("academy_players").limit(10).get().then(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     if(doc.id !== myId) html += `<div class="item-row" onclick="createMatch('${doc.id}')"><span>${doc.data().name}</span><span class="rating-badge">${doc.data().rating}</span></div>`;
                 });
                 document.getElementById('available-players').innerHTML = html;
             });
+        }
 
-            // Match List
-            db.collection("academy_matches").where("players", "array-contains", myId).where("status", "==", "active").onSnapshot(snap => {
-                let html = "";
-                snap.forEach(doc => html += `<button class="btn" style="font-size: 11px;" onclick="loadGame('${doc.id}')">VS ${doc.id.replace(myId, "").replace("_vs_", "").toUpperCase()}</button>`);
-                document.getElementById('match-list').innerHTML = html || "No active games.";
+        function loadGame(id) {
+            activeMatchId = id;
+            $(".container").addClass("hidden");
+            $("#section-game").removeClass("hidden");
+            if(!board) {
+                board = ChessBoard('myBoard', { draggable: false, position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
+                $('#myBoard').on('click', '.square-55d63', onSquareClick);
+            }
+            db.collection("academy_matches").doc(id).onSnapshot(doc => {
+                const d = doc.data();
+                if(d.status !== "active") return showLobby();
+                game.load(d.fen); board.position(d.fen);
+                const isPlayer = (myId === d.white || myId === d.black);
+                if(isPlayer) {
+                    board.orientation(d.white === myId ? 'white' : 'black');
+                    document.getElementById('game-status').innerText = (game.turn() === (d.white === myId ? 'w' : 'b')) ? "🟢 YOUR TURN" : "⏳ WAITING";
+                    $("#resign-btn").show();
+                } else {
+                    board.orientation('white');
+                    document.getElementById('game-status').innerText = "👁️ SPECTATING";
+                    $("#resign-btn").hide();
+                }
             });
         }
 
-        // --- ADMIN FUNCTIONS ---
-        window.adminDeletePlayer = function(id) {
-            if(confirm("Delete this student permanently?")) {
-                db.collection("academy_players").doc(id).delete();
-            }
-        };
+        function onSquareClick() {
+            // Check if player or spectator
+            db.collection("academy_matches").doc(activeMatchId).get().then(doc => {
+                const d = doc.data();
+                if (myId !== d.white && myId !== d.black) return; // Block spectators
+                
+                const sq = $(this).attr('data-square');
+                // Movement logic simplified for example
+                const move = game.move({ from: sq, to: sq, promotion: 'q' }); 
+                if(move) db.collection("academy_matches").doc(activeMatchId).update({ fen: game.fen(), updated: firebase.firestore.FieldValue.serverTimestamp() });
+            });
+        }
 
-        window.adminResetPin = function(id) {
-            const newPin = prompt("Enter new 4-digit PIN:");
-            if(newPin) db.collection("academy_players").doc(id).update({ pin: newPin });
-        };
+        function confirmResign() {
+            if(confirm("Resign this game?")) {
+                db.collection("academy_matches").doc(activeMatchId).update({ status: "resigned" });
+            }
+        }
+
+        function adminDelete(id) {
+            if(confirm("Delete player?")) db.collection("academy_players").doc(id).delete();
+        }
 
         function createMatch(oppId) {
             const id = [myId, oppId].sort().join("_vs_");
             db.collection("academy_matches").doc(id).set({ players: [myId, oppId], white: myId, black: oppId, fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", status: "active", updated: firebase.firestore.FieldValue.serverTimestamp() }, {merge: true}).then(() => loadGame(id));
-        }
-
-        function loadGame(id) {
-            activeMatchId = id; $(".container").addClass("hidden"); $("#section-game").removeClass("hidden");
-            if(!board) {
-                board = ChessBoard('myBoard', { draggable: false, position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
-                $('#myBoard').on('click', '.square-55d63', onMove);
-            }
-            db.collection("academy_matches").doc(id).onSnapshot(doc => {
-                const d = doc.data(); if(d.status === "finished") return showLobby();
-                game.load(d.fen); board.position(d.fen); board.orientation(d.white === myId ? 'white' : 'black');
-                document.getElementById('game-status').innerText = (game.turn() === (d.white === myId ? 'w' : 'b')) ? "🟢 YOUR TURN" : "⏳ WAITING";
-            });
-        }
-
-        function onMove() {
-            const sq = $(this).attr('data-square');
-            if (!activeMatchId) return;
-            // Existing movement logic here...
-            const move = game.move({ from: sq, to: sq, promotion: 'q' }); // Simplified for space
-            db.collection("academy_matches").doc(activeMatchId).update({ fen: game.fen() });
         }
     </script>
 </body>
