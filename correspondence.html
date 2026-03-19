@@ -27,8 +27,8 @@
         .btn-danger:hover { background: var(--danger); color: white; }
 
         /* Scrollable Lists */
-        #match-list, #available-players, #spectate-match-list, #admin-player-list { 
-            max-height: 180px; 
+        #match-list, #available-players, #spectate-match-list, #admin-player-list, #leaderboard { 
+            max-height: 200px; 
             overflow-y: auto; 
             margin-bottom: 15px; 
         }
@@ -37,7 +37,8 @@
 
         .item-row { background: var(--primary); padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #333; cursor: pointer; }
         .rating-badge { background: var(--secondary); color: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: 800; }
-        .mini-btn-del { background: var(--danger); color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer; }
+        .mini-btn-del { background: var(--danger); color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 10px; font-weight: bold; cursor: pointer; }
+        .highlight-sq { background: rgba(74, 222, 128, 0.5) !important; }
     </style>
 </head>
 <body>
@@ -52,6 +53,7 @@
             <option value="🦁">Brave Lion</option>
             <option value="🦅">Eagle Eye</option>
             <option value="🐍">Tactical Cobra</option>
+            <option value="👑">Academy Admin</option>
         </select>
         <input type="password" id="reg-password" placeholder="PIN or Admin Code">
         <button class="btn" onclick="handleRegister()">Enter Arena</button>
@@ -63,14 +65,17 @@
         <h3>⚔️ Active Matches</h3>
         <div id="match-list"></div>
 
+        <h3>🏆 Academy Leaderboard</h3>
+        <div id="leaderboard"></div>
+
+        <h3>🤝 Challenge Students</h3>
+        <div id="available-players">Searching...</div>
+
         <h3>👁️ Spectate Arena</h3>
         <div id="spectate-match-list"></div>
 
-        <h3>🤝 Challenge Students</h3>
-        <div id="available-players">Loading...</div>
-
-        <div id="admin-panel" class="hidden" style="margin-top: 30px; border-top: 2px dashed var(--danger); pt-15px;">
-            <h3 style="color: var(--danger); font-size: 0.9em; margin-top: 15px;">🛠️ Instructor: Manage Players</h3>
+        <div id="admin-panel" class="hidden" style="margin-top: 30px; border-top: 2px dashed var(--danger); padding-top: 15px;">
+            <h3 style="color: var(--danger); font-size: 0.9em; margin-bottom: 10px;">🛠️ Instructor Tools</h3>
             <div id="admin-player-list"></div>
         </div>
     </div>
@@ -112,15 +117,15 @@
             const docRef = db.collection("academy_players").doc(userId);
             const doc = await docRef.get();
             
-            // Check for Admin access
             const isAdmin = (pin === "decipher1234"); 
-
             if(doc.exists && !isAdmin && doc.data().pin !== pin) return alert("Wrong PIN!");
             
-            myData = doc.exists ? doc.data() : { name: rawName, school, avatar: $('#reg-avatar').val(), rating: 1200, pin };
-            if(isAdmin) myData.role = "admin"; // Set role as admin if code matches
+            myData = doc.exists ? doc.data() : { 
+                name: rawName, school, avatar: $('#reg-avatar').val(), 
+                rating: 0, pin, role: isAdmin ? "admin" : "student"
+            };
             
-            if(!doc.exists) await docRef.set(myData);
+            await docRef.set(myData, { merge: true });
             myId = userId;
             showLobby();
         }
@@ -128,40 +133,30 @@
         function showLobby() {
             $(".container").addClass("hidden");
             $("#section-lobby").removeClass("hidden");
-            document.getElementById('user-welcome').innerHTML = `<h3>${myData.avatar} ${myData.name}</h3>`;
+            document.getElementById('user-welcome').innerHTML = `<h3>${myData.avatar} ${myData.name} <span class="rating-badge">${myData.rating} pts</span></h3>`;
             
             if(myData.role === "admin") {
                 $("#admin-panel").removeClass("hidden");
-                loadAdminList(); // Only load delete list for admins
+                loadAdminList();
             }
             loadLobbyData();
         }
 
-        function loadAdminList() {
-            db.collection("academy_players").onSnapshot(snap => {
+        function loadLobbyData() {
+            // Leaderboard (Ranked by Points)
+            db.collection("academy_players").orderBy("rating", "desc").limit(10).onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     const p = doc.data();
-                    if(doc.id !== myId) {
-                        html += `<div class="item-row" style="cursor:default;">
-                            <span style="font-size: 11px;">${p.name} (${p.school})</span>
-                            <button class="mini-btn-del" onclick="deletePlayer('${doc.id}')">DELETE</button>
-                        </div>`;
-                    }
+                    html += `<div class="item-row" style="cursor:default; border-left: 2px solid var(--secondary);">
+                        <span>${p.name}</span>
+                        <span class="rating-badge">${p.rating}</span>
+                    </div>`;
                 });
-                document.getElementById('admin-player-list').innerHTML = html;
+                document.getElementById('leaderboard').innerHTML = html;
             });
-        }
 
-        function deletePlayer(id) {
-            if(confirm("Permanently delete this student's account?")) {
-                db.collection("academy_players").doc(id).delete();
-            }
-        }
-
-        // ... (Keep existing loadLobbyData, loadGame, onSquareClick, createMatch, and confirmResign) ...
-
-        function loadLobbyData() {
+            // My Games
             db.collection("academy_matches").where("players", "array-contains", myId).where("status", "==", "active").onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
@@ -172,31 +167,28 @@
                 document.getElementById('match-list').innerHTML = html || "No active games.";
             });
 
-            db.collection("academy_matches").where("status", "==", "active").limit(10).onSnapshot(snap => {
-                let html = "";
-                snap.forEach(doc => {
-                    const d = doc.data();
-                    html += `<div class="item-row" onclick="loadGame('${doc.id}')" style="border-left: 3px solid var(--accent);">
-                        <span style="font-size: 11px;">${d.white.replace('_',' ')} vs ${d.black.replace('_',' ')}</span>
-                        <span class="rating-badge" style="background: var(--accent);">VIEW</span>
-                    </div>`;
-                });
-                document.getElementById('spectate-match-list').innerHTML = html || "No live games.";
-            });
-
-            db.collection("academy_players").limit(50).get().then(snap => {
+            // Player List
+            db.collection("academy_players").limit(50).onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     if(doc.id !== myId) {
                         const p = doc.data();
                         html += `<div class="item-row" onclick="createMatch('${doc.id}')">
                             <span style="font-size: 13px;">${p.name} <small style="display:block; color:#888;">${p.school}</small></span>
-                            <span class="rating-badge">${p.rating || 1200}</span>
+                            <span class="rating-badge">${p.rating}</span>
                         </div>`;
                     }
                 });
                 document.getElementById('available-players').innerHTML = html;
             });
+        }
+
+        function updatePoints(winnerId, loserId, type) {
+            const winAmt = 20;
+            const lossAmt = type === 'resign' ? 10 : 5;
+
+            db.collection("academy_players").doc(winnerId).update({ rating: firebase.firestore.FieldValue.increment(winAmt) });
+            db.collection("academy_players").doc(loserId).update({ rating: firebase.firestore.FieldValue.increment(-lossAmt) });
         }
 
         function loadGame(id) {
@@ -209,8 +201,25 @@
             }
             db.collection("academy_matches").doc(id).onSnapshot(doc => {
                 const d = doc.data();
-                if(!d || d.status !== "active") return showLobby();
+                if(!d) return;
+                
+                // Handle Game Over
+                if(d.status !== "active") {
+                    alert("Game Over! " + d.status.toUpperCase());
+                    return showLobby();
+                }
+
                 game.load(d.fen); board.position(d.fen);
+                
+                // Checkmate detection
+                if(game.in_checkmate()) {
+                    const loser = game.turn() === 'w' ? d.white : d.black;
+                    const winner = game.turn() === 'w' ? d.black : d.white;
+                    db.collection("academy_matches").doc(id).update({ status: "checkmate" });
+                    updatePoints(winner, loser, 'mate');
+                    return;
+                }
+
                 document.getElementById('label-white').innerText = `White: ${d.white.replace('_',' ')}`;
                 document.getElementById('label-black').innerText = `Black: ${d.black.replace('_',' ')}`;
                 const isWhite = (myId === d.white); const isBlack = (myId === d.black);
@@ -249,14 +258,37 @@
             });
         }
 
-        function createMatch(oppId) {
-            const matchId = [myId, oppId].sort().join("_vs_");
-            db.collection("academy_matches").doc(matchId).set({ players: [myId, oppId], white: myId, black: oppId, fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", status: "active", updated: firebase.firestore.FieldValue.serverTimestamp() }, {merge: true}).then(() => loadGame(matchId));
+        function confirmResign() {
+            if(confirm("Resign? You will lose 10 points.")) {
+                db.collection("academy_matches").doc(activeMatchId).get().then(doc => {
+                    const d = doc.data();
+                    const winner = myId === d.white ? d.black : d.white;
+                    db.collection("academy_matches").doc(activeMatchId).update({ status: "resigned" });
+                    updatePoints(winner, myId, 'resign');
+                });
+            }
         }
 
-        function confirmResign() {
-            if(confirm("Are you sure you want to resign?")) db.collection("academy_matches").doc(activeMatchId).update({ status: "resigned" });
+        function createMatch(oppId) {
+            const matchId = [myId, oppId].sort().join("_vs_");
+            db.collection("academy_matches").doc(matchId).set({ 
+                players: [myId, oppId], white: myId, black: oppId, 
+                fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 
+                status: "active", updated: firebase.firestore.FieldValue.serverTimestamp() 
+            }, {merge: true}).then(() => loadGame(matchId));
         }
+
+        function loadAdminList() {
+            db.collection("academy_players").onSnapshot(snap => {
+                let html = "";
+                snap.forEach(doc => {
+                    if(doc.id !== myId) html += `<div class="item-row"><span>${doc.data().name}</span><button class="mini-btn-del" onclick="deletePlayer('${doc.id}')">DEL</button></div>`;
+                });
+                document.getElementById('admin-player-list').innerHTML = html;
+            });
+        }
+
+        function deletePlayer(id) { if(confirm("Delete player?")) db.collection("academy_players").doc(id).delete(); }
     </script>
 </body>
 </html>
