@@ -26,20 +26,12 @@
         .btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; padding: 12px; font-size: 12px; width: 100%; margin-bottom: 10px; text-transform: uppercase; font-weight: bold; }
         .btn-danger:hover { background: var(--danger); color: white; }
 
-        /* Scrollable Lists */
-        #match-list, #available-players, #admin-player-list, #spectate-match-list {
-            max-height: 160px; 
-            overflow-y: auto;
-            padding-right: 8px;
-            margin-bottom: 15px;
-        }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: var(--secondary); border-radius: 10px; }
-
-        .item-row { background: var(--primary); padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #333; }
+        #match-list, #available-players, #spectate-match-list { max-height: 180px; overflow-y: auto; margin-bottom: 15px; }
+        .item-row { background: var(--primary); padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #333; cursor: pointer; }
         .rating-badge { background: var(--secondary); color: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: 800; }
-        .admin-controls { display: flex; gap: 5px; }
-        .mini-btn { padding: 4px 8px; font-size: 10px; border-radius: 4px; cursor: pointer; border: 1px solid var(--danger); color: var(--danger); background: transparent; }
+        
+        /* Highlight for selected piece */
+        .highlight-sq { background: rgba(74, 222, 128, 0.5) !important; }
     </style>
 </head>
 <body>
@@ -51,10 +43,9 @@
         <input type="text" id="reg-name" placeholder="Full Name">
         <input type="text" id="reg-school" placeholder="School Name">
         <select id="reg-avatar">
-            <option value="🎯">🎯 Attacker</option>
-            <option value="🛡️">🛡️ Defender</option>
-            <option value="🧩">🧩 Positional Player</option>
-            <option value="⚡">⚡ Tactical Wizard</option>
+            <option value="🦁">Brave Lion</option>
+            <option value="🦅">Eagle Eye</option>
+            <option value="🐍">Tactical Cobra</option>
         </select>
         <input type="password" id="reg-password" placeholder="PIN or Admin Code">
         <button class="btn" onclick="handleRegister()">Enter Arena</button>
@@ -63,34 +54,24 @@
     <div id="section-lobby" class="container hidden">
         <div id="user-welcome" style="text-align:center; margin-bottom:15px;"></div>
         
-        <div id="admin-panel" class="hidden" style="border: 1px dashed var(--secondary); padding: 10px; border-radius: 8px; margin-bottom: 20px;">
-            <h3 style="font-size: 0.8em; color: var(--danger);">🛠️ Instructor Tools</h3>
-            <div id="admin-player-list"></div>
-        </div>
-
-        <h3>⚔️ Your Active Matches</h3>
+        <h3>⚔️ Active Matches</h3>
         <div id="match-list"></div>
 
         <h3>👁️ Spectate Arena</h3>
         <div id="spectate-match-list"></div>
 
-        <h3>🤝 Challenge a Friend</h3>
-        <div id="available-players">Searching...</div>
-
-        <h3 style="margin-top: 20px;">🏆 Top 10 Masters</h3>
-        <div id="leaderboard-list"></div>
+        <h3>🤝 Challenge Students</h3>
+        <div id="available-players">Loading...</div>
     </div>
 
     <div id="section-game" class="container hidden">
-        <div id="match-header" style="display:flex; justify-content:space-between; margin-bottom:10px; font-size: 0.8em; font-weight: bold;">
-            <span id="label-white">White</span>
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size: 0.85em; font-weight: bold; color: #aaa;">
+            <span id="label-white">White: --</span>
             <span style="color:var(--secondary)">VS</span>
-            <span id="label-black">Black</span>
+            <span id="label-black">Black: --</span>
         </div>
-        <div id="board-container" style="width: 100%; border: 3px solid var(--secondary); border-radius: 8px; overflow: hidden; margin-bottom: 15px;">
-            <div id="myBoard"></div>
-        </div>
-        <div id="game-status" style="text-align:center; font-weight:bold; color:var(--secondary); margin-bottom:15px;">Your Turn</div>
+        <div id="myBoard" style="width: 100%; border: 2px solid var(--secondary); border-radius: 8px; margin-bottom: 15px;"></div>
+        <div id="game-status" style="text-align:center; font-weight:bold; color:var(--secondary); margin-bottom:15px;">Loading...</div>
         
         <button class="btn-danger" id="resign-btn" onclick="confirmResign()">🏳️ Resign Match</button>
         <button class="btn" onclick="showLobby()">Back to Lobby</button>
@@ -109,76 +90,68 @@
         const db = firebase.firestore();
 
         let game = new Chess(), board = null, myId = null, myData = null, activeMatchId = null;
+        let sourceSquare = null; // Used for click-to-move logic
 
         async function handleRegister() {
             const name = document.getElementById('reg-name').value.trim();
             const school = document.getElementById('reg-school').value.trim();
-            const enteredPass = document.getElementById('reg-password').value.trim();
-            if(!name || !school || !enteredPass) return alert("Fill all fields!");
+            const pin = document.getElementById('reg-password').value.trim();
+            if(!name || !school || !pin) return alert("Fill all fields!");
 
-            if (enteredPass === "decipher1234") {
-                myId = "admin_" + name.toLowerCase().replace(/\s/g, '_');
-                myData = { name: name, school: "Admin", avatar: "👑", rating: 2000, role: "admin" };
-                await db.collection("academy_players").doc(myId).set(myData, {merge: true});
-            } else {
-                myId = name.toLowerCase().replace(/\s/g, '_');
-                const doc = await db.collection("academy_players").doc(myId).get();
-                if (doc.exists && doc.data().pin !== enteredPass) return alert("Wrong PIN!");
-                myData = doc.exists ? doc.data() : { name, school, avatar: $('#reg-avatar').val(), rating: 1500, pin: enteredPass, role: "student" };
-                if (!doc.exists) await db.collection("academy_players").doc(myId).set(myData);
-            }
+            myId = name.toLowerCase().replace(/\s/g, '_');
+            const doc = await db.collection("academy_players").doc(myId).get();
+            
+            if(doc.exists && doc.data().pin !== pin) return alert("Wrong PIN!");
+            
+            myData = doc.exists ? doc.data() : { name, school, avatar: $('#reg-avatar').val(), rating: 1200, pin };
+            if(!doc.exists) await db.collection("academy_players").doc(myId).set(myData);
+            
             showLobby();
         }
 
         function showLobby() {
             $(".container").addClass("hidden");
             $("#section-lobby").removeClass("hidden");
-            if(myData.role === "admin") $("#admin-panel").removeClass("hidden");
             document.getElementById('user-welcome').innerHTML = `<h3>${myData.avatar} ${myData.name}</h3>`;
             loadLobbyData();
         }
 
         function loadLobbyData() {
-            // Your Matches
+            // My Active Games
             db.collection("academy_matches").where("players", "array-contains", myId).where("status", "==", "active").onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     const d = doc.data();
                     const opp = d.white === myId ? d.black : d.white;
-                    html += `<button class="btn" style="font-size: 11px;" onclick="loadGame('${doc.id}')">PLAY VS ${opp.toUpperCase()}</button>`;
+                    html += `<button class="btn" onclick="loadGame('${doc.id}')">VS ${opp.replace('_',' ').toUpperCase()}</button>`;
                 });
                 document.getElementById('match-list').innerHTML = html || "No active games.";
             });
 
-            // Spectate ALL Matches
-            db.collection("academy_matches").where("status", "==", "active").limit(10).onSnapshot(snap => {
+            // Spectate Arena
+            db.collection("academy_matches").where("status", "==", "active").limit(5).onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     const d = doc.data();
-                    html += `<div class="item-row" onclick="loadGame('${doc.id}')" style="cursor:pointer; border-left: 3px solid var(--accent);">
-                        <span style="font-size: 10px;">${d.white} vs ${d.black}</span>
-                        <span class="rating-badge" style="background: var(--accent);">WATCH</span>
+                    html += `<div class="item-row" onclick="loadGame('${doc.id}')" style="border-left: 3px solid var(--accent);">
+                        <span style="font-size: 11px;">${d.white.replace('_',' ')} vs ${d.black.replace('_',' ')}</span>
+                        <span class="rating-badge" style="background: var(--accent);">VIEW</span>
                     </div>`;
                 });
                 document.getElementById('spectate-match-list').innerHTML = html || "No live games.";
             });
 
-            // Admin List
-            if (myData.role === "admin") {
-                db.collection("academy_players").onSnapshot(snap => {
-                    let h = "";
-                    snap.forEach(doc => {
-                        if(doc.data().role !== 'admin') h += `<div class="item-row" style="font-size: 10px;"><span>${doc.data().name}</span><div class="admin-controls"><button class="mini-btn" onclick="adminDelete('${doc.id}')">DEL</button></div></div>`;
-                    });
-                    document.getElementById('admin-player-list').innerHTML = h;
-                });
-            }
-
             // Challenge List
-            db.collection("academy_players").limit(10).get().then(snap => {
+            db.collection("academy_players").limit(20).get().then(snap => {
                 let html = "";
                 snap.forEach(doc => {
-                    if(doc.id !== myId) html += `<div class="item-row" onclick="createMatch('${doc.id}')"><span>${doc.data().name}</span><span class="rating-badge">${doc.data().rating}</span></div>`;
+                    if(doc.id !== myId) {
+                        const p = doc.data();
+                        html += `<div class="item-row" onclick="createMatch('${doc.id}')">
+                            <span style="font-size: 13px;">${p.name} <small style="display:block; color:#888;">${p.school}</small></span>
+                            <span class="rating-badge">${p.rating || 1200}</span>
+                        </div>`;
+                    }
                 });
                 document.getElementById('available-players').innerHTML = html;
             });
@@ -188,18 +161,34 @@
             activeMatchId = id;
             $(".container").addClass("hidden");
             $("#section-game").removeClass("hidden");
+            
             if(!board) {
-                board = ChessBoard('myBoard', { draggable: false, position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
+                board = ChessBoard('myBoard', { 
+                    draggable: false, 
+                    position: 'start', 
+                    pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' 
+                });
                 $('#myBoard').on('click', '.square-55d63', onSquareClick);
             }
+
             db.collection("academy_matches").doc(id).onSnapshot(doc => {
                 const d = doc.data();
-                if(d.status !== "active") return showLobby();
-                game.load(d.fen); board.position(d.fen);
-                const isPlayer = (myId === d.white || myId === d.black);
-                if(isPlayer) {
-                    board.orientation(d.white === myId ? 'white' : 'black');
-                    document.getElementById('game-status').innerText = (game.turn() === (d.white === myId ? 'w' : 'b')) ? "🟢 YOUR TURN" : "⏳ WAITING";
+                if(!d || d.status !== "active") return showLobby();
+                
+                game.load(d.fen);
+                board.position(d.fen);
+                
+                // Update Opponent Names
+                document.getElementById('label-white').innerText = `White: ${d.white.replace('_',' ')}`;
+                document.getElementById('label-black').innerText = `Black: ${d.black.replace('_',' ')}`;
+                
+                const isWhite = (myId === d.white);
+                const isBlack = (myId === d.black);
+                
+                if(isWhite || isBlack) {
+                    board.orientation(isWhite ? 'white' : 'black');
+                    const myTurn = (game.turn() === (isWhite ? 'w' : 'b'));
+                    document.getElementById('game-status').innerText = myTurn ? "🟢 YOUR TURN" : "⏳ OPPONENT'S TURN";
                     $("#resign-btn").show();
                 } else {
                     board.orientation('white');
@@ -210,31 +199,68 @@
         }
 
         function onSquareClick() {
-            // Check if player or spectator
+            if (!activeMatchId) return;
+            const square = $(this).attr('data-square');
+            
             db.collection("academy_matches").doc(activeMatchId).get().then(doc => {
                 const d = doc.data();
-                if (myId !== d.white && myId !== d.black) return; // Block spectators
+                const isWhite = (myId === d.white);
+                const isBlack = (myId === d.black);
                 
-                const sq = $(this).attr('data-square');
-                // Movement logic simplified for example
-                const move = game.move({ from: sq, to: sq, promotion: 'q' }); 
-                if(move) db.collection("academy_matches").doc(activeMatchId).update({ fen: game.fen(), updated: firebase.firestore.FieldValue.serverTimestamp() });
+                // Security: Turn check
+                if (game.turn() === 'w' && !isWhite) return;
+                if (game.turn() === 'b' && !isBlack) return;
+
+                if (sourceSquare === null) {
+                    // Click 1: Selection
+                    if (game.get(square) && game.get(square).color === game.turn()) {
+                        sourceSquare = square;
+                        $('.square-55d63').removeClass('highlight-sq');
+                        $(this).addClass('highlight-sq');
+                    }
+                } else {
+                    // Click 2: Movement
+                    const move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
+                    
+                    if (move === null) {
+                        // Switch selection if clicking another of your pieces
+                        if (game.get(square) && game.get(square).color === game.turn()) {
+                            sourceSquare = square;
+                            $('.square-55d63').removeClass('highlight-sq');
+                            $(this).addClass('highlight-sq');
+                        } else {
+                            sourceSquare = null;
+                            $('.square-55d63').removeClass('highlight-sq');
+                        }
+                    } else {
+                        // Success
+                        sourceSquare = null;
+                        $('.square-55d63').removeClass('highlight-sq');
+                        db.collection("academy_matches").doc(activeMatchId).update({
+                            fen: game.fen(),
+                            updated: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                }
             });
         }
 
+        function createMatch(oppId) {
+            const matchId = [myId, oppId].sort().join("_vs_");
+            db.collection("academy_matches").doc(matchId).set({
+                players: [myId, oppId],
+                white: myId,
+                black: oppId,
+                fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                status: "active",
+                updated: firebase.firestore.FieldValue.serverTimestamp()
+            }, {merge: true}).then(() => loadGame(matchId));
+        }
+
         function confirmResign() {
-            if(confirm("Resign this game?")) {
+            if(confirm("Are you sure you want to resign?")) {
                 db.collection("academy_matches").doc(activeMatchId).update({ status: "resigned" });
             }
-        }
-
-        function adminDelete(id) {
-            if(confirm("Delete player?")) db.collection("academy_players").doc(id).delete();
-        }
-
-        function createMatch(oppId) {
-            const id = [myId, oppId].sort().join("_vs_");
-            db.collection("academy_matches").doc(id).set({ players: [myId, oppId], white: myId, black: oppId, fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", status: "active", updated: firebase.firestore.FieldValue.serverTimestamp() }, {merge: true}).then(() => loadGame(id));
         }
     </script>
 </body>
