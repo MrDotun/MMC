@@ -26,24 +26,18 @@
         .btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; padding: 12px; font-size: 12px; width: 100%; margin-bottom: 10px; text-transform: uppercase; font-weight: bold; }
         .btn-danger:hover { background: var(--danger); color: white; }
 
-        /* --- Scroll Logic --- */
-        #match-list, #available-players, #spectate-match-list { 
-            max-height: 200px; /* Fixed height for mobile */
+        /* Scrollable Lists */
+        #match-list, #available-players, #spectate-match-list, #admin-player-list { 
+            max-height: 180px; 
             overflow-y: auto; 
             margin-bottom: 15px; 
-            padding-right: 5px;
         }
-
-        /* Custom Scrollbar for better UI */
-        #match-list::-webkit-scrollbar, #available-players::-webkit-scrollbar { width: 4px; }
-        #match-list::-webkit-scrollbar-thumb, #available-players::-webkit-scrollbar-thumb { 
-            background: var(--secondary); 
-            border-radius: 10px; 
-        }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: var(--secondary); border-radius: 10px; }
 
         .item-row { background: var(--primary); padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #333; cursor: pointer; }
         .rating-badge { background: var(--secondary); color: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: 800; }
-        .highlight-sq { background: rgba(74, 222, 128, 0.5) !important; }
+        .mini-btn-del { background: var(--danger); color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -74,6 +68,11 @@
 
         <h3>🤝 Challenge Students</h3>
         <div id="available-players">Loading...</div>
+
+        <div id="admin-panel" class="hidden" style="margin-top: 30px; border-top: 2px dashed var(--danger); pt-15px;">
+            <h3 style="color: var(--danger); font-size: 0.9em; margin-top: 15px;">🛠️ Instructor: Manage Players</h3>
+            <div id="admin-player-list"></div>
+        </div>
     </div>
 
     <div id="section-game" class="container hidden">
@@ -101,41 +100,27 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        let game = new Chess(), board = null, myId = null, myData = null, activeMatchId = null;
-        let sourceSquare = null;
+        let game = new Chess(), board = null, myId = null, myData = null, activeMatchId = null, sourceSquare = null;
 
-        // --- Anti-Duplicate Account Logic ---
         async function handleRegister() {
             const rawName = document.getElementById('reg-name').value.trim();
             const school = document.getElementById('reg-school').value.trim();
             const pin = document.getElementById('reg-password').value.trim();
-            
             if(!rawName || !school || !pin) return alert("Fill all fields!");
 
-            // Normalize ID to prevent slight name variations creating new accounts
             const userId = rawName.toLowerCase().replace(/\s/g, '_');
             const docRef = db.collection("academy_players").doc(userId);
             const doc = await docRef.get();
             
-            if(doc.exists) {
-                // If account exists, verify the school or PIN to prevent duplicates
-                const existingData = doc.data();
-                if(existingData.pin !== pin) {
-                    return alert("This name is already registered. Please use the correct PIN or a different name.");
-                }
-                myData = existingData;
-            } else {
-                // New Account Creation
-                myData = { 
-                    name: rawName, 
-                    school: school, 
-                    avatar: $('#reg-avatar').val(), 
-                    rating: 1200, 
-                    pin: pin 
-                };
-                await docRef.set(myData);
-            }
+            // Check for Admin access
+            const isAdmin = (pin === "decipher1234"); 
+
+            if(doc.exists && !isAdmin && doc.data().pin !== pin) return alert("Wrong PIN!");
             
+            myData = doc.exists ? doc.data() : { name: rawName, school, avatar: $('#reg-avatar').val(), rating: 1200, pin };
+            if(isAdmin) myData.role = "admin"; // Set role as admin if code matches
+            
+            if(!doc.exists) await docRef.set(myData);
             myId = userId;
             showLobby();
         }
@@ -144,8 +129,37 @@
             $(".container").addClass("hidden");
             $("#section-lobby").removeClass("hidden");
             document.getElementById('user-welcome').innerHTML = `<h3>${myData.avatar} ${myData.name}</h3>`;
+            
+            if(myData.role === "admin") {
+                $("#admin-panel").removeClass("hidden");
+                loadAdminList(); // Only load delete list for admins
+            }
             loadLobbyData();
         }
+
+        function loadAdminList() {
+            db.collection("academy_players").onSnapshot(snap => {
+                let html = "";
+                snap.forEach(doc => {
+                    const p = doc.data();
+                    if(doc.id !== myId) {
+                        html += `<div class="item-row" style="cursor:default;">
+                            <span style="font-size: 11px;">${p.name} (${p.school})</span>
+                            <button class="mini-btn-del" onclick="deletePlayer('${doc.id}')">DELETE</button>
+                        </div>`;
+                    }
+                });
+                document.getElementById('admin-player-list').innerHTML = html;
+            });
+        }
+
+        function deletePlayer(id) {
+            if(confirm("Permanently delete this student's account?")) {
+                db.collection("academy_players").doc(id).delete();
+            }
+        }
+
+        // ... (Keep existing loadLobbyData, loadGame, onSquareClick, createMatch, and confirmResign) ...
 
         function loadLobbyData() {
             db.collection("academy_matches").where("players", "array-contains", myId).where("status", "==", "active").onSnapshot(snap => {
@@ -170,7 +184,6 @@
                 document.getElementById('spectate-match-list').innerHTML = html || "No live games.";
             });
 
-            // Increased limit to 50 to test the new scroll feature
             db.collection("academy_players").limit(50).get().then(snap => {
                 let html = "";
                 snap.forEach(doc => {
@@ -190,33 +203,22 @@
             activeMatchId = id;
             $(".container").addClass("hidden");
             $("#section-game").removeClass("hidden");
-            
             if(!board) {
-                board = ChessBoard('myBoard', { 
-                    draggable: false, 
-                    position: 'start', 
-                    pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' 
-                });
+                board = ChessBoard('myBoard', { draggable: false, position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
                 $('#myBoard').on('click', '.square-55d63', onSquareClick);
             }
-
             db.collection("academy_matches").doc(id).onSnapshot(doc => {
                 const d = doc.data();
                 if(!d || d.status !== "active") return showLobby();
-                game.load(d.fen);
-                board.position(d.fen);
+                game.load(d.fen); board.position(d.fen);
                 document.getElementById('label-white').innerText = `White: ${d.white.replace('_',' ')}`;
                 document.getElementById('label-black').innerText = `Black: ${d.black.replace('_',' ')}`;
-                const isWhite = (myId === d.white);
-                const isBlack = (myId === d.black);
+                const isWhite = (myId === d.white); const isBlack = (myId === d.black);
                 if(isWhite || isBlack) {
                     board.orientation(isWhite ? 'white' : 'black');
-                    const myTurn = (game.turn() === (isWhite ? 'w' : 'b'));
-                    document.getElementById('game-status').innerText = myTurn ? "🟢 YOUR TURN" : "⏳ OPPONENT'S TURN";
-                    $("#resign-btn").show();
+                    document.getElementById('game-status').innerText = (game.turn() === (isWhite ? 'w' : 'b')) ? "🟢 YOUR TURN" : "⏳ OPPONENT'S TURN";
                 } else {
-                    board.orientation('white');
-                    document.getElementById('game-status').innerText = "👁️ SPECTATING";
+                    board.orientation('white'); document.getElementById('game-status').innerText = "👁️ SPECTATING";
                     $("#resign-btn").hide();
                 }
             });
@@ -231,28 +233,17 @@
                 if (game.turn() === 'b' && myId !== d.black) return;
                 if (sourceSquare === null) {
                     if (game.get(square) && game.get(square).color === game.turn()) {
-                        sourceSquare = square;
-                        $('.square-55d63').removeClass('highlight-sq');
-                        $(this).addClass('highlight-sq');
+                        sourceSquare = square; $('.square-55d63').removeClass('highlight-sq'); $(this).addClass('highlight-sq');
                     }
                 } else {
                     const move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
                     if (move === null) {
                         if (game.get(square) && game.get(square).color === game.turn()) {
-                            sourceSquare = square;
-                            $('.square-55d63').removeClass('highlight-sq');
-                            $(this).addClass('highlight-sq');
-                        } else {
-                            sourceSquare = null;
-                            $('.square-55d63').removeClass('highlight-sq');
-                        }
+                            sourceSquare = square; $('.square-55d63').removeClass('highlight-sq'); $(this).addClass('highlight-sq');
+                        } else { sourceSquare = null; $('.square-55d63').removeClass('highlight-sq'); }
                     } else {
-                        sourceSquare = null;
-                        $('.square-55d63').removeClass('highlight-sq');
-                        db.collection("academy_matches").doc(activeMatchId).update({
-                            fen: game.fen(),
-                            updated: firebase.firestore.FieldValue.serverTimestamp()
-                        });
+                        sourceSquare = null; $('.square-55d63').removeClass('highlight-sq');
+                        db.collection("academy_matches").doc(activeMatchId).update({ fen: game.fen(), updated: firebase.firestore.FieldValue.serverTimestamp() });
                     }
                 }
             });
@@ -260,20 +251,11 @@
 
         function createMatch(oppId) {
             const matchId = [myId, oppId].sort().join("_vs_");
-            db.collection("academy_matches").doc(matchId).set({
-                players: [myId, oppId],
-                white: myId,
-                black: oppId,
-                fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-                status: "active",
-                updated: firebase.firestore.FieldValue.serverTimestamp()
-            }, {merge: true}).then(() => loadGame(matchId));
+            db.collection("academy_matches").doc(matchId).set({ players: [myId, oppId], white: myId, black: oppId, fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", status: "active", updated: firebase.firestore.FieldValue.serverTimestamp() }, {merge: true}).then(() => loadGame(matchId));
         }
 
         function confirmResign() {
-            if(confirm("Are you sure you want to resign?")) {
-                db.collection("academy_matches").doc(activeMatchId).update({ status: "resigned" });
-            }
+            if(confirm("Are you sure you want to resign?")) db.collection("academy_matches").doc(activeMatchId).update({ status: "resigned" });
         }
     </script>
 </body>
