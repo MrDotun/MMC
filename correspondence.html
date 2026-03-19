@@ -18,8 +18,8 @@
         .container { width: 100%; max-width: 400px; background: var(--card); padding: 20px; border-radius: 12px; box-sizing: border-box; margin-bottom: 20px; border: 1px solid #333; }
         .hidden { display: none !important; }
         h2, h3 { color: var(--secondary); text-align: center; margin-top: 0; text-transform: uppercase; letter-spacing: 1px; }
-        input, select { width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 8px; border: 2px solid var(--secondary); background: var(--bg); color: white; box-sizing: border-box; }
-        .btn { padding: 14px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; margin-bottom: 10px; text-transform: uppercase; transition: 0.3s; }
+        input, select { width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 8px; border: 2px solid var(--secondary); background: var(--bg); color: white; box-sizing: border-box; font-size: 16px; }
+        .btn { padding: 14px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; margin-bottom: 10px; text-transform: uppercase; transition: 0.3s; font-size: 16px; outline: none; }
         .btn:hover { background: var(--secondary); color: var(--bg); }
         #board-container { width: 100%; border: 3px solid var(--secondary); border-radius: 8px; overflow: hidden; margin-bottom: 15px; }
         .highlight-selected { background-color: rgba(74, 222, 128, 0.7) !important; }
@@ -36,10 +36,12 @@
         <input type="text" id="reg-name" placeholder="Full Name">
         <input type="text" id="reg-school" placeholder="School Name">
         <select id="reg-avatar">
-            <option value="🦁">🦁 Brave Lion</option>
-            <option value="🐉">🐉 Fire Dragon</option>
-            <option value="🦉">🦉 Wise Owl</option>
+            <option value="🎯">🎯 Attacker</option>
+            <option value="🛡️">🛡️ Defender</option>
+            <option value="🧩">🧩 Positional Player</option>
+            <option value="⚡">⚡ Tactical Wizard</option>
         </select>
+        <input type="password" id="reg-password" placeholder="PIN or Admin Code">
         <button class="btn" onclick="handleRegister()">Enter Arena</button>
     </div>
 
@@ -85,12 +87,11 @@
         async function handleRegister() {
             const name = document.getElementById('reg-name').value.trim();
             const school = document.getElementById('reg-school').value.trim();
-            if(!name || !school) return alert("Please enter your name and school!");
+            const enteredPass = document.getElementById('reg-password').value.trim();
+            
+            if(!name || !school || !enteredPass) return alert("Please fill all fields!");
 
-            const enteredPass = prompt("Enter your Private Academy PIN (4 digits) or Admin Code:");
-            if (!enteredPass) return;
-
-            // Admin Access Logic
+            // Admin Code: decipher1234
             if (enteredPass === "decipher1234") {
                 myId = "admin_" + name.toLowerCase().replace(/\s/g, '_');
                 myData = { name: name, school: "Academy Admin", avatar: "👑", rating: 1500, role: "admin" };
@@ -99,7 +100,7 @@
                 return;
             }
 
-            // Student Impersonation Protection Logic
+            // Student Login/Reg with PIN logic
             myId = name.toLowerCase().replace(/\s/g, '_');
             const userRef = db.collection("academy_players").doc(myId);
             const doc = await userRef.get();
@@ -112,14 +113,10 @@
                     alert("Incorrect PIN! If you forgot it, ask your instructor to reset it.");
                 }
             } else {
-                // Initial Registration with Default Rating 1500
                 myData = {
-                    name: name,
-                    school: school,
+                    name: name, school: school,
                     avatar: document.getElementById('reg-avatar').value,
-                    rating: 1500,
-                    pin: enteredPass,
-                    role: "student"
+                    rating: 1500, pin: enteredPass, role: "student"
                 };
                 await userRef.set(myData);
                 showLobby();
@@ -134,7 +131,6 @@
         }
 
         function loadLobbyData() {
-            // Live Leaderboard sorted by rating
             db.collection("academy_players").orderBy("rating", "desc").limit(10).onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
@@ -147,7 +143,6 @@
                 document.getElementById('leaderboard-list').innerHTML = html;
             });
 
-            // Available Challengers
             db.collection("academy_players").limit(20).get().then(snap => {
                 let html = "";
                 snap.forEach(doc => {
@@ -161,7 +156,6 @@
                 document.getElementById('available-players').innerHTML = html || "No other students online.";
             });
 
-            // Match List
             db.collection("academy_matches").where("players", "array-contains", myId).where("status", "==", "active").onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
@@ -178,8 +172,7 @@
             db.collection("academy_matches").doc(id).set({
                 players: [myId, oppId], white: myId, black: oppId,
                 fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-                status: "active",
-                updated: firebase.firestore.FieldValue.serverTimestamp()
+                status: "active", updated: firebase.firestore.FieldValue.serverTimestamp()
             }, {merge: true}).then(() => loadGame(id));
         }
 
@@ -221,9 +214,7 @@
         }
 
         function checkGameOver() {
-            let status = "active";
-            let winner = null;
-
+            let status = "active", winner = null;
             if (game.in_checkmate()) {
                 status = "finished";
                 winner = game.turn() === 'w' ? 'black' : 'white';
@@ -231,14 +222,12 @@
                 status = "finished";
                 winner = "draw";
             }
-
             const updateData = { fen: game.fen(), updated: firebase.firestore.FieldValue.serverTimestamp() };
             if (status === "finished") {
                 updateData.status = "finished";
                 updateData.winner = winner;
                 processRatingChange(winner);
             }
-
             db.collection("academy_matches").doc(activeMatchId).update(updateData);
         }
 
@@ -247,23 +236,15 @@
             const m = matchDoc.data();
             const whiteRef = db.collection("academy_players").doc(m.white);
             const blackRef = db.collection("academy_players").doc(m.black);
-
             const [wDoc, bDoc] = await Promise.all([whiteRef.get(), blackRef.get()]);
-            let wR = wDoc.data().rating;
-            let bR = bDoc.data().rating;
+            let wR = wDoc.data().rating, bR = bDoc.data().rating, wChange = 0, bChange = 0;
 
-            let wChange = 0, bChange = 0;
-
-            // Rating logic: 10-15 for wins/losses, +2/+3 for draws
             if (result === "white") {
-                wChange = Math.floor(Math.random() * 6) + 10;
-                bChange = -wChange;
+                wChange = Math.floor(Math.random() * 6) + 10; bChange = -wChange;
             } else if (result === "black") {
-                bChange = Math.floor(Math.random() * 6) + 10;
-                wChange = -bChange;
+                bChange = Math.floor(Math.random() * 6) + 10; wChange = -bChange;
             } else if (result === "draw") {
-                wChange = wR < bR ? 3 : 2;
-                bChange = bR < wR ? 3 : 2;
+                wChange = wR < bR ? 3 : 2; bChange = bR < wR ? 3 : 2;
             }
 
             await Promise.all([
