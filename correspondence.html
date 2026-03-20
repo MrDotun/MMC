@@ -23,9 +23,6 @@
         .btn { padding: 14px; cursor: pointer; border-radius: 8px; border: 1px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; margin-bottom: 10px; text-transform: uppercase; transition: 0.3s; font-size: 14px; outline: none; }
         .btn:hover { background: var(--secondary); color: var(--bg); }
         
-        .btn-guest { border-color: #aaa; color: #aaa; background: transparent; }
-        .btn-guest:hover { background: #aaa; color: var(--bg); }
-
         .btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; padding: 12px; font-size: 12px; width: 100%; margin-bottom: 10px; text-transform: uppercase; font-weight: bold; }
         .btn-danger:hover { background: var(--danger); color: white; }
 
@@ -39,16 +36,36 @@
         .rating-badge { background: var(--secondary); color: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: 800; }
         .mini-btn-del { background: var(--danger); color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 10px; font-weight: bold; cursor: pointer; }
         .highlight-sq { background: rgba(74, 222, 128, 0.5) !important; }
+
+        /* Profile Modal Style */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .profile-card { background: var(--card); border: 2px solid var(--secondary); padding: 25px; border-radius: 15px; width: 300px; text-align: center; }
+        .name-clickable { text-decoration: underline; cursor: pointer; color: var(--secondary); }
     </style>
 </head>
 <body>
 
     <h1 style="color: var(--secondary); margin-bottom: 20px; font-style: italic;">♟️ ARENA</h1>
 
+    <div id="profile-modal" class="modal-overlay hidden">
+        <div class="profile-card">
+            <h2 id="prof-name">--</h2>
+            <p><strong>School:</strong> <span id="prof-school">--</span></p>
+            <p><strong>Age:</strong> <span id="prof-age">--</span> | <strong>Class:</strong> <span id="prof-class">--</span></p>
+            <p style="font-style: italic; color: #aaa; border-top: 1px solid #333; padding-top: 10px;">"<span id="prof-quote">--</span>"</p>
+            <button class="btn" style="margin-top: 10px;" onclick="$('#profile-modal').addClass('hidden')">Close</button>
+        </div>
+    </div>
+
     <div id="section-register" class="container">
         <h2>Student Access</h2>
         <input type="text" id="reg-name" placeholder="Full Name">
         <input type="text" id="reg-school" placeholder="School Name">
+        <div style="display: flex; gap: 10px;">
+            <input type="number" id="reg-age" placeholder="Age" style="width: 40%;">
+            <input type="text" id="reg-class" placeholder="Class/Grade" style="width: 60%;">
+        </div>
+        <input type="text" id="reg-quote" placeholder="Your Chess Quote (e.g. Checkmate!)">
         <select id="reg-avatar">
             <option value="🦁">Brave Lion</option>
             <option value="🦅">Eagle Eye</option>
@@ -57,29 +74,31 @@
         </select>
         <input type="password" id="reg-password" placeholder="PIN or Admin Code">
         <button class="btn" onclick="handleRegister()">Enter Arena</button>
-        <button class="btn btn-guest" onclick="enterAsGuest()">👁️ Spectate as Guest</button>
+        <button class="btn" style="border-color:#888; color:#888;" onclick="enterAsGuest()">Spectate as Guest</button>
     </div>
 
     <div id="section-lobby" class="container hidden">
         <div id="user-welcome" style="text-align:center; margin-bottom:15px;"></div>
         
-        <div id="player-only-sections">
+        <div id="match-section">
             <h3>⚔️ Active Matches</h3>
             <div id="match-list"></div>
-
-            <h3>🤝 Challenge Students</h3>
-            <div id="available-players">Searching for players...</div>
         </div>
 
         <h3>🏆 Leaderboard</h3>
         <div id="leaderboard"></div>
+
+        <div id="challenge-section">
+            <h3>🤝 Challenge Students</h3>
+            <div id="available-players">Searching for players...</div>
+        </div>
 
         <h3>👁️ Spectate Arena</h3>
         <div id="spectate-match-list"></div>
 
         <div id="admin-panel" class="hidden" style="margin-top: 30px; border-top: 2px dashed var(--danger); padding-top: 15px;">
             <h3 style="color: var(--danger); font-size: 0.9em; margin-bottom: 10px;">🛠️ Instructor Tools</h3>
-            <button class="btn-danger" style="margin-bottom: 15px;" onclick="resetAllRatings()">Reset All Ratings to 1500</button>
+            <button class="btn-danger" onclick="resetRatings()">Reset All Ratings to 1500</button>
             <div id="admin-player-list"></div>
         </div>
     </div>
@@ -114,7 +133,11 @@
         async function handleRegister() {
             const rawName = document.getElementById('reg-name').value.trim();
             const school = document.getElementById('reg-school').value.trim();
+            const age = document.getElementById('reg-age').value.trim();
+            const cls = document.getElementById('reg-class').value.trim();
+            const quote = document.getElementById('reg-quote').value.trim();
             const pin = document.getElementById('reg-password').value.trim();
+            
             if(!rawName || !school || !pin) return alert("Fill all fields!");
 
             const userId = rawName.toLowerCase().replace(/\s/g, '_');
@@ -128,7 +151,7 @@
             }
             
             myData = doc.exists ? doc.data() : { 
-                name: rawName, school, avatar: $('#reg-avatar').val(), 
+                name: rawName, school, age, class: cls, quote, avatar: $('#reg-avatar').val(), 
                 rating: 1500, pin, role: isAdmin ? "admin" : "student"
             };
             
@@ -138,23 +161,20 @@
         }
 
         function enterAsGuest() {
-            myId = "guest_" + Math.floor(Math.random() * 10000);
-            myData = { name: "Guest Viewer", role: "guest", avatar: "👁️", rating: "-" };
+            myId = "guest_" + Date.now();
+            myData = { name: "Guest", role: "guest", rating: 0, avatar: "👁️" };
             showLobby();
         }
 
         function showLobby() {
             $(".container").addClass("hidden");
             $("#section-lobby").removeClass("hidden");
+            document.getElementById('user-welcome').innerHTML = `<h3>${myData.avatar} ${myData.name} <span class="rating-badge">${myData.rating} pts</span></h3>`;
             
             if(myData.role === "guest") {
-                document.getElementById('user-welcome').innerHTML = `<h3>👁️ Guest Spectator</h3>`;
-                $('#player-only-sections').hide();
-            } else {
-                document.getElementById('user-welcome').innerHTML = `<h3>${myData.avatar} ${myData.name} <span class="rating-badge">${myData.rating} pts</span></h3>`;
-                $('#player-only-sections').show();
+                $("#match-section, #challenge-section").hide();
             }
-            
+
             if(myData.role === "admin") {
                 $("#admin-panel").removeClass("hidden");
                 loadAdminList();
@@ -163,26 +183,29 @@
         }
 
         function loadLobbyData() {
-            // Leaderboard
+            // Leaderboard with Profile Click
             db.collection("academy_players").orderBy("rating", "desc").limit(10).onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     const p = doc.data();
-                    html += `<div class="item-row" style="cursor:default;"><span>${p.name}</span><span class="rating-badge">${p.rating}</span></div>`;
+                    html += `<div class="item-row" style="cursor:default;">
+                                <span class="name-clickable" onclick="viewProfile('${doc.id}')">${p.name}</span>
+                                <span class="rating-badge">${p.rating}</span>
+                             </div>`;
                 });
                 document.getElementById('leaderboard').innerHTML = html;
             });
 
-            // Player List (Hide from Guest to save reads)
-            if (myData.role !== "guest") {
+            if(myData.role !== "guest") {
+                // Player List
                 db.collection("academy_players").limit(50).onSnapshot(snap => {
                     let html = "";
                     snap.forEach(doc => {
                         if(doc.id !== myId) {
                             const p = doc.data();
-                            html += `<div class="item-row" onclick="createMatch('${doc.id}')">
-                                <span style="font-size: 13px;">${p.name} <small style="display:block; color:#888;">${p.school}</small></span>
-                                <span class="rating-badge">${p.rating}</span>
+                            html += `<div class="item-row">
+                                <span onclick="viewProfile('${doc.id}')" class="name-clickable" style="font-size: 13px;">${p.name} <small style="display:block; color:#888;">${p.school}</small></span>
+                                <button class="rating-badge" onclick="createMatch('${doc.id}')" style="border:none; cursor:pointer;">CHALLENGE</button>
                             </div>`;
                         }
                     });
@@ -195,54 +218,52 @@
                     snap.forEach(doc => {
                         const d = doc.data();
                         const opp = d.white === myId ? d.black : d.white;
-                        html += `<button class="btn" onclick="loadGame('${doc.id}')">VS ${opp.replace('_',' ').toUpperCase()}</button>`;
+                        html += `<button class="btn" onclick="loadGame('${doc.id}')">VS ${opp.replace(/_/g,' ').toUpperCase()}</button>`;
                     });
                     document.getElementById('match-list').innerHTML = html || "No active games.";
                 });
             }
 
-            // Spectate List (Active Matches for everyone)
+            // Spectate List
             db.collection("academy_matches").where("status", "==", "active").onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
                     const d = doc.data();
-                    html += `<button class="btn btn-guest" onclick="loadGame('${doc.id}')">${d.white.replace('_',' ')} VS ${d.black.replace('_',' ')}</button>`;
+                    html += `<button class="btn" style="border-color:#aaa; color:#aaa;" onclick="loadGame('${doc.id}')">👁️ ${d.white} vs ${d.black}</button>`;
                 });
                 document.getElementById('spectate-match-list').innerHTML = html || "No live matches.";
             });
         }
 
-        async function updatePoints(winnerId, loserId, isDraw = false) {
-            const wRef = db.collection("academy_players").doc(winnerId);
-            const lRef = db.collection("academy_players").doc(loserId);
-
-            try {
-                await db.runTransaction(async (transaction) => {
-                    const wDoc = await transaction.get(wRef);
-                    const lDoc = await transaction.get(lRef);
-
-                    let wRating = wDoc.exists ? wDoc.data().rating : 1500;
-                    let lRating = lDoc.exists ? lDoc.data().rating : 1500;
-
-                    let diff = lRating - wRating; 
-                    let wPoints = 11; let lPoints = -11;
-
-                    // Scaling points based on opponent rating
-                    if (diff > 50) { wPoints = 13; lPoints = -10; } // Beat higher rated
-                    else if (diff < -50) { wPoints = 10; lPoints = -13; } // Beat lower rated
-
-                    if (isDraw) {
-                        if (diff > 50) { wPoints = 3; lPoints = -3; }
-                        else if (diff < -50) { wPoints = -3; lPoints = 3; }
-                        else { wPoints = 1; lPoints = -1; }
-                    }
-
-                    transaction.update(wRef, { rating: wRating + wPoints });
-                    transaction.update(lRef, { rating: lRating + lPoints });
-                });
-            } catch (error) {
-                console.error("Failed to calculate points: ", error);
+        async function viewProfile(id) {
+            const doc = await db.collection("academy_players").doc(id).get();
+            if(doc.exists) {
+                const p = doc.data();
+                document.getElementById('prof-name').innerText = p.avatar + " " + p.name;
+                document.getElementById('prof-school').innerText = p.school || "N/A";
+                document.getElementById('prof-age').innerText = p.age || "??";
+                document.getElementById('prof-class').innerText = p.class || "??";
+                document.getElementById('prof-quote').innerText = p.quote || "Let's play chess!";
+                $('#profile-modal').removeClass('hidden');
             }
+        }
+
+        function updatePoints(winnerId, loserId, type) {
+            // Logic: 10-13 pts based on rating diff
+            const winRef = db.collection("academy_players").doc(winnerId);
+            const loseRef = db.collection("academy_players").doc(loserId);
+            
+            db.runTransaction(async (transaction) => {
+                const wDoc = await transaction.get(winRef);
+                const lDoc = await transaction.get(loseRef);
+                const diff = lDoc.data().rating - wDoc.data().rating;
+                let points = 11;
+                if(diff > 50) points = 13;
+                if(diff < -50) points = 10;
+                
+                transaction.update(winRef, { rating: firebase.firestore.FieldValue.increment(points) });
+                transaction.update(loseRef, { rating: firebase.firestore.FieldValue.increment(-points) });
+            });
         }
 
         function loadGame(id) {
@@ -255,37 +276,26 @@
             }
             db.collection("academy_matches").doc(id).onSnapshot(doc => {
                 const d = doc.data();
-                if(!d || (d.status !== "active" && myData.role === 'guest')) return showLobby();
-
+                if(!d) return;
                 game.load(d.fen); board.position(d.fen);
                 
-                // Match Resolution checks
-                if(d.status === "active") {
-                    if(game.in_checkmate()) {
-                        const winner = game.turn() === 'w' ? d.black : d.white;
-                        const loser = game.turn() === 'w' ? d.white : d.black;
-                        db.collection("academy_matches").doc(id).update({ status: "checkmate" });
-                        updatePoints(winner, loser, false);
-                        return;
-                    } else if (game.in_draw() || game.in_stalemate() || game.in_threefold_repetition()) {
-                        db.collection("academy_matches").doc(id).update({ status: "draw" });
-                        updatePoints(d.white, d.black, true);
-                        return;
-                    }
+                if(game.in_checkmate() && d.status === "active") {
+                    const winner = game.turn() === 'w' ? d.black : d.white;
+                    const loser = game.turn() === 'w' ? d.white : d.black;
+                    db.collection("academy_matches").doc(id).update({ status: "checkmate" });
+                    updatePoints(winner, loser, 'mate');
                 }
 
-                document.getElementById('label-white').innerText = `White: ${d.white.replace('_',' ')}`;
-                document.getElementById('label-black').innerText = `Black: ${d.black.replace('_',' ')}`;
-                
-                const isWhite = (myId === d.white); const isBlack = (myId === d.black);
-                if(isWhite || isBlack) {
-                    board.orientation(isWhite ? 'white' : 'black');
-                    document.getElementById('game-status').innerText = (game.turn() === (isWhite ? 'w' : 'b')) ? "🟢 YOUR TURN" : "⏳ OPPONENT'S TURN";
-                    if(d.status === "active") $("#resign-btn").show();
-                    else $("#resign-btn").hide();
+                document.getElementById('label-white').innerText = `White: ${d.white}`;
+                document.getElementById('label-black').innerText = `Black: ${d.black}`;
+                const isPlayer = (myId === d.white || myId === d.black);
+                if(isPlayer) {
+                    board.orientation(myId === d.white ? 'white' : 'black');
+                    document.getElementById('game-status').innerText = (game.turn() === (myId === d.white ? 'w' : 'b')) ? "🟢 YOUR TURN" : "⏳ OPPONENT'S TURN";
+                    $("#resign-btn").show();
                 } else {
-                    board.orientation('white'); 
-                    document.getElementById('game-status').innerText = d.status === "active" ? "👁️ SPECTATING" : `🏁 Match Over (${d.status})`;
+                    board.orientation('white');
+                    document.getElementById('game-status').innerText = "👁️ SPECTATING";
                     $("#resign-btn").hide();
                 }
             });
@@ -304,25 +314,23 @@
                     }
                 } else {
                     const move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
-                    if (move === null) {
-                        if (game.get(square) && game.get(square).color === game.turn()) {
-                            sourceSquare = square; $('.square-55d63').removeClass('highlight-sq'); $(this).addClass('highlight-sq');
-                        } else { sourceSquare = null; $('.square-55d63').removeClass('highlight-sq'); }
-                    } else {
+                    if (move) {
                         sourceSquare = null; $('.square-55d63').removeClass('highlight-sq');
                         db.collection("academy_matches").doc(activeMatchId).update({ fen: game.fen(), updated: firebase.firestore.FieldValue.serverTimestamp() });
+                    } else {
+                        sourceSquare = null; $('.square-55d63').removeClass('highlight-sq');
                     }
                 }
             });
         }
 
         function confirmResign() {
-            if(confirm("Resign? Your rating will adjust based on opponent.")) {
+            if(confirm("Resign?")) {
                 db.collection("academy_matches").doc(activeMatchId).get().then(doc => {
                     const d = doc.data();
                     const winner = myId === d.white ? d.black : d.white;
                     db.collection("academy_matches").doc(activeMatchId).update({ status: "resigned" });
-                    updatePoints(winner, myId, false);
+                    updatePoints(winner, myId, 'resign');
                 });
             }
         }
@@ -346,15 +354,14 @@
             });
         }
 
-        function deletePlayer(id) { if(confirm("Delete player?")) db.collection("academy_players").doc(id).delete(); }
-        
-        async function resetAllRatings() {
-            if(!confirm("Are you sure? This will wipe existing scores and set everyone to 1500.")) return;
-            const snapshot = await db.collection("academy_players").get();
-            snapshot.forEach(doc => {
-                db.collection("academy_players").doc(doc.id).update({ rating: 1500 });
-            });
-            alert("All players successfully reset to 1500 rating.");
+        function deletePlayer(id) { if(confirm("Delete?")) db.collection("academy_players").doc(id).delete(); }
+
+        function resetRatings() {
+            if(confirm("Reset all ratings to 1500?")) {
+                db.collection("academy_players").get().then(snap => {
+                    snap.forEach(doc => doc.ref.update({ rating: 1500 }));
+                });
+            }
         }
     </script>
 </body>
