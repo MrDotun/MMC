@@ -37,10 +37,11 @@
         .mini-btn-del { background: var(--danger); color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 10px; font-weight: bold; cursor: pointer; }
         .highlight-sq { background: rgba(74, 222, 128, 0.5) !important; }
 
-        /* Profile Modal Style */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; }
         .profile-card { background: var(--card); border: 2px solid var(--secondary); padding: 25px; border-radius: 15px; width: 300px; text-align: center; }
         .name-clickable { text-decoration: underline; cursor: pointer; color: var(--secondary); }
+        
+        #timer-display { font-size: 0.9em; color: var(--danger); margin-bottom: 10px; font-weight: bold; text-align: center; }
     </style>
 </head>
 <body>
@@ -104,6 +105,7 @@
     </div>
 
     <div id="section-game" class="container hidden">
+        <div id="timer-display">Match Deadline: Calculating...</div>
         <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size: 0.85em; font-weight: bold; color: #aaa;">
             <span id="label-white">White: --</span>
             <span style="color:var(--secondary)">VS</span>
@@ -128,7 +130,7 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        let game = new Chess(), board = null, myId = null, myData = null, activeMatchId = null, sourceSquare = null;
+        let game = new Chess(), board = null, myId = null, myData = null, activeMatchId = null, sourceSquare = null, timerInterval = null;
 
         async function handleRegister() {
             const rawName = document.getElementById('reg-name').value.trim();
@@ -167,6 +169,7 @@
         }
 
         function showLobby() {
+            clearInterval(timerInterval);
             $(".container").addClass("hidden");
             $("#section-lobby").removeClass("hidden");
             document.getElementById('user-welcome').innerHTML = `<h3>${myData.avatar} ${myData.name} <span class="rating-badge">${myData.rating} pts</span></h3>`;
@@ -183,7 +186,6 @@
         }
 
         function loadLobbyData() {
-            // Leaderboard with Profile Click
             db.collection("academy_players").orderBy("rating", "desc").limit(10).onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
@@ -197,7 +199,6 @@
             });
 
             if(myData.role !== "guest") {
-                // Player List
                 db.collection("academy_players").limit(50).onSnapshot(snap => {
                     let html = "";
                     snap.forEach(doc => {
@@ -212,7 +213,6 @@
                     document.getElementById('available-players').innerHTML = html || "Waiting for students...";
                 });
 
-                // My Games
                 db.collection("academy_matches").where("players", "array-contains", myId).where("status", "==", "active").onSnapshot(snap => {
                     let html = "";
                     snap.forEach(doc => {
@@ -224,7 +224,6 @@
                 });
             }
 
-            // Spectate List
             db.collection("academy_matches").where("status", "==", "active").onSnapshot(snap => {
                 let html = "";
                 snap.forEach(doc => {
@@ -249,18 +248,17 @@
         }
 
         function updatePoints(winnerId, loserId, type) {
-            // Logic: 10-13 pts based on rating diff
             const winRef = db.collection("academy_players").doc(winnerId);
             const loseRef = db.collection("academy_players").doc(loserId);
             
             db.runTransaction(async (transaction) => {
                 const wDoc = await transaction.get(winRef);
                 const lDoc = await transaction.get(loseRef);
+                if(!wDoc.exists || !lDoc.exists) return;
                 const diff = lDoc.data().rating - wDoc.data().rating;
                 let points = 11;
                 if(diff > 50) points = 13;
                 if(diff < -50) points = 10;
-                
                 transaction.update(winRef, { rating: firebase.firestore.FieldValue.increment(points) });
                 transaction.update(loseRef, { rating: firebase.firestore.FieldValue.increment(-points) });
             });
@@ -276,10 +274,34 @@
             }
             db.collection("academy_matches").doc(id).onSnapshot(doc => {
                 const d = doc.data();
-                if(!d) return;
+                if(!d || d.status !== "active") return;
+
+                clearInterval(timerInterval);
+                if(d.updated) {
+                    const lastMove = d.updated.toDate();
+                    const deadline = new Date(lastMove.getTime() + (3 * 24 * 60 * 60 * 1000));
+                    
+                    timerInterval = setInterval(() => {
+                        const now = new Date();
+                        const diff = deadline - now;
+                        if(diff <= 0) {
+                            clearInterval(timerInterval);
+                            const loser = game.turn() === 'w' ? d.white : d.black;
+                            const winner = game.turn() === 'w' ? d.black : d.white;
+                            db.collection("academy_matches").doc(id).update({ status: "forfeit" });
+                            updatePoints(winner, loser, 'timeout');
+                            alert("Forfeit: Time limit exceeded (3 days).");
+                            showLobby();
+                        } else {
+                            const hours = Math.floor(diff / 3600000);
+                            const mins = Math.floor((diff % 3600000) / 60000);
+                            document.getElementById('timer-display').innerText = `⏳ Move within: ${hours}h ${mins}m`;
+                        }
+                    }, 1000);
+                }
+
                 game.load(d.fen); board.position(d.fen);
-                
-                if(game.in_checkmate() && d.status === "active") {
+                if(game.in_checkmate()) {
                     const winner = game.turn() === 'w' ? d.black : d.white;
                     const loser = game.turn() === 'w' ? d.white : d.black;
                     db.collection("academy_matches").doc(id).update({ status: "checkmate" });
@@ -331,6 +353,7 @@
                     const winner = myId === d.white ? d.black : d.white;
                     db.collection("academy_matches").doc(activeMatchId).update({ status: "resigned" });
                     updatePoints(winner, myId, 'resign');
+                    showLobby();
                 });
             }
         }
