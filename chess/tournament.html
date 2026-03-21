@@ -213,12 +213,8 @@
         let board = null, game = new Chess(), currentRound = 0, pTime = 300, mTime = 300, timerInterval;
         let sourceSquare = null;
         
-        let worker;
-        try {
-            worker = new Worker('chess-worker.js');
-        } catch(e) {
-            console.log("Worker could not be loaded. AI will use random moves.");
-        }
+        // Stockfish worker (ensure chess-worker.js exists in your directory)
+        const worker = new Worker('chess-worker.js');
 
         function initializeTournament() {
             const name = document.getElementById('player-name-input').value.trim();
@@ -242,12 +238,13 @@
             document.getElementById('intro-overlay').style.display = 'none';
             if (!board) {
                 board = Chessboard('board', {
-                    draggable: false, 
+                    draggable: false, // Using custom click logic
                     position: 'start',
                     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
                 });
                 
-                $('#board').on('click', '.square-55d6', function() {
+                // Enhanced listener for Mobile and Desktop
+                $('#board').on('pointerdown', '.square-55d6', function(e) {
                     const square = $(this).attr('data-square');
                     onSquareClick(square);
                 });
@@ -260,10 +257,12 @@
         }
 
         function onSquareClick(square) {
+            // Only allow moves on White's turn
             if (game.turn() !== 'w' || game.game_over()) return;
 
             const piece = game.get(square);
 
+            // Phase 1: Selecting a piece
             if (sourceSquare === null) {
                 if (piece && piece.color === 'w') {
                     sourceSquare = square;
@@ -271,7 +270,9 @@
                     $('.square-' + square).addClass('highlight-sq');
                 }
             } 
+            // Phase 2: Choosing a target or switching piece
             else {
+                // If user clicks another of their own pieces, switch selection
                 if (piece && piece.color === 'w') {
                     sourceSquare = square;
                     $('.square-55d6').removeClass('highlight-sq');
@@ -279,6 +280,7 @@
                     return;
                 }
 
+                // Attempt Move
                 const move = game.move({
                     from: sourceSquare,
                     to: square,
@@ -286,62 +288,61 @@
                 });
 
                 if (move === null) {
+                    // Invalid move - clear highlight and reset
                     $('.square-55d6').removeClass('highlight-sq');
                     sourceSquare = null;
                 } else {
+                    // Valid move
                     board.position(game.fen());
                     $('.square-55d6').removeClass('highlight-sq');
                     sourceSquare = null;
                     
+                    checkGameOver();
+
+                    // Trigger AI (The Master)
                     if (!game.game_over()) {
                         const m = Masters[currentRound];
-                        if(worker) {
-                            worker.postMessage("position " + game.fen());
-                            worker.postMessage("go depth " + m.depth);
-                        } else {
-                            setTimeout(makeRandomMove, 600);
-                        }
+                        worker.postMessage("position " + game.fen());
+                        worker.postMessage("go depth " + m.depth);
                     }
+                }
+            }
+        }
+
+        worker.onmessage = function(e) {
+            if (e.data.indexOf('bestmove') > -1) {
+                const moveStr = e.data.split(' ')[1];
+                const master = Masters[currentRound];
+                
+                setTimeout(() => {
+                    // Chance for Master to blunder based on their personality
+                    if (Math.random() < master.blunder) {
+                        const moves = game.moves();
+                        game.move(moves[Math.floor(Math.random() * moves.length)]);
+                    } else {
+                        game.move({ 
+                            from: moveStr.substring(0,2), 
+                            to: moveStr.substring(2,4), 
+                            promotion: 'q' 
+                        });
+                    }
+                    board.position(game.fen());
                     checkGameOver();
-                }
+                }, 600);
             }
-        }
-
-        function makeRandomMove() {
-            const moves = game.moves();
-            if (moves.length > 0) {
-                game.move(moves[Math.floor(Math.random() * moves.length)]);
-                board.position(game.fen());
-                checkGameOver();
-            }
-        }
-
-        if (worker) {
-            worker.onmessage = function(e) {
-                if (e.data.indexOf('bestmove') > -1) {
-                    const moveStr = e.data.split(' ')[1];
-                    const master = Masters[currentRound];
-                    
-                    setTimeout(() => {
-                        if (Math.random() < master.blunder) {
-                            makeRandomMove();
-                        } else {
-                            game.move({ from: moveStr.substring(0,2), to: moveStr.substring(2,4), promotion: 'q' });
-                        }
-                        board.position(game.fen());
-                        checkGameOver();
-                    }, 600);
-                }
-            };
-        }
+        };
 
         function checkGameOver() {
             if (game.game_over()) {
                 clearInterval(timerInterval);
                 let msg = "";
-                if (game.in_checkmate()) msg = game.turn() === 'w' ? "MASTER WINS!" : "YOU WIN! ADVANCING...";
-                else if (game.in_draw()) msg = "MATCH DRAWN";
-                else msg = "GAME OVER";
+                if (game.in_checkmate()) {
+                    msg = (game.turn() === 'b') ? "CHECKMATE! YOU WIN!" : "CHECKMATE! MASTER WINS.";
+                } else if (game.in_draw()) {
+                    msg = "STALEMATE / DRAW";
+                } else {
+                    msg = "GAME OVER";
+                }
                 document.getElementById('system-msg').innerText = msg;
             }
         }
@@ -356,6 +357,7 @@
                 };
                 document.getElementById('master-timer').innerText = fmt(mTime);
                 document.getElementById('player-timer').innerText = fmt(pTime);
+                
                 if (pTime <= 0 || mTime <= 0) {
                     clearInterval(timerInterval);
                     document.getElementById('system-msg').innerText = "TIME EXPIRED!";
