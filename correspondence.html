@@ -217,13 +217,11 @@
                 $('#myBoard').on('click', '.square-55d63', onSquareClick);
             }
             
-            db.collection("academy_matches").doc(id).onSnapshot(doc => {
-                const d = doc.data(); if (!d) return;
+            db.collection("academy_matches").doc(id).onSnapshot(async doc => {
+                const d = doc.data(); if (!d || d.status !== "active") return;
                 
-                // RESTORE HISTORY: Use PGN for history, fallback to FEN for visual sync
                 game.load_pgn(d.pgn || "");
                 if (game.history().length === 0 && d.fen !== "start") game.load(d.fen);
-                
                 historyMoves = game.history();
 
                 if (viewIndex === -1 || viewIndex >= historyMoves.length - 1) {
@@ -232,15 +230,69 @@
                     document.getElementById('replay-label').innerText = "LIVE VIEW";
                 }
 
-                // DEADLINE LOGIC: 3-Day Countdown
+                // 3-DAY FORFEIT & DYNAMIC RATING LOGIC
                 if (d.lastMoveTime) {
                     const deadline = d.lastMoveTime + (3 * 24 * 60 * 60 * 1000);
                     const diff = deadline - Date.now();
-                    if (diff <= 0) document.getElementById('deadline-timer').innerText = "⚠️ TIME EXPIRED";
-                    else {
+                    
+                    if (diff <= 0) {
+                        const matchRef = db.collection("academy_matches").doc(id);
+                        if (historyMoves.length === 0) {
+                            await matchRef.update({ status: "aborted", result: "Aborted: No moves made." });
+                        } else {
+                            const loserId = game.turn() === 'w' ? d.white : d.black;
+                            const winnerId = game.turn() === 'w' ? d.black : d.white;
+                            
+                            await matchRef.update({ status: "finished", result: `${winnerId} wins by forfeit`, winner: winnerId });
+
+                            // Dynamic Rating Calculation on Forfeit
+                            db.runTransaction(async (transaction) => {
+                                const winRef = db.collection("academy_players").doc(winnerId);
+                                const loseRef = db.collection("academy_players").doc(loserId);
+                                const wDoc = await transaction.get(winRef);
+                                const lDoc = await transaction.get(loseRef);
+
+                                if (wDoc.exists && lDoc.exists) {
+                                    const wRating = wDoc.data().rating || 1500;
+                                    const lRating = lDoc.data().rating || 1500;
+                                    const ratingDiff = lRating - wRating;
+
+                                    // Winner: +10 to +14 (Higher gain if opponent was stronger)
+                                    let winGain = ratingDiff >= 100 ? 14 : (ratingDiff <= -100 ? 10 : 12);
+                                    // Loser: -10 to -13 (Higher loss if loser was stronger)
+                                    let lossPen = ratingDiff <= -100 ? 13 : (ratingDiff >= 100 ? 10 : 11);
+
+                                    transaction.update(winRef, { rating: wRating + winGain });
+                                    transaction.update(loseRef, { rating: lRating - lossPen });
+                                }
+                            });
+                        }
+                    } else {
                         const hours = Math.floor(diff / (1000 * 60 * 60));
-                        document.getElementById('deadline-timer').innerText = `Move Deadline: ${hours}h remaining`;
+                        document.getElementById('deadline-timer').innerText = `Deadline: ${hours}h remaining`;
                     }
+                }
+
+                // DRAW LOGIC (Triggered if the move resulted in a draw)
+                if (game.in_draw() && d.status === "active") {
+                    db.runTransaction(async (transaction) => {
+                        const wRef = db.collection("academy_players").doc(d.white);
+                        const bRef = db.collection("academy_players").doc(d.black);
+                        const wDoc = await transaction.get(wRef);
+                        const bDoc = await transaction.get(bRef);
+                        
+                        if (wDoc.exists && bDoc.exists) {
+                            const wR = wDoc.data().rating;
+                            const bR = bDoc.data().rating;
+                            // Draw: -2 to +2 (Lower rated player gains small amount, higher rated loses small amount)
+                            let wAdj = (bR - wR) >= 50 ? 2 : ((wR - bR) >= 50 ? -2 : 0);
+                            let bAdj = (wR - bR) >= 50 ? 2 : ((bR - wR) >= 50 ? -2 : 0);
+
+                            transaction.update(wRef, { rating: wR + wAdj });
+                            transaction.update(bRef, { rating: bR + bAdj });
+                            db.collection("academy_matches").doc(id).update({ status: "finished", result: "Draw" });
+                        }
+                    });
                 }
 
                 document.getElementById('label-white').innerText = "W: " + d.white;
@@ -273,7 +325,6 @@
                     const move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
                     sourceSquare = null; $('.square-55d63').css('background', '');
                     if (move) {
-                        // SAVE BOTH FEN AND PGN + TIMESTAMP
                         db.collection("academy_matches").doc(activeMatchId).update({ 
                             fen: game.fen(), 
                             pgn: game.pgn(),
