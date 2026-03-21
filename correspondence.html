@@ -75,6 +75,11 @@
         .chat-input-wrap input { margin-bottom: 0 !important; padding: 8px !important; font-size: 12px; flex: 1; }
         .chat-send { width: 60px !important; padding: 8px !important; margin-bottom: 0 !important; font-size: 10px; }
 
+        /* Replay Controls Styling */
+        .replay-nav { display: flex; justify-content: center; align-items: center; gap: 15px; margin: 10px 0; }
+        .replay-btn { background: var(--card); border: 1px solid #334155; color: var(--secondary); border-radius: 8px; padding: 8px 15px; cursor: pointer; font-weight: bold; }
+        #replay-label { font-size: 11px; color: var(--secondary); letter-spacing: 1px; font-weight: bold; min-width: 80px; text-align: center; }
+
         .rating-badge { background: var(--secondary); color: #064e3b; padding: 4px 8px; border-radius: 6px; font-size: 0.7em; font-weight: 900; }
         input, select { width: 100%; padding: 14px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
     </style>
@@ -105,34 +110,28 @@
 
     <div id="section-lobby" class="container hidden">
         <div id="user-welcome"></div>
-
         <div class="podium-wrap" id="winners-podium">
             <div class="podium-rank rank-2"><div class="podium-name" id="p2-name">-</div><div class="podium-bar">2nd</div></div>
             <div class="podium-rank rank-1"><div class="podium-name" id="p1-name">-</div><div class="podium-bar">1st</div></div>
             <div class="podium-rank rank-3"><div class="podium-name" id="p3-name">-</div><div class="podium-bar">3rd</div></div>
         </div>
-
         <div id="admin-panel" class="hidden" style="border: 1px dashed var(--gold); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
             <h3 style="color:var(--gold)">🛠️ TOURNAMENT GEN</h3>
             <div id="player-check-list" style="max-height: 80px; overflow-y: auto; margin: 10px 0; font-size: 11px;"></div>
             <button class="btn" style="background: var(--gold); color: black;" onclick="generateTournament()">Generate Bracket</button>
         </div>
-
         <div id="live-games-section">
             <h3><span class="live-badge">LIVE</span> WATCH GAMES</h3>
             <div id="live-games-list"></div>
         </div>
-
         <div id="my-matches-section">
             <h3>⚔️ MY ACTIVE GAMES</h3>
             <div id="my-match-list"></div>
         </div>
-
         <div id="leaderboard-section">
             <h3>🏆 ALL REGISTERED PLAYERS</h3>
             <div id="full-leaderboard" style="max-height: 150px; overflow-y: auto;"></div>
         </div>
-
         <button class="btn" style="background: transparent; border: 1px solid #334155; color: #64748b; margin-top: 15px;" onclick="logout()">LOGOUT</button>
     </div>
 
@@ -141,8 +140,16 @@
             <span id="label-white">White</span>
             <span id="label-black">Black</span>
         </div>
+        
         <div id="myBoard" style="width: 100%; border-radius: 12px; overflow: hidden; border: 4px solid #1e293b;"></div>
-        <div id="game-status" style="text-align:center; margin-top:10px; font-weight:bold; color: var(--secondary);"></div>
+
+        <div class="replay-nav">
+            <button class="replay-btn" onclick="updateReplayView(-1)">←</button>
+            <span id="replay-label">LIVE VIEW</span>
+            <button class="replay-btn" onclick="updateReplayView(1)">→</button>
+        </div>
+
+        <div id="game-status" style="text-align:center; margin-top:5px; font-weight:bold; color: var(--secondary);"></div>
 
         <div id="chat-container">
             <div id="chat-box"></div>
@@ -151,7 +158,6 @@
                 <button class="btn chat-send" onclick="sendChat()">SEND</button>
             </div>
         </div>
-
         <button class="btn" style="margin-top:15px;" onclick="showLobby()">Back to Lobby</button>
     </div>
 
@@ -167,7 +173,10 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        let myId = localStorage.getItem('savedUserId'), myData = null, board = null, game = new Chess(), activeMatchId = null, authMode = 'login', sourceSquare = null, chatUnsubscribe = null;
+        // Added historyMoves and viewIndex for Replay
+        let myId = localStorage.getItem('savedUserId'), myData = null, board = null, game = new Chess(), 
+            activeMatchId = null, authMode = 'login', sourceSquare = null, chatUnsubscribe = null,
+            historyMoves = [], viewIndex = -1;
 
         window.onload = async function() {
             if (myId) {
@@ -262,22 +271,35 @@
         }
 
         function loadGame(id) {
-            activeMatchId = id; $(".container").addClass("hidden"); $("#section-game").removeClass("hidden");
+            activeMatchId = id; 
+            viewIndex = -1; // Reset view index on new game load
+            $(".container").addClass("hidden"); $("#section-game").removeClass("hidden");
+            
             if (!board) {
                 board = ChessBoard('myBoard', { draggable: false, position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
                 $('#myBoard').on('click', '.square-55d63', onSquareClick);
             }
+            
             db.collection("academy_matches").doc(id).onSnapshot(doc => {
                 const d = doc.data(); if (!d) return;
-                game.load(d.fen === "start" ? "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" : d.fen);
-                board.position(game.fen());
+                
+                // Load full history from PGN
+                game.load_pgn(d.pgn || "");
+                historyMoves = game.history();
+
+                // If user is at the end or just joined, keep "Live"
+                if (viewIndex === -1 || viewIndex >= historyMoves.length - 1) {
+                    viewIndex = historyMoves.length - 1;
+                    board.position(game.fen());
+                    document.getElementById('replay-label').innerText = "LIVE VIEW";
+                }
+
                 document.getElementById('label-white').innerText = "W: " + d.white;
                 document.getElementById('label-black').innerText = "B: " + d.black;
                 document.getElementById('game-status').innerText = game.turn() === 'w' ? "WHITE'S TURN" : "BLACK'S TURN";
                 if(d.players.includes(myId)) board.orientation(myId === d.white ? 'white' : 'black');
             });
 
-            // Chat Listener
             if(chatUnsubscribe) chatUnsubscribe();
             chatUnsubscribe = db.collection("academy_matches").doc(id).collection("chat").orderBy("time", "asc").limitToLast(20).onSnapshot(snap => {
                 let html = ""; snap.forEach(c => {
@@ -287,6 +309,29 @@
                 document.getElementById('chat-box').innerHTML = html;
                 document.getElementById('chat-box').scrollTop = document.getElementById('chat-box').scrollHeight;
             });
+        }
+
+        // REPLAY LOGIC FUNCTION
+        function updateReplayView(dir) {
+            let targetIndex = viewIndex + dir;
+            if (targetIndex < -1 || targetIndex >= historyMoves.length) return;
+
+            viewIndex = targetIndex;
+            let tempGame = new Chess();
+            for (let i = 0; i <= viewIndex; i++) {
+                tempGame.move(historyMoves[i]);
+            }
+            board.position(tempGame.fen());
+
+            // Update Label
+            const label = document.getElementById('replay-label');
+            if (viewIndex === historyMoves.length - 1) {
+                label.innerText = "LIVE VIEW";
+                label.style.color = "var(--secondary)";
+            } else {
+                label.innerText = `MOVE ${viewIndex + 1}`;
+                label.style.color = "#fff";
+            }
         }
 
         async function sendChat() {
@@ -303,6 +348,12 @@
             db.collection("academy_matches").doc(activeMatchId).get().then(doc => {
                 const d = doc.data();
                 if (!d.players.includes(myId) || (game.turn() === 'w' && myId !== d.white) || (game.turn() === 'b' && myId !== d.black)) return;
+                
+                // Block moving if currently replaying the past
+                if (viewIndex !== historyMoves.length - 1) {
+                   return alert("Go back to LIVE VIEW to make a move!");
+                }
+
                 if (sourceSquare === null) {
                     if (game.get(sq) && game.get(sq).color === game.turn()) { sourceSquare = sq; $(this).css('background', 'rgba(74, 222, 128, 0.4)'); }
                 } else {
