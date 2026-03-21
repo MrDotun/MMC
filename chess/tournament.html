@@ -89,14 +89,15 @@
             transition: 0.3s;
         }
         .btn:hover { opacity: 0.9; transform: translateY(-1px); }
-        .draw-btn { 
+        .control-btn { 
             background: #2c3e50; 
             color: #bdc3c7; 
-            width: 100%; 
+            width: 48%; 
             margin-top: 10px; 
             font-size: 11px; 
             text-transform: uppercase;
         }
+        .resign-btn { background: #4a1c1c; color: #ff7675; }
 
         .overlay { 
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
@@ -136,6 +137,8 @@
         .rating-badge { color: #f1c40f; font-weight: bold; float: right; }
         .highlight-white { background: rgba(251, 191, 36, 0.5) !important; }
         #system-msg { color:#f1c40f; height: 24px; font-weight: bold; font-size: 1.1rem; margin-top: 10px;}
+        
+        .stat-line { display: flex; justify-content: space-between; margin: 10px 0; border-bottom: 1px solid #333; padding-bottom: 5px; }
     </style>
 </head>
 <body>
@@ -150,6 +153,19 @@
             <input type="text" id="p-school" placeholder="School Name">
             <input type="password" id="p-pass" placeholder="Secret Password">
             <button class="btn" style="background:#27ae60; color:white; width: 100%;" onclick="startTournament()">ENTER THE ARENA</button>
+        </div>
+    </div>
+
+    <div id="post-round-overlay" class="overlay">
+        <div class="modal">
+            <h2 id="round-result-msg" style="color:#27ae60;">ROUND COMPLETE</h2>
+            <div style="background: #111; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: left;">
+                <div class="stat-line"><span>Match Outcome:</span> <b id="match-outcome">-</b></div>
+                <div class="stat-line"><span>Rating Change:</span> <b id="rating-change" style="color:#f1c40f;">-</b></div>
+                <div class="stat-line"><span>Current Total Score:</span> <b id="tournament-points">0 / 9</b></div>
+                <div class="stat-line"><span>New Live Rating:</span> <b id="live-rating">1500</b></div>
+            </div>
+            <button class="btn" style="background:#27ae60; color:white; width: 100%;" onclick="nextRoundTrigger()">PROCEED TO NEXT ROUND</button>
         </div>
     </div>
 
@@ -174,7 +190,10 @@
             <b id="m-name">Mr. Dotun</b><br>
             <small id="m-title" style="color: #27ae60;">Coach</small><br>
             Rating: <span id="m-rating">2150</span>
-            <button class="btn draw-btn" onclick="offerDraw()">Offer Draw</button>
+            <div style="display: flex; gap: 4px;">
+                <button class="btn control-btn" onclick="offerDraw()">Draw</button>
+                <button class="btn control-btn resign-btn" onclick="resignGame()">Resign</button>
+            </div>
         </div>
     </div>
 
@@ -187,7 +206,7 @@
     <p id="system-msg"></p>
 
     <script>
-        // --- 1. THE BRAIN: DATA & FIREBASE (From School Engine) ---
+        // --- 1. DATA & FIREBASE ---
         const firebaseConfig = { 
             apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw", 
             authDomain: "assignments-de95a.firebaseapp.com", 
@@ -221,7 +240,7 @@
         // --- 2. TOURNAMENT LOGIC ---
         let board = null, game = new Chess(), sourceSquare = null;
         let currentRound = 0, pTime = 300, mTime = 300, timerInterval;
-        let playerDocId = "", currentElo = 1500;
+        let playerDocId = "", currentElo = 1500, tournamentScore = 0;
 
         async function startTournament() {
             const name = $('#p-name').val().trim();
@@ -239,7 +258,7 @@
             if (!doc.exists) {
                 await docRef.set({ name, class: cls, school, password: pass, rating: 1500, history: [] });
             } else {
-                currentElo = doc.data().rating;
+                currentElo = doc.data().rating || 1500;
             }
 
             $('#disp-name').text(name);
@@ -264,7 +283,7 @@
             $('#intro-overlay').hide();
             if (!board) {
                 board = ChessBoard('board', {
-                    draggable: false, // Click-to-move brain
+                    draggable: false,
                     position: 'start',
                     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
                 });
@@ -277,10 +296,9 @@
             startClock();
         }
 
-        // --- 3. CLICK-TO-MOVE ENGINE (The Brain) ---
+        // --- 3. CORE ENGINE ---
         function onSquareClick(sq) {
             if (game.game_over() || game.turn() !== 'w') return;
-
             if (!sourceSquare) {
                 let p = game.get(sq);
                 if (p && p.color === 'w') {
@@ -289,13 +307,10 @@
                 }
                 return;
             }
-
             let m = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
             $('.highlight-white').removeClass('highlight-white');
             sourceSquare = null;
-
-            if (!m) return; // Illegal move
-
+            if (!m) return;
             board.position(game.fen());
             updateStatus();
             if (!game.game_over()) makeAiMove();
@@ -304,10 +319,8 @@
         function makeAiMove() {
             $('#system-msg').text("Master is thinking...");
             const master = masterPool[currentRound];
-            
             setTimeout(() => {
                 let moves = game.moves({ verbose: true });
-                // Blunder logic from school brain
                 if (Math.random() < master.blunder && moves.length > 0) {
                     let safeBlunders = moves.filter(m => m.piece !== 'q' && m.piece !== 'r');
                     let finalMove = safeBlunders.length > 0 ? safeBlunders[Math.floor(Math.random() * safeBlunders.length)] : moves[Math.floor(Math.random() * moves.length)];
@@ -327,35 +340,58 @@
             updateStatus();
         };
 
-        async function updateStatus() {
-            if (game.game_over()) {
+        async function updateStatus(forcedResult = null) {
+            if (game.game_over() || forcedResult) {
                 clearInterval(timerInterval);
-                let change = 0, msg = "";
-                if (game.in_checkmate()) {
+                let change = 0, outcome = "", pointsAdded = 0;
+
+                if (forcedResult === 'resigned') {
+                    outcome = "Resignation (Loss)";
+                    change = -15;
+                } else if (game.in_checkmate()) {
                     if (game.turn() === 'b') { // Player won
-                        change = 50; msg = "VICTORY!";
-                        currentRound++;
+                        outcome = "Victory!";
+                        change = 45;
+                        pointsAdded = 1;
                     } else { // Master won
-                        change = -20; msg = "DEFEAT.";
+                        outcome = "Defeat";
+                        change = -20;
                     }
-                } else { msg = "DRAW."; change = 5; }
+                } else if (game.in_draw() || game.in_stalemate() || pTime <= 0 || mTime <= 0) {
+                    outcome = "Draw";
+                    change = 10;
+                    pointsAdded = 0.5;
+                }
 
                 currentElo += change;
+                tournamentScore += pointsAdded;
+                
+                // Update UI elements
+                $('#match-outcome').text(outcome);
+                $('#rating-change').text(`${change > 0 ? '+' : ''}${change} Rating Pts`);
+                $('#tournament-points').text(`${tournamentScore} / 9`);
+                $('#live-rating').text(currentElo);
                 $('#disp-elo').text(currentElo);
-                $('#system-msg').text(msg);
 
                 await db.collection("leaderboard").doc(playerDocId).update({ 
                     rating: currentElo, 
                     history: firebase.firestore.FieldValue.arrayUnion(game.pgn()) 
                 });
 
-                setTimeout(() => {
-                    alert(msg);
-                    if (currentRound < masterPool.length) showRoundIntro();
-                    else alert("VARSITY CUP CHAMPION!");
-                }, 500);
+                setTimeout(() => { $('#post-round-overlay').css('display', 'flex'); }, 600);
             } else {
                 $('#system-msg').text(game.turn() === 'w' ? "Your turn!" : "Master is thinking...");
+            }
+        }
+
+        function nextRoundTrigger() {
+            $('#post-round-overlay').hide();
+            currentRound++;
+            if (currentRound < masterPool.length) {
+                showRoundIntro();
+            } else {
+                alert("TOURNAMENT COMPLETE! Final Rating: " + currentElo);
+                location.reload();
             }
         }
 
@@ -374,7 +410,19 @@
         }
 
         function offerDraw() {
-            $('#system-msg').text(`${masterPool[currentRound].name}: "Fight on!"`);
+            const master = masterPool[currentRound];
+            const messages = [
+                `"The position is still full of life. Play on!"`,
+                `"I see no reason to stop. My pieces are hungry."`,
+                `"A draw? In the Varsity Cup? Not today."`
+            ];
+            $('#system-msg').text(`${master.name}: ${messages[Math.floor(Math.random() * messages.length)]}`);
+        }
+
+        function resignGame() {
+            if(confirm("Are you sure you want to resign this round?")) {
+                updateStatus('resigned');
+            }
         }
     </script>
 </body>
