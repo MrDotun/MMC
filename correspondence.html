@@ -35,7 +35,7 @@
         .replay-nav { display: flex; justify-content: center; align-items: center; gap: 15px; margin: 10px 0; }
         .replay-btn { background: var(--card); border: 1px solid #334155; color: var(--secondary); border-radius: 8px; padding: 8px 15px; cursor: pointer; font-weight: bold; }
         #replay-label { font-size: 11px; color: var(--secondary); letter-spacing: 1px; font-weight: bold; min-width: 80px; text-align: center; }
-        .deadline-badge { font-size: 11px; color: #fbbf24; text-align: center; margin-bottom: 10px; font-weight: 800; text-transform: uppercase; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.3); }
+        .deadline-badge { font-size: 12px; color: #fbbf24; text-align: center; margin-bottom: 10px; font-weight: 900; text-transform: uppercase; background: rgba(0,0,0,0.4); padding: 10px; border-radius: 8px; border: 1px solid #fbbf24; display: block; }
         input, select { width: 100%; padding: 14px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
     </style>
 </head>
@@ -66,12 +66,16 @@
     <div id="section-lobby" class="container hidden">
         <div id="user-welcome"></div>
         <div id="live-games-section">
-            <h3>🤝 CHALLENGE PLAYERS</h3>
+            <h3><span class="live-badge">LIVE</span> WATCH GAMES</h3>
             <div id="live-games-list"></div>
         </div>
         <div id="my-matches-section">
             <h3>⚔️ MY ACTIVE GAMES</h3>
             <div id="my-match-list"></div>
+        </div>
+        <div id="player-list-section">
+            <h3>🤝 CHALLENGE</h3>
+            <div id="player-challenge-list"></div>
         </div>
         <button class="btn" style="background: transparent; border: 1px solid #334155; color: #64748b; margin-top: 15px;" onclick="logout()">LOGOUT</button>
     </div>
@@ -87,7 +91,7 @@
             <span id="replay-label">LIVE VIEW</span>
             <button class="replay-btn" onclick="updateReplayView(1)">→</button>
         </div>
-        <div id="deadline-timer" class="deadline-badge">WAITING FOR MOVE...</div>
+        <div id="deadline-timer" class="deadline-badge">CLOCK INITIALIZING...</div>
         <div id="game-status" style="text-align:center; font-weight:bold; color: var(--secondary);"></div>
         <div id="chat-container">
             <div id="chat-box"></div>
@@ -151,43 +155,43 @@
 
         function showLobby() {
             $(".container").addClass("hidden"); $("#section-lobby").removeClass("hidden");
-            if(liveTimer) clearInterval(liveTimer);
-            document.getElementById('user-welcome').innerHTML = `<h3>${myData.name} (${myData.rating})</h3>`;
+            if(liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+            document.getElementById('user-welcome').innerHTML = `<h3>${myData.name}</h3>`;
             loadLobbyData();
         }
 
         function loadLobbyData() {
             db.collection("academy_matches").where("status", "==", "active").onSnapshot(snap => {
-                let myHtml = ""; hasActiveGame = false;
+                let liveHtml = "", myHtml = ""; hasActiveGame = false;
                 snap.forEach(doc => {
-                    const d = doc.data();
+                    const d = doc.data(); const opp = d.white === myId ? d.black : d.white;
                     if(d.players.includes(myId)) {
                         hasActiveGame = true;
-                        const opp = d.white === myId ? d.black : d.white;
-                        myHtml += `<button class="btn" onclick="loadGame('${doc.id}')">CONTINUE VS ${opp.toUpperCase()}</button>`;
+                        myHtml += `<button class="btn" onclick="loadGame('${doc.id}')">PLAY VS ${opp.toUpperCase()}</button>`;
+                    } else {
+                        liveHtml += `<div class="item-row" onclick="loadGame('${doc.id}')" style="cursor:pointer;"><span>${d.white} vs ${d.black}</span><span class="live-badge">WATCH</span></div>`;
                     }
                 });
-                document.getElementById('my-match-list').innerHTML = myHtml || "<p style='font-size:10px; text-align:center;'>No active games.</p>";
+                document.getElementById('my-match-list').innerHTML = myHtml || "<p style='font-size:10px; text-align:center;'>No active matches.</p>";
+                document.getElementById('live-games-list').innerHTML = liveHtml || "<p style='font-size:10px; text-align:center;'>No live games to watch.</p>";
             });
 
-            db.collection("academy_players").limit(10).onSnapshot(snap => {
-                let listHtml = "";
-                snap.forEach(doc => {
-                    if(doc.id !== myId) {
-                        listHtml += `<div class="item-row"><span>${doc.data().name} (${doc.data().rating})</span>
-                        <button onclick="challengePlayer('${doc.id}')" style="background:var(--secondary); border:none; border-radius:4px; padding:4px 8px; font-weight:bold; cursor:pointer;">CHALLENGE</button></div>`;
-                    }
+            if(myId && !myId.startsWith('guest')) {
+                db.collection("academy_players").limit(15).get().then(snap => {
+                    let pList = "";
+                    snap.forEach(doc => {
+                        if(doc.id !== myId) pList += `<div class="item-row"><span>${doc.data().name}</span><button onclick="challenge('${doc.id}')" style="background:var(--secondary); border:none; border-radius:4px; padding:6px; font-weight:bold; cursor:pointer;">⚔️ CHALLENGE</button></div>`;
+                    });
+                    document.getElementById('player-challenge-list').innerHTML = pList || "<p style='font-size:10px; text-align:center;'>No other players found.</p>";
                 });
-                document.getElementById('live-games-list').innerHTML = listHtml || "<p style='font-size:10px; text-align:center;'>Searching for masters...</p>";
-            });
+            }
         }
 
-        async function challengePlayer(oppId) {
-            if(hasActiveGame) return alert("You already have an active game!");
+        async function challenge(oppId) {
+            if(hasActiveGame) return alert("You are already in an active game!");
             const matchId = `${myId}_vs_${oppId}_${Date.now()}`;
             await db.collection("academy_matches").doc(matchId).set({
-                white: myId, black: oppId, players: [myId, oppId],
-                status: "active", fen: "start", pgn: "", lastMoveTime: Date.now()
+                white: myId, black: oppId, players: [myId, oppId], status: "active", fen: "start", pgn: "", lastMoveTime: Date.now()
             });
             loadGame(matchId);
         }
@@ -209,43 +213,35 @@
                     viewIndex = historyMoves.length - 1; board.position(game.fen());
                 }
 
-                // CONSTANT COUNTDOWN TIMER LOGIC
+                // CONSTANT LIVE TIMER LOGIC
                 if(liveTimer) clearInterval(liveTimer);
-                const updateCountdown = () => {
-                    const threeDays = 3 * 24 * 60 * 60 * 1000;
-                    const timeLeft = (d.lastMoveTime + threeDays) - Date.now();
-                    
-                    if (timeLeft <= 0) {
-                        document.getElementById('deadline-timer').innerHTML = "⚠️ TIME EXPIRED";
+                const timerDisplay = document.getElementById('deadline-timer');
+                
+                const startTimer = () => {
+                    const deadline = (d.lastMoveTime || Date.now()) + (3 * 24 * 60 * 60 * 1000);
+                    const now = Date.now();
+                    const diff = deadline - now;
+
+                    if(diff <= 0) {
+                        timerDisplay.innerText = "⚠️ TIME EXPIRED";
                         clearInterval(liveTimer);
-                        handleTimeout(id, d);
                     } else {
-                        const days = Math.floor(timeLeft / (1000 * 60 * 60 * 24));
-                        const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                        const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-                        const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
-                        document.getElementById('deadline-timer').innerHTML = 
-                            `⏳ ${days}d ${hours}h ${minutes}m ${seconds}s`;
+                        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                        const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                        const secs = Math.floor((diff % (1000 * 60)) / 1000);
+                        timerDisplay.innerText = `⏳ ${days}d ${hours}h ${mins}m ${secs}s`;
                     }
                 };
-                updateCountdown();
-                liveTimer = setInterval(updateCountdown, 1000);
+                
+                startTimer();
+                liveTimer = setInterval(startTimer, 1000);
 
                 document.getElementById('label-white').innerText = "W: " + d.white;
                 document.getElementById('label-black').innerText = "B: " + d.black;
                 document.getElementById('game-status').innerText = game.turn() === 'w' ? "WHITE'S TURN" : "BLACK'S TURN";
                 if(d.players.includes(myId)) board.orientation(myId === d.white ? 'white' : 'black');
             });
-        }
-
-        async function handleTimeout(id, d) {
-            const matchRef = db.collection("academy_matches").doc(id);
-            if (game.history().length === 0) {
-                await matchRef.update({ status: "aborted", result: "Forfeit: No initial moves" });
-            } else {
-                const winnerId = game.turn() === 'w' ? d.black : d.white;
-                await matchRef.update({ status: "finished", result: "Won by Time Out", winner: winnerId });
-            }
         }
 
         function onSquareClick() {
