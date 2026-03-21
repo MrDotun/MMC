@@ -213,8 +213,12 @@
         let board = null, game = new Chess(), currentRound = 0, pTime = 300, mTime = 300, timerInterval;
         let sourceSquare = null;
         
-        // Ensure you have a 'chess-worker.js' file for the AI to process moves
-        const worker = new Worker('chess-worker.js');
+        let worker;
+        try {
+            worker = new Worker('chess-worker.js');
+        } catch(e) {
+            console.log("Worker could not be loaded. AI will use random moves.");
+        }
 
         function initializeTournament() {
             const name = document.getElementById('player-name-input').value.trim();
@@ -243,7 +247,6 @@
                     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
                 });
                 
-                // CLICK LISTENER RE-ATTACHED
                 $('#board').on('click', '.square-55d6', function() {
                     const square = $(this).attr('data-square');
                     onSquareClick(square);
@@ -261,7 +264,6 @@
 
             const piece = game.get(square);
 
-            // Phase 1: Selecting a piece
             if (sourceSquare === null) {
                 if (piece && piece.color === 'w') {
                     sourceSquare = square;
@@ -269,9 +271,7 @@
                     $('.square-' + square).addClass('highlight-sq');
                 }
             } 
-            // Phase 2: Choosing a target square
             else {
-                // If you click another of your own pieces, switch selection
                 if (piece && piece.color === 'w') {
                     sourceSquare = square;
                     $('.square-55d6').removeClass('highlight-sq');
@@ -279,7 +279,6 @@
                     return;
                 }
 
-                // Attempt Move
                 const move = game.move({
                     from: sourceSquare,
                     to: square,
@@ -287,49 +286,62 @@
                 });
 
                 if (move === null) {
-                    // Invalid move - clear selection
                     $('.square-55d6').removeClass('highlight-sq');
                     sourceSquare = null;
                 } else {
-                    // Valid move
                     board.position(game.fen());
                     $('.square-55d6').removeClass('highlight-sq');
                     sourceSquare = null;
                     
-                    // Call Master AI
-                    const m = Masters[currentRound];
-                    worker.postMessage("position " + game.fen());
-                    worker.postMessage("go depth " + m.depth);
+                    if (!game.game_over()) {
+                        const m = Masters[currentRound];
+                        if(worker) {
+                            worker.postMessage("position " + game.fen());
+                            worker.postMessage("go depth " + m.depth);
+                        } else {
+                            setTimeout(makeRandomMove, 600);
+                        }
+                    }
                     checkGameOver();
                 }
             }
         }
 
-        worker.onmessage = function(e) {
-            if (e.data.indexOf('bestmove') > -1) {
-                const moveStr = e.data.split(' ')[1];
-                const master = Masters[currentRound];
-                
-                setTimeout(() => {
-                    if (Math.random() < master.blunder) {
-                        const moves = game.moves();
-                        game.move(moves[Math.floor(Math.random() * moves.length)]);
-                    } else {
-                        game.move({ from: moveStr.substring(0,2), to: moveStr.substring(2,4), promotion: 'q' });
-                    }
-                    board.position(game.fen());
-                    checkGameOver();
-                }, 600);
+        function makeRandomMove() {
+            const moves = game.moves();
+            if (moves.length > 0) {
+                game.move(moves[Math.floor(Math.random() * moves.length)]);
+                board.position(game.fen());
+                checkGameOver();
             }
-        };
+        }
+
+        if (worker) {
+            worker.onmessage = function(e) {
+                if (e.data.indexOf('bestmove') > -1) {
+                    const moveStr = e.data.split(' ')[1];
+                    const master = Masters[currentRound];
+                    
+                    setTimeout(() => {
+                        if (Math.random() < master.blunder) {
+                            makeRandomMove();
+                        } else {
+                            game.move({ from: moveStr.substring(0,2), to: moveStr.substring(2,4), promotion: 'q' });
+                        }
+                        board.position(game.fen());
+                        checkGameOver();
+                    }, 600);
+                }
+            };
+        }
 
         function checkGameOver() {
             if (game.game_over()) {
                 clearInterval(timerInterval);
                 let msg = "";
-                if (game.in_draw()) msg = "MATCH DRAWN";
-                else if (game.turn() === 'b') msg = "YOU WIN! ADVANCING...";
-                else msg = "MASTER WINS. TRY AGAIN?";
+                if (game.in_checkmate()) msg = game.turn() === 'w' ? "MASTER WINS!" : "YOU WIN! ADVANCING...";
+                else if (game.in_draw()) msg = "MATCH DRAWN";
+                else msg = "GAME OVER";
                 document.getElementById('system-msg').innerText = msg;
             }
         }
@@ -339,7 +351,7 @@
             timerInterval = setInterval(() => {
                 if (game.turn() === 'w') pTime--; else mTime--;
                 const fmt = (s) => {
-                    let mins = Math.floor(s/60), secs = s%60;
+                    let mins = Math.floor(Math.max(0, s)/60), secs = Math.max(0, s)%60;
                     return `${mins}:${secs < 10 ? '0'+secs : secs}`;
                 };
                 document.getElementById('master-timer').innerText = fmt(mTime);
