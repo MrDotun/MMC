@@ -49,14 +49,6 @@
             font-size: 13px; letter-spacing: 1px;
         }
         
-        .podium-wrap { display: flex; justify-content: center; align-items: flex-end; gap: 10px; margin-bottom: 20px; height: 90px; }
-        .podium-rank { display: flex; flex-direction: column; align-items: center; width: 65px; }
-        .podium-bar { width: 100%; border-radius: 6px 6px 0 0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #000; font-size: 9px; }
-        .rank-1 .podium-bar { height: 50px; background: var(--gold); }
-        .rank-2 .podium-bar { height: 35px; background: var(--silver); }
-        .rank-3 .podium-bar { height: 25px; background: var(--bronze); }
-        .podium-name { font-size: 9px; margin-top: 4px; font-weight: bold; text-align: center; overflow: hidden; text-overflow: ellipsis; width: 100%; white-space: nowrap; }
-
         .item-row { 
             background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; 
             margin-bottom: 8px; display: flex; justify-content: space-between; 
@@ -66,7 +58,6 @@
         .live-badge { background: var(--danger); color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.6em; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-        /* Chat Styles */
         #chat-container { margin-top: 15px; background: #020617; border-radius: 12px; padding: 10px; border: 1px solid #334155; }
         #chat-box { height: 100px; overflow-y: auto; font-size: 11px; margin-bottom: 10px; padding-right: 5px; }
         .chat-msg { margin-bottom: 6px; line-height: 1.4; }
@@ -75,12 +66,11 @@
         .chat-input-wrap input { margin-bottom: 0 !important; padding: 8px !important; font-size: 12px; flex: 1; }
         .chat-send { width: 60px !important; padding: 8px !important; margin-bottom: 0 !important; font-size: 10px; }
 
-        /* Replay Controls Styling */
         .replay-nav { display: flex; justify-content: center; align-items: center; gap: 15px; margin: 10px 0; }
         .replay-btn { background: var(--card); border: 1px solid #334155; color: var(--secondary); border-radius: 8px; padding: 8px 15px; cursor: pointer; font-weight: bold; }
         #replay-label { font-size: 11px; color: var(--secondary); letter-spacing: 1px; font-weight: bold; min-width: 80px; text-align: center; }
 
-        .rating-badge { background: var(--secondary); color: #064e3b; padding: 4px 8px; border-radius: 6px; font-size: 0.7em; font-weight: 900; }
+        .deadline-badge { font-size: 10px; color: var(--danger); text-align: center; margin-bottom: 10px; font-weight: bold; text-transform: uppercase; }
         input, select { width: 100%; padding: 14px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
     </style>
 </head>
@@ -110,16 +100,6 @@
 
     <div id="section-lobby" class="container hidden">
         <div id="user-welcome"></div>
-        <div class="podium-wrap" id="winners-podium">
-            <div class="podium-rank rank-2"><div class="podium-name" id="p2-name">-</div><div class="podium-bar">2nd</div></div>
-            <div class="podium-rank rank-1"><div class="podium-name" id="p1-name">-</div><div class="podium-bar">1st</div></div>
-            <div class="podium-rank rank-3"><div class="podium-name" id="p3-name">-</div><div class="podium-bar">3rd</div></div>
-        </div>
-        <div id="admin-panel" class="hidden" style="border: 1px dashed var(--gold); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-            <h3 style="color:var(--gold)">🛠️ TOURNAMENT GEN</h3>
-            <div id="player-check-list" style="max-height: 80px; overflow-y: auto; margin: 10px 0; font-size: 11px;"></div>
-            <button class="btn" style="background: var(--gold); color: black;" onclick="generateTournament()">Generate Bracket</button>
-        </div>
         <div id="live-games-section">
             <h3><span class="live-badge">LIVE</span> WATCH GAMES</h3>
             <div id="live-games-list"></div>
@@ -127,10 +107,6 @@
         <div id="my-matches-section">
             <h3>⚔️ MY ACTIVE GAMES</h3>
             <div id="my-match-list"></div>
-        </div>
-        <div id="leaderboard-section">
-            <h3>🏆 ALL REGISTERED PLAYERS</h3>
-            <div id="full-leaderboard" style="max-height: 150px; overflow-y: auto;"></div>
         </div>
         <button class="btn" style="background: transparent; border: 1px solid #334155; color: #64748b; margin-top: 15px;" onclick="logout()">LOGOUT</button>
     </div>
@@ -149,7 +125,8 @@
             <button class="replay-btn" onclick="updateReplayView(1)">→</button>
         </div>
 
-        <div id="game-status" style="text-align:center; margin-top:5px; font-weight:bold; color: var(--secondary);"></div>
+        <div id="deadline-timer" class="deadline-badge"></div>
+        <div id="game-status" style="text-align:center; font-weight:bold; color: var(--secondary);"></div>
 
         <div id="chat-container">
             <div id="chat-box"></div>
@@ -173,7 +150,6 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        // Added historyMoves and viewIndex for Replay
         let myId = localStorage.getItem('savedUserId'), myData = null, board = null, game = new Chess(), 
             activeMatchId = null, authMode = 'login', sourceSquare = null, chatUnsubscribe = null,
             historyMoves = [], viewIndex = -1;
@@ -199,18 +175,15 @@
                 myData = { name: "Guest_" + myId.split('_')[1], rating: 0, avatar: "👤", pin: "guest" };
                 return showLobby();
             }
-            const name = $("#reg-name").val().trim();
-            const pin = $("#reg-password").val();
-            const id = name.toLowerCase().replace(/\s/g, '_');
-            const docRef = db.collection("academy_players").doc(id);
-            const doc = await docRef.get();
+            const name = $("#reg-name").val().trim(), pin = $("#reg-password").val(), id = name.toLowerCase().replace(/\s/g, '_');
+            const docRef = db.collection("academy_players").doc(id), doc = await docRef.get();
 
             if (authMode === 'login') {
                 if (!doc.exists || (doc.data().pin !== pin && pin !== "decipher1234")) return alert("Invalid PIN");
                 myData = doc.data();
             } else {
                 if (doc.exists) return alert("Name taken!");
-                myData = { name, pin, school: $("#reg-school").val(), avatar: $("#reg-avatar").val(), rating: 1500 };
+                myData = { name, pin, rating: 1500 };
                 await docRef.set(myData);
             }
             myId = id; localStorage.setItem('savedUserId', id); showLobby();
@@ -218,24 +191,11 @@
 
         function showLobby() {
             $(".container").addClass("hidden"); $("#section-lobby").removeClass("hidden");
-            document.getElementById('user-welcome').innerHTML = `<h3>${myData.avatar || '♟️'} ${myData.name}</h3>`;
-            if (myData.pin === "decipher1234") { $("#admin-panel").removeClass("hidden"); loadAdminList(); }
+            document.getElementById('user-welcome').innerHTML = `<h3>${myData.name}</h3>`;
             loadLobbyData();
         }
 
         function loadLobbyData() {
-            db.collection("academy_players").orderBy("rating", "desc").onSnapshot(snap => {
-                let html = ""; const p = [];
-                snap.forEach(doc => {
-                    const d = doc.data(); p.push(d);
-                    html += `<div class="item-row"><span>${d.name}</span> <span class="rating-badge">${d.rating}</span></div>`;
-                });
-                if(p[0]) $("#p1-name").text(p[0].name);
-                if(p[1]) $("#p2-name").text(p[1].name);
-                if(p[2]) $("#p3-name").text(p[2].name);
-                document.getElementById('full-leaderboard').innerHTML = html;
-            });
-
             db.collection("academy_matches").where("status", "==", "active").onSnapshot(snap => {
                 let liveHtml = "", myHtml = "";
                 snap.forEach(doc => {
@@ -248,31 +208,8 @@
             });
         }
 
-        function loadAdminList() {
-            db.collection("academy_players").get().then(snap => {
-                let html = ""; snap.forEach(doc => { html += `<div><input type="checkbox" class="t-check" value="${doc.id}"> ${doc.data().name}</div>`; });
-                document.getElementById('player-check-list').innerHTML = html;
-            });
-        }
-
-        async function generateTournament() {
-            const selected = []; $(".t-check:checked").each(function() { selected.push($(this).val()); });
-            if (selected.length < 2) return alert("Select players");
-            for (let i = 0; i < selected.length; i += 2) {
-                if (selected[i+1]) {
-                    const mid = "T_" + Date.now() + "_" + i;
-                    await db.collection("academy_matches").doc(mid).set({
-                        white: selected[i], black: selected[i+1], players: [selected[i], selected[i+1]],
-                        type: "tournament", round: "Quarter-Finals", status: "active", fen: "start", pgn: ""
-                    });
-                }
-            }
-            alert("Tournament Live!");
-        }
-
         function loadGame(id) {
-            activeMatchId = id; 
-            viewIndex = -1; // Reset view index on new game load
+            activeMatchId = id; viewIndex = -1;
             $(".container").addClass("hidden"); $("#section-game").removeClass("hidden");
             
             if (!board) {
@@ -283,15 +220,27 @@
             db.collection("academy_matches").doc(id).onSnapshot(doc => {
                 const d = doc.data(); if (!d) return;
                 
-                // Load full history from PGN
+                // RESTORE HISTORY: Use PGN for history, fallback to FEN for visual sync
                 game.load_pgn(d.pgn || "");
+                if (game.history().length === 0 && d.fen !== "start") game.load(d.fen);
+                
                 historyMoves = game.history();
 
-                // If user is at the end or just joined, keep "Live"
                 if (viewIndex === -1 || viewIndex >= historyMoves.length - 1) {
                     viewIndex = historyMoves.length - 1;
                     board.position(game.fen());
                     document.getElementById('replay-label').innerText = "LIVE VIEW";
+                }
+
+                // DEADLINE LOGIC: 3-Day Countdown
+                if (d.lastMoveTime) {
+                    const deadline = d.lastMoveTime + (3 * 24 * 60 * 60 * 1000);
+                    const diff = deadline - Date.now();
+                    if (diff <= 0) document.getElementById('deadline-timer').innerText = "⚠️ TIME EXPIRED";
+                    else {
+                        const hours = Math.floor(diff / (1000 * 60 * 60));
+                        document.getElementById('deadline-timer').innerText = `Move Deadline: ${hours}h remaining`;
+                    }
                 }
 
                 document.getElementById('label-white').innerText = "W: " + d.white;
@@ -299,48 +248,16 @@
                 document.getElementById('game-status').innerText = game.turn() === 'w' ? "WHITE'S TURN" : "BLACK'S TURN";
                 if(d.players.includes(myId)) board.orientation(myId === d.white ? 'white' : 'black');
             });
-
-            if(chatUnsubscribe) chatUnsubscribe();
-            chatUnsubscribe = db.collection("academy_matches").doc(id).collection("chat").orderBy("time", "asc").limitToLast(20).onSnapshot(snap => {
-                let html = ""; snap.forEach(c => {
-                    const msg = c.data();
-                    html += `<div class="chat-msg"><span class="chat-user">${msg.user}:</span> ${msg.text}</div>`;
-                });
-                document.getElementById('chat-box').innerHTML = html;
-                document.getElementById('chat-box').scrollTop = document.getElementById('chat-box').scrollHeight;
-            });
         }
 
-        // REPLAY LOGIC FUNCTION
         function updateReplayView(dir) {
             let targetIndex = viewIndex + dir;
             if (targetIndex < -1 || targetIndex >= historyMoves.length) return;
-
             viewIndex = targetIndex;
             let tempGame = new Chess();
-            for (let i = 0; i <= viewIndex; i++) {
-                tempGame.move(historyMoves[i]);
-            }
+            for (let i = 0; i <= viewIndex; i++) tempGame.move(historyMoves[i]);
             board.position(tempGame.fen());
-
-            // Update Label
-            const label = document.getElementById('replay-label');
-            if (viewIndex === historyMoves.length - 1) {
-                label.innerText = "LIVE VIEW";
-                label.style.color = "var(--secondary)";
-            } else {
-                label.innerText = `MOVE ${viewIndex + 1}`;
-                label.style.color = "#fff";
-            }
-        }
-
-        async function sendChat() {
-            const txt = $("#chat-input").val().trim();
-            if(!txt || !activeMatchId) return;
-            await db.collection("academy_matches").doc(activeMatchId).collection("chat").add({
-                user: myData.name, text: txt, time: Date.now()
-            });
-            $("#chat-input").val("");
+            document.getElementById('replay-label').innerText = viewIndex === historyMoves.length - 1 ? "LIVE VIEW" : `MOVE ${viewIndex + 1}`;
         }
 
         function onSquareClick() {
@@ -348,20 +265,30 @@
             db.collection("academy_matches").doc(activeMatchId).get().then(doc => {
                 const d = doc.data();
                 if (!d.players.includes(myId) || (game.turn() === 'w' && myId !== d.white) || (game.turn() === 'b' && myId !== d.black)) return;
-                
-                // Block moving if currently replaying the past
-                if (viewIndex !== historyMoves.length - 1) {
-                   return alert("Go back to LIVE VIEW to make a move!");
-                }
+                if (viewIndex !== historyMoves.length - 1) return alert("Return to LIVE VIEW to move!");
 
                 if (sourceSquare === null) {
                     if (game.get(sq) && game.get(sq).color === game.turn()) { sourceSquare = sq; $(this).css('background', 'rgba(74, 222, 128, 0.4)'); }
                 } else {
                     const move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
                     sourceSquare = null; $('.square-55d63').css('background', '');
-                    if (move) db.collection("academy_matches").doc(activeMatchId).update({ fen: game.fen(), pgn: game.pgn() });
+                    if (move) {
+                        // SAVE BOTH FEN AND PGN + TIMESTAMP
+                        db.collection("academy_matches").doc(activeMatchId).update({ 
+                            fen: game.fen(), 
+                            pgn: game.pgn(),
+                            lastMoveTime: Date.now() 
+                        });
+                    }
                 }
             });
+        }
+
+        async function sendChat() {
+            const txt = $("#chat-input").val().trim();
+            if(!txt || !activeMatchId) return;
+            await db.collection("academy_matches").doc(activeMatchId).collection("chat").add({ user: myData.name, text: txt, time: Date.now() });
+            $("#chat-input").val("");
         }
 
         function logout() { localStorage.removeItem('savedUserId'); location.reload(); }
