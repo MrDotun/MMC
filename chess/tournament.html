@@ -13,15 +13,15 @@
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; text-align: center; margin: 0; padding: 10px; }
         #board-wrapper { display: flex; justify-content: center; margin: 15px 0; }
-        #board { width: 90vw; max-width: 400px; height: auto; border: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+        #board { width: 95vw; max-width: 400px; height: auto; border: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
         
-        /* Updated Stats Layout to put Clocks on the side */
-        .game-stats { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 10px; }
+        /* Side-by-Side Clock Layout */
+        .game-stats { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 10px; }
         .info-card { 
             background: #1e2a36; 
             padding: 10px; 
             border-radius: 8px; 
-            width: 95%; 
+            width: 100%; 
             max-width: 400px; 
             border-top: 4px solid #27ae60; 
             display: flex; 
@@ -36,24 +36,24 @@
             font-size: 24px; 
             font-family: monospace; 
             font-weight: bold; 
-            color: #bbb; 
-            background: #111; 
-            padding: 5px 10px; 
+            color: #888; 
+            background: #000; 
+            padding: 5px 12px; 
             border-radius: 4px; 
             border: 1px solid #444;
+            margin-left: 10px;
         }
-        .active-turn { color: #e74c3c; border-color: #e74c3c; }
+        .active-turn { color: #e74c3c; border-color: #e74c3c; box-shadow: 0 0 5px rgba(231, 76, 60, 0.5); }
 
         .btn { padding: 10px 15px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin: 5px; }
-        .draw-btn { background: #f39c12; color: white; margin-top: 5px; font-size: 12px; }
+        .draw-btn { background: #f39c12; color: white; font-size: 11px; padding: 5px 10px; margin-top: 5px; }
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: none; z-index: 100; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
         .modal { background: #222; padding: 25px; border: 2px solid #27ae60; border-radius: 12px; max-width: 500px; width: 100%; overflow-y: auto; max-height: 90vh; }
         input { padding: 12px; width: 80%; margin-bottom: 15px; border-radius: 4px; border: none; font-size: 16px; }
         .master-list { text-align: left; font-size: 13px; background: #111; padding: 10px; border-radius: 5px; margin: 15px 0; }
-        .rating-badge { color: #f1c40f; font-weight: bold; float: right; }
         
         /* Highlight selected piece */
-        .highlight-sq { background-color: rgba(241, 196, 15, 0.5) !important; }
+        .highlight-sq { background-color: rgba(241, 196, 15, 0.6) !important; }
     </style>
 </head>
 <body>
@@ -61,7 +61,6 @@
     <div id="name-overlay" class="overlay" style="display: flex;">
         <div class="modal">
             <h2 style="color:#27ae60; margin-top:0;">🇳🇬 THE VARSITY CUP</h2>
-            <p>A new lineup of Legends awaits you.</p>
             <div class="master-list" id="dynamic-roster"></div>
             <input type="text" id="player-name-input" placeholder="Enter Your Name">
             <button class="btn" style="background:#27ae60; color:white; width: 80%;" onclick="initializeTournament()">ENTER THE ARENA</button>
@@ -83,8 +82,8 @@
         <div class="info-card">
             <div class="details">
                 <b id="current-name">Mr. Dotun</b><br>
-                <span id="current-title">Coach</span> | Rating: <span id="current-rating">2150</span>
-                <button class="btn draw-btn" onclick="offerDraw()">Offer Draw</button>
+                <span id="current-title">Coach</span> | <span id="current-rating">2150</span>
+                <br><button class="btn draw-btn" onclick="offerDraw()">Offer Draw</button>
             </div>
             <div id="master-timer" class="side-clock">05:00</div>
         </div>
@@ -103,22 +102,20 @@
 
     <script>
         const masterPool = [
-            { name: "Mr. Dotun", title: "Coach", rating: 2150, blunder: 0.45, bio: "Welcome to the Grinder. I am Mr. Dotun." },
+            { name: "Mr. Dotun", title: "Coach", rating: 2150, blunder: 0.45, bio: "Welcome to the Grinder." },
             { name: "Okeke Isaac", title: "IM", rating: 2210, blunder: 0.35, bio: "The tactical wonder-kid." },
             { name: "Bunmi Olape", title: "IM", rating: 2320, blunder: 0.30, bio: "The Professor." },
             { name: "Ajibola Olanrewaju", title: "FM", rating: 2335, blunder: 0.25, bio: "The Blitz specialist." },
             { name: "Oladapo Adu", title: "IM", rating: 2450, blunder: 0.15, bio: "The Veteran King." }
         ];
 
-        let Masters = masterPool.sort(() => 0.5 - Math.random()).slice(0, 7);
+        let Masters = masterPool.sort(() => 0.5 - Math.random()).slice(0, 5);
         const rosterDiv = document.getElementById('dynamic-roster');
-        Masters.forEach((m, i) => {
-            rosterDiv.innerHTML += `Round ${i+1}: <b>${m.name}</b> <span class="rating-badge">${m.rating}</span><br>`;
-        });
+        Masters.forEach((m, i) => { rosterDiv.innerHTML += `Round ${i+1}: <b>${m.name}</b> (${m.rating})<br>`; });
 
         let board = null, game = new Chess(), currentRound = 0, timerInterval;
-        let pTime = 300, mTime = 300;
-        let sourceSquare = null;
+        let pTime = 300, mTime = 300, sourceSquare = null;
+        
         const worker = new Worker('chess-worker.js');
 
         function initializeTournament() {
@@ -142,7 +139,7 @@
         function closeIntro() {
             document.getElementById('intro-overlay').style.display = 'none';
             const cfg = {
-                draggable: false, 
+                draggable: false, // Click-to-move only
                 position: 'start',
                 onSquareClick: onSquareClick,
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
@@ -157,6 +154,7 @@
         function onSquareClick(square) {
             if (game.turn() !== 'w') return;
 
+            // 1. First Click: Selecting
             if (sourceSquare === null) {
                 const piece = game.get(square);
                 if (piece && piece.color === 'w') {
@@ -164,20 +162,25 @@
                     $('.square-55d6').removeClass('highlight-sq');
                     $('.square-' + square).addClass('highlight-sq');
                 }
-            } else {
+            } 
+            // 2. Second Click: Moving
+            else {
                 const move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
                 $('.square-55d6').removeClass('highlight-sq');
-                sourceSquare = null;
-
+                
                 if (move) {
+                    sourceSquare = null;
                     board.position(game.fen());
+                    updateClockDisplay();
                     window.setTimeout(() => worker.postMessage("position " + game.fen()), 250);
                 } else {
-                    // If clicked another white piece, change selection
+                    // Switch selection if clicking another white piece
                     const piece = game.get(square);
                     if (piece && piece.color === 'w') {
                         sourceSquare = square;
                         $('.square-' + square).addClass('highlight-sq');
+                    } else {
+                        sourceSquare = null;
                     }
                 }
             }
@@ -185,7 +188,7 @@
 
         worker.onmessage = function(e) {
             const bestMove = e.data;
-            if (bestMove.indexOf(':') !== -1) return; // Ignore PV messages
+            if (bestMove.indexOf(':') !== -1) return;
             
             const master = Masters[currentRound];
             if (Math.random() < master.blunder) {
@@ -195,6 +198,7 @@
                 game.move({ from: bestMove.substring(0,2), to: bestMove.substring(2,4), promotion: 'q' });
             }
             board.position(game.fen());
+            updateClockDisplay();
         };
 
         function startClock() {
@@ -202,7 +206,10 @@
             timerInterval = setInterval(() => {
                 if (game.turn() === 'w') pTime--; else mTime--;
                 updateClockDisplay();
-                if (pTime <= 0 || mTime <= 0) clearInterval(timerInterval);
+                if (pTime <= 0 || mTime <= 0) {
+                    clearInterval(timerInterval);
+                    alert(pTime <= 0 ? "You lost on time!" : "Master lost on time!");
+                }
             }, 1000);
         }
 
@@ -211,13 +218,13 @@
                 let m = Math.floor(s/60), secs = s%60;
                 return `${m}:${secs < 10 ? '0'+secs : secs}`;
             };
-            const pt = document.getElementById('player-timer');
-            const mt = document.getElementById('master-timer');
-            pt.innerText = fmt(pTime);
-            mt.innerText = fmt(mTime);
+            const pClock = document.getElementById('player-timer');
+            const mClock = document.getElementById('master-timer');
+            pClock.innerText = fmt(pTime);
+            mClock.innerText = fmt(mTime);
             
-            pt.classList.toggle('active-turn', game.turn() === 'w');
-            mt.classList.toggle('active-turn', game.turn() === 'b');
+            pClock.classList.toggle('active-turn', game.turn() === 'w');
+            mClock.classList.toggle('active-turn', game.turn() === 'b');
         }
 
         function offerDraw() {
