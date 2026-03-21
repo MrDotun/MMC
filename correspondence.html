@@ -137,7 +137,6 @@
             hasActiveGame = false, liveTimer = null;
 
         window.onload = async function() {
-            // UPDATED: Load Leaderboard for front page with all users
             loadFrontLeaderboard();
             
             if (myId) {
@@ -147,7 +146,6 @@
         };
 
         function loadFrontLeaderboard() {
-            // REMOVED .limit(5) so all players are shown
             db.collection("academy_players").orderBy("rating", "desc").get().then(snap => {
                 let html = "";
                 let rank = 1;
@@ -180,14 +178,31 @@
                 return showLobby();
             }
             const name = $("#reg-name").val().trim(), pin = $("#reg-password").val(), id = name.toLowerCase().replace(/\s/g, '_');
+            if(!name || !pin) return alert("Please fill in all required fields.");
+            
             const docRef = db.collection("academy_players").doc(id), doc = await docRef.get();
+            
             if (authMode === 'login') {
-                if (!doc.exists || (doc.data().pin !== pin && pin !== "decipher1234")) return alert("Invalid PIN");
+                if (!doc.exists || (doc.data().pin !== pin && pin !== "decipher1234")) return alert("Invalid PIN or Username");
                 myData = doc.data();
             } else {
-                if (doc.exists) return alert("Name taken!");
+                if (doc.exists) return alert("Name taken! If you are a sibling sharing a device, please use a slight variation (e.g., add your last initial).");
+                
+                // MULTIPLE ACCOUNTS/SIBLINGS CHECK
+                let deviceAccounts = JSON.parse(localStorage.getItem('registeredAccounts') || '[]');
+                if (deviceAccounts.length > 0 && !deviceAccounts.includes(id)) {
+                    if(!confirm("An account is already registered on this device. Are you a sibling registering a new account?")) {
+                        return;
+                    }
+                }
+
                 myData = { name, pin, rating: 1500 };
                 await docRef.set(myData);
+                
+                if(!deviceAccounts.includes(id)) {
+                    deviceAccounts.push(id);
+                    localStorage.setItem('registeredAccounts', JSON.stringify(deviceAccounts));
+                }
             }
             myId = id; localStorage.setItem('savedUserId', id); showLobby();
         }
@@ -227,7 +242,19 @@
         }
 
         async function challenge(oppId) {
-            if(hasActiveGame) return alert("You are already in an active game!");
+            // MULTIPLE ACTIVE CHALLENGES CHECK
+            const snap = await db.collection("academy_matches")
+                .where("status", "==", "active")
+                .where("players", "array-contains", myId)
+                .get();
+
+            let activeWithOpponent = false;
+            snap.forEach(doc => {
+                if(doc.data().players.includes(oppId)) activeWithOpponent = true;
+            });
+
+            if (activeWithOpponent) return alert("You already have an active game with this player!");
+
             const matchId = `${myId}_vs_${oppId}_${Date.now()}`;
             await db.collection("academy_matches").doc(matchId).set({
                 white: myId, black: oppId, players: [myId, oppId], status: "active", fen: "start", pgn: "", lastMoveTime: Date.now(), drawOffer: null
@@ -247,7 +274,6 @@
                 const d = doc.data(); 
                 if (!d) return;
 
-                // UPDATED: Handle Game Over States (Resignation & Draw)
                 if (d.status !== "active") {
                     if(liveTimer) clearInterval(liveTimer);
                     game.load_pgn(d.pgn || "");
@@ -295,7 +321,6 @@
                 startTimer();
                 liveTimer = setInterval(startTimer, 1000);
 
-                // Show/Hide Action Buttons based on player involvement
                 if(d.players.includes(myId)) {
                     $("#game-actions").removeClass("hidden").css("display", "flex");
                 } else {
@@ -330,7 +355,6 @@
             });
         }
 
-        // NEW: Draw Logic
         async function offerDraw() {
             if(!activeMatchId) return;
             const doc = await db.collection("academy_matches").doc(activeMatchId).get();
@@ -349,7 +373,6 @@
             }
         }
 
-        // NEW: Resign Logic
         async function resignGame() {
             if(!activeMatchId || !confirm("Are you sure you want to resign?")) return;
             const doc = await db.collection("academy_matches").doc(activeMatchId).get();
