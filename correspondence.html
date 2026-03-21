@@ -38,7 +38,6 @@
         .deadline-badge { font-size: 12px; color: #fbbf24; text-align: center; margin-bottom: 10px; font-weight: 900; text-transform: uppercase; background: rgba(0,0,0,0.4); padding: 10px; border-radius: 8px; border: 1px solid #fbbf24; display: block; }
         input, select { width: 100%; padding: 14px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
         
-        /* New Style for Front Page Leaderboard */
         .rank-badge { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 10px; font-weight: bold; margin-right: 10px; background: #334155; }
         .rank-1 { background: var(--gold); color: #000; }
         .rank-2 { background: var(--silver); color: #000; }
@@ -105,6 +104,12 @@
         </div>
         <div id="deadline-timer" class="deadline-badge">CLOCK INITIALIZING...</div>
         <div id="game-status" style="text-align:center; font-weight:bold; color: var(--secondary);"></div>
+        
+        <div id="game-actions" class="hidden" style="display:flex; gap:10px; margin-top:15px;">
+            <button class="btn" style="margin-bottom:0; font-size:11px;" onclick="offerDraw()">Offer/Accept Draw</button>
+            <button class="btn" style="margin-bottom:0; font-size:11px; background:var(--danger);" onclick="resignGame()">Resign</button>
+        </div>
+
         <div id="chat-container">
             <div id="chat-box"></div>
             <div class="chat-input-wrap">
@@ -132,7 +137,7 @@
             hasActiveGame = false, liveTimer = null;
 
         window.onload = async function() {
-            // Load Leaderboard for front page
+            // UPDATED: Load Leaderboard for front page with all users
             loadFrontLeaderboard();
             
             if (myId) {
@@ -141,9 +146,9 @@
             }
         };
 
-        // NEW FUNCTION: Fetch and display leaderboard on front page
         function loadFrontLeaderboard() {
-            db.collection("academy_players").orderBy("rating", "desc").limit(5).get().then(snap => {
+            // REMOVED .limit(5) so all players are shown
+            db.collection("academy_players").orderBy("rating", "desc").get().then(snap => {
                 let html = "";
                 let rank = 1;
                 snap.forEach(doc => {
@@ -225,7 +230,7 @@
             if(hasActiveGame) return alert("You are already in an active game!");
             const matchId = `${myId}_vs_${oppId}_${Date.now()}`;
             await db.collection("academy_matches").doc(matchId).set({
-                white: myId, black: oppId, players: [myId, oppId], status: "active", fen: "start", pgn: "", lastMoveTime: Date.now()
+                white: myId, black: oppId, players: [myId, oppId], status: "active", fen: "start", pgn: "", lastMoveTime: Date.now(), drawOffer: null
             });
             loadGame(matchId);
         }
@@ -239,7 +244,27 @@
             }
             
             db.collection("academy_matches").doc(id).onSnapshot(async doc => {
-                const d = doc.data(); if (!d || d.status !== "active") return;
+                const d = doc.data(); 
+                if (!d) return;
+
+                // UPDATED: Handle Game Over States (Resignation & Draw)
+                if (d.status !== "active") {
+                    if(liveTimer) clearInterval(liveTimer);
+                    game.load_pgn(d.pgn || "");
+                    if (game.history().length === 0 && d.fen !== "start") game.load(d.fen);
+                    board.position(game.fen());
+                    
+                    let resultMsg = "GAME OVER";
+                    if(d.status === "white_resigned") resultMsg = "BLACK WINS (White Resigned)";
+                    else if(d.status === "black_resigned") resultMsg = "WHITE WINS (Black Resigned)";
+                    else if(d.status === "draw") resultMsg = "MATCH DRAWN";
+
+                    document.getElementById('game-status').innerText = resultMsg;
+                    document.getElementById('deadline-timer').innerText = "🏁 MATCH CONCLUDED";
+                    $("#game-actions").addClass("hidden");
+                    return;
+                }
+
                 game.load_pgn(d.pgn || "");
                 if (game.history().length === 0 && d.fen !== "start") game.load(d.fen);
                 historyMoves = game.history();
@@ -270,9 +295,20 @@
                 startTimer();
                 liveTimer = setInterval(startTimer, 1000);
 
+                // Show/Hide Action Buttons based on player involvement
+                if(d.players.includes(myId)) {
+                    $("#game-actions").removeClass("hidden").css("display", "flex");
+                } else {
+                    $("#game-actions").addClass("hidden");
+                }
+
                 document.getElementById('label-white').innerText = "W: " + d.white;
                 document.getElementById('label-black').innerText = "B: " + d.black;
-                document.getElementById('game-status').innerText = game.turn() === 'w' ? "WHITE'S TURN" : "BLACK'S TURN";
+                
+                let statusText = game.turn() === 'w' ? "WHITE'S TURN" : "BLACK'S TURN";
+                if (d.drawOffer) statusText += ` | DRAW OFFERED BY ${d.drawOffer.toUpperCase()}`;
+                document.getElementById('game-status').innerText = statusText;
+
                 if(d.players.includes(myId)) board.orientation(myId === d.white ? 'white' : 'black');
             });
         }
@@ -288,9 +324,40 @@
                     const move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
                     sourceSquare = null; $('.square-55d63').css('background', '');
                     if (move) {
-                        db.collection("academy_matches").doc(activeMatchId).update({ fen: game.fen(), pgn: game.pgn(), lastMoveTime: Date.now() });
+                        db.collection("academy_matches").doc(activeMatchId).update({ fen: game.fen(), pgn: game.pgn(), lastMoveTime: Date.now(), drawOffer: null });
                     }
                 }
+            });
+        }
+
+        // NEW: Draw Logic
+        async function offerDraw() {
+            if(!activeMatchId) return;
+            const doc = await db.collection("academy_matches").doc(activeMatchId).get();
+            const d = doc.data();
+            const myColor = (myId === d.white) ? 'white' : 'black';
+            
+            if(d.drawOffer) {
+                if(d.drawOffer !== myColor) {
+                    await db.collection("academy_matches").doc(activeMatchId).update({ status: "draw", drawOffer: null });
+                } else {
+                    alert("You have already offered a draw.");
+                }
+            } else {
+                await db.collection("academy_matches").doc(activeMatchId).update({ drawOffer: myColor });
+                alert("Draw offered to your opponent.");
+            }
+        }
+
+        // NEW: Resign Logic
+        async function resignGame() {
+            if(!activeMatchId || !confirm("Are you sure you want to resign?")) return;
+            const doc = await db.collection("academy_matches").doc(activeMatchId).get();
+            const d = doc.data();
+            const myColor = (myId === d.white) ? 'white' : 'black';
+            
+            await db.collection("academy_matches").doc(activeMatchId).update({
+                status: myColor + "_resigned"
             });
         }
 
