@@ -12,39 +12,44 @@
     
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; text-align: center; margin: 0; padding: 10px; }
-        
-        /* Ensure the board is visible and centered */
         #board-wrapper { display: flex; justify-content: center; margin: 15px 0; }
-        #board { width: 90vw; max-width: 400px; height: auto; border: 2px solid #333; }
-
+        #board { width: 90vw; max-width: 400px; height: auto; border: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
         #timer { font-size: 40px; color: #e74c3c; font-weight: bold; font-family: monospace; margin: 10px 0; }
-        
-        /* Layout for Stats */
         .game-stats { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
         .info-card { background: #1e2a36; padding: 10px; border-radius: 8px; width: 45%; min-width: 150px; border-top: 4px solid #27ae60; text-align: left; font-size: 14px; }
         .info-card.player { border-top-color: #3498db; }
-
-        /* Buttons */
-        .btn { padding: 8px 15px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin: 5px; font-size: 12px; }
-        .draw-btn { background: #f39c12; color: white; width: 100%; }
-        
-        /* Overlays */
+        .btn { padding: 10px 15px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin: 5px; }
+        .draw-btn { background: #f39c12; color: white; width: 100%; margin-top: 10px; }
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: none; z-index: 100; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
-        .modal { background: #222; padding: 20px; border: 2px solid #27ae60; border-radius: 10px; max-width: 90%; }
-        input { padding: 10px; width: 80%; margin-bottom: 10px; border-radius: 4px; border: none; }
+        .modal { background: #222; padding: 25px; border: 2px solid #27ae60; border-radius: 12px; max-width: 500px; width: 100%; overflow-y: auto; max-height: 90vh; }
+        input { padding: 12px; width: 80%; margin-bottom: 15px; border-radius: 4px; border: none; font-size: 16px; }
+        .master-list { text-align: left; font-size: 13px; background: #111; padding: 10px; border-radius: 5px; margin: 15px 0; }
+        .rating-badge { color: #f1c40f; font-weight: bold; float: right; }
     </style>
 </head>
 <body>
 
     <div id="name-overlay" class="overlay" style="display: flex;">
         <div class="modal">
-            <h2>Varsity Cup Entry</h2>
-            <input type="text" id="player-name-input" placeholder="Your Name">
-            <button class="btn" style="background:#27ae60; color:white;" onclick="initializeTournament()">ENTER</button>
+            <h2 style="color:#27ae60; margin-top:0;">🇳🇬 THE VARSITY CUP</h2>
+            <p>A new lineup of Legends awaits you.</p>
+            <div class="master-list" id="dynamic-roster">
+                </div>
+            <input type="text" id="player-name-input" placeholder="Enter Your Name">
+            <button class="btn" style="background:#27ae60; color:white; width: 80%;" onclick="initializeTournament()">ENTER THE ARENA</button>
         </div>
     </div>
 
-    <h3>🇳🇬 Nigerian Masters Varsity Cup</h3>
+    <div id="intro-overlay" class="overlay">
+        <div class="modal">
+            <h1 id="round-title" style="color:#27ae60;">ROUND 1</h1>
+            <h2 id="master-name-intro">Master Name</h2>
+            <p id="master-bio-intro" style="font-style: italic; line-height: 1.5;"></p>
+            <button class="btn" style="background:#27ae60; color:white; padding: 15px 30px;" onclick="closeIntro()">BEGIN MATCH</button>
+        </div>
+    </div>
+
+    <h3>Nigerian Masters Varsity Cup</h3>
     <div id="timer">05:00</div>
 
     <div class="game-stats">
@@ -61,45 +66,94 @@
         </div>
     </div>
 
-    <div id="board-wrapper">
-        <div id="board"></div>
-    </div>
-
-    <p id="system-msg" style="color:#f1c40f; height: 20px;"></p>
+    <div id="board-wrapper"><div id="board"></div></div>
+    <p id="system-msg" style="color:#f1c40f; height: 20px; font-weight: bold;"></p>
 
     <script>
-        // ... (The JavaScript from the previous response remains the same)
-        // CRITICAL FIX: Ensure Board initialization is called
-        let board = null;
-        let game = new Chess();
+        // Full Pool of 9 Masters
+        const masterPool = [
+            { name: "Mr. Dotun", title: "Coach", rating: 2150, blunder: 0.45, bio: "Welcome to the Grinder. I am Mr. Dotun. I will squeeze your position until you find the exit!" },
+            { name: "Okeke Isaac", title: "IM", rating: 2210, blunder: 0.35, bio: "The tactical wonder-kid. Isaac plays with youthful energy and lightning speed!" },
+            { name: "Bunmi Olape", title: "IM", rating: 2320, blunder: 0.30, bio: "The Professor. IM Bunmi Olape will test your endgame technique and discipline." },
+            { name: "Ajibola Olanrewaju", title: "FM", rating: 2335, blunder: 0.25, bio: "The Blitz specialist. He thrives in the chaos of 5-minute chess!" },
+            { name: "Oladapo Adu", title: "IM", rating: 2450, blunder: 0.15, bio: "The Veteran King. A powerhouse of Nigerian chess who rarely shows weakness." },
+            { name: "Akinseye Abiola", title: "FM", rating: 2380, blunder: 0.20, bio: "Behold the 'Iron Wall.' Break through his defense if you can!" },
+            { name: "Odion Aikhoje", title: "IM", rating: 2510, blunder: 0.08, bio: "The Golden Hero of 1998. He is arguably the strongest strategist in the field." },
+            { name: "Fola Akintola", title: "Master", rating: 2390, blunder: 0.18, bio: "A fierce attacker who hunts the King from the very first move." },
+            { name: "Anwuli Daniel", title: "IM", rating: 2420, blunder: 0.12, bio: "The Speed Demon. He might not be the highest rated today, but he is the fastest!" }
+        ];
 
-        function onDrop(source, target) {
-            let move = game.move({ from: source, to: target, promotion: 'q' });
-            if (move === null) return 'snapback';
-            
-            // Trigger Engine
-            window.setTimeout(() => {
-                worker.postMessage("position startpos moves " + game.history().join(" "));
-            }, 250);
+        // Randomly pick 7 for the tournament
+        let Masters = masterPool.sort(() => 0.5 - Math.random()).slice(0, 7);
+
+        // Display the randomized list in the first overlay
+        const rosterDiv = document.getElementById('dynamic-roster');
+        rosterDiv.innerHTML = '<p style="border-bottom: 1px solid #333; padding-bottom:5px;"><b>THE ELITE LINEUP (RANDOMIZED):</b></p>';
+        Masters.forEach((m, i) => {
+            rosterDiv.innerHTML += `Round ${i+1}: <b>${m.name}</b> <span class="rating-badge">${m.rating}</span><br>`;
+        });
+
+        let board = null, game = new Chess(), currentRound = 0, timeLeft = 300, timerInterval;
+        let player = { name: "Student", rating: 1500, points: 0 };
+        const worker = new Worker('chess-worker.js');
+
+        function initializeTournament() {
+            const name = document.getElementById('player-name-input').value.trim();
+            if (name) player.name = name;
+            document.getElementById('display-player-name').innerText = player.name;
+            document.getElementById('name-overlay').style.display = 'none';
+            showRoundIntro();
+        }
+
+        function showRoundIntro() {
+            const m = Masters[currentRound];
+            document.getElementById('round-title').innerText = `ROUND ${currentRound + 1}`;
+            document.getElementById('master-name-intro').innerText = `${m.name} (${m.rating})`;
+            document.getElementById('master-bio-intro').innerText = m.bio;
+            document.getElementById('intro-overlay').style.display = 'flex';
         }
 
         function closeIntro() {
             document.getElementById('intro-overlay').style.display = 'none';
-            // Explicitly Initialize Board when the game starts
-            if (!board) {
-                board = Chessboard('board', {
-                    draggable: true,
-                    position: 'start',
-                    onDrop: onDrop
-                });
-            } else {
-                board.start();
-                game.reset();
-            }
+            if (!board) board = Chessboard('board', { draggable: true, position: 'start', onDrop: onDrop });
+            else { board.start(); game.reset(); }
+            $(window).trigger('resize');
             startClock();
         }
-        
-        // ... rest of tournament logic
+
+        function onDrop(source, target) {
+            let move = game.move({ from: source, to: target, promotion: 'q' });
+            if (move === null) return 'snapback';
+            window.setTimeout(() => worker.postMessage("position startpos moves " + game.history().join(" ")), 250);
+        }
+
+        worker.onmessage = function(e) {
+            const bestMove = e.data;
+            const master = Masters[currentRound];
+            if (Math.random() < master.blunder) {
+                const moves = game.moves();
+                game.move(moves[Math.floor(Math.random() * moves.length)]);
+            } else {
+                game.move({ from: bestMove.substring(0,2), to: bestMove.substring(2,4), promotion: 'q' });
+            }
+            board.position(game.fen());
+        };
+
+        function startClock() {
+            clearInterval(timerInterval);
+            timeLeft = 300;
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                let m = Math.floor(timeLeft / 60), s = timeLeft % 60;
+                document.getElementById('timer').innerText = `${m}:${s < 10 ? '0'+s : s}`;
+                if (timeLeft <= 0) { clearInterval(timerInterval); alert("Time's up!"); }
+            }, 1000);
+        }
+
+        function offerDraw() {
+            document.getElementById('system-msg').innerText = `${Masters[currentRound].name}: "No draws! Fight to the end!"`;
+            setTimeout(() => { document.getElementById('system-msg').innerText = ""; }, 3000);
+        }
     </script>
 </body>
 </html>
