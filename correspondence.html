@@ -26,9 +26,9 @@
         .live-badge { background: var(--danger); color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.6em; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
         #chat-container { margin-top: 15px; background: #020617; border-radius: 12px; padding: 10px; border: 1px solid #334155; }
-        #chat-box { height: 100px; overflow-y: auto; font-size: 11px; margin-bottom: 10px; padding-right: 5px; }
-        .chat-msg { margin-bottom: 6px; line-height: 1.4; }
-        .chat-user { color: var(--secondary); font-weight: bold; }
+        #chat-box { height: 100px; overflow-y: auto; font-size: 11px; margin-bottom: 10px; padding-right: 5px; scroll-behavior: smooth; }
+        .chat-msg { margin-bottom: 6px; line-height: 1.4; color: #cbd5e1; }
+        .chat-user { color: var(--secondary); font-weight: bold; margin-right: 4px; }
         .chat-input-wrap { display: flex; gap: 5px; }
         .chat-input-wrap input { margin-bottom: 0 !important; padding: 8px !important; font-size: 12px; flex: 1; }
         .chat-send { width: 60px !important; padding: 8px !important; margin-bottom: 0 !important; font-size: 10px; }
@@ -113,7 +113,7 @@
         <div id="chat-container">
             <div id="chat-box"></div>
             <div class="chat-input-wrap">
-                <input type="text" id="chat-input" placeholder="Say something...">
+                <input type="text" id="chat-input" placeholder="Say something..." onkeypress="if(event.key === 'Enter') sendChat()">
                 <button class="btn chat-send" onclick="sendChat()">SEND</button>
             </div>
         </div>
@@ -134,7 +134,7 @@
 
         let myId = localStorage.getItem('savedUserId'), myData = null, board = null, game = new Chess(), 
             activeMatchId = null, authMode = 'login', sourceSquare = null, historyMoves = [], viewIndex = -1,
-            hasActiveGame = false, liveTimer = null;
+            hasActiveGame = false, liveTimer = null, chatUnsubscribe = null;
 
         window.onload = async function() {
             loadFrontLeaderboard();
@@ -188,7 +188,6 @@
             } else {
                 if (doc.exists) return alert("Name taken! If you are a sibling sharing a device, please use a slight variation (e.g., add your last initial).");
                 
-                // MULTIPLE ACCOUNTS/SIBLINGS CHECK
                 let deviceAccounts = JSON.parse(localStorage.getItem('registeredAccounts') || '[]');
                 if (deviceAccounts.length > 0 && !deviceAccounts.includes(id)) {
                     if(!confirm("An account is already registered on this device. Are you a sibling registering a new account?")) {
@@ -210,6 +209,7 @@
         function showLobby() {
             $(".container").addClass("hidden"); $("#section-lobby").removeClass("hidden");
             if(liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+            if(chatUnsubscribe) { chatUnsubscribe(); chatUnsubscribe = null; }
             document.getElementById('user-welcome').innerHTML = `<h3>${myData.name}</h3>`;
             loadLobbyData();
         }
@@ -242,7 +242,6 @@
         }
 
         async function challenge(oppId) {
-            // MULTIPLE ACTIVE CHALLENGES CHECK
             const snap = await db.collection("academy_matches")
                 .where("status", "==", "active")
                 .where("players", "array-contains", myId)
@@ -269,6 +268,21 @@
                 board = ChessBoard('myBoard', { draggable: false, position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
                 $('#myBoard').on('click', '.square-55d63', onSquareClick);
             }
+
+            // CHAT LISTENER ADDED HERE
+            if(chatUnsubscribe) chatUnsubscribe();
+            chatUnsubscribe = db.collection("academy_matches").doc(id).collection("chat")
+                .orderBy("time", "asc")
+                .onSnapshot(snap => {
+                    let html = "";
+                    snap.forEach(doc => {
+                        const m = doc.data();
+                        html += `<div class="chat-msg"><span class="chat-user">${m.user}:</span> ${m.text}</div>`;
+                    });
+                    const box = document.getElementById('chat-box');
+                    box.innerHTML = html;
+                    box.scrollTop = box.scrollHeight;
+                });
             
             db.collection("academy_matches").doc(id).onSnapshot(async doc => {
                 const d = doc.data(); 
