@@ -16,7 +16,7 @@
         #board { width: 90vw; max-width: 400px; height: auto; border: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
         #timer { font-size: 40px; color: #e74c3c; font-weight: bold; font-family: monospace; margin: 10px 0; }
         .game-stats { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
-        .info-card { background: #1e2a36; padding: 10px; border-radius: 8px; width: 45%; min-width: 150px; border-top: 4px solid #27ae60; text-align: left; font-size: 14px; }
+        .info-card { background: #1e2a36; padding: 10px; border-radius: 8px; width: 45%; min-width: 150px; border-top: 4px solid #27ae60; text-align: left; font-size: 14px; box-sizing: border-box;}
         .info-card.player { border-top-color: #3498db; }
         .btn { padding: 10px 15px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin: 5px; }
         .draw-btn { background: #f39c12; color: white; width: 100%; margin-top: 10px; }
@@ -33,8 +33,7 @@
         <div class="modal">
             <h2 style="color:#27ae60; margin-top:0;">🇳🇬 THE VARSITY CUP</h2>
             <p>A new lineup of Legends awaits you.</p>
-            <div class="master-list" id="dynamic-roster">
-                </div>
+            <div class="master-list" id="dynamic-roster"></div>
             <input type="text" id="player-name-input" placeholder="Enter Your Name">
             <button class="btn" style="background:#27ae60; color:white; width: 80%;" onclick="initializeTournament()">ENTER THE ARENA</button>
         </div>
@@ -70,7 +69,6 @@
     <p id="system-msg" style="color:#f1c40f; height: 20px; font-weight: bold;"></p>
 
     <script>
-        // Full Pool of 9 Masters
         const masterPool = [
             { name: "Mr. Dotun", title: "Coach", rating: 2150, blunder: 0.45, bio: "Welcome to the Grinder. I am Mr. Dotun. I will squeeze your position until you find the exit!" },
             { name: "Okeke Isaac", title: "IM", rating: 2210, blunder: 0.35, bio: "The tactical wonder-kid. Isaac plays with youthful energy and lightning speed!" },
@@ -83,10 +81,7 @@
             { name: "Anwuli Daniel", title: "IM", rating: 2420, blunder: 0.12, bio: "The Speed Demon. He might not be the highest rated today, but he is the fastest!" }
         ];
 
-        // Randomly pick 7 for the tournament
         let Masters = masterPool.sort(() => 0.5 - Math.random()).slice(0, 7);
-
-        // Display the randomized list in the first overlay
         const rosterDiv = document.getElementById('dynamic-roster');
         rosterDiv.innerHTML = '<p style="border-bottom: 1px solid #333; padding-bottom:5px;"><b>THE ELITE LINEUP (RANDOMIZED):</b></p>';
         Masters.forEach((m, i) => {
@@ -95,7 +90,14 @@
 
         let board = null, game = new Chess(), currentRound = 0, timeLeft = 300, timerInterval;
         let player = { name: "Student", rating: 1500, points: 0 };
-        const worker = new Worker('chess-worker.js');
+        
+        // Safety: If worker file is missing, the game won't crash
+        let worker;
+        try {
+            worker = new Worker('chess-worker.js');
+        } catch(e) {
+            console.log("Worker not found. Master will play randomly.");
+        }
 
         function initializeTournament() {
             const name = document.getElementById('player-name-input').value.trim();
@@ -107,6 +109,10 @@
 
         function showRoundIntro() {
             const m = Masters[currentRound];
+            document.getElementById('current-name').innerText = m.name;
+            document.getElementById('current-title').innerText = m.title;
+            document.getElementById('current-rating').innerText = m.rating;
+            
             document.getElementById('round-title').innerText = `ROUND ${currentRound + 1}`;
             document.getElementById('master-name-intro').innerText = `${m.name} (${m.rating})`;
             document.getElementById('master-bio-intro').innerText = m.bio;
@@ -115,29 +121,57 @@
 
         function closeIntro() {
             document.getElementById('intro-overlay').style.display = 'none';
-            if (!board) board = Chessboard('board', { draggable: true, position: 'start', onDrop: onDrop });
-            else { board.start(); game.reset(); }
-            $(window).trigger('resize');
+            
+            const cfg = {
+                draggable: true,
+                position: 'start',
+                onDrop: onDrop,
+                // FIX: Added the piece theme CDN
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+            };
+
+            if (!board) {
+                board = Chessboard('board', cfg);
+            } else {
+                board.start();
+                game.reset();
+            }
+            
+            // Force board to resize to its container
+            setTimeout(() => { board.resize(); }, 100);
             startClock();
+        }
+
+        function makeMasterMove() {
+            if (game.game_over()) return;
+
+            const master = Masters[currentRound];
+            const moves = game.moves();
+            
+            // If master blunders or worker is missing, pick random
+            if (Math.random() < master.blunder || !worker) {
+                const randomMove = moves[Math.floor(Math.random() * moves.length)];
+                game.move(randomMove);
+                board.position(game.fen());
+            } else {
+                worker.postMessage("position startpos moves " + game.history().join(" "));
+            }
         }
 
         function onDrop(source, target) {
             let move = game.move({ from: source, to: target, promotion: 'q' });
             if (move === null) return 'snapback';
-            window.setTimeout(() => worker.postMessage("position startpos moves " + game.history().join(" ")), 250);
+            
+            window.setTimeout(makeMasterMove, 500);
         }
 
-        worker.onmessage = function(e) {
-            const bestMove = e.data;
-            const master = Masters[currentRound];
-            if (Math.random() < master.blunder) {
-                const moves = game.moves();
-                game.move(moves[Math.floor(Math.random() * moves.length)]);
-            } else {
+        if(worker) {
+            worker.onmessage = function(e) {
+                const bestMove = e.data;
                 game.move({ from: bestMove.substring(0,2), to: bestMove.substring(2,4), promotion: 'q' });
-            }
-            board.position(game.fen());
-        };
+                board.position(game.fen());
+            };
+        }
 
         function startClock() {
             clearInterval(timerInterval);
@@ -146,7 +180,10 @@
                 timeLeft--;
                 let m = Math.floor(timeLeft / 60), s = timeLeft % 60;
                 document.getElementById('timer').innerText = `${m}:${s < 10 ? '0'+s : s}`;
-                if (timeLeft <= 0) { clearInterval(timerInterval); alert("Time's up!"); }
+                if (timeLeft <= 0) { 
+                    clearInterval(timerInterval); 
+                    alert("Time's up!"); 
+                }
             }, 1000);
         }
 
