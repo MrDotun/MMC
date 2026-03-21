@@ -14,19 +14,9 @@
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; text-align: center; margin: 0; padding: 10px; }
         #board-wrapper { display: flex; justify-content: center; margin: 15px 0; }
         #board { width: 90vw; max-width: 400px; height: auto; border: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
-        
-        /* Highlight for the selected piece */
-        .highlight-selected { background-color: rgba(241, 196, 15, 0.5) !important; }
-
-        .timer-row { display: flex; justify-content: center; gap: 15px; margin: 10px 0; }
-        .clock-box { background: #1e1e1e; padding: 8px 15px; border-radius: 6px; border: 1px solid #444; min-width: 80px; }
-        .clock-label { font-size: 10px; text-transform: uppercase; color: #888; display: block; margin-bottom: 2px; }
-        .time-display { font-size: 24px; font-weight: bold; font-family: monospace; color: #bbb; }
-        .active-clock { border-color: #e74c3c; box-shadow: 0 0 8px rgba(231, 76, 60, 0.4); }
-        .active-clock .time-display { color: #e74c3c; }
-
+        #timer { font-size: 40px; color: #e74c3c; font-weight: bold; font-family: monospace; margin: 10px 0; }
         .game-stats { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
-        .info-card { background: #1e2a36; padding: 10px; border-radius: 8px; width: 45%; min-width: 150px; border-top: 4px solid #27ae60; text-align: left; font-size: 14px; box-sizing: border-box; }
+        .info-card { background: #1e2a36; padding: 10px; border-radius: 8px; width: 45%; min-width: 150px; border-top: 4px solid #27ae60; text-align: left; font-size: 14px; }
         .info-card.player { border-top-color: #3498db; }
         .btn { padding: 10px 15px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin: 5px; }
         .draw-btn { background: #f39c12; color: white; width: 100%; margin-top: 10px; }
@@ -35,6 +25,9 @@
         input { padding: 12px; width: 80%; margin-bottom: 15px; border-radius: 4px; border: none; font-size: 16px; }
         .master-list { text-align: left; font-size: 13px; background: #111; padding: 10px; border-radius: 5px; margin: 15px 0; }
         .rating-badge { color: #f1c40f; font-weight: bold; float: right; }
+        
+        /* Highlight square for click-to-move */
+        .highlight-sq { background-color: rgba(241, 196, 15, 0.5) !important; }
     </style>
 </head>
 <body>
@@ -42,6 +35,7 @@
     <div id="name-overlay" class="overlay" style="display: flex;">
         <div class="modal">
             <h2 style="color:#27ae60; margin-top:0;">🇳🇬 THE VARSITY CUP</h2>
+            <p>A new lineup of Legends awaits you.</p>
             <div class="master-list" id="dynamic-roster"></div>
             <input type="text" id="player-name-input" placeholder="Enter Your Name">
             <button class="btn" style="background:#27ae60; color:white; width: 80%;" onclick="initializeTournament()">ENTER THE ARENA</button>
@@ -50,34 +44,26 @@
 
     <div id="intro-overlay" class="overlay">
         <div class="modal">
-            <h1 id="round-title">ROUND 1</h1>
+            <h1 id="round-title" style="color:#27ae60;">ROUND 1</h1>
             <h2 id="master-name-intro">Master Name</h2>
-            <p id="master-bio-intro"></p>
+            <p id="master-bio-intro" style="font-style: italic; line-height: 1.5;"></p>
             <button class="btn" style="background:#27ae60; color:white; padding: 15px 30px;" onclick="closeIntro()">BEGIN MATCH</button>
         </div>
     </div>
 
     <h3>Nigerian Masters Varsity Cup</h3>
-
-    <div class="timer-row">
-        <div id="opp-clock-box" class="clock-box">
-            <span class="clock-label">Master</span>
-            <div id="opp-timer" class="time-display">05:00</div>
-        </div>
-        <div id="user-clock-box" class="clock-box">
-            <span class="clock-label">You</span>
-            <div id="user-timer" class="time-display">05:00</div>
-        </div>
-    </div>
+    <div id="timer">05:00 | 05:00</div>
 
     <div class="game-stats">
         <div class="info-card player">
             <b id="display-player-name">Student</b><br>
-            Rating: 1500
+            Rating: <span id="display-player-rating">1500</span><br>
+            Pts: <span id="display-player-points">0.0</span>
         </div>
         <div class="info-card">
-            <b id="current-name">Master</b><br>
-            Rating: <span id="current-rating">2000</span>
+            <b id="current-name">Mr. Dotun</b><br>
+            <span id="current-title">Coach</span><br>
+            Rating: <span id="current-rating">2150</span>
             <button class="btn draw-btn" onclick="offerDraw()">Offer Draw</button>
         </div>
     </div>
@@ -87,16 +73,26 @@
 
     <script>
         const masterPool = [
-            { name: "Mr. Dotun", title: "Coach", rating: 2150, blunder: 0.45, bio: "Welcome to the Grinder." },
-            { name: "Okeke Isaac", title: "IM", rating: 2210, blunder: 0.35, bio: "Tactical wonder-kid." },
-            { name: "Bunmi Olape", title: "IM", rating: 2320, blunder: 0.30, bio: "The Professor." }
+            { name: "Mr. Dotun", title: "Coach", rating: 2150, blunder: 0.45, bio: "Welcome to the Grinder. I am Mr. Dotun. I will squeeze your position until you find the exit!" },
+            { name: "Okeke Isaac", title: "IM", rating: 2210, blunder: 0.35, bio: "The tactical wonder-kid. Isaac plays with youthful energy and lightning speed!" },
+            { name: "Bunmi Olape", title: "IM", rating: 2320, blunder: 0.30, bio: "The Professor. IM Bunmi Olape will test your endgame technique and discipline." },
+            { name: "Ajibola Olanrewaju", title: "FM", rating: 2335, blunder: 0.25, bio: "The Blitz specialist. He thrives in the chaos of 5-minute chess!" },
+            { name: "Oladapo Adu", title: "IM", rating: 2450, blunder: 0.15, bio: "The Veteran King. A powerhouse of Nigerian chess who rarely shows weakness." },
+            { name: "Akinseye Abiola", title: "FM", rating: 2380, blunder: 0.20, bio: "Behold the 'Iron Wall.' Break through his defense if you can!" },
+            { name: "Odion Aikhoje", title: "IM", rating: 2510, blunder: 0.08, bio: "The Golden Hero of 1998. He is arguably the strongest strategist in the field." },
+            { name: "Fola Akintola", title: "Master", rating: 2390, blunder: 0.18, bio: "A fierce attacker who hunts the King from the very first move." },
+            { name: "Anwuli Daniel", title: "IM", rating: 2420, blunder: 0.12, bio: "The Speed Demon. He might not be the highest rated today, but he is the fastest!" }
         ];
 
-        let Masters = masterPool.sort(() => 0.5 - Math.random());
-        let board = null, game = new Chess(), currentRound = 0, timerInterval;
-        let pTime = 300, oTime = 300, turn = 'w';
-        let sourceSquare = null; 
+        let Masters = masterPool.sort(() => 0.5 - Math.random()).slice(0, 7);
+        const rosterDiv = document.getElementById('dynamic-roster');
+        rosterDiv.innerHTML = '<p style="border-bottom: 1px solid #333; padding-bottom:5px;"><b>THE ELITE LINEUP:</b></p>';
+        Masters.forEach((m, i) => {
+            rosterDiv.innerHTML += `Round ${i+1}: <b>${m.name}</b> <span class="rating-badge">${m.rating}</span><br>`;
+        });
 
+        let board = null, game = new Chess(), currentRound = 0, pTime = 300, mTime = 300, timerInterval;
+        let sourceSquare = null;
         const worker = new Worker('chess-worker.js');
 
         function initializeTournament() {
@@ -110,108 +106,80 @@
             const m = Masters[currentRound];
             document.getElementById('current-name').innerText = m.name;
             document.getElementById('current-rating').innerText = m.rating;
+            document.getElementById('round-title').innerText = `ROUND ${currentRound + 1}`;
+            document.getElementById('master-name-intro').innerText = `${m.name} (${m.rating})`;
+            document.getElementById('master-bio-intro').innerText = m.bio;
             document.getElementById('intro-overlay').style.display = 'flex';
         }
 
         function closeIntro() {
             document.getElementById('intro-overlay').style.display = 'none';
             const cfg = {
-                draggable: false, // DRAG DISABLED
+                draggable: false, // Click to move only
                 position: 'start',
-                onSquareClick: onSquareClick, // CLICK ENABLED
+                onSquareClick: onSquareClick,
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             };
             if (!board) board = Chessboard('board', cfg);
             else { board.start(); game.reset(); }
-            
-            pTime = 300; oTime = 300; turn = 'w';
-            updateClockUI();
+            pTime = 300; mTime = 300;
             startClock();
         }
 
-        // Handle Click Logic
         function onSquareClick(square) {
-            // Prevent clicks if it's the Master's turn
-            if (turn !== 'w') return;
+            if (game.turn() !== 'w') return;
 
-            // 1. Selecting a piece
             if (sourceSquare === null) {
                 const piece = game.get(square);
                 if (piece && piece.color === 'w') {
                     sourceSquare = square;
-                    highlightSquare(square);
+                    $('.square-55d6').removeClass('highlight-sq');
+                    $('.square-' + square).addClass('highlight-sq');
                 }
-                return;
-            }
+            } else {
+                const move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
+                $('.square-55d6').removeClass('highlight-sq');
+                sourceSquare = null;
 
-            // 2. Attempting a move
-            const move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
-            
-            // Cleanup highlights
-            removeHighlights();
-
-            if (move === null) {
-                // If clicked another of your own pieces, switch selection
-                const piece = game.get(square);
-                if (piece && piece.color === 'w') {
-                    sourceSquare = square;
-                    highlightSquare(square);
-                } else {
-                    sourceSquare = null;
+                if (move) {
+                    board.position(game.fen());
+                    // Send FEN to Garbo
+                    window.setTimeout(() => worker.postMessage("position " + game.fen()), 250);
                 }
-                return;
             }
-
-            // 3. Move successful
-            sourceSquare = null;
-            board.position(game.fen());
-            turn = 'b';
-            updateClockUI();
-            window.setTimeout(triggerMaster, 500);
-        }
-
-        function highlightSquare(square) {
-            $('#board .square-' + square).addClass('highlight-selected');
-        }
-
-        function removeHighlights() {
-            $('#board .square-55d6').removeClass('highlight-selected');
-        }
-
-        function triggerMaster() {
-            worker.postMessage("position startpos moves " + game.history().join(" "));
         }
 
         worker.onmessage = function(e) {
             const bestMove = e.data;
-            game.move({ from: bestMove.substring(0,2), to: bestMove.substring(2,4), promotion: 'q' });
+            const master = Masters[currentRound];
+            // If it's a message from Garbo (like PV), ignore it for move logic
+            if (bestMove.indexOf(':') !== -1) return;
+
+            if (Math.random() < master.blunder) {
+                const moves = game.moves();
+                game.move(moves[Math.floor(Math.random() * moves.length)]);
+            } else {
+                game.move({ from: bestMove.substring(0,2), to: bestMove.substring(2,4), promotion: 'q' });
+            }
             board.position(game.fen());
-            turn = 'w';
-            updateClockUI();
         };
 
         function startClock() {
             clearInterval(timerInterval);
             timerInterval = setInterval(() => {
-                if (turn === 'w') pTime--; else oTime--;
-                updateClockUI();
-                if (pTime <= 0 || oTime <= 0) clearInterval(timerInterval);
+                if (game.turn() === 'w') pTime--; else mTime--;
+                const fmt = (s) => {
+                    let mins = Math.floor(s/60), secs = s%60;
+                    return `${mins}:${secs < 10 ? '0'+secs : secs}`;
+                };
+                document.getElementById('timer').innerText = `${fmt(mTime)} | ${fmt(pTime)}`;
+                if (pTime <= 0 || mTime <= 0) clearInterval(timerInterval);
             }, 1000);
         }
 
-        function updateClockUI() {
-            const fmt = (s) => {
-                let m = Math.floor(s / 60), secs = s % 60;
-                return `${m}:${secs < 10 ? '0'+secs : secs}`;
-            };
-            document.getElementById('user-timer').innerText = fmt(pTime);
-            document.getElementById('opp-timer').innerText = fmt(oTime);
-            document.getElementById('user-clock-box').classList.toggle('active-clock', turn === 'w');
-            document.getElementById('opp-clock-box').classList.toggle('active-clock', turn === 'b');
-        }
-
         function offerDraw() {
-            document.getElementById('system-msg').innerText = "Master: No draws allowed!";
+            document.getElementById('system-msg').innerText = `${Masters[currentRound].name}: "No draws!"`;
+            setTimeout(() => { document.getElementById('system-msg').innerText = ""; }, 3000);
         }
     </script>
 </body>
