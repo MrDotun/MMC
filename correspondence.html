@@ -35,14 +35,18 @@
         .item-row { background: var(--primary); padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #333; cursor: pointer; }
         .rating-badge { background: var(--secondary); color: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: 800; }
         .mini-btn-del { background: var(--danger); color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 10px; font-weight: bold; cursor: pointer; }
-        .highlight-sq { background: rgba(74, 222, 128, 0.5) !important; }
-
+        
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; }
         .profile-card { background: var(--card); border: 2px solid var(--secondary); padding: 25px; border-radius: 15px; width: 300px; text-align: center; }
         .name-clickable { text-decoration: underline; cursor: pointer; color: var(--secondary); }
         
         #timer-display { font-size: 0.9em; color: var(--danger); margin-bottom: 10px; font-weight: bold; text-align: center; }
         #move-history { background: #000; color: #4ade80; padding: 10px; border-radius: 8px; font-family: monospace; font-size: 12px; max-height: 60px; overflow-y: auto; margin-bottom: 10px; border: 1px solid #444; }
+        
+        /* Auth Switch Styling */
+        .auth-toggle { display: flex; gap: 5px; margin-bottom: 15px; }
+        .auth-toggle button { flex: 1; padding: 10px; font-size: 11px; background: #333; color: #888; border: 1px solid #444; border-radius: 6px; cursor: pointer; }
+        .auth-toggle button.active { background: var(--primary); color: var(--secondary); border-color: var(--secondary); }
     </style>
 </head>
 <body>
@@ -60,23 +64,34 @@
     </div>
 
     <div id="section-register" class="container">
-        <h2>Student Access</h2>
-        <input type="text" id="reg-name" placeholder="Full Name">
-        <input type="text" id="reg-school" placeholder="School Name">
-        <div style="display: flex; gap: 10px;">
-            <input type="number" id="reg-age" placeholder="Age" style="width: 40%;">
-            <input type="text" id="reg-class" placeholder="Class/Grade" style="width: 60%;">
+        <div class="auth-toggle">
+            <button id="tab-login" class="active" onclick="switchAuth('login')">LOGIN</button>
+            <button id="tab-register" onclick="switchAuth('register')">REGISTER</button>
+            <button id="tab-guest" onclick="switchAuth('guest')">GUEST</button>
         </div>
-        <input type="text" id="reg-quote" placeholder="Your Chess Quote">
-        <select id="reg-avatar">
-            <option value="🦁">Brave Lion</option>
-            <option value="🦅">Eagle Eye</option>
-            <option value="🐍">Tactical Cobra</option>
-            <option value="👑">Academy Admin</option>
-        </select>
-        <input type="password" id="reg-password" placeholder="PIN or Admin Code">
-        <button class="btn" onclick="handleRegister()">Enter Arena</button>
-        <button class="btn" style="border-color:#888; color:#888;" onclick="enterAsGuest()">Spectate as Guest</button>
+
+        <div id="auth-form">
+            <h2 id="auth-title">Welcome Back</h2>
+            <input type="text" id="reg-name" placeholder="Full Name">
+            <input type="password" id="reg-password" placeholder="PIN or Admin Code">
+            
+            <div id="extra-fields" class="hidden">
+                <input type="text" id="reg-school" placeholder="School Name">
+                <div style="display: flex; gap: 10px;">
+                    <input type="number" id="reg-age" placeholder="Age" style="width: 40%;">
+                    <input type="text" id="reg-class" placeholder="Class/Grade" style="width: 60%;">
+                </div>
+                <input type="text" id="reg-quote" placeholder="Your Chess Quote">
+                <select id="reg-avatar">
+                    <option value="🦁">Brave Lion</option>
+                    <option value="🦅">Eagle Eye</option>
+                    <option value="🐍">Tactical Cobra</option>
+                    <option value="👑">Academy Admin</option>
+                </select>
+            </div>
+            
+            <button class="btn" id="main-auth-btn" onclick="handleAuth()">Enter Arena</button>
+        </div>
     </div>
 
     <div id="section-lobby" class="container hidden">
@@ -101,10 +116,9 @@
         <div id="admin-panel" class="hidden" style="margin-top: 30px; border-top: 2px dashed var(--danger); padding-top: 15px;">
             <h3 style="color: var(--danger); font-size: 0.9em; margin-bottom: 10px;">🛠️ Instructor Tools</h3>
             <button class="btn-danger" onclick="resetRatings()">Reset All Ratings to 1500</button>
-            <button class="btn" style="background: #333; font-size: 10px;" onclick="logout()">Logout / Change Account</button>
             <div id="admin-player-list"></div>
         </div>
-        <button class="btn" id="logout-btn" style="background: #333; font-size: 10px; margin-top:10px;" onclick="logout()">Logout</button>
+        <button class="btn" id="logout-btn" style="background: #333; font-size: 10px; margin-top:10px;" onclick="logout()">Logout / Change Account</button>
     </div>
 
     <div id="section-game" class="container hidden">
@@ -137,8 +151,8 @@
         const db = firebase.firestore();
 
         let game = new Chess(), board = null, myId = null, myData = null, activeMatchId = null, sourceSquare = null, timerInterval = null;
+        let authMode = 'login';
 
-        // AUTO-LOGIN LOGIC ON LOAD
         window.onload = async function() {
             const savedId = localStorage.getItem('savedUserId');
             if (savedId) {
@@ -151,23 +165,57 @@
             }
         };
 
-        async function handleRegister() {
+        function switchAuth(mode) {
+            authMode = mode;
+            $(".auth-toggle button").removeClass("active");
+            $(`#tab-${mode}`).addClass("active");
+            
+            if(mode === 'login') {
+                $("#auth-title").text("Welcome Back");
+                $("#extra-fields").addClass("hidden");
+                $("#reg-name, #reg-password").removeClass("hidden");
+            } else if (mode === 'register') {
+                $("#auth-title").text("Create Profile");
+                $("#extra-fields").removeClass("hidden");
+                $("#reg-name, #reg-password").removeClass("hidden");
+            } else {
+                $("#auth-title").text("Spectator Mode");
+                $("#extra-fields, #reg-name, #reg-password").addClass("hidden");
+            }
+        }
+
+        async function handleAuth() {
+            if (authMode === 'guest') return enterAsGuest();
+
             const rawName = document.getElementById('reg-name').value.trim();
-            const school = document.getElementById('reg-school').value.trim();
-            const age = document.getElementById('reg-age').value.trim();
-            const cls = document.getElementById('reg-class').value.trim();
-            const quote = document.getElementById('reg-quote').value.trim();
             const pin = document.getElementById('reg-password').value.trim();
-            if(!rawName || !school || !pin) return alert("Fill all fields!");
+            if(!rawName || !pin) return alert("Enter Name and PIN!");
+            
             const userId = rawName.toLowerCase().replace(/\s/g, '_');
             const isAdmin = (pin === "decipher1234"); 
             const docRef = db.collection("academy_players").doc(userId);
             const doc = await docRef.get();
-            if(doc.exists && !isAdmin && doc.data().pin !== pin) return alert("Incorrect PIN for this name.");
-            myData = doc.exists ? doc.data() : { name: rawName, school, age, class: cls, quote, avatar: $('#reg-avatar').val(), rating: 1500, pin, role: isAdmin ? "admin" : "student" };
-            await docRef.set(myData, { merge: true });
+
+            if (authMode === 'login') {
+                if(!doc.exists) return alert("User not found. Please Register first.");
+                if(!isAdmin && doc.data().pin !== pin) return alert("Incorrect PIN!");
+                myData = doc.data();
+            } else {
+                if(doc.exists) return alert("Name already taken. Use Login.");
+                const school = document.getElementById('reg-school').value.trim();
+                if(!school) return alert("Please fill in School, Age, and Class!");
+                
+                myData = { 
+                    name: rawName, school, 
+                    age: document.getElementById('reg-age').value.trim(), 
+                    class: document.getElementById('reg-class').value.trim(), 
+                    quote: document.getElementById('reg-quote').value.trim() || "Ready!", 
+                    avatar: $('#reg-avatar').val(), 
+                    rating: 1500, pin, role: isAdmin ? "admin" : "student" 
+                };
+                await docRef.set(myData);
+            }
             
-            // SAVE TO LOCAL STORAGE
             myId = userId;
             localStorage.setItem('savedUserId', myId);
             showLobby();
@@ -286,7 +334,6 @@
                             const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
                             if (d.fen === startFen) {
                                 db.collection("academy_matches").doc(id).update({ status: "terminated" });
-                                alert("Terminated: No move made.");
                             } else {
                                 const loser = game.turn() === 'w' ? d.white : d.black;
                                 const winner = game.turn() === 'w' ? d.black : d.white;
@@ -301,8 +348,12 @@
                         }
                     }, 1000);
                 }
-                game.load(d.fen); board.position(d.fen);
-                document.getElementById('move-history').innerText = "History: " + (game.pgn() || "None");
+                
+                if (d.pgn) { game.load_pgn(d.pgn); } else { game.load(d.fen); }
+                board.position(game.fen());
+                const moveList = game.history().join(' ');
+                document.getElementById('move-history').innerText = "History: " + (moveList || "None");
+                
                 if(game.in_checkmate()) {
                     const winner = game.turn() === 'w' ? d.black : d.white;
                     const loser = game.turn() === 'w' ? d.white : d.black;
@@ -339,7 +390,9 @@
                     const move = game.move({ from: sourceSquare, to: square, promotion: 'q' });
                     if (move) {
                         sourceSquare = null; $('.square-55d63').removeClass('highlight-sq');
-                        db.collection("academy_matches").doc(activeMatchId).update({ fen: game.fen(), updated: firebase.firestore.FieldValue.serverTimestamp() });
+                        db.collection("academy_matches").doc(activeMatchId).update({ 
+                            fen: game.fen(), pgn: game.pgn(), updated: firebase.firestore.FieldValue.serverTimestamp() 
+                        });
                     } else {
                         sourceSquare = null; $('.square-55d63').removeClass('highlight-sq');
                     }
@@ -351,9 +404,15 @@
             if (!activeMatchId) return;
             db.collection("academy_matches").doc(activeMatchId).get().then(doc => {
                 const d = doc.data();
-                if (myData.role !== 'admin' && myId !== d.white && myId !== d.black) return;
-                game.undo();
-                db.collection("academy_matches").doc(activeMatchId).update({ fen: game.fen(), updated: firebase.firestore.FieldValue.serverTimestamp() });
+                const undone = game.undo();
+                if (!undone) return; 
+                if (myData.role !== 'admin' && myId !== d.white && myId !== d.black) {
+                    board.position(game.fen());
+                    return;
+                }
+                db.collection("academy_matches").doc(activeMatchId).update({ 
+                    fen: game.fen(), pgn: game.pgn(), updated: firebase.firestore.FieldValue.serverTimestamp() 
+                });
             });
         }
 
@@ -371,7 +430,11 @@
 
         function createMatch(oppId) {
             const matchId = [myId, oppId].sort().join("_vs_");
-            db.collection("academy_matches").doc(matchId).set({ players: [myId, oppId], white: myId, black: oppId, fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", status: "active", updated: firebase.firestore.FieldValue.serverTimestamp() }, {merge: true}).then(() => loadGame(matchId));
+            db.collection("academy_matches").doc(matchId).set({ 
+                players: [myId, oppId], white: myId, black: oppId, 
+                fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", pgn: "", 
+                status: "active", updated: firebase.firestore.FieldValue.serverTimestamp() 
+            }, {merge: true}).then(() => loadGame(matchId));
         }
 
         function loadAdminList() {
@@ -385,7 +448,7 @@
         function deletePlayer(id) { if(confirm("Delete?")) db.collection("academy_players").doc(id).delete(); }
 
         function resetRatings() {
-            if(confirm("Reset all ratings?")) {
+            if(confirm("Reset ratings?")) {
                 db.collection("academy_players").get().then(snap => { snap.forEach(doc => doc.ref.update({ rating: 1500 })); });
             }
         }
