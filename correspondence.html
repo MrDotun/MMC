@@ -134,7 +134,7 @@
 
         let myId = localStorage.getItem('savedUserId'), myData = null, board = null, game = new Chess(), 
             activeMatchId = null, authMode = 'login', sourceSquare = null, historyMoves = [], viewIndex = -1,
-            hasActiveGame = false, liveTimer = null, chatUnsubscribe = null;
+            hasActiveGame = false, liveTimer = null, chatUnsubscribe = null, matchData = null;
 
         window.onload = async function() {
             loadFrontLeaderboard();
@@ -269,7 +269,6 @@
                 $('#myBoard').on('click', '.square-55d63', onSquareClick);
             }
 
-            // CHAT LISTENER ADDED HERE
             if(chatUnsubscribe) chatUnsubscribe();
             chatUnsubscribe = db.collection("academy_matches").doc(id).collection("chat")
                 .orderBy("time", "asc")
@@ -287,6 +286,7 @@
             db.collection("academy_matches").doc(id).onSnapshot(async doc => {
                 const d = doc.data(); 
                 if (!d) return;
+                matchData = d; // Store for the click handler to use locally
 
                 if (d.status !== "active") {
                     if(liveTimer) clearInterval(liveTimer);
@@ -354,19 +354,38 @@
 
         function onSquareClick() {
             const sq = $(this).attr('data-square');
-            db.collection("academy_matches").doc(activeMatchId).get().then(doc => {
-                const d = doc.data();
-                if (!d || d.status !== "active" || !d.players.includes(myId) || (game.turn() === 'w' && myId !== d.white) || (game.turn() === 'b' && myId !== d.black)) return;
-                if (sourceSquare === null) {
-                    if (game.get(sq) && game.get(sq).color === game.turn()) { sourceSquare = sq; $(this).css('background', 'rgba(74, 222, 128, 0.4)'); }
+            // Remove the async .get() call here to stop the 'hang'
+            if (!matchData || matchData.status !== "active" || !matchData.players.includes(myId)) return;
+            
+            const isMyTurn = (game.turn() === 'w' && myId === matchData.white) || (game.turn() === 'b' && myId === matchData.black);
+            if (!isMyTurn) return;
+
+            if (sourceSquare === null) {
+                if (game.get(sq) && game.get(sq).color === game.turn()) { 
+                    sourceSquare = sq; 
+                    $(this).css('background', 'rgba(74, 222, 128, 0.4)'); 
+                }
+            } else {
+                const move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
+                sourceSquare = null; 
+                $('.square-55d63').css('background', '');
+                
+                if (move) {
+                    board.position(game.fen()); // Update UI immediately for smoothness
+                    db.collection("academy_matches").doc(activeMatchId).update({ 
+                        fen: game.fen(), 
+                        pgn: game.pgn(), 
+                        lastMoveTime: Date.now(), 
+                        drawOffer: null 
+                    });
                 } else {
-                    const move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
-                    sourceSquare = null; $('.square-55d63').css('background', '');
-                    if (move) {
-                        db.collection("academy_matches").doc(activeMatchId).update({ fen: game.fen(), pgn: game.pgn(), lastMoveTime: Date.now(), drawOffer: null });
+                    // Check if they clicked another of their own pieces instead
+                    if (game.get(sq) && game.get(sq).color === game.turn()) {
+                        sourceSquare = sq;
+                        $(this).css('background', 'rgba(74, 222, 128, 0.4)');
                     }
                 }
-            });
+            }
         }
 
         async function offerDraw() {
