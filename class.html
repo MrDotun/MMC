@@ -1,4 +1,3 @@
-</html>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -34,9 +33,11 @@
 
         .master-badge { background: var(--gold); color: #000; padding: 2px 10px; border-radius: 20px; font-size: 10px; font-weight: 900; text-transform: uppercase; }
 
-        #masterBoard { border: 4px solid #1e293b; border-radius: 12px; box-shadow: 0 0 25px rgba(0,0,0,0.5); width: 100%; cursor: pointer; }
+        #masterBoard { border: 4px solid #1e293b; border-radius: 12px; box-shadow: 0 0 25px rgba(0,0,0,0.5); width: 100%; cursor: pointer; position: relative; }
         
-        /* Highlight for click-to-move */
+        /* Drawing Layer */
+        #drawing-canvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 10; }
+
         .highlight-sq { box-shadow: inset 0 0 3px 3px yellow; }
 
         .analysis-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; }
@@ -47,11 +48,12 @@
         .btn-gold { background: var(--gold); color: #000; }
 
         #participants-list { background: rgba(0,0,0,0.3); border-radius: 12px; padding: 10px; margin: 10px 0; font-size: 12px; border: 1px solid rgba(255,255,255,0.05); }
-        .participant-item { display: flex; justify-content: space-between; margin-bottom: 4px; color: #94a3b8; }
+        .participant-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; color: #94a3b8; }
+        .mod-btn { background: var(--danger); color: white; border: none; padding: 2px 6px; border-radius: 4px; font-size: 9px; cursor: pointer; margin-left: 5px; }
 
         #chat-container { margin-top: 15px; background: rgba(2, 6, 23, 0.6); border-radius: 12px; padding: 10px; border-top: 2px solid var(--gold); }
         #master-chat-box { height: 120px; overflow-y: auto; font-size: 11px; margin-bottom: 10px; scroll-behavior: smooth; }
-        .chat-msg { margin-bottom: 6px; color: #cbd5e1; }
+        .chat-msg { margin-bottom: 6px; color: #cbd5e1; display: flex; justify-content: space-between; }
         .chat-user { font-weight: bold; margin-right: 5px; color: var(--secondary); }
         .chat-coach { color: var(--gold) !important; text-shadow: 0 0 5px rgba(251, 191, 36, 0.3); }
         .chat-input-wrap { display: flex; gap: 5px; }
@@ -59,6 +61,11 @@
 
         .mic-btn { background: rgba(255, 255, 255, 0.1); border: 1px solid var(--secondary); color: white; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.3s; }
         .mic-off { border-color: var(--danger); color: var(--danger); }
+
+        /* Satellite Board Styling */
+        .satellite-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; width: 100%; }
+        .satellite-container { background: var(--card); padding: 10px; border-radius: 12px; border: 1px solid #334155; }
+        .sat-label { font-size: 10px; color: var(--gold); text-align: center; margin-bottom: 5px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -87,7 +94,9 @@
             <div id="mic-control-area"></div>
         </div>
 
-        <div id="masterBoard"></div>
+        <div id="masterBoard" oncontextmenu="return false;">
+            <canvas id="drawing-canvas"></canvas>
+        </div>
 
         <div id="participants-panel">
             <p style="font-size: 10px; font-weight: bold; color: var(--secondary); margin-bottom: 5px;">PARTICIPANTS</p>
@@ -100,6 +109,18 @@
                 <button class="tool-btn" onclick="masterBoard.flip()">🔄 FLIP</button>
                 <button class="tool-btn" onclick="muteAllStudents()" style="color:var(--danger)">🔇 MUTE ALL</button>
                 <button class="tool-btn" onclick="unmuteAllStudents()" style="color:var(--secondary)">🔊 UNMUTE ALL</button>
+            </div>
+            
+            <p style="font-size: 10px; color: var(--gold); margin-top: 10px;">SATELLITE OBSERVATION</p>
+            <div class="satellite-wrap">
+                <div class="satellite-container">
+                    <div class="sat-label">BOARD A</div>
+                    <div id="boardA" style="width: 100%"></div>
+                </div>
+                <div class="satellite-container">
+                    <div class="sat-label">BOARD B</div>
+                    <div id="boardB" style="width: 100%"></div>
+                </div>
             </div>
         </div>
 
@@ -130,12 +151,15 @@
 
         let myData = { name: "Student_" + Math.floor(Math.random()*1000), id: Math.random().toString(36).substr(2, 9) }; 
         let masterBoard = null;
+        let boardA = null, boardB = null;
         let isCoach = false;
         let jitsiAPI = null;
         let micOn = false;
-        
-        // CLICK TO MOVE VARIABLES
         let sourceSquare = null;
+
+        // Drawing Variables
+        let isDrawing = false;
+        let startPoint = null;
 
         function showPassScreen() { $("#password-overlay").removeClass("hidden"); }
 
@@ -159,75 +183,116 @@
             initBoard();
             initAudio();
             renderMicUI();
+            if(isCoach) initSatelliteBoards();
         }
 
         function initBoard() {
             if(masterBoard) masterBoard.destroy();
-            
-            const config = {
-                draggable: false, // Explicitly set to false for click-to-move
-                position: 'start',
-                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-            };
+            const config = { draggable: false, position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' };
             masterBoard = ChessBoard('masterBoard', config);
+            
+            setupDrawingCanvas();
 
-            // CLICK TO MOVE LOGIC
-            $('#masterBoard').on('click', '.square-55d63', function() {
-                if (!isCoach) return; // Only coach can move
-
+            $('#masterBoard').on('mousedown', '.square-55d63', function(e) {
+                if (!isCoach) return;
                 const square = $(this).data('square');
-                const piece = masterBoard.position()[square];
-
-                // Remove previous highlights
-                $('#masterBoard .square-55d63').removeClass('highlight-sq');
-
-                if (sourceSquare === null) {
-                    if (piece) {
-                        sourceSquare = square;
-                        $(this).addClass('highlight-sq');
-                    }
+                
+                if (e.button === 2) { // Right Click
+                    isDrawing = true;
+                    const offset = $(this).offset();
+                    const boardOffset = $('#masterBoard').offset();
+                    startPoint = { 
+                        x: offset.left - boardOffset.left + $(this).width()/2, 
+                        y: offset.top - boardOffset.top + $(this).height()/2 
+                    };
                 } else {
-                    // Execute move
-                    const newPos = masterBoard.position();
-                    const movingPiece = newPos[sourceSquare];
-                    delete newPos[sourceSquare];
-                    newPos[square] = movingPiece;
-
-                    masterBoard.position(newPos);
-                    
-                    // Sync to Firebase
-                    db.collection("special_rooms").doc("masterclass_arena").set({
-                        fen: ChessBoard.objToFen(newPos),
-                        lastUpdate: Date.now()
-                    }, {merge: true});
-
-                    sourceSquare = null;
+                    handleMoveLogic(square, this);
                 }
             });
+
+            $(document).on('mouseup', function() { isDrawing = false; });
 
             db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
                 const d = doc.data();
                 if (d && d.fen && masterBoard.fen() !== d.fen) masterBoard.position(d.fen);
-                if (!isCoach && d) {
-                    if(d.globalMute > (myData.lastCmd || 0)) { if(micOn) handleMicToggle(); myData.lastCmd = d.globalMute; }
-                    if(d.globalUnmute > (myData.lastCmd || 0)) { if(!micOn) handleMicToggle(); myData.lastCmd = d.globalUnmute; }
-                }
+                if (d && d.arrows && !isCoach) drawArrowsFromData(d.arrows);
             });
 
-            // Chat Sync
             db.collection("special_rooms").doc("masterclass_arena").collection("chat")
                 .orderBy("time", "desc").limit(30).onSnapshot(snap => {
                     let html = "";
                     snap.docs.reverse().forEach(doc => {
                         const m = doc.data();
-                        html += `<div class="chat-msg"><span class="chat-user ${m.isCoach ? 'chat-coach' : ''}">${m.user}:</span> ${m.text}</div>`;
+                        const delBtn = isCoach ? `<button class="mod-btn" onclick="deleteChat('${doc.id}')">×</button>` : '';
+                        html += `<div class="chat-msg"><span><span class="chat-user ${m.isCoach ? 'chat-coach' : ''}">${m.user}:</span> ${m.text}</span> ${delBtn}</div>`;
                     });
                     const box = document.getElementById('master-chat-box');
                     box.innerHTML = html; box.scrollTop = box.scrollHeight;
                 });
         }
 
-        // --- AUDIO & UI UTILS ---
+        function handleMoveLogic(square, el) {
+            const piece = masterBoard.position()[square];
+            $('#masterBoard .square-55d63').removeClass('highlight-sq');
+            if (sourceSquare === null) {
+                if (piece) { sourceSquare = square; $(el).addClass('highlight-sq'); }
+            } else {
+                const newPos = masterBoard.position();
+                const movingPiece = newPos[sourceSquare];
+                delete newPos[sourceSquare];
+                newPos[square] = movingPiece;
+                masterBoard.position(newPos);
+                syncMasterPosition(masterBoard.fen());
+                sourceSquare = null;
+            }
+        }
+
+        function setupDrawingCanvas() {
+            const canvas = document.getElementById('drawing-canvas');
+            const board = $('#masterBoard');
+            canvas.width = board.width();
+            canvas.height = board.height();
+            
+            board.on('mousemove', function(e) {
+                if (isDrawing && isCoach) {
+                    const ctx = canvas.getContext('2d');
+                    const boardOffset = board.offset();
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    drawArrow(ctx, startPoint.x, startPoint.y, e.pageX - boardOffset.left, e.pageY - boardOffset.top);
+                }
+            });
+        }
+
+        function drawArrow(ctx, fromx, fromy, tox, toy) {
+            ctx.strokeStyle = "rgba(255, 165, 0, 0.8)";
+            ctx.lineWidth = 6;
+            const headlen = 15;
+            const angle = Math.atan2(toy-fromy, tox-fromx);
+            ctx.beginPath();
+            ctx.moveTo(fromx, fromy);
+            ctx.lineTo(tox, toy);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(tox, toy);
+            ctx.lineTo(tox-headlen*Math.cos(angle-Math.PI/6), toy-headlen*Math.sin(angle-Math.PI/6));
+            ctx.moveTo(tox, toy);
+            ctx.lineTo(tox-headlen*Math.cos(angle+Math.PI/6), toy-headlen*Math.sin(angle+Math.PI/6));
+            ctx.stroke();
+        }
+
+        function initSatelliteBoards() {
+            boardA = ChessBoard('boardA', { position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', sparse: true });
+            boardB = ChessBoard('boardB', { position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', sparse: true });
+        }
+
+        function deleteChat(id) { db.collection("special_rooms").doc("masterclass_arena").collection("chat").doc(id).delete(); }
+
+        function removeParticipant(pid) {
+            if(confirm("Remove this student?")) {
+                jitsiAPI.executeCommand('kickParticipant', pid);
+            }
+        }
+
         function renderMicUI() {
             $("#mic-control-area").html(`<button id="mic-toggle-btn" class="mic-btn ${isCoach ? '' : 'mic-off'}" onclick="handleMicToggle()">${isCoach ? '🎤' : '🔇'}</button>`);
         }
@@ -254,7 +319,10 @@
             setInterval(() => {
                 const list = jitsiAPI.getParticipantsInfo();
                 let html = `<div class="participant-item"><span>${myData.name} (You)</span> <span>🟢</span></div>`;
-                list.forEach(p => { html += `<div class="participant-item"><span>${p.displayName || 'Guest'}</span> <span>🟢</span></div>`; });
+                list.forEach(p => { 
+                    const kickBtn = isCoach ? `<button class="mod-btn" onclick="removeParticipant('${p.participantId}')">REMOVE</button>` : '';
+                    html += `<div class="participant-item"><span>${p.displayName || 'Guest'}</span> <span>🟢 ${kickBtn}</span></div>`; 
+                });
                 $("#participants-list").html(html);
             }, 5000);
         }
