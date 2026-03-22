@@ -143,7 +143,7 @@
     </div>
 
     <script>
-        // --- 1. CONFIG & DATA (UPDATED FOR WEAK MASTERS, DEPTH 1) ---
+        // --- 1. CONFIG & DATA ---
         const firebaseConfig = { 
             apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw", 
             authDomain: "assignments-de95a.firebaseapp.com", 
@@ -157,15 +157,15 @@
         const chessWorker = new Worker('./chess-worker.js');
 
         const masterPool = [
-            { name: "Mr. Dotun", title: "Coach", rating: 2150, blunder: 0.20, depth: 1, bio: "The gatekeeper." },
-            { name: "Okeke Isaac", title: "IM", rating: 2210, blunder: 0.18, depth: 1, bio: "Tactical wonder-kid." },
-            { name: "Bunmi Olape", title: "IM", rating: 2320, blunder: 0.15, depth: 1, bio: "The Professor." },
-            { name: "Ajibola Olanrewaju", title: "FM", rating: 2335, blunder: 0.12, depth: 1, bio: "Blitz specialist." },
-            { name: "Oladapo Adu", title: "IM", rating: 2450, blunder: 0.10, depth: 1, bio: "The Veteran King." },
-            { name: "Akinseye Abiola", title: "FM", rating: 2380, blunder: 0.08, depth: 1, bio: "The Iron Wall." },
-            { name: "Odion Aikhoje", title: "IM", rating: 2510, blunder: 0.07, depth: 1, bio: "The Golden Hero." },
-            { name: "Fola Akintola", title: "Master", rating: 2390, blunder: 0.06, depth: 1, bio: "Fierce attacker." },
-            { name: "Anwuli Daniel", title: "IM", rating: 2420, blunder: 0.05, depth: 1, bio: "Speed Demon." }
+            { name: "Mr. Dotun", title: "Coach", rating: 2150, depth: 1, bio: "The gatekeeper.", openings: ['e4', 'd4'] },
+            { name: "Okeke Isaac", title: "IM", rating: 2210, depth: 1, bio: "Tactical wonder-kid.", openings: ['e4', 'c4'] },
+            { name: "Bunmi Olape", title: "IM", rating: 2320, depth: 1, bio: "The Professor.", openings: ['d4', 'Nf3'] },
+            { name: "Ajibola Olanrewaju", title: "FM", rating: 2335, depth: 1, bio: "Blitz specialist.", openings: ['e4', 'g3'] },
+            { name: "Oladapo Adu", title: "IM", rating: 2450, depth: 1, bio: "The Veteran King.", openings: ['d4', 'c4'] },
+            { name: "Akinseye Abiola", title: "FM", rating: 2380, depth: 1, bio: "The Iron Wall.", openings: ['e4', 'e3'] },
+            { name: "Odion Aikhoje", title: "IM", rating: 2510, depth: 1, bio: "The Golden Hero.", openings: ['Nf3', 'd4'] },
+            { name: "Fola Akintola", title: "Master", rating: 2390, depth: 1, bio: "Fierce attacker.", openings: ['f4', 'e4'] },
+            { name: "Anwuli Daniel", title: "IM", rating: 2420, depth: 1, bio: "Speed Demon.", openings: ['e4', 'd4'] }
         ];
 
         let otherPlayers = [
@@ -178,7 +178,7 @@
         let board = null, game = new Chess(), sourceSquare = null;
         let currentRound = 0, pTime = 300, mTime = 300, timerInterval;
         let playerDocId = "", currentElo = 1500, tournamentScore = 0;
-        let pName = "";
+        let pName = "", playerColor = 'w';
 
         async function startTournament() {
             pName = $('#p-name').val().trim();
@@ -215,7 +215,7 @@
                 tournamentScore: tournamentScore,
                 otherPlayers: otherPlayers
             }).then(() => {
-                alert("Progress saved! See you later.");
+                alert("Progress saved!");
                 location.reload();
             });
         }
@@ -262,21 +262,30 @@
 
         function closeIntro() {
             $('#intro-overlay').hide();
+            playerColor = Math.random() > 0.5 ? 'w' : 'b';
+            const boardOrientation = playerColor === 'w' ? 'white' : 'black';
+
             if (!board) {
                 board = ChessBoard('board', {
-                    draggable: false, position: 'start',
+                    draggable: false, position: 'start', orientation: boardOrientation,
                     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
                 });
                 $('#board').on('click', '[class*="square-"]', function() { onSquareClick($(this).attr('data-square')); });
-            } else { game.reset(); board.start(); }
+            } else { 
+                game.reset(); 
+                board.orientation(boardOrientation);
+                board.start(); 
+            }
             pTime = 300; mTime = 300; startClock();
+            if (playerColor === 'b') makeAiMove();
+            updateStatus();
         }
 
         function onSquareClick(sq) {
-            if (game.game_over() || game.turn() !== 'w') return;
+            if (game.game_over() || game.turn() !== playerColor) return;
             if (!sourceSquare) {
                 let p = game.get(sq);
-                if (p && p.color === 'w') { sourceSquare = sq; $('.square-' + sq).addClass('highlight-white'); }
+                if (p && p.color === playerColor) { sourceSquare = sq; $('.square-' + sq).addClass('highlight-white'); }
                 return;
             }
             let m = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
@@ -292,7 +301,16 @@
             $('#system-msg').text("Master is thinking...");
             const master = masterPool[currentRound];
             setTimeout(() => {
-                // To prevent blundering the queen at Depth 1, we add a simple blunder-check logic
+                const history = game.history();
+                // Random opening logic if first move
+                if (history.length < 2) {
+                    const choice = master.openings[Math.floor(Math.random() * master.openings.length)];
+                    if (game.move(choice)) {
+                        board.position(game.fen());
+                        updateStatus();
+                        return;
+                    }
+                }
                 chessWorker.postMessage("position " + game.fen());
                 chessWorker.postMessage("go depth " + master.depth);
             }, 1000);
@@ -300,27 +318,7 @@
 
         chessWorker.onmessage = function(e) {
             let moveObj = { from: e.data.substring(0, 2), to: e.data.substring(2, 4), promotion: 'q' };
-            
-            // "Don't blunder queen" safety check:
-            let testGame = new Chess(game.fen());
-            let piece = testGame.get(moveObj.from);
-            
-            // If the move is a queen move, check if it's moving into immediate capture
-            if (piece && piece.type === 'q') {
-                testGame.move(moveObj);
-                let moves = testGame.moves({verbose: true});
-                let isCaptured = moves.some(m => m.to === moveObj.to && m.captured);
-                if (isCaptured) {
-                    // If moving queen would get it captured, pick any other legal move
-                    let safeMoves = game.moves();
-                    game.move(safeMoves[Math.floor(Math.random() * safeMoves.length)]);
-                } else {
-                    game.move(moveObj);
-                }
-            } else {
-                game.move(moveObj);
-            }
-
+            game.move(moveObj);
             board.position(game.fen());
             updateStatus();
         };
@@ -331,7 +329,7 @@
                 let change = 0, pointsAdded = 0;
                 if (forcedResult === 'resigned') { change = -15; }
                 else if (game.in_checkmate()) {
-                    if (game.turn() === 'b') { change = 45; pointsAdded = 1; }
+                    if (game.turn() !== playerColor) { change = 45; pointsAdded = 1; }
                     else { change = -20; }
                 } else { change = 10; pointsAdded = 0.5; }
 
@@ -349,7 +347,7 @@
                     otherPlayers: otherPlayers
                 });
                 setTimeout(() => { $('#post-round-overlay').css('display', 'flex'); }, 600);
-            } else { $('#system-msg').text(game.turn() === 'w' ? "Your turn!" : "Master is thinking..."); }
+            } else { $('#system-msg').text(game.turn() === playerColor ? "Your turn!" : "Master is thinking..."); }
         }
 
         function nextRoundTrigger() {
@@ -361,8 +359,8 @@
         function startClock() {
             clearInterval(timerInterval);
             timerInterval = setInterval(() => {
-                if (game.turn() === 'w') pTime--; else mTime--;
-                const fmt = (s) => { let m = Math.floor(s/60), sec = s%60; return `${m}:${sec < 10 ? '0'+sec : sec}`; };
+                if (game.turn() === playerColor) pTime--; else mTime--;
+                const fmt = (s) => { let m = Math.floor(Math.max(0, s)/60), sec = Math.max(0, s)%60; return `${m}:${sec < 10 ? '0'+sec : sec}`; };
                 $('#player-timer').text(fmt(pTime));
                 $('#master-timer').text(fmt(mTime));
                 if (pTime <= 0 || mTime <= 0) updateStatus();
