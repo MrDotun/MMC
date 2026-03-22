@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Mind Masters | Chess Class</title>
     
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -33,34 +33,23 @@
 
         .master-badge { background: var(--gold); color: #000; padding: 2px 10px; border-radius: 20px; font-size: 10px; font-weight: 900; text-transform: uppercase; }
 
-        /* Added relative positioning for the canvas layer */
-        #masterBoard { border: 4px solid #1e293b; border-radius: 12px; box-shadow: 0 0 25px rgba(0,0,0,0.5); width: 100%; cursor: pointer; position: relative; }
-        
-        /* Drawing Layer Style */
-        #drawing-canvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 100; }
-
-        .highlight-sq { box-shadow: inset 0 0 3px 3px yellow; }
+        /* Board & Drawing Wrapper */
+        #board-wrapper { position: relative; width: 100%; touch-action: none; margin-bottom: 15px; }
+        #masterBoard { border: 4px solid #1e293b; border-radius: 12px; box-shadow: 0 0 25px rgba(0,0,0,0.5); width: 100%; }
+        #drawingCanvas { position: absolute; top: 4px; left: 4px; z-index: 10; pointer-events: none; border-radius: 8px; }
+        .coach-mode #drawingCanvas { pointer-events: auto; }
 
         .analysis-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; }
         .tool-btn { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text); padding: 10px; border-radius: 8px; font-size: 11px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .tool-btn:hover { background: rgba(251, 191, 36, 0.15); border-color: var(--gold); }
 
         .btn { padding: 16px; cursor: pointer; border-radius: 12px; border: none; background: linear-gradient(135deg, #2D1B4D 0%, #4c1d95 100%); color: var(--secondary); font-weight: 800; width: 100%; text-transform: uppercase; transition: 0.3s; font-size: 12px; margin-top: 10px; }
         .btn-gold { background: var(--gold); color: #000; }
 
-        #participants-list { background: rgba(0,0,0,0.3); border-radius: 12px; padding: 10px; margin: 10px 0; font-size: 12px; border: 1px solid rgba(255,255,255,0.05); }
-        .participant-item { display: flex; justify-content: space-between; margin-bottom: 4px; color: #94a3b8; }
-
+        #participants-list { background: rgba(0,0,0,0.3); border-radius: 12px; padding: 10px; margin: 10px 0; font-size: 12px; }
         #chat-container { margin-top: 15px; background: rgba(2, 6, 23, 0.6); border-radius: 12px; padding: 10px; border-top: 2px solid var(--gold); }
-        #master-chat-box { height: 120px; overflow-y: auto; font-size: 11px; margin-bottom: 10px; scroll-behavior: smooth; }
-        .chat-msg { margin-bottom: 6px; color: #cbd5e1; }
-        .chat-user { font-weight: bold; margin-right: 5px; color: var(--secondary); }
-        .chat-coach { color: var(--gold) !important; text-shadow: 0 0 5px rgba(251, 191, 36, 0.3); }
+        #master-chat-box { height: 120px; overflow-y: auto; font-size: 11px; margin-bottom: 10px; }
         .chat-input-wrap { display: flex; gap: 5px; }
-        input { flex: 1; background: #0f172a; border: 1px solid #334155; color: white; padding: 10px; border-radius: 8px; font-size: 12px; }
-
-        .mic-btn { background: rgba(255, 255, 255, 0.1); border: 1px solid var(--secondary); color: white; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.3s; }
-        .mic-off { border-color: var(--danger); color: var(--danger); }
+        input { flex: 1; background: #0f172a; border: 1px solid #334155; color: white; padding: 10px; border-radius: 8px; }
     </style>
 </head>
 <body oncontextmenu="return false;">
@@ -89,8 +78,9 @@
             <div id="mic-control-area"></div>
         </div>
 
-        <div id="masterBoard">
-            <canvas id="drawing-canvas"></canvas>
+        <div id="board-wrapper">
+            <div id="masterBoard"></div>
+            <canvas id="drawingCanvas"></canvas>
         </div>
 
         <div id="participants-panel">
@@ -101,16 +91,14 @@
         <div id="master-admin-panel" class="hidden">
             <div class="analysis-tools">
                 <button class="tool-btn" onclick="syncMasterPosition('start')">🔄 RESET</button>
-                <button class="tool-btn" onclick="masterBoard.flip()">🔄 FLIP</button>
-                <button class="tool-btn" onclick="muteAllStudents()" style="color:var(--danger)">🔇 MUTE ALL</button>
-                <button class="tool-btn" onclick="unmuteAllStudents()" style="color:var(--secondary)">🔊 UNMUTE ALL</button>
+                <button class="tool-btn" onclick="clearDrawings()" style="color:var(--danger)">🧹 CLEAR LINES</button>
             </div>
         </div>
 
         <div id="chat-container">
             <div id="master-chat-box"></div>
             <div class="chat-input-wrap">
-                <input type="text" id="master-chat-input" placeholder="Say something..." onkeypress="if(event.key === 'Enter') sendMasterChat()">
+                <input type="text" id="master-chat-input" placeholder="Say something...">
                 <button class="btn" style="width: 60px; padding: 10px; margin:0;" onclick="sendMasterChat()">SEND</button>
             </div>
         </div>
@@ -137,11 +125,10 @@
         let isCoach = false;
         let jitsiAPI = null;
         let micOn = false;
-        let sourceSquare = null;
-
-        // Drawing Logic Variables
-        let isDrawing = false;
-        let startX, startY;
+        
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
 
         function showPassScreen() { $("#password-overlay").removeClass("hidden"); }
 
@@ -152,7 +139,8 @@
                 myData.name = "Coach Dotun";
                 $("#master-admin-panel").removeClass("hidden");
                 $("#role-text").html('<span class="master-badge">COACH</span>');
-            } else if (pass.length > 2) {
+                $("#section-masterclass").addClass("coach-mode");
+            } else if (pass === "1122") {
                 isCoach = false;
                 $("#role-text").text("STUDENT VIEW");
             } else { alert("Invalid Key"); return; }
@@ -160,129 +148,91 @@
             $("#password-overlay").addClass("hidden");
             $("#section-lobby").addClass("hidden");
             $("#section-masterclass").removeClass("hidden");
-            $("#main-title").text("MIND MASTERS CHESS CLASS");
-
             initBoard();
             initAudio();
+            initCanvas();
             renderMicUI();
         }
 
+        function initCanvas() {
+            const board = document.getElementById('masterBoard');
+            canvas.width = board.clientWidth - 8;
+            canvas.height = board.clientHeight - 8;
+        }
+
+        // --- MOBILE & MOUSE DRAWING LOGIC ---
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            // Handle both touch and mouse
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+
+        function handleStart(e) {
+            if(!isCoach) return;
+            drawing = true;
+            const pos = getPos(e);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            e.preventDefault();
+        }
+
+        function handleMove(e) {
+            if(!drawing || !isCoach) return;
+            const pos = getPos(e);
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#4ade80';
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+            e.preventDefault();
+        }
+
+        function handleEnd() {
+            if(!drawing || !isCoach) return;
+            drawing = false;
+            db.collection("special_rooms").doc("masterclass_arena").update({ drawing: canvas.toDataURL() });
+        }
+
+        canvas.addEventListener('mousedown', handleStart);
+        canvas.addEventListener('mousemove', handleMove);
+        canvas.addEventListener('mouseup', handleEnd);
+        
+        // Touch Listeners
+        canvas.addEventListener('touchstart', handleStart, {passive: false});
+        canvas.addEventListener('touchmove', handleMove, {passive: false});
+        canvas.addEventListener('touchend', handleEnd);
+
+        function clearDrawings() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            db.collection("special_rooms").doc("masterclass_arena").update({ drawing: null });
+        }
+
         function initBoard() {
-            if(masterBoard) masterBoard.destroy();
-            
-            const config = {
-                draggable: false, 
+            masterBoard = ChessBoard('masterBoard', {
+                draggable: isCoach,
                 position: 'start',
-                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-            };
-            masterBoard = ChessBoard('masterBoard', config);
-
-            // Setup Canvas size
-            const canvas = document.getElementById('drawing-canvas');
-            const boardEl = $('#masterBoard');
-            canvas.width = boardEl.width();
-            canvas.height = boardEl.height();
-            const ctx = canvas.getContext('2d');
-
-            // --- DRAWING LOGIC ---
-            $('#masterBoard').on('mousedown', function(e) {
-                if (!isCoach) return;
-                if (e.button === 2) { // Right Click
-                    isDrawing = true;
-                    const offset = $(this).offset();
-                    startX = e.pageX - offset.left;
-                    startY = e.pageY - offset.top;
-                }
-            });
-
-            $(document).on('mousemove', function(e) {
-                if (!isDrawing) return;
-                const offset = $('#masterBoard').offset();
-                const currentX = e.pageX - offset.left;
-                const currentY = e.pageY - offset.top;
-                
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                drawArrow(ctx, startX, startY, currentX, currentY);
-            });
-
-            $(document).on('mouseup', function(e) {
-                if (isDrawing && e.button === 2) {
-                    isDrawing = false;
-                    // If just a click (no drag), clear the board
-                    const offset = $('#masterBoard').offset();
-                    if (Math.abs(startX - (e.pageX - offset.left)) < 5) {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    }
-                }
-            });
-
-            function drawArrow(context, fromx, fromy, tox, toy) {
-                context.strokeStyle = "orange";
-                context.lineWidth = 5;
-                const headlen = 15;
-                const angle = Math.atan2(toy-fromy, tox-fromx);
-                context.beginPath();
-                context.moveTo(fromx, fromy);
-                context.lineTo(tox, toy);
-                context.stroke();
-                context.beginPath();
-                context.moveTo(tox, toy);
-                context.lineTo(tox-headlen*Math.cos(angle-Math.PI/6), toy-headlen*Math.sin(angle-Math.PI/6));
-                context.moveTo(tox, toy);
-                context.lineTo(tox-headlen*Math.cos(angle+Math.PI/6), toy-headlen*Math.sin(angle+Math.PI/6));
-                context.stroke();
-            }
-
-            // CLICK TO MOVE LOGIC
-            $('#masterBoard').on('click', '.square-55d63', function() {
-                if (!isCoach) return; 
-
-                const square = $(this).data('square');
-                const piece = masterBoard.position()[square];
-
-                $('#masterBoard .square-55d63').removeClass('highlight-sq');
-
-                if (sourceSquare === null) {
-                    if (piece) {
-                        sourceSquare = square;
-                        $(this).addClass('highlight-sq');
-                    }
-                } else {
-                    const newPos = masterBoard.position();
-                    const movingPiece = newPos[sourceSquare];
-                    delete newPos[sourceSquare];
-                    newPos[square] = movingPiece;
-
-                    masterBoard.position(newPos);
-                    
-                    db.collection("special_rooms").doc("masterclass_arena").set({
-                        fen: ChessBoard.objToFen(newPos),
-                        lastUpdate: Date.now()
-                    }, {merge: true});
-
-                    sourceSquare = null;
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+                onDrop: () => {
+                    setTimeout(() => {
+                        db.collection("special_rooms").doc("masterclass_arena").set({ fen: masterBoard.fen() }, {merge: true});
+                    }, 100);
                 }
             });
 
             db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
                 const d = doc.data();
-                if (d && d.fen && masterBoard.fen() !== d.fen) masterBoard.position(d.fen);
-                if (!isCoach && d) {
-                    if(d.globalMute > (myData.lastCmd || 0)) { if(micOn) handleMicToggle(); myData.lastCmd = d.globalMute; }
-                    if(d.globalUnmute > (myData.lastCmd || 0)) { if(!micOn) handleMicToggle(); myData.lastCmd = d.globalUnmute; }
+                if(!d) return;
+                if(d.fen && masterBoard.fen() !== d.fen) masterBoard.position(d.fen);
+                if(!isCoach && d.drawing) {
+                    const img = new Image();
+                    img.onload = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0); };
+                    img.src = d.drawing;
+                } else if (!isCoach && !d.drawing) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
                 }
             });
-
-            db.collection("special_rooms").doc("masterclass_arena").collection("chat")
-                .orderBy("time", "desc").limit(30).onSnapshot(snap => {
-                    let html = "";
-                    snap.docs.reverse().forEach(doc => {
-                        const m = doc.data();
-                        html += `<div class="chat-msg"><span class="chat-user ${m.isCoach ? 'chat-coach' : ''}">${m.user}:</span> ${m.text}</div>`;
-                    });
-                    const box = document.getElementById('master-chat-box');
-                    box.innerHTML = html; box.scrollTop = box.scrollHeight;
-                });
         }
 
         function renderMicUI() {
@@ -296,39 +246,21 @@
             $("#mic-toggle-btn").toggleClass("mic-off", !micOn).text(micOn ? "🎤" : "🔇");
         }
 
-        function muteAllStudents() { if(isCoach) db.collection("special_rooms").doc("masterclass_arena").update({ globalMute: Date.now() }); }
-        function unmuteAllStudents() { if(isCoach) db.collection("special_rooms").doc("masterclass_arena").update({ globalUnmute: Date.now() }); }
-
         function initAudio() {
             jitsiAPI = new JitsiMeetExternalAPI("meet.jit.si", {
                 roomName: "MindMasters_Arena_2026",
                 width: '100%', height: 0,
                 parentNode: document.querySelector('#jitsi-container'),
                 userInfo: { displayName: myData.name },
-                configOverwrite: { startWithAudioMuted: !isCoach, startWithVideoMuted: true, prejoinPageEnabled: false },
+                configOverwrite: { startWithAudioMuted: !isCoach, startWithVideoMuted: true },
             });
             micOn = isCoach;
-            setInterval(() => {
-                const list = jitsiAPI.getParticipantsInfo();
-                let html = `<div class="participant-item"><span>${myData.name} (You)</span> <span>🟢</span></div>`;
-                list.forEach(p => { html += `<div class="participant-item"><span>${p.displayName || 'Guest'}</span> <span>🟢</span></div>`; });
-                $("#participants-list").html(html);
-            }, 5000);
         }
 
         function syncMasterPosition(fen) {
             if(!isCoach) return;
             if(fen === 'start') masterBoard.start();
             setTimeout(() => { db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); }, 100);
-        }
-
-        async function sendMasterChat() {
-            const txt = $("#master-chat-input").val().trim();
-            if(!txt) return;
-            await db.collection("special_rooms").doc("masterclass_arena").collection("chat").add({
-                user: myData.name, text: txt, isCoach: isCoach, time: Date.now()
-            });
-            $("#master-chat-input").val("");
         }
 
         function exitStudio() { if(confirm("Exit?")) { if(jitsiAPI) jitsiAPI.dispose(); location.reload(); } }
