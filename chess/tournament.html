@@ -143,7 +143,7 @@
     </div>
 
     <script>
-        // --- 1. CONFIG & DATA ---
+        // --- 1. CONFIG & DATA (UPDATED FOR WEAK MASTERS, DEPTH 1) ---
         const firebaseConfig = { 
             apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw", 
             authDomain: "assignments-de95a.firebaseapp.com", 
@@ -157,15 +157,15 @@
         const chessWorker = new Worker('./chess-worker.js');
 
         const masterPool = [
-            { name: "Mr. Dotun", title: "Coach", rating: 2150, blunder: 0.15, depth: 1.2, bio: "The gatekeeper." },
-            { name: "Okeke Isaac", title: "IM", rating: 2210, blunder: 0.13, depth: 1.2, bio: "Tactical wonder-kid." },
-            { name: "Bunmi Olape", title: "IM", rating: 2320, blunder: 0.11, depth: 1.2, bio: "The Professor." },
-            { name: "Ajibola Olanrewaju", title: "FM", rating: 2335, blunder: 0.09, depth: 1.2, bio: "Blitz specialist." },
-            { name: "Oladapo Adu", title: "IM", rating: 2450, blunder: 0.08, depth: 1.2, bio: "The Veteran King." },
-            { name: "Akinseye Abiola", title: "FM", rating: 2380, blunder: 0.07, depth: 1.2, bio: "The Iron Wall." },
-            { name: "Odion Aikhoje", title: "IM", rating: 2510, blunder: 0.05, depth: 1.2, bio: "The Golden Hero." },
-            { name: "Fola Akintola", title: "Master", rating: 2390, blunder: 0.04, depth: 1.2, bio: "Fierce attacker." },
-            { name: "Anwuli Daniel", title: "IM", rating: 2420, blunder: 0.03, depth: 1.2, bio: "Speed Demon." }
+            { name: "Mr. Dotun", title: "Coach", rating: 2150, blunder: 0.20, depth: 1, bio: "The gatekeeper." },
+            { name: "Okeke Isaac", title: "IM", rating: 2210, blunder: 0.18, depth: 1, bio: "Tactical wonder-kid." },
+            { name: "Bunmi Olape", title: "IM", rating: 2320, blunder: 0.15, depth: 1, bio: "The Professor." },
+            { name: "Ajibola Olanrewaju", title: "FM", rating: 2335, blunder: 0.12, depth: 1, bio: "Blitz specialist." },
+            { name: "Oladapo Adu", title: "IM", rating: 2450, blunder: 0.10, depth: 1, bio: "The Veteran King." },
+            { name: "Akinseye Abiola", title: "FM", rating: 2380, blunder: 0.08, depth: 1, bio: "The Iron Wall." },
+            { name: "Odion Aikhoje", title: "IM", rating: 2510, blunder: 0.07, depth: 1, bio: "The Golden Hero." },
+            { name: "Fola Akintola", title: "Master", rating: 2390, blunder: 0.06, depth: 1, bio: "Fierce attacker." },
+            { name: "Anwuli Daniel", title: "IM", rating: 2420, blunder: 0.05, depth: 1, bio: "Speed Demon." }
         ];
 
         let otherPlayers = [
@@ -292,13 +292,35 @@
             $('#system-msg').text("Master is thinking...");
             const master = masterPool[currentRound];
             setTimeout(() => {
+                // To prevent blundering the queen at Depth 1, we add a simple blunder-check logic
                 chessWorker.postMessage("position " + game.fen());
                 chessWorker.postMessage("go depth " + master.depth);
             }, 1000);
         }
 
         chessWorker.onmessage = function(e) {
-            game.move({ from: e.data.substring(0, 2), to: e.data.substring(2, 4), promotion: 'q' });
+            let moveObj = { from: e.data.substring(0, 2), to: e.data.substring(2, 4), promotion: 'q' };
+            
+            // "Don't blunder queen" safety check:
+            let testGame = new Chess(game.fen());
+            let piece = testGame.get(moveObj.from);
+            
+            // If the move is a queen move, check if it's moving into immediate capture
+            if (piece && piece.type === 'q') {
+                testGame.move(moveObj);
+                let moves = testGame.moves({verbose: true});
+                let isCaptured = moves.some(m => m.to === moveObj.to && m.captured);
+                if (isCaptured) {
+                    // If moving queen would get it captured, pick any other legal move
+                    let safeMoves = game.moves();
+                    game.move(safeMoves[Math.floor(Math.random() * safeMoves.length)]);
+                } else {
+                    game.move(moveObj);
+                }
+            } else {
+                game.move(moveObj);
+            }
+
             board.position(game.fen());
             updateStatus();
         };
