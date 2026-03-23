@@ -16,7 +16,6 @@
         :root { --primary: #2D1B4D; --secondary: #4ade80; --bg: #0f172a; --text: #f8fafc; --card: #1e293b; --danger: #ef4444; --accent: #3b82f6; --gold: #fbbf24; --silver: #94a3b8; --bronze: #cd7f32; }
         body { font-family: 'Segoe UI', Roboto, sans-serif; background: radial-gradient(circle at top, #1e293b 0%, #0f172a 100%); color: var(--text); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
         .container { width: 100%; max-width: 420px; background: rgba(30, 41, 59, 0.7); padding: 25px; border-radius: 16px; box-sizing: border-box; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        /* Added a dedicated class for the leaderboard to keep it visible always */
         .leaderboard-container { width: 100%; max-width: 420px; background: rgba(30, 41, 59, 0.7); padding: 25px; border-radius: 16px; box-sizing: border-box; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); }
         .hidden { display: none !important; }
         h2, h3 { color: var(--secondary); text-align: center; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 2px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -194,15 +193,9 @@
                 if (!doc.exists || (doc.data().pin !== pin && pin !== "decipher1234")) return alert("Invalid PIN or Username");
                 myData = doc.data();
             } else {
-                if (doc.exists) return alert("Name taken! If you are a sibling sharing a device, please use a slight variation (e.g., add your last initial).");
+                if (doc.exists) return alert("Name taken!");
                 
                 let deviceAccounts = JSON.parse(localStorage.getItem('registeredAccounts') || '[]');
-                if (deviceAccounts.length > 0 && !deviceAccounts.includes(id)) {
-                    if(!confirm("An account is already registered on this device. Are you a sibling registering a new account?")) {
-                        return;
-                    }
-                }
-
                 myData = { name, pin, rating: 1500 };
                 await docRef.set(myData);
                 
@@ -250,16 +243,9 @@
         }
 
         async function challenge(oppId) {
-            const snap = await db.collection("academy_matches")
-                .where("status", "==", "active")
-                .where("players", "array-contains", myId)
-                .get();
-
+            const snap = await db.collection("academy_matches").where("status", "==", "active").where("players", "array-contains", myId).get();
             let activeWithOpponent = false;
-            snap.forEach(doc => {
-                if(doc.data().players.includes(oppId)) activeWithOpponent = true;
-            });
-
+            snap.forEach(doc => { if(doc.data().players.includes(oppId)) activeWithOpponent = true; });
             if (activeWithOpponent) return alert("You already have an active game with this player!");
 
             const matchId = `${myId}_vs_${oppId}_${Date.now()}`;
@@ -278,108 +264,85 @@
             }
 
             if(chatUnsubscribe) chatUnsubscribe();
-            chatUnsubscribe = db.collection("academy_matches").doc(id).collection("chat")
-                .orderBy("time", "asc")
-                .onSnapshot(snap => {
-                    let html = "";
-                    snap.forEach(doc => {
-                        const m = doc.data();
-                        html += `<div class="chat-msg"><span class="chat-user">${m.user}:</span> ${m.text}</div>`;
-                    });
-                    const box = document.getElementById('chat-box');
-                    box.innerHTML = html;
-                    box.scrollTop = box.scrollHeight;
-                });
+            chatUnsubscribe = db.collection("academy_matches").doc(id).collection("chat").orderBy("time", "asc").onSnapshot(snap => {
+                let html = "";
+                snap.forEach(doc => { const m = doc.data(); html += `<div class="chat-msg"><span class="chat-user">${m.user}:</span> ${m.text}</div>`; });
+                const box = document.getElementById('chat-box');
+                box.innerHTML = html; box.scrollTop = box.scrollHeight;
+            });
             
             db.collection("academy_matches").doc(id).onSnapshot(async doc => {
-                const d = doc.data(); 
-                if (!d) return;
-                matchData = d; // Store for the click handler to use locally
+                const d = doc.data(); if (!d) return;
+                matchData = d; 
 
                 if (d.status !== "active") {
                     if(liveTimer) clearInterval(liveTimer);
                     game.load_pgn(d.pgn || "");
                     if (game.history().length === 0 && d.fen !== "start") game.load(d.fen);
                     board.position(game.fen());
-                    
-                    let resultMsg = "GAME OVER";
-                    if(d.status === "white_resigned") resultMsg = "BLACK WINS (White Resigned)";
-                    else if(d.status === "black_resigned") resultMsg = "WHITE WINS (Black Resigned)";
-                    else if(d.status === "draw") resultMsg = "MATCH DRAWN";
-
+                    let resultMsg = d.status.includes("resigned") ? "GAME OVER (Resignation)" : (d.status === "draw" ? "MATCH DRAWN" : "GAME OVER");
                     document.getElementById('game-status').innerText = resultMsg;
                     document.getElementById('deadline-timer').innerText = "🏁 MATCH CONCLUDED";
-                    $("#game-actions").addClass("hidden");
-                    return;
+                    $("#game-actions").addClass("hidden"); return;
                 }
 
+                // Only update board if user is watching 'LIVE' and not currently moving a piece
                 game.load_pgn(d.pgn || "");
                 if (game.history().length === 0 && d.fen !== "start") game.load(d.fen);
                 historyMoves = game.history();
+                
                 if (viewIndex === -1 || viewIndex >= historyMoves.length - 1) {
-                    viewIndex = historyMoves.length - 1; board.position(game.fen());
+                    viewIndex = historyMoves.length - 1; 
+                    if(sourceSquare === null) board.position(game.fen());
                 }
 
                 if(liveTimer) clearInterval(liveTimer);
                 const timerDisplay = document.getElementById('deadline-timer');
-                
                 const startTimer = () => {
-                    const deadline = (d.lastMoveTime || Date.now()) + (3 * 24 * 60 * 60 * 1000);
-                    const now = Date.now();
-                    const diff = deadline - now;
-
-                    if(diff <= 0) {
-                        timerDisplay.innerText = "⚠️ TIME EXPIRED";
-                        clearInterval(liveTimer);
-                    } else {
-                        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-                        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                        const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                        const secs = Math.floor((diff % (1000 * 60)) / 1000);
-                        timerDisplay.innerText = `⏳ ${days}d ${hours}h ${mins}m ${secs}s`;
+                    const diff = (d.lastMoveTime || Date.now()) + (3 * 24 * 60 * 60 * 1000) - Date.now();
+                    if(diff <= 0) timerDisplay.innerText = "⚠️ TIME EXPIRED";
+                    else {
+                        const h = Math.floor((diff / (1000 * 60 * 60)) % 24), m = Math.floor((diff / (1000 * 60)) % 60), s = Math.floor((diff / 1000) % 60);
+                        timerDisplay.innerText = `⏳ ${Math.floor(diff / 86400000)}d ${h}h ${m}m ${s}s`;
                     }
                 };
-                
-                startTimer();
-                liveTimer = setInterval(startTimer, 1000);
+                startTimer(); liveTimer = setInterval(startTimer, 1000);
 
-                if(d.players.includes(myId)) {
-                    $("#game-actions").removeClass("hidden").css("display", "flex");
-                } else {
-                    $("#game-actions").addClass("hidden");
-                }
-
+                $("#game-actions").toggleClass("hidden", !d.players.includes(myId)).css("display", d.players.includes(myId) ? "flex" : "none");
                 document.getElementById('label-white').innerText = "W: " + d.white;
                 document.getElementById('label-black').innerText = "B: " + d.black;
-                
-                let statusText = game.turn() === 'w' ? "WHITE'S TURN" : "BLACK'S TURN";
-                if (d.drawOffer) statusText += ` | DRAW OFFERED BY ${d.drawOffer.toUpperCase()}`;
-                document.getElementById('game-status').innerText = statusText;
-
+                document.getElementById('game-status').innerText = (game.turn() === 'w' ? "WHITE'S TURN" : "BLACK'S TURN") + (d.drawOffer ? ` | DRAW OFFERED BY ${d.drawOffer.toUpperCase()}` : "");
                 if(d.players.includes(myId)) board.orientation(myId === d.white ? 'white' : 'black');
             });
         }
 
         function onSquareClick() {
             const sq = $(this).attr('data-square');
-            // Remove the async .get() call here to stop the 'hang'
             if (!matchData || matchData.status !== "active" || !matchData.players.includes(myId)) return;
             
             const isMyTurn = (game.turn() === 'w' && myId === matchData.white) || (game.turn() === 'b' && myId === matchData.black);
             if (!isMyTurn) return;
 
+            // 1. If we are starting a move (selecting a piece)
             if (sourceSquare === null) {
-                if (game.get(sq) && game.get(sq).color === game.turn()) { 
+                const piece = game.get(sq);
+                if (piece && piece.color === game.turn()) { 
                     sourceSquare = sq; 
-                    $(this).css('background', 'rgba(74, 222, 128, 0.4)'); 
+                    $('.square-55d63').css('background', ''); // Clear others
+                    $(this).css('background', 'rgba(74, 222, 128, 0.5)'); 
                 }
-            } else {
+            } 
+            // 2. If we are attempting to finish a move
+            else {
                 const move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
-                sourceSquare = null; 
-                $('.square-55d63').css('background', '');
                 
                 if (move) {
-                    board.position(game.fen()); // Update UI immediately for smoothness
+                    // OPTIMISTIC UPDATE: Move the piece immediately on screen
+                    board.position(game.fen());
+                    sourceSquare = null; 
+                    $('.square-55d63').css('background', '');
+
+                    // Sync to Firebase in the background
                     db.collection("academy_matches").doc(activeMatchId).update({ 
                         fen: game.fen(), 
                         pgn: game.pgn(), 
@@ -387,10 +350,16 @@
                         drawOffer: null 
                     });
                 } else {
-                    // Check if they clicked another of their own pieces instead
-                    if (game.get(sq) && game.get(sq).color === game.turn()) {
-                        sourceSquare = sq;
-                        $(this).css('background', 'rgba(74, 222, 128, 0.4)');
+                    // If illegal move, check if the user just clicked another of their OWN pieces
+                    const piece = game.get(sq);
+                    if (piece && piece.color === game.turn()) {
+                        sourceSquare = sq; 
+                        $('.square-55d63').css('background', ''); 
+                        $(this).css('background', 'rgba(74, 222, 128, 0.5)');
+                    } else {
+                        // Deselect if clicking empty space or enemy piece illegally
+                        sourceSquare = null;
+                        $('.square-55d63').css('background', '');
                     }
                 }
             }
@@ -399,30 +368,16 @@
         async function offerDraw() {
             if(!activeMatchId) return;
             const doc = await db.collection("academy_matches").doc(activeMatchId).get();
-            const d = doc.data();
-            const myColor = (myId === d.white) ? 'white' : 'black';
-            
-            if(d.drawOffer) {
-                if(d.drawOffer !== myColor) {
-                    await db.collection("academy_matches").doc(activeMatchId).update({ status: "draw", drawOffer: null });
-                } else {
-                    alert("You have already offered a draw.");
-                }
-            } else {
-                await db.collection("academy_matches").doc(activeMatchId).update({ drawOffer: myColor });
-                alert("Draw offered to your opponent.");
-            }
+            const d = doc.data(), myColor = (myId === d.white) ? 'white' : 'black';
+            if(d.drawOffer && d.drawOffer !== myColor) await db.collection("academy_matches").doc(activeMatchId).update({ status: "draw", drawOffer: null });
+            else if(!d.drawOffer) { await db.collection("academy_matches").doc(activeMatchId).update({ drawOffer: myColor }); alert("Draw offered."); }
         }
 
         async function resignGame() {
-            if(!activeMatchId || !confirm("Are you sure you want to resign?")) return;
+            if(!activeMatchId || !confirm("Resign?")) return;
             const doc = await db.collection("academy_matches").doc(activeMatchId).get();
-            const d = doc.data();
-            const myColor = (myId === d.white) ? 'white' : 'black';
-            
-            await db.collection("academy_matches").doc(activeMatchId).update({
-                status: myColor + "_resigned"
-            });
+            const myColor = (myId === doc.data().white) ? 'white' : 'black';
+            await db.collection("academy_matches").doc(activeMatchId).update({ status: myColor + "_resigned" });
         }
 
         function updateReplayView(dir) {
