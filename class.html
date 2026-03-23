@@ -51,6 +51,15 @@
         }
         .hidden { display: none !important; }
         
+        /* FIX: Visually hidden but active for audio processing */
+        #jitsi-container { 
+            position: absolute; 
+            left: -9999px; 
+            width: 1px; 
+            height: 1px; 
+            opacity: 0; 
+        }
+
         #password-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(15, 23, 42, 0.95); z-index: 1000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(12px); }
         .pass-card { background: var(--card); padding: 40px 30px; border-radius: 24px; border: 1px solid var(--gold); text-align: center; width: 320px; box-shadow: 0 0 40px rgba(251, 191, 36, 0.1); }
 
@@ -96,6 +105,7 @@
         #master-chat-box { height: 100px; overflow-y: auto; font-size: 12px; margin-bottom: 12px; padding-right: 5px; }
         .chat-msg { margin-bottom: 5px; line-height: 1.4; }
         .chat-name { color: var(--gold); font-weight: bold; margin-right: 5px; }
+        .system-msg { color: #94a3b8; font-style: italic; font-size: 11px; margin: 5px 0; text-align: center; border-bottom: 1px dashed rgba(255,255,255,0.05); }
         input, textarea { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px; border-radius: 12px; margin-bottom: 10px; width: 100%; box-sizing: border-box; font-family: inherit;}
         .chat-input-wrap { display: flex; gap: 8px; }
         .chat-input-wrap input { margin-bottom: 0; }
@@ -177,7 +187,7 @@
         <button class="btn" style="margin-top:20px; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: #94a3b8;" onclick="exitStudio()">EXIT CLASS</button>
     </div>
 
-    <div id="jitsi-container" style="display:none;"></div>
+    <div id="jitsi-container"></div>
 
     <script>
         const firebaseConfig = {
@@ -196,7 +206,7 @@
         let isCoach = false;
         let isDrawMode = false;
         let isSetupMode = false;
-        let globalMove = false; // NEW variable
+        let globalMove = false;
         let authorizedMovers = []; 
         let jitsiAPI = null;
         let micOn = false;
@@ -239,7 +249,6 @@
             initChat(); 
         }
 
-        // NEW: Function to toggle global student movement
         function toggleGlobalMove() {
             if (!isCoach) return;
             db.collection("special_rooms").doc("masterclass_arena").update({ 
@@ -333,7 +342,6 @@
                 dropOffBoard: isSetupMode ? 'trash' : 'snapback',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 onDragStart: (source, piece, position, orientation) => {
-                    // Coach can always move. Global Move or Specific Auth allows student.
                     if (isCoach) return true;
                     if (globalMove) return true;
                     if (authorizedMovers.includes(myData.id)) return true;
@@ -355,7 +363,6 @@
                     if(!d) return;
                     if(d.fen && masterBoard.fen() !== d.fen) masterBoard.position(d.fen);
                     
-                    // NEW: Update global move state
                     globalMove = d.studentMoveEnabled || false;
                     if (isCoach) {
                         $("#global-move-btn")
@@ -386,20 +393,27 @@
                   chatBox.empty();
                   snapshot.forEach(doc => {
                       const msg = doc.data();
-                      chatBox.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}:</span><span>${msg.text}</span></div>`);
+                      if(msg.type === "system") {
+                        chatBox.append(`<div class="system-msg">${msg.text}</div>`);
+                      } else {
+                        chatBox.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}:</span><span>${msg.text}</span></div>`);
+                      }
                   });
                   chatBox.scrollTop(chatBox[0].scrollHeight);
               });
         }
 
-        function sendMasterChat() {
+        function sendMasterChat(customText = null, isSystem = false) {
             const input = $("#master-chat-input");
-            const text = input.val().trim();
+            const text = customText || input.val().trim();
             if (!text) return;
             db.collection("special_rooms").doc("masterclass_arena").collection("messages").add({
-                sender: myData.name, text: text, timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                sender: isSystem ? "SYSTEM" : myData.name, 
+                text: text, 
+                type: isSystem ? "system" : "chat",
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
             });
-            input.val("");
+            if(!customText) input.val("");
         }
 
         function handleFileUpload(event) {
@@ -443,14 +457,14 @@
         }
 
         function renderMicUI() {
-            $("#mic-control-area").html(`<button id="mic-toggle-btn" class="mic-btn ${isCoach ? '' : 'mic-off'}" style="background:none; border:none; cursor:pointer; font-size:20px;" onclick="handleMicToggle()">${isCoach ? '🎤' : '🔇'}</button>`);
+            const color = micOn ? 'var(--secondary)' : 'var(--danger)';
+            const icon = micOn ? '🎤' : '🔇';
+            $("#mic-control-area").html(`<button id="mic-toggle-btn" class="mic-btn" style="background:none; border:none; cursor:pointer; font-size:20px; color:${color}" onclick="handleMicToggle()">${icon}</button>`);
         }
 
         function handleMicToggle() {
             if(!jitsiAPI) return;
             jitsiAPI.executeCommand('toggleAudio');
-            micOn = !micOn;
-            $("#mic-toggle-btn").toggleClass("mic-off", !micOn).text(micOn ? "🎤" : "🔇");
         }
 
         function renderParticipants() {
@@ -489,25 +503,46 @@
         function initAudio() {
             jitsiAPI = new JitsiMeetExternalAPI("meet.jit.si", {
                 roomName: "MindMasters_Chess_2026",
-                width: '100%', height: 0,
+                width: 1, height: 1,
                 parentNode: document.querySelector('#jitsi-container'),
                 userInfo: { displayName: myData.name },
-                configOverwrite: { startWithAudioMuted: !isCoach, startWithVideoMuted: true },
+                configOverwrite: { 
+                    startWithAudioMuted: !isCoach, 
+                    startWithVideoMuted: true,
+                    prejoinPageEnabled: false
+                },
             });
-            micOn = isCoach;
 
-            jitsiAPI.addEventListener('videoConferenceJoined', (e) => {
-                myData.id = e.id; 
-                activeParticipants[e.id] = myData.name + " (You)";
-                renderParticipants();
-            });
-            jitsiAPI.addEventListener('participantJoined', (e) => {
-                activeParticipants[e.id] = e.displayName || "Guest";
-                renderParticipants();
-            });
-            jitsiAPI.addEventListener('participantLeft', (e) => {
-                delete activeParticipants[e.id];
-                renderParticipants();
+            // Listeners for Mic Status and Participant Notifications
+            jitsiAPI.addEventListeners({
+                videoConferenceJoined: (e) => {
+                    myData.id = e.id; 
+                    activeParticipants[e.id] = myData.name + " (You)";
+                    renderParticipants();
+                    // Announce to everyone in Firebase Chat
+                    sendMasterChat(`${myData.name} has entered the campus.`, true);
+                    
+                    // Set initial Mic UI
+                    jitsiAPI.isAudioMuted().then(muted => {
+                        micOn = !muted;
+                        renderMicUI();
+                    });
+                },
+                participantJoined: (e) => {
+                    activeParticipants[e.id] = e.displayName || "Guest";
+                    renderParticipants();
+                    if(isCoach) sendMasterChat(`${e.displayName || 'A student'} joined the session.`, true);
+                },
+                participantLeft: (e) => {
+                    const name = activeParticipants[e.id] || "Guest";
+                    delete activeParticipants[e.id];
+                    renderParticipants();
+                    if(isCoach) sendMasterChat(`${name} left the campus.`, true);
+                },
+                audioMuteStatusChanged: (e) => {
+                    micOn = !e.muted;
+                    renderMicUI();
+                }
             });
         }
 
