@@ -2,32 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NFOC 2500 Trainer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NFOC GM Trainer</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
     <style>
         body { background: #0d1117; color: #c9d1d9; font-family: sans-serif; margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
-        
-        /* Mobile responsive board */
-        #board-container { width: 95vw; max-width: 400px; margin-bottom: 15px; }
-        #board { width: 100%; border: 2px solid #30363d; border-radius: 4px; transition: opacity 0.3s; }
-        
-        /* Sidebar/Menu as a scrollable row for mobile */
-        .game-menu { width: 95vw; overflow-x: auto; white-space: nowrap; margin-bottom: 15px; display: flex; gap: 10px; padding-bottom: 5px; }
-        .game-btn { background: #161b22; border: 1px solid #30363d; padding: 10px; border-radius: 6px; color: #58a6ff; font-size: 12px; min-width: 140px; }
-
-        .controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; width: 95vw; max-width: 400px; }
-        button { padding: 12px; cursor: pointer; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; font-weight: bold; font-size: 13px; }
-        button:active { background: #30363d; border-color: #ffd700; }
-        
-        .hidden { opacity: 0 !important; filter: blur(20px); }
-        #status { background: #161b22; padding: 10px; width: 90vw; max-width: 380px; border-radius: 5px; margin-bottom: 10px; font-size: 13px; border-left: 4px solid #ffd700; overflow: hidden; }
-        .active-mode { background: #8b0000 !important; }
+        #board-container { width: 95vw; max-width: 380px; margin: 15px 0; touch-action: none; }
+        #board { width: 100%; border: 2px solid #30363d; border-radius: 4px; }
+        .game-menu { width: 100%; overflow-x: auto; display: flex; gap: 8px; padding-bottom: 10px; }
+        .game-btn { background: #161b22; border: 1px solid #30363d; padding: 8px 12px; border-radius: 6px; color: #58a6ff; white-space: nowrap; font-size: 12px; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 95vw; max-width: 380px; }
+        button { padding: 15px; background: #21262d; color: #fff; border: 1px solid #30363d; border-radius: 8px; font-weight: bold; }
+        .hidden { opacity: 0.01 !important; filter: blur(20px); }
+        #status { background: #1c2128; padding: 12px; width: 90vw; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #ffd700; font-size: 14px; }
+        .active { background: #8b0000 !important; }
     </style>
 </head>
 <body>
 
-    <div id="status">Ready: Load a Game Below</div>
+    <div id="status">System Loading...</div>
 
     <div class="game-menu">
         <button class="game-btn" onclick="loadFullGame(0)">London: Carlsen</button>
@@ -45,7 +38,7 @@
         <button onclick="nextMove()">NEXT ▶</button>
         <button id="visionBtn" onclick="toggleVision()">VISION OFF</button>
         <button id="trainBtn" onclick="toggleTraining()">AUTO-HIDE: OFF</button>
-        <button onclick="askEngine()" style="grid-column: span 2; background: #238636;">GET GM HINT (SF)</button>
+        <button onclick="askEngine()" style="grid-column: span 2; background: #238636;">GET GM HINT</button>
         <button onclick="resetSandbox()" style="grid-column: span 2;">RESET BOARD</button>
     </div>
 
@@ -69,13 +62,29 @@
         let history = [];
         let moveIndex = -1;
 
+        // Force board initialization after page load
+        window.onload = function() {
+            board = Chessboard('board', {
+                draggable: true,
+                position: 'start',
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+                onDrop: function(s, t) {
+                    let m = game.move({from: s, to: t, promotion: 'q'});
+                    if (!m) return 'snapback';
+                    if (trainingMode) setTimeout(() => { $('#board').addClass('hidden'); }, 300);
+                }
+            });
+            $('#status').text("READY: LOAD A GAME");
+            $(window).resize(board.resize);
+        };
+
         function loadFullGame(i) {
             game.load_pgn(fullGames[i]);
             history = game.history();
             game.reset();
             moveIndex = -1;
             board.position('start');
-            $('#status').text("Game Loaded. Press NEXT.");
+            $('#status').text("GAME LOADED: PRESS NEXT");
             $('#board').removeClass('hidden');
         }
 
@@ -94,7 +103,7 @@
                 game.undo();
                 moveIndex--;
                 board.position(game.fen());
-                $('#status').text(moveIndex >= 0 ? "BACK: " + history[moveIndex] : "Reset");
+                $('#status').text(moveIndex >= 0 ? "BACK: " + history[moveIndex] : "START");
                 $('#board').removeClass('hidden');
             }
         }
@@ -106,7 +115,7 @@
 
         function toggleTraining() {
             trainingMode = !trainingMode;
-            $('#trainBtn').toggleClass('active-mode').text(trainingMode ? "AUTO-HIDE: ON" : "AUTO-HIDE: OFF");
+            $('#trainBtn').toggleClass('active').text(trainingMode ? "AUTO-HIDE: ON" : "AUTO-HIDE: OFF");
         }
 
         function askEngine() {
@@ -123,19 +132,6 @@
             board.start();
             $('#board').removeClass('hidden');
         }
-
-        // Initialize board with mobile resize
-        board = Chessboard('board', {
-            draggable: true,
-            position: 'start',
-            onDrop: (s, t) => {
-                let m = game.move({from: s, to: t, promotion: 'q'});
-                if (!m) return 'snapback';
-                if (trainingMode) setTimeout(() => { $('#board').addClass('hidden'); }, 300);
-            }
-        });
-        
-        $(window).resize(board.resize);
     </script>
 </body>
 </html>
