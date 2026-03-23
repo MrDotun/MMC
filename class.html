@@ -239,6 +239,12 @@
                 $("#role-text").text("STUDENT VIEW");
             } else { alert("Invalid Key"); return; }
 
+            // NEW: Pre-unlock audio context to bypass autoplay restrictions on mobile/desktop
+            if (window.AudioContext || window.webkitAudioContext) {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                audioCtx.resume(); 
+            }
+
             $("#password-overlay").addClass("hidden");
             $("#section-lobby").addClass("hidden");
             $("#section-masterclass").removeClass("hidden");
@@ -456,10 +462,19 @@
             setTimeout(() => { db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); }, 100);
         }
 
+        // NEW: Updated UI for the microphone button
         function renderMicUI() {
             const color = micOn ? 'var(--secondary)' : 'var(--danger)';
-            const icon = micOn ? '🎤' : '🔇';
-            $("#mic-control-area").html(`<button id="mic-toggle-btn" class="mic-btn" style="background:none; border:none; cursor:pointer; font-size:20px; color:${color}" onclick="handleMicToggle()">${icon}</button>`);
+            const icon = micOn ? '🎤 ON' : '🔇 MUTED';
+            const shadow = micOn ? '0 0 15px rgba(74, 222, 128, 0.4)' : 'none';
+            
+            $("#mic-control-area").html(`
+                <button id="mic-toggle-btn" 
+                    style="background: rgba(255,255,255,0.05); border: 1px solid ${color}; padding: 8px 15px; border-radius: 12px; cursor:pointer; font-size:12px; font-weight:bold; color:${color}; box-shadow: ${shadow}; transition: 0.3s;" 
+                    onclick="handleMicToggle()">
+                    ${icon}
+                </button>
+            `);
         }
 
         function handleMicToggle() {
@@ -501,17 +516,30 @@
         function kickUser(id) { if(confirm("Remove this student?")) jitsiAPI.executeCommand('kickParticipant', id); }
 
         function initAudio() {
-            jitsiAPI = new JitsiMeetExternalAPI("meet.jit.si", {
+            const domain = "meet.jit.si";
+            const options = {
                 roomName: "MindMasters_Chess_2026",
-                width: 1, height: 1,
+                width: 1, 
+                height: 1,
                 parentNode: document.querySelector('#jitsi-container'),
                 userInfo: { displayName: myData.name },
+                // NEW: Added constraints to force browser to recognize audio intent
                 configOverwrite: { 
                     startWithAudioMuted: !isCoach, 
                     startWithVideoMuted: true,
-                    prejoinPageEnabled: false
+                    prejoinPageEnabled: false,
+                    constraints: { audio: true, video: false } 
                 },
-            });
+                // NEW: Adds necessary permissions to the invisible iframe
+                onload: function() {
+                    const iframe = document.querySelector('#jitsi-container iframe');
+                    if (iframe) {
+                        iframe.setAttribute("allow", "microphone; autoplay; display-capture");
+                    }
+                }
+            };
+
+            jitsiAPI = new JitsiMeetExternalAPI(domain, options);
 
             // Listeners for Mic Status and Participant Notifications
             jitsiAPI.addEventListeners({
