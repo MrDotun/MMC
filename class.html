@@ -83,8 +83,16 @@
         .btn-gold { background: var(--gold); color: #000; }
 
         #participants-list { background: rgba(0,0,0,0.2); border-radius: 16px; padding: 15px; margin: 10px 0; font-size: 13px; }
-        .participant-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .participant-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         
+        /* NEW STYLES FOR COACH CONTROLS */
+        .p-actions { display: flex; gap: 5px; }
+        .p-btn { padding: 5px 8px; border-radius: 6px; border: none; font-size: 9px; font-weight: bold; cursor: pointer; transition: 0.2s; text-transform: uppercase; }
+        .move-btn { background: var(--secondary); color: #000; }
+        .move-btn.active { background: var(--danger); color: #fff; }
+        .mute-btn { background: #475569; color: white; }
+        .kick-btn { background: #b91c1c; color: white; }
+
         #chat-container { margin-top: 15px; background: rgba(2, 6, 23, 0.4); border-radius: 16px; padding: 15px; border: 1px solid rgba(255,255,255,0.05); }
         #master-chat-box { height: 100px; overflow-y: auto; font-size: 12px; margin-bottom: 12px; padding-right: 5px; }
         .chat-msg { margin-bottom: 5px; line-height: 1.4; }
@@ -229,10 +237,9 @@
             initAudio();
             initCanvas();
             renderMicUI();
-            initChat(); // Enable Chat Listeners
+            initChat(); 
         }
 
-        // --- CHAT LOGIC ---
         function initChat() {
             db.collection("special_rooms").doc("masterclass_arena")
               .collection("messages").orderBy("timestamp", "asc")
@@ -261,14 +268,13 @@
             input.val("");
         }
 
-        // --- PGN FILE UPLOAD ---
         function handleFileUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
             const reader = new FileReader();
             reader.onload = function(e) {
                 $("#pgn-input").val(e.target.result);
-                loadPgnData(); // Trigger loading
+                loadPgnData(); 
             };
             reader.readAsText(file);
         }
@@ -392,13 +398,14 @@
                 dropOffBoard: isSetupMode ? 'trash' : 'snapback',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 onDragStart: (source, piece, position, orientation) => {
+                    // Coach can always move. Authorized students can move.
                     if (isCoach) return true;
                     if (authorizedMovers.includes(myData.id)) return true;
                     return false;
                 },
                 onDrop: (source, target) => {
                     setTimeout(() => {
-                        db.collection("special_rooms").doc("masterclass_arena").set({ fen: masterBoard.fen() }, {merge: true});
+                        db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
                     }, 100);
                 }
             };
@@ -411,8 +418,11 @@
                     const d = doc.data();
                     if(!d) return;
                     if(d.fen && masterBoard.fen() !== d.fen) masterBoard.position(d.fen);
+                    
+                    // Sync authorized movers from DB
                     authorizedMovers = d.authorizedMovers || [];
                     renderParticipants();
+
                     if(!isCoach && d.drawing) {
                         const img = new Image();
                         img.onload = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0); };
@@ -450,7 +460,9 @@
                     <span>👤 ${activeParticipants[id]} ${hasMoveAccess ? '⚡' : ''}</span>
                     ${isCoach && !activeParticipants[id].includes("Coach") ? `
                         <div class="p-actions">
-                            <button class="p-btn move-btn" onclick="toggleMoveAccess('${id}')">${hasMoveAccess ? 'Take Move' : 'Give Move'}</button>
+                            <button class="p-btn move-btn ${hasMoveAccess ? 'active' : ''}" onclick="toggleMoveAccess('${id}')">
+                                ${hasMoveAccess ? 'Disable Move' : 'Enable Move'}
+                            </button>
                             <button class="p-btn mute-btn" onclick="muteUser('${id}')">Mute</button>
                             <button class="p-btn kick-btn" onclick="kickUser('${id}')">Kick</button>
                         </div>
@@ -462,8 +474,11 @@
 
         function toggleMoveAccess(id) {
             let newMovers = [...authorizedMovers];
-            if (newMovers.includes(id)) newMovers = newMovers.filter(item => item !== id);
-            else newMovers.push(id);
+            if (newMovers.includes(id)) {
+                newMovers = newMovers.filter(item => item !== id);
+            } else {
+                newMovers.push(id);
+            }
             db.collection("special_rooms").doc("masterclass_arena").update({ authorizedMovers: newMovers });
         }
 
