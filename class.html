@@ -243,7 +243,7 @@
                 $("#role-text").text("STUDENT VIEW");
             } else { alert("Invalid Key"); return; }
 
-            // Wake up Audio Hardware on Mobile
+            // CRITICAL: Wake up Audio Hardware on Mobile
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 stream.getTracks().forEach(track => track.stop()); // Kickstart and release
@@ -542,31 +542,17 @@
                     startWithVideoMuted: true,
                     prejoinPageEnabled: false,
                     enableWelcomePage: false,
-                    disableDeepLinking: true, 
+                    disableDeepLinking: true, // Prevents mobile app redirect
                     remoteVideoMenu: { disableKick: !isCoach },
                     disableRemoteMute: !isCoach,
                     enableNoAudioDetection: true,
                     enableNoisyMicDetection: true,
-                    constraints: {
-                        audio: {
-                            optional: [],
-                            mandatory: {
-                                googEchoCancellation: true,
-                                googAutoGainControl: true,
-                                googNoiseSuppression: true,
-                                googHighpassFilter: true
-                            }
-                        },
-                        video: false
-                    }
-                },
-                interfaceConfigOverwrite: {
-                    MOBILE_APP_PROMO: false,
-                    TOOLBAR_BUTTONS: []
+                    constraints: { audio: true, video: false }
                 },
                 onload: function() {
                     const iframe = document.querySelector('#jitsi-container iframe');
                     if (iframe) {
+                        // FORCE Permission attributes on the iframe
                         iframe.setAttribute("allow", "microphone; autoplay; display-capture");
                     }
                 }
@@ -580,8 +566,9 @@
                     activeParticipants[e.id] = myData.name + " (You)";
                     renderParticipants();
                     renderMicUI();
+                    // Auto-unmute Coach on join
                     if(isCoach) { jitsiAPI.executeCommand('toggleAudio'); }
-                    sendMasterChat(`${myData.name} is now online.`, true);
+                    sendMasterChat(`${myData.name} joined audio.`, true);
                 },
                 participantJoined: (e) => {
                     activeParticipants[e.id] = e.displayName || "Guest";
@@ -594,9 +581,6 @@
                 audioMuteStatusChanged: (e) => {
                     micOn = !e.muted;
                     renderMicUI();
-                },
-                readyToClose: () => {
-                    exitStudio();
                 }
             });
         }
