@@ -75,25 +75,20 @@
         .tool-btn { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text); padding: 12px; border-radius: 12px; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.2s; }
         .tool-btn:hover { background: rgba(255, 255, 255, 0.1); }
 
-        /* PGN Styling */
         .pgn-section { margin-top: 15px; background: rgba(255,255,255,0.03); border-radius: 12px; padding: 10px; }
         .pgn-nav { display: flex; gap: 5px; margin-top: 8px; }
         .pgn-nav button { flex: 1; padding: 10px; font-size: 14px; background: var(--card); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 8px; cursor: pointer; }
-        .pgn-nav button:active { background: var(--secondary); color: black; }
 
         .btn { padding: 16px; cursor: pointer; border-radius: 14px; border: none; background: linear-gradient(135deg, #4c1d95 0%, #2D1B4D 100%); color: var(--secondary); font-weight: 800; width: 100%; text-transform: uppercase; transition: 0.3s; font-size: 12px; margin-top: 10px; letter-spacing: 1px; }
         .btn-gold { background: var(--gold); color: #000; }
 
         #participants-list { background: rgba(0,0,0,0.2); border-radius: 16px; padding: 15px; margin: 10px 0; font-size: 13px; }
         .participant-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .p-actions { display: flex; gap: 5px; }
-        .p-btn { padding: 4px 8px; border-radius: 6px; border: none; font-size: 10px; font-weight: bold; cursor: pointer; }
-        .kick-btn { background: var(--danger); color: white; }
-        .mute-btn { background: #64748b; color: white; }
-        .move-btn { background: var(--secondary); color: #000; }
         
         #chat-container { margin-top: 15px; background: rgba(2, 6, 23, 0.4); border-radius: 16px; padding: 15px; border: 1px solid rgba(255,255,255,0.05); }
-        #master-chat-box { height: 100px; overflow-y: auto; font-size: 12px; margin-bottom: 12px; }
+        #master-chat-box { height: 100px; overflow-y: auto; font-size: 12px; margin-bottom: 12px; padding-right: 5px; }
+        .chat-msg { margin-bottom: 5px; line-height: 1.4; }
+        .chat-name { color: var(--gold); font-weight: bold; margin-right: 5px; }
         input, textarea { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px; border-radius: 12px; margin-bottom: 10px; width: 100%; box-sizing: border-box; font-family: inherit;}
         .chat-input-wrap { display: flex; gap: 8px; }
         .chat-input-wrap input { margin-bottom: 0; }
@@ -144,7 +139,13 @@
             <div class="pgn-section">
                 <p style="font-size: 10px; color: var(--secondary); margin-bottom: 5px; font-weight: bold;">PGN TEACHING TOOL</p>
                 <textarea id="pgn-input" placeholder="Paste PGN here..." style="height: 60px; font-size: 11px;"></textarea>
-                <button class="tool-btn" style="width:100%" onclick="loadPgnData()">📥 LOAD PGN</button>
+                
+                <div style="display: flex; gap: 5px;">
+                    <button class="tool-btn" style="flex:1" onclick="loadPgnData()">📥 LOAD TEXT</button>
+                    <button class="tool-btn" style="flex:1" onclick="document.getElementById('pgn-file').click()">📁 UPLOAD PGN</button>
+                </div>
+                <input type="file" id="pgn-file" accept=".pgn" style="display:none" onchange="handleFileUpload(event)">
+
                 <div class="pgn-nav">
                     <button onclick="pgnMove('start')">⏮</button>
                     <button onclick="pgnMove('prev')">◀</button>
@@ -162,7 +163,7 @@
         <div id="chat-container">
             <div id="master-chat-box"></div>
             <div class="chat-input-wrap">
-                <input type="text" id="master-chat-input" placeholder="Type a message...">
+                <input type="text" id="master-chat-input" placeholder="Type a message..." onkeypress="if(event.key==='Enter') sendMasterChat()">
                 <button class="btn" style="width: 80px; padding: 12px; margin:0;" onclick="sendMasterChat()">SEND</button>
             </div>
         </div>
@@ -194,7 +195,6 @@
         let micOn = false;
         let activeParticipants = {}; 
         
-        // PGN Variables
         let teachingGame = new Chess();
         let moveHistory = [];
         let currentMoveIndex = -1;
@@ -229,6 +229,48 @@
             initAudio();
             initCanvas();
             renderMicUI();
+            initChat(); // Enable Chat Listeners
+        }
+
+        // --- CHAT LOGIC ---
+        function initChat() {
+            db.collection("special_rooms").doc("masterclass_arena")
+              .collection("messages").orderBy("timestamp", "asc")
+              .onSnapshot(snapshot => {
+                  const chatBox = $("#master-chat-box");
+                  chatBox.empty();
+                  snapshot.forEach(doc => {
+                      const msg = doc.data();
+                      chatBox.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}:</span><span>${msg.text}</span></div>`);
+                  });
+                  chatBox.scrollTop(chatBox[0].scrollHeight);
+              });
+        }
+
+        function sendMasterChat() {
+            const input = $("#master-chat-input");
+            const text = input.val().trim();
+            if (!text) return;
+
+            db.collection("special_rooms").doc("masterclass_arena")
+              .collection("messages").add({
+                  sender: myData.name,
+                  text: text,
+                  timestamp: firebase.firestore.FieldValue.serverTimestamp()
+              });
+            input.val("");
+        }
+
+        // --- PGN FILE UPLOAD ---
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                $("#pgn-input").val(e.target.result);
+                loadPgnData(); // Trigger loading
+            };
+            reader.readAsText(file);
         }
 
         function toggleDrawMode() {
@@ -263,7 +305,6 @@
             canvas.height = board.clientHeight - 12;
         }
 
-        // --- DRAWING LOGIC ---
         function clearDrawings() {
             if(!isCoach) return;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -310,7 +351,6 @@
         canvas.addEventListener('touchmove', handleMove, {passive: false});
         canvas.addEventListener('touchend', handleEnd);
 
-        // --- PGN LOGIC ---
         function loadPgnData() {
             const pgn = $("#pgn-input").val();
             if(!pgn) return;
@@ -319,7 +359,6 @@
                 teachingGame.reset();
                 currentMoveIndex = -1;
                 syncMasterPosition(teachingGame.fen());
-                alert("PGN Loaded! Use arrows to navigate.");
             } else {
                 alert("Invalid PGN format.");
             }
