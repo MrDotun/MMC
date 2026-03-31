@@ -37,7 +37,6 @@
         .top-5-highlight { border: 1px solid rgba(251, 191, 36, 0.4) !important; background: linear-gradient(90deg, rgba(30, 41, 59, 0.8) 0%, rgba(251, 191, 36, 0.05) 100%) !important; box-shadow: 0 0 15px rgba(251, 191, 36, 0.1); }
         .top-5-highlight b { color: var(--gold); text-shadow: 0 0 8px rgba(251, 191, 36, 0.3); }
 
-        /* Hall of Grandmasters Styling */
         .hall-section { margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px; }
         .gm-card { background: linear-gradient(135deg, rgba(45, 27, 77, 0.5) 0%, rgba(74, 222, 128, 0.1) 100%); border: 1px solid var(--gold); padding: 15px; border-radius: 12px; text-align: center; position: relative; overflow: hidden; margin-bottom: 10px; }
         .gm-card::after { content: 'LEGEND'; position: absolute; top: 10px; right: -25px; transform: rotate(45deg); background: var(--gold); color: black; font-size: 8px; font-weight: 900; padding: 2px 30px; }
@@ -61,6 +60,13 @@
         .rank-1 { background: var(--gold); color: #000; box-shadow: 0 0 10px var(--gold); }
         .rank-2 { background: var(--silver); color: #000; }
         .rank-3 { background: var(--bronze); color: #000; }
+
+        /* Profile School Edit Section */
+        .school-edit-wrap { margin-bottom: 20px; text-align: center; position: relative; }
+        .school-edit-wrap label { font-size: 10px; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 5px; font-weight: bold; }
+        .school-input-lobby { border: 1px solid #334155; background: rgba(0,0,0,0.3); color: var(--secondary); padding: 8px 35px 8px 10px; border-radius: 8px; text-align: center; font-size: 12px; width: 85%; margin: 0 auto; display: block; outline: none; }
+        .school-save-btn { position: absolute; right: 10%; bottom: 8px; background: transparent; border: none; color: var(--gold); cursor: pointer; font-size: 14px; transition: 0.2s; }
+        .school-save-btn:hover { transform: scale(1.2); }
     </style>
 </head>
 <body>
@@ -94,6 +100,12 @@
     <div id="section-lobby" class="container hidden">
         <div id="user-welcome"></div>
         
+        <div class="school-edit-wrap">
+            <label>School Name</label>
+            <input type="text" id="lobby-school-input" class="school-input-lobby" placeholder="Update School">
+            <button class="school-save-btn" onclick="updateMySchool($('#lobby-school-input').val())">💾</button>
+        </div>
+
         <div class="rules-wrapper">
             <button class="rules-toggle" onclick="$('#rules-body').toggleClass('hidden')">
                 📜 Arena Rules <span>▼</span>
@@ -191,22 +203,37 @@
             }
         };
 
+        async function updateMySchool(newSchool) {
+            if(!myId || myId.startsWith('guest')) return;
+            const schoolName = newSchool.trim() || "Independent";
+            const btn = $(".school-save-btn");
+            btn.text("⏳"); // Show loading
+            
+            try {
+                await db.collection("academy_players").doc(myId).update({ school: schoolName });
+                myData.school = schoolName;
+                loadFrontLeaderboard();
+                btn.text("✅"); // Success feedback
+                setTimeout(() => btn.text("💾"), 2000); // Revert after 2s
+            } catch (err) {
+                btn.text("❌");
+                setTimeout(() => btn.text("💾"), 2000);
+            }
+        }
+
         async function cleanExpiredGames() {
             const now = Date.now();
             const threeDays = 259200000;
             const snap = await db.collection("academy_matches").where("status", "==", "active").get();
-            
             for (const doc of snap.docs) {
                 const d = doc.data();
                 const lastTime = d.lastMoveTime || (now - (threeDays + 1000)); 
-                
                 if (now - lastTime > threeDays) {
                     const tempGame = new Chess();
                     tempGame.load_pgn(d.pgn || "");
                     const turn = tempGame.turn();
                     const loserId = (turn === 'w') ? d.white : d.black;
                     const winnerId = (turn === 'w') ? d.black : d.white;
-
                     await db.collection("academy_matches").doc(doc.id).update({ status: "terminated" });
                     await adjustRating(winnerId, 20);
                     await adjustRating(loserId, -20);
@@ -232,8 +259,6 @@
                     const rankClass = rank <= 3 ? `rank-${rank}` : "";
                     const highlightClass = rank <= 5 ? "top-5-highlight" : "";
                     const schoolText = p.school ? p.school : "Independent";
-                    
-                    // Main Leaderboard HTML
                     html += `
                         <div class="item-row ${highlightClass}">
                             <div style="display: flex; align-items: center;">
@@ -245,8 +270,6 @@
                             </div>
                             <span style="color: var(--gold); font-weight:bold;">${p.rating}</span>
                         </div>`;
-
-                    // Hall of Fame logic: Only show the top all-time player as a legend card
                     if(rank === 1 && p.rating >= 1600) {
                         hallHtml = `
                         <div class="gm-card">
@@ -298,6 +321,7 @@
             if(liveTimer) clearInterval(liveTimer);
             if(chatUnsubscribe) chatUnsubscribe();
             document.getElementById('user-welcome').innerHTML = `<h3>${myData.name}</h3>`;
+            document.getElementById('lobby-school-input').value = myData.school || "Independent";
             loadLobbyData();
         }
 
@@ -345,7 +369,6 @@
                 let html = ""; snap.forEach(doc => { const m = doc.data(); html += `<div class="chat-msg"><span class="chat-user">${m.user}:</span> ${m.text}</div>`; });
                 const box = document.getElementById('chat-box'); box.innerHTML = html; box.scrollTop = box.scrollHeight;
             });
-            
             db.collection("academy_matches").doc(id).onSnapshot(doc => {
                 const d = doc.data(); if (!doc.exists) return;
                 matchData = d; 
