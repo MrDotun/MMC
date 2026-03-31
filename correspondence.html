@@ -19,6 +19,8 @@
         .leaderboard-container { width: 100%; max-width: 420px; background: rgba(30, 41, 59, 0.7); padding: 25px; border-radius: 16px; box-sizing: border-box; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); }
         .hidden { display: none !important; }
         h2, h3 { color: var(--secondary); text-align: center; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 2px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .rules-box { background: rgba(59, 130, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; padding: 15px; margin-bottom: 20px; font-size: 0.8rem; line-height: 1.4; }
+        .rules-box b { color: var(--gold); }
         .auth-toggle { display: flex; gap: 8px; margin-bottom: 20px; background: #0f172a; padding: 5px; border-radius: 12px; }
         .auth-toggle button { flex: 1; padding: 10px; font-size: 10px; background: transparent; color: #64748b; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
         .auth-toggle button.active { background: var(--card); color: var(--secondary); }
@@ -75,6 +77,13 @@
 
     <div id="section-lobby" class="container hidden">
         <div id="user-welcome"></div>
+        
+        <div class="rules-box">
+            <h3 style="color: var(--accent); font-size: 0.7rem; margin-bottom: 10px;">📜 CHAMPIONSHIP RULES</h3>
+            • <b>3-DAY CLOCK:</b> You must make a move within 3 days or you lose 20 points! <br>
+            • <b>QUALIFICATION:</b> Top players on the leaderboard will be selected to <b>represent their schools</b> in upcoming tournaments!
+        </div>
+
         <div id="live-games-section">
             <h3><span class="live-badge">LIVE</span> WATCH GAMES</h3>
             <div id="live-games-list"></div>
@@ -149,33 +158,30 @@
                 const doc = await db.collection("academy_players").doc(myId).get();
                 if (doc.exists) { 
                     myData = doc.data(); 
-                    await cleanExpiredGames(); // Check for expired games on load
+                    await cleanExpiredGames(); 
                     showLobby(); 
                 }
             }
         };
 
-        // --- RATING & CLEANUP LOGIC ---
         async function cleanExpiredGames() {
             const now = Date.now();
-            const threeDays = 259200000; // 3 days in ms
+            const threeDays = 259200000;
             const snap = await db.collection("academy_matches").where("status", "==", "active").get();
             
             for (const doc of snap.docs) {
                 const d = doc.data();
-                if (now - (d.lastMoveTime || now) > threeDays) {
+                // Ensure there is a timestamp to compare against; if not, use creation or 'now' to trigger cleanup if stuck
+                const lastTime = d.lastMoveTime || (now - (threeDays + 1000)); 
+                
+                if (now - lastTime > threeDays) {
                     const tempGame = new Chess();
                     tempGame.load_pgn(d.pgn || "");
-                    const turn = tempGame.turn(); // 'w' or 'b'
-                    
-                    // The player whose turn it was loses points
+                    const turn = tempGame.turn();
                     const loserId = (turn === 'w') ? d.white : d.black;
                     const winnerId = (turn === 'w') ? d.black : d.white;
 
-                    // Update game status
                     await db.collection("academy_matches").doc(doc.id).update({ status: "expired" });
-
-                    // Adjust Ratings
                     await adjustRating(winnerId, 20);
                     await adjustRating(loserId, -20);
                 }
@@ -247,7 +253,6 @@
                 let liveHtml = "", myHtml = "";
                 snap.forEach(doc => {
                     const d = doc.data(); 
-                    // Client-side safety: hide if expired but database not yet updated
                     if (Date.now() - (d.lastMoveTime || Date.now()) > 259200000) return;
 
                     const opp = d.white === myId ? d.black : d.white;
@@ -309,15 +314,16 @@
                 if(liveTimer) clearInterval(liveTimer);
                 const timerDisplay = document.getElementById('deadline-timer');
                 const startTimer = () => {
-                    const diff = (d.lastMoveTime || Date.now()) + (259200000) - Date.now();
+                    const lastMove = d.lastMoveTime || Date.now();
+                    const diff = lastMove + (259200000) - Date.now();
                     if(diff <= 0) {
                         timerDisplay.innerText = "⚠️ EXPIRED";
-                        // If current viewer is a player, trigger cleanup
                         if(d.players.includes(myId)) cleanExpiredGames();
                     }
                     else {
                         const h = Math.floor((diff / 3600000) % 24), m = Math.floor((diff / 60000) % 60), s = Math.floor((diff / 1000) % 60);
-                        timerDisplay.innerText = `⏳ ${Math.floor(diff / 86400000)}d ${h}h ${m}m ${s}s`;
+                        const days = Math.floor(diff / 86400000);
+                        timerDisplay.innerText = `⏳ ${days}d ${h}h ${m}m ${s}s`;
                     }
                 };
                 startTimer(); liveTimer = setInterval(startTimer, 1000);
