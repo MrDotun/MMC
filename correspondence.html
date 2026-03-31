@@ -20,7 +20,6 @@
         .hidden { display: none !important; }
         h2, h3 { color: var(--secondary); text-align: center; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 2px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; }
         
-        /* Collapsible Rules Styling */
         .rules-wrapper { margin-bottom: 20px; }
         .rules-toggle { width: 100%; background: rgba(59, 130, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); padding: 8px; border-radius: 8px; font-size: 10px; font-weight: 800; cursor: pointer; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; }
         .rules-content { background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(59, 130, 246, 0.3); border-top: none; padding: 12px; border-radius: 0 0 8px 8px; font-size: 0.75rem; line-height: 1.4; color: #cbd5e1; }
@@ -30,7 +29,19 @@
         .auth-toggle button { flex: 1; padding: 10px; font-size: 10px; background: transparent; color: #64748b; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
         .auth-toggle button.active { background: var(--card); color: var(--secondary); }
         .btn { padding: 16px; cursor: pointer; border-radius: 10px; border: none; background: linear-gradient(135deg, #2D1B4D 0%, #4c1d95 100%); color: var(--secondary); font-weight: 800; width: 100%; margin-bottom: 12px; text-transform: uppercase; transition: 0.3s; font-size: 13px; letter-spacing: 1px; }
-        .item-row { background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05); font-size: 0.8em; }
+        
+        .item-row { background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05); font-size: 0.8em; transition: 0.3s; }
+        .player-info { display: flex; flex-direction: column; gap: 2px; }
+        .player-school { font-size: 0.65rem; color: #94a3b8; font-style: italic; }
+
+        .top-5-highlight { border: 1px solid rgba(251, 191, 36, 0.4) !important; background: linear-gradient(90deg, rgba(30, 41, 59, 0.8) 0%, rgba(251, 191, 36, 0.05) 100%) !important; box-shadow: 0 0 15px rgba(251, 191, 36, 0.1); }
+        .top-5-highlight b { color: var(--gold); text-shadow: 0 0 8px rgba(251, 191, 36, 0.3); }
+
+        /* Hall of Grandmasters Styling */
+        .hall-section { margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px; }
+        .gm-card { background: linear-gradient(135deg, rgba(45, 27, 77, 0.5) 0%, rgba(74, 222, 128, 0.1) 100%); border: 1px solid var(--gold); padding: 15px; border-radius: 12px; text-align: center; position: relative; overflow: hidden; margin-bottom: 10px; }
+        .gm-card::after { content: 'LEGEND'; position: absolute; top: 10px; right: -25px; transform: rotate(45deg); background: var(--gold); color: black; font-size: 8px; font-weight: 900; padding: 2px 30px; }
+
         .live-badge { background: var(--danger); color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.6em; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
         #chat-container { margin-top: 15px; background: #020617; border-radius: 12px; padding: 10px; border: 1px solid #334155; }
@@ -46,8 +57,8 @@
         .deadline-badge { font-size: 12px; color: #fbbf24; text-align: center; margin-bottom: 10px; font-weight: 900; text-transform: uppercase; background: rgba(0,0,0,0.4); padding: 10px; border-radius: 8px; border: 1px solid #fbbf24; display: block; }
         input, select { width: 100%; padding: 14px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
         
-        .rank-badge { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 10px; font-weight: bold; margin-right: 10px; background: #334155; }
-        .rank-1 { background: var(--gold); color: #000; }
+        .rank-badge { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 10px; font-weight: bold; margin-right: 10px; background: #334155; flex-shrink: 0; }
+        .rank-1 { background: var(--gold); color: #000; box-shadow: 0 0 10px var(--gold); }
         .rank-2 { background: var(--silver); color: #000; }
         .rank-3 { background: var(--bronze); color: #000; }
     </style>
@@ -143,6 +154,13 @@
         <div id="front-leaderboard">
             <p style="text-align:center; font-size:10px; color:#64748b;">Loading rankings...</p>
         </div>
+
+        <div class="hall-section">
+            <h3 style="color: var(--gold);">🏛️ HALL OF GRANDMASTERS</h3>
+            <div id="hall-of-fame">
+                <p style="text-align:center; font-size:10px; color:#64748b;">Waiting for Legends...</p>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -208,13 +226,39 @@
 
         function loadFrontLeaderboard() {
             db.collection("academy_players").orderBy("rating", "desc").get().then(snap => {
-                let html = ""; let rank = 1;
+                let html = ""; let hallHtml = ""; let rank = 1;
                 snap.forEach(doc => {
-                    const p = doc.data(); const rankClass = rank <= 3 ? `rank-${rank}` : "";
-                    html += `<div class="item-row"><span><span class="rank-badge ${rankClass}">${rank}</span> ${p.name}</span><span style="color: var(--gold); font-weight:bold;">${p.rating}</span></div>`;
+                    const p = doc.data(); 
+                    const rankClass = rank <= 3 ? `rank-${rank}` : "";
+                    const highlightClass = rank <= 5 ? "top-5-highlight" : "";
+                    const schoolText = p.school ? p.school : "Independent";
+                    
+                    // Main Leaderboard HTML
+                    html += `
+                        <div class="item-row ${highlightClass}">
+                            <div style="display: flex; align-items: center;">
+                                <span class="rank-badge ${rankClass}">${rank}</span>
+                                <div class="player-info">
+                                    <b style="font-size: 0.85rem;">${p.name}</b>
+                                    <span class="player-school">${schoolText}</span>
+                                </div>
+                            </div>
+                            <span style="color: var(--gold); font-weight:bold;">${p.rating}</span>
+                        </div>`;
+
+                    // Hall of Fame logic: Only show the top all-time player as a legend card
+                    if(rank === 1 && p.rating >= 1600) {
+                        hallHtml = `
+                        <div class="gm-card">
+                            <h4 style="margin:0; color: var(--gold); letter-spacing:2px;">${p.name.toUpperCase()}</h4>
+                            <p style="margin:5px 0 0 0; font-size:10px; color:rgba(255,255,255,0.7);">${schoolText}</p>
+                            <div style="margin-top:10px; font-size:14px; font-weight:bold; color:var(--secondary);">ELO: ${p.rating}</div>
+                        </div>`;
+                    }
                     rank++;
                 });
                 document.getElementById('front-leaderboard').innerHTML = html || "<p style='font-size:10px; text-align:center;'>No players yet.</p>";
+                if(hallHtml) document.getElementById('hall-of-fame').innerHTML = hallHtml;
             });
         }
 
@@ -229,10 +273,11 @@
         async function handleAuth() {
             if(authMode === 'guest') {
                 myId = "guest_" + Math.floor(Math.random() * 10000);
-                myData = { name: "Guest_" + myId.split('_')[1], rating: 1200, pin: "guest" };
+                myData = { name: "Guest_" + myId.split('_')[1], rating: 1200, pin: "guest", school: "Guest" };
                 return showLobby();
             }
             const name = $("#reg-name").val().trim(), pin = $("#reg-password").val(), id = name.toLowerCase().replace(/\s/g, '_');
+            const school = $("#reg-school").val().trim();
             if(!name || !pin) return alert("Please fill in all required fields.");
             const docRef = db.collection("academy_players").doc(id), doc = await docRef.get();
             if (authMode === 'login') {
@@ -240,7 +285,7 @@
                 myData = doc.data();
             } else {
                 if (doc.exists) return alert("Name taken!");
-                myData = { name, pin, rating: 1500 };
+                myData = { name, pin, rating: 1500, school: school || "Independent" };
                 await docRef.set(myData);
             }
             myId = id; localStorage.setItem('savedUserId', id); 
@@ -302,7 +347,7 @@
             });
             
             db.collection("academy_matches").doc(id).onSnapshot(doc => {
-                const d = doc.data(); if (!d) return;
+                const d = doc.data(); if (!doc.exists) return;
                 matchData = d; 
                 if (d.status !== "active") {
                     game.load_pgn(d.pgn || ""); board.position(game.fen());
