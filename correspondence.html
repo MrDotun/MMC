@@ -19,8 +19,13 @@
         .leaderboard-container { width: 100%; max-width: 420px; background: rgba(30, 41, 59, 0.7); padding: 25px; border-radius: 16px; box-sizing: border-box; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); }
         .hidden { display: none !important; }
         h2, h3 { color: var(--secondary); text-align: center; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 2px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; }
-        .rules-box { background: rgba(59, 130, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; padding: 15px; margin-bottom: 20px; font-size: 0.8rem; line-height: 1.4; }
-        .rules-box b { color: var(--gold); }
+        
+        /* Collapsible Rules Styling */
+        .rules-wrapper { margin-bottom: 20px; }
+        .rules-toggle { width: 100%; background: rgba(59, 130, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); padding: 8px; border-radius: 8px; font-size: 10px; font-weight: 800; cursor: pointer; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; }
+        .rules-content { background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(59, 130, 246, 0.3); border-top: none; padding: 12px; border-radius: 0 0 8px 8px; font-size: 0.75rem; line-height: 1.4; color: #cbd5e1; }
+        .rules-content b { color: var(--gold); }
+
         .auth-toggle { display: flex; gap: 8px; margin-bottom: 20px; background: #0f172a; padding: 5px; border-radius: 12px; }
         .auth-toggle button { flex: 1; padding: 10px; font-size: 10px; background: transparent; color: #64748b; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
         .auth-toggle button.active { background: var(--card); color: var(--secondary); }
@@ -78,10 +83,14 @@
     <div id="section-lobby" class="container hidden">
         <div id="user-welcome"></div>
         
-        <div class="rules-box">
-            <h3 style="color: var(--accent); font-size: 0.7rem; margin-bottom: 10px;">📜 CHAMPIONSHIP RULES</h3>
-            • <b>3-DAY CLOCK:</b> You must make a move within 3 days or you lose 20 points! <br>
-            • <b>QUALIFICATION:</b> Top players on the leaderboard will be selected to <b>represent their schools</b> in upcoming tournaments!
+        <div class="rules-wrapper">
+            <button class="rules-toggle" onclick="$('#rules-body').toggleClass('hidden')">
+                📜 Arena Rules <span>▼</span>
+            </button>
+            <div id="rules-body" class="rules-content hidden">
+                • <b>3-DAY CLOCK:</b> Move within 72hrs or lose 20pts! <br>
+                • <b>GLORY:</b> Top masters qualify for school tournaments!
+            </div>
         </div>
 
         <div id="live-games-section">
@@ -171,7 +180,6 @@
             
             for (const doc of snap.docs) {
                 const d = doc.data();
-                // Ensure there is a timestamp to compare against; if not, use creation or 'now' to trigger cleanup if stuck
                 const lastTime = d.lastMoveTime || (now - (threeDays + 1000)); 
                 
                 if (now - lastTime > threeDays) {
@@ -181,7 +189,7 @@
                     const loserId = (turn === 'w') ? d.white : d.black;
                     const winnerId = (turn === 'w') ? d.black : d.white;
 
-                    await db.collection("academy_matches").doc(doc.id).update({ status: "expired" });
+                    await db.collection("academy_matches").doc(doc.id).update({ status: "terminated" });
                     await adjustRating(winnerId, 20);
                     await adjustRating(loserId, -20);
                 }
@@ -251,10 +259,11 @@
         function loadLobbyData() {
             db.collection("academy_matches").where("status", "==", "active").onSnapshot(snap => {
                 let liveHtml = "", myHtml = "";
+                const now = Date.now();
+                const threeDays = 259200000;
                 snap.forEach(doc => {
                     const d = doc.data(); 
-                    if (Date.now() - (d.lastMoveTime || Date.now()) > 259200000) return;
-
+                    if (now - (d.lastMoveTime || now) > threeDays) return;
                     const opp = d.white === myId ? d.black : d.white;
                     if(d.players.includes(myId)) myHtml += `<button class="btn" onclick="loadGame('${doc.id}')">PLAY VS ${opp.toUpperCase()}</button>`;
                     else liveHtml += `<div class="item-row" onclick="loadGame('${doc.id}')" style="cursor:pointer;"><span>${d.white} vs ${d.black}</span><span class="live-badge">WATCH</span></div>`;
@@ -301,16 +310,13 @@
                     document.getElementById('deadline-timer').innerText = "🏁 FINISHED";
                     $("#game-actions").addClass("hidden"); return;
                 }
-
                 const oldLen = historyMoves.length;
                 game.load_pgn(d.pgn || "");
                 historyMoves = game.history();
-
                 if (viewIndex === -1 || viewIndex >= oldLen - 1) {
                     viewIndex = historyMoves.length - 1;
                     if(!sourceSquare) board.position(game.fen());
                 }
-
                 if(liveTimer) clearInterval(liveTimer);
                 const timerDisplay = document.getElementById('deadline-timer');
                 const startTimer = () => {
@@ -327,7 +333,6 @@
                     }
                 };
                 startTimer(); liveTimer = setInterval(startTimer, 1000);
-
                 $("#game-actions").toggleClass("hidden", !d.players.includes(myId)).css("display", d.players.includes(myId) ? "flex" : "none");
                 document.getElementById('label-white').innerText = "W: " + d.white;
                 document.getElementById('label-black').innerText = "B: " + d.black;
@@ -341,7 +346,6 @@
             if (!matchData || matchData.status !== "active" || !matchData.players.includes(myId)) return;
             const isMyTurn = (game.turn() === 'w' && myId === matchData.white) || (game.turn() === 'b' && myId === matchData.black);
             if (!isMyTurn) return;
-
             if (sourceSquare === null) {
                 const piece = game.get(sq);
                 if (piece && piece.color === game.turn()) { 
