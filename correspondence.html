@@ -147,9 +147,50 @@
             loadFrontLeaderboard();
             if (myId) {
                 const doc = await db.collection("academy_players").doc(myId).get();
-                if (doc.exists) { myData = doc.data(); showLobby(); }
+                if (doc.exists) { 
+                    myData = doc.data(); 
+                    await cleanExpiredGames(); // Check for expired games on load
+                    showLobby(); 
+                }
             }
         };
+
+        // --- RATING & CLEANUP LOGIC ---
+        async function cleanExpiredGames() {
+            const now = Date.now();
+            const threeDays = 259200000; // 3 days in ms
+            const snap = await db.collection("academy_matches").where("status", "==", "active").get();
+            
+            for (const doc of snap.docs) {
+                const d = doc.data();
+                if (now - (d.lastMoveTime || now) > threeDays) {
+                    const tempGame = new Chess();
+                    tempGame.load_pgn(d.pgn || "");
+                    const turn = tempGame.turn(); // 'w' or 'b'
+                    
+                    // The player whose turn it was loses points
+                    const loserId = (turn === 'w') ? d.white : d.black;
+                    const winnerId = (turn === 'w') ? d.black : d.white;
+
+                    // Update game status
+                    await db.collection("academy_matches").doc(doc.id).update({ status: "expired" });
+
+                    // Adjust Ratings
+                    await adjustRating(winnerId, 20);
+                    await adjustRating(loserId, -20);
+                }
+            }
+            loadFrontLeaderboard();
+        }
+
+        async function adjustRating(playerId, amount) {
+            const ref = db.collection("academy_players").doc(playerId);
+            const doc = await ref.get();
+            if(doc.exists) {
+                const newRating = (doc.data().rating || 1500) + amount;
+                await ref.update({ rating: newRating });
+            }
+        }
 
         function loadFrontLeaderboard() {
             db.collection("academy_players").orderBy("rating", "desc").get().then(snap => {
@@ -188,7 +229,9 @@
                 myData = { name, pin, rating: 1500 };
                 await docRef.set(myData);
             }
-            myId = id; localStorage.setItem('savedUserId', id); showLobby();
+            myId = id; localStorage.setItem('savedUserId', id); 
+            await cleanExpiredGames();
+            showLobby();
         }
 
         function showLobby() {
@@ -203,7 +246,11 @@
             db.collection("academy_matches").where("status", "==", "active").onSnapshot(snap => {
                 let liveHtml = "", myHtml = "";
                 snap.forEach(doc => {
-                    const d = doc.data(); const opp = d.white === myId ? d.black : d.white;
+                    const d = doc.data(); 
+                    // Client-side safety: hide if expired but database not yet updated
+                    if (Date.now() - (d.lastMoveTime || Date.now()) > 259200000) return;
+
+                    const opp = d.white === myId ? d.black : d.white;
                     if(d.players.includes(myId)) myHtml += `<button class="btn" onclick="loadGame('${doc.id}')">PLAY VS ${opp.toUpperCase()}</button>`;
                     else liveHtml += `<div class="item-row" onclick="loadGame('${doc.id}')" style="cursor:pointer;"><span>${d.white} vs ${d.black}</span><span class="live-badge">WATCH</span></div>`;
                 });
@@ -250,12 +297,10 @@
                     $("#game-actions").addClass("hidden"); return;
                 }
 
-                // SMART SYNC: Detect if a new move arrived
                 const oldLen = historyMoves.length;
                 game.load_pgn(d.pgn || "");
                 historyMoves = game.history();
 
-                // Only auto-update board if user is on the latest move (Live Mode)
                 if (viewIndex === -1 || viewIndex >= oldLen - 1) {
                     viewIndex = historyMoves.length - 1;
                     if(!sourceSquare) board.position(game.fen());
@@ -265,7 +310,11 @@
                 const timerDisplay = document.getElementById('deadline-timer');
                 const startTimer = () => {
                     const diff = (d.lastMoveTime || Date.now()) + (259200000) - Date.now();
-                    if(diff <= 0) timerDisplay.innerText = "⚠️ EXPIRED";
+                    if(diff <= 0) {
+                        timerDisplay.innerText = "⚠️ EXPIRED";
+                        // If current viewer is a player, trigger cleanup
+                        if(d.players.includes(myId)) cleanExpiredGames();
+                    }
                     else {
                         const h = Math.floor((diff / 3600000) % 24), m = Math.floor((diff / 60000) % 60), s = Math.floor((diff / 1000) % 60);
                         timerDisplay.innerText = `⏳ ${Math.floor(diff / 86400000)}d ${h}h ${m}m ${s}s`;
@@ -296,7 +345,7 @@
             } else {
                 const move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
                 if (move) {
-                    board.position(game.fen()); // Local smooth update
+                    board.position(game.fen()); 
                     sourceSquare = null; $('.square-55d63').css('background', '');
                     db.collection("academy_matches").doc(activeMatchId).update({ 
                         fen: game.fen(), pgn: game.pgn(), lastMoveTime: Date.now(), drawOffer: null 
