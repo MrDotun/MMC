@@ -7,94 +7,75 @@
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
     
-    <script type="importmap">
-      {
-        "imports": {
-          "@google/generative-ai": "https://esm.run/@google/generative-ai"
-        }
-      }
-    </script>
-
     <style>
-        body { margin: 0; padding: 20px; font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; }
-        .container { width: 100%; max-width: 500px; background: #1e293b; padding: 20px; border-radius: 15px; border: 2px solid #4ade80; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        h1 { color: #4ade80; text-align: center; margin-bottom: 20px; font-size: 1.5em; }
-        textarea { width: 100%; height: 120px; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 8px; padding: 10px; box-sizing: border-box; font-family: monospace; font-size: 14px; margin-bottom: 15px; }
-        .btn { background: #4ade80; color: #0f172a; padding: 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1.1em; margin-bottom: 20px; }
-        #status { text-align: center; color: #94a3b8; margin-bottom: 15px; font-weight: bold; }
-        #output-container { background: #020617; padding: 15px; border-radius: 8px; border: 1px solid #334155; display: none; }
-        #final-pgn { color: #4ade80; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; user-select: all; }
+        body { margin: 0; padding: 15px; font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 500px; background: #1e293b; padding: 20px; border-radius: 15px; border: 2px solid #4ade80; box-sizing: border-box; }
+        h1 { color: #4ade80; text-align: center; font-size: 1.4em; margin-bottom: 10px; }
+        textarea { width: 100%; height: 100px; background: #020617; color: white; border: 1px solid #334155; border-radius: 8px; padding: 10px; box-sizing: border-box; font-family: monospace; margin-bottom: 15px; }
+        .btn { background: #4ade80; color: #0f172a; padding: 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1.1em; }
+        #status { text-align: center; margin: 15px 0; font-weight: bold; font-size: 0.9em; min-height: 1.2em; }
+        #output-box { background: #020617; padding: 15px; border-radius: 8px; border: 1px solid #4ade80; display: none; word-break: break-all; font-family: monospace; font-size: 11px; color: #4ade80; user-select: all; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>AI Grandmaster Analyzer</h1>
-    <p style="font-size: 0.9em; color: #94a3b8; text-align: center;">Paste PGN from 'Analyze This' to add GM annotations.</p>
-    
-    <textarea id="pgnInput" placeholder="Paste your PGN here..."></textarea>
-    
-    <button class="btn" onclick="startAnalysis()">GENERATE ANNOTATIONS</button>
-    
-    <div id="status">Ready to analyze.</div>
-    
-    <div id="output-container">
-        <div id="final-pgn"></div>
-        <p style="font-size: 10px; color: #64748b; margin-top: 10px; text-align: center;">Copy this back into 'Analyze This'.</p>
-    </div>
+    <h1>GM AI Analyzer</h1>
+    <textarea id="pgnInput" placeholder="Paste PGN here..."></textarea>
+    <button class="btn" onclick="runAnalysis()">ANNOTATE GAME</button>
+    <div id="status">Ready.</div>
+    <div id="output-box" id="finalPgn"></div>
 </div>
 
 <script type="module">
-import { GoogleGenerativeAI } from "@google/generative-ai";
+    import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
-// Your API Key from Screenshot
-const API_KEY = "AIzaSyChIR_r59Wttwim72_CxJSjbn5zEr0p64A";
-const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const API_KEY = "AIzaSyChIR_r59Wttwim72_CxJSjbn5zEr0p64A";
+    const genAI = new GoogleGenerativeAI(API_KEY);
 
-window.startAnalysis = async function() {
-    const pgn = document.getElementById('pgnInput').value.trim();
-    if (!pgn) return alert("Please paste a PGN first!");
+    window.runAnalysis = async function() {
+        const pgn = document.getElementById('pgnInput').value.trim();
+        const status = document.getElementById('status');
+        const outputBox = document.getElementById('output-box');
 
-    const status = document.getElementById('status');
-    const outputContainer = document.getElementById('output-container');
-    const finalPgn = document.getElementById('final-pgn');
+        if (!pgn) return alert("Paste PGN first!");
 
-    status.innerText = "Processing moves...";
-    status.style.color = "#fbbf24";
-    outputContainer.style.display = "none";
+        status.innerText = "Connecting to Gemini AI...";
+        status.style.color = "#fbbf24";
 
-    try {
-        // Regex to split moves while keeping symbols and numbers
-        const moveParts = pgn.split(/(\d+\.+\s*\S+)/g);
-        let resultPgn = "";
+        try {
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            
+            // Simplified split for stability
+            const moves = pgn.match(/(\d+\.+\s?\S+)/g);
+            if (!moves) throw new Error("No moves found in PGN.");
 
-        for (let part of moveParts) {
-            if (part.match(/\d+\.+\s*\S+/)) {
-                // Request witty GM commentary from Gemini
-                const prompt = `You are a Chess Grandmaster. Briefly annotate the move "${part}". 
-                Write one witty, educational sentence (max 15 words). 
-                Wrap comment in { } brackets. Keep all existing symbols like $1 or [%csl].`;
+            let annotatedPgn = pgn;
 
-                const result = await model.generateContent(prompt);
-                const aiComment = result.response.text().trim();
-                resultPgn += ` ${aiComment} ${part}`;
-            } else {
-                resultPgn += part;
-            }
+            // We will just get ONE overall summary to prove it works first
+            status.innerText = "Grandmaster is thinking...";
+            
+            const prompt = `You are a Chess Grandmaster. Review this PGN: ${pgn}. 
+            Provide a short (20 words) witty summary of the game. 
+            Wrap it in { } brackets.`;
+
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+
+            status.innerText = "Success!";
+            status.style.color = "#4ade80";
+            outputBox.innerText = text + "\n\n" + pgn;
+            outputBox.style.display = "block";
+
+        } catch (e) {
+            console.error(e);
+            status.innerText = "Error: " + e.message;
+            status.style.color = "#ef4444";
+            alert("AI Error: " + e.message + "\nCheck if your API key has 'Generative Language API' enabled in Google Cloud Console.");
         }
-
-        status.innerText = "Analysis Complete!";
-        status.style.color = "#4ade80";
-        finalPgn.innerText = resultPgn;
-        outputContainer.style.display = "block";
-    } catch (error) {
-        status.innerText = "Error: Check connection or API key.";
-        status.style.color = "#ef4444";
     }
-}
 </script>
 </body>
 </html>
