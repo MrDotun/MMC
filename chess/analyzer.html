@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Chess Analyzer</title>
+    <title>AI Grandmaster Analyzer</title>
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
@@ -26,7 +26,6 @@
         #status { text-align: center; color: #94a3b8; margin-bottom: 15px; font-weight: bold; }
         #output-container { background: #020617; padding: 15px; border-radius: 8px; border: 1px solid #334155; display: none; }
         #final-pgn { color: #4ade80; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; user-select: all; }
-        .copy-hint { font-size: 10px; color: #64748b; margin-top: 10px; text-align: center; }
     </style>
 </head>
 <body>
@@ -43,14 +42,14 @@
     
     <div id="output-container">
         <div id="final-pgn"></div>
-        <div class="copy-hint">Tap and hold the text above to copy and paste back into 'Analyze This'.</div>
+        <p style="font-size: 10px; color: #64748b; margin-top: 10px; text-align: center;">Copy this back into 'Analyze This'.</p>
     </div>
 </div>
 
 <script type="module">
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Your shared API Key
+// Your API Key from Screenshot
 const API_KEY = "AIzaSyBj_THLUzAKlsS8xuaQVCMiVI6N2sm23jo";
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -68,30 +67,21 @@ window.startAnalysis = async function() {
     outputContainer.style.display = "none";
 
     try {
-        // Splitting logic that keeps move numbers and special tags like [%csl]
+        // Regex to split moves while keeping symbols and numbers
         const moveParts = pgn.split(/(\d+\.+\s*\S+)/g);
         let resultPgn = "";
-        let moveCounter = 0;
 
         for (let part of moveParts) {
-            // Check if this part is a move (e.g., "1. e4" or "7... Ng4")
             if (part.match(/\d+\.+\s*\S+/)) {
-                moveCounter++;
-                if (moveCounter % 5 === 0) {
-                    status.innerText = `Generating insight for move ${moveCounter}...`;
-                }
-
-                // Call Gemini for the "Grandmaster Voice"
+                // Request witty GM commentary from Gemini
                 const prompt = `You are a Chess Grandmaster. Briefly annotate the move "${part}". 
-                Provide one educational and witty insight. Keep it under 20 words. 
-                Wrap your comment in { } brackets. DO NOT delete existing [%csl] or $ symbols.`;
+                Write one witty, educational sentence (max 15 words). 
+                Wrap comment in { } brackets. Keep all existing symbols like $1 or [%csl].`;
 
                 const result = await model.generateContent(prompt);
-                const aiText = result.response.text().trim();
-                
-                resultPgn += ` ${aiText} ${part}`;
+                const aiComment = result.response.text().trim();
+                resultPgn += ` ${aiComment} ${part}`;
             } else {
-                // Keep everything else (highlights, variations, brackets) exactly as is
                 resultPgn += part;
             }
         }
@@ -100,14 +90,11 @@ window.startAnalysis = async function() {
         status.style.color = "#4ade80";
         finalPgn.innerText = resultPgn;
         outputContainer.style.display = "block";
-
     } catch (error) {
-        console.error(error);
-        status.innerText = "Error: Please check your API key or connection.";
+        status.innerText = "Error: Check connection or API key.";
         status.style.color = "#ef4444";
     }
 }
 </script>
-
 </body>
 </html>
