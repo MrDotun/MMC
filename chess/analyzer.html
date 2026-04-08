@@ -3,33 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Grandmaster Analyzer</title>
-    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <title>GM AI Analyzer</title>
     <style>
-        body { margin: 0; padding: 15px; font-family: sans-serif; background: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; }
+        body { margin: 0; padding: 15px; font-family: system-ui, sans-serif; background: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 500px; background: #1e293b; padding: 20px; border-radius: 15px; border: 2px solid #4ade80; box-sizing: border-box; }
-        h1 { color: #4ade80; text-align: center; font-size: 1.4em; }
-        textarea { width: 100%; height: 100px; background: #020617; color: white; border: 1px solid #334155; border-radius: 8px; padding: 10px; box-sizing: border-box; margin-bottom: 15px; }
-        .btn { background: #4ade80; color: #0f172a; padding: 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; }
-        #status { text-align: center; margin: 15px 0; font-weight: bold; }
-        #output { background: #020617; padding: 15px; border-radius: 8px; border: 1px solid #4ade80; display: none; word-break: break-all; font-family: monospace; color: #4ade80; }
+        h1 { color: #4ade80; text-align: center; font-size: 1.4em; margin-top: 0; }
+        textarea { width: 100%; height: 120px; background: #020617; color: white; border: 1px solid #334155; border-radius: 8px; padding: 10px; box-sizing: border-box; font-family: monospace; margin-bottom: 15px; }
+        .btn { background: #4ade80; color: #0f172a; padding: 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1.1em; }
+        #status { text-align: center; margin: 15px 0; font-weight: bold; font-size: 0.9em; }
+        #output { background: #020617; padding: 15px; border-radius: 8px; border: 1px solid #4ade80; display: none; word-break: break-all; font-family: monospace; color: #4ade80; font-size: 12px; white-space: pre-wrap; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>GM AI Analyzer</h1>
+    <h1>Grandmaster AI</h1>
     <textarea id="pgnInput" placeholder="Paste PGN here..."></textarea>
     <button class="btn" onclick="runAnalysis()">ANNOTATE GAME</button>
-    <div id="status">Ready.</div>
+    <div id="status">Ready for analysis</div>
     <div id="output"></div>
 </div>
 
 <script type="module">
     import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
-    // PASTE YOUR NEW KEY HERE
-    const API_KEY = "AIzaSyChIR_r59Wttwim72_CxJSjbn5zEr0p64A"; 
+    // PASTE YOUR NEW KEY BETWEEN THE QUOTES
+    const API_KEY = "PASTE_YOUR_NEW_KEY_HERE"; 
     const genAI = new GoogleGenerativeAI(API_KEY);
 
     window.runAnalysis = async function() {
@@ -37,30 +36,35 @@
         const status = document.getElementById('status');
         const output = document.getElementById('output');
 
-        if (!pgn) return alert("Please paste a PGN!");
+        if (!pgn) return alert("Please paste a PGN first!");
 
-        status.innerText = "GM is thinking...";
+        status.innerText = "GM is reviewing the moves...";
         status.style.color = "#fbbf24";
+        output.style.display = "none";
 
         try {
-            // FIX: This forces the stable version to stop the 404 error
+            // Updated to 'gemini-1.5-flash-latest' for better compatibility
             const model = genAI.getGenerativeModel({ 
-                model: "gemini-1.5-flash" 
-            }, { apiVersion: 'v1' });
+                model: "gemini-1.5-flash-latest" 
+            });
 
-            const prompt = `You are a witty Chess Grandmaster. Annotate this game briefly: ${pgn}. Wrap your summary in { } brackets.`;
+            const prompt = `You are a witty Chess Grandmaster. Analyze this PGN: ${pgn}. 
+            1. Provide a witty 20-word summary in { } brackets.
+            2. Add move-by-move annotations in { } where possible.
+            3. Return the full annotated PGN.`;
 
             const result = await model.generateContent(prompt);
-            const response = await result.response;
+            const text = result.response.text();
             
-            status.innerText = "Success!";
+            status.innerText = "Analysis Complete!";
             status.style.color = "#4ade80";
-            output.innerText = response.text() + "\n\n" + pgn;
+            output.innerText = text;
             output.style.display = "block";
 
         } catch (e) {
             status.innerText = "Error: " + e.message;
             status.style.color = "#ef4444";
+            console.error(e);
         }
     }
 </script>
