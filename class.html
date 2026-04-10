@@ -7,7 +7,7 @@
     
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/chess.js/0.10.3/chess.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
@@ -102,6 +102,10 @@
         audio { height: 35px; width: 100%; margin-top: 5px; filter: hue-rotate(90deg) brightness(1.5); }
         .latest-audio-wrap audio { margin-top: 0; height: 28px; }
         .del-msg { background: none; border: none; color: var(--danger); font-size: 14px; cursor: pointer; position: absolute; right: 0; top: 0; padding: 5px;}
+        
+        .mode-selector { display: flex; gap: 10px; margin-bottom: 10px; }
+        .mode-btn { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.2); color: white; font-size: 10px; cursor: pointer; }
+        .mode-btn.active { border-color: var(--gold); color: var(--gold); background: rgba(251, 191, 36, 0.1); }
     </style>
 </head>
 <body oncontextmenu="return false;">
@@ -131,9 +135,15 @@
             <div id="mic-control-area"></div>
         </div>
 
+        <div id="student-mode-controls" class="mode-selector hidden">
+            <button id="btn-play-mode" class="mode-btn active" onclick="setBoardMode('play')">🎮 PLAY MODE</button>
+            <button id="btn-analysis-mode" class="mode-btn" onclick="setBoardMode('analysis')">🧪 ANALYSIS</button>
+        </div>
+
         <div class="top-vn-bar" id="notif-bar">
-            <div style="position:relative; display:flex; flex-direction:column; align-items:center;">
+            <div style="position:relative; display:flex; flex-direction:column; align-items:center; gap:5px;">
                 <button id="top-vn-btn" class="vn-btn" onclick="toggleVN()">🎤</button>
+                <button id="cancel-vn-btn" class="hidden" onclick="cancelRecording()" style="background:var(--danger); border:none; color:white; font-size:8px; padding:2px 5px; border-radius:4px; cursor:pointer;">CANCEL</button>
                 <span id="rec-indicator" class="rec-label hidden">RECORDING...</span>
             </div>
             <div id="latest-audio-container" class="latest-audio-wrap">
@@ -214,10 +224,13 @@
         let jitsiAPI = null;
         let micOn = false;
         let activeParticipants = {}; 
+        let studentBoardMode = 'play'; // 'play' or 'analysis'
 
+        // Voice Note Engine
         let mediaRecorder;
         let audioChunks = [];
         let isRecording = false;
+        let wasCancelled = false;
 
         function showPassScreen() { 
             const name = $("#user-display-name").val();
@@ -236,6 +249,7 @@
             } else if (pass === "1122") {
                 isCoach = false;
                 $("#role-text").text("STUDENT");
+                $("#student-mode-controls").removeClass("hidden");
             } else { alert("Invalid Key"); return; }
 
             try {
@@ -243,6 +257,11 @@
                 mediaRecorder = new MediaRecorder(stream);
                 mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
                 mediaRecorder.onstop = () => {
+                    if(wasCancelled) {
+                        audioChunks = [];
+                        wasCancelled = false;
+                        return;
+                    }
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     const reader = new FileReader();
                     reader.readAsDataURL(audioBlob);
@@ -260,19 +279,41 @@
             renderMicUI();
         }
 
+        function setBoardMode(mode) {
+            studentBoardMode = mode;
+            $(".mode-btn").removeClass("active");
+            if(mode === 'play') $("#btn-play-mode").addClass("active");
+            else $("#btn-analysis-mode").addClass("active");
+        }
+
         function toggleVN() {
             if (!mediaRecorder) { alert("Microphone not detected."); return; }
             if (!isRecording) {
                 audioChunks = [];
+                wasCancelled = false;
                 mediaRecorder.start();
                 isRecording = true;
                 $("#top-vn-btn").addClass("recording").text("🛑");
                 $("#rec-indicator").removeClass("hidden");
+                $("#cancel-vn-btn").removeClass("hidden");
             } else {
                 mediaRecorder.stop();
                 isRecording = false;
                 $("#top-vn-btn").removeClass("recording").text("🎤");
                 $("#rec-indicator").addClass("hidden");
+                $("#cancel-vn-btn").addClass("hidden");
+            }
+        }
+
+        function cancelRecording() {
+            if(isRecording) {
+                wasCancelled = true;
+                mediaRecorder.stop();
+                isRecording = false;
+                $("#top-vn-btn").removeClass("recording").text("🎤");
+                $("#rec-indicator").addClass("hidden");
+                $("#cancel-vn-btn").addClass("hidden");
+                audioChunks = [];
             }
         }
 
@@ -303,8 +344,7 @@
                   snap.forEach(doc => {
                       const msg = doc.data();
                       const id = doc.id;
-                      // Fixed cut-off by adding preload and re-sync on play
-                      let content = msg.audio ? `<audio preload="auto" controls src="${msg.audio}" onplay="if(this.currentTime < 1){this.load(); this.play();}"></audio>` : `<span>${msg.text}</span>`;
+                      let content = msg.audio ? `<audio controls src="${msg.audio}"></audio>` : `<span>${msg.text}</span>`;
                       box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}</span>${content}<button class="del-msg" onclick="deleteMsg('${id}')">🗑️</button></div>`);
                       
                       if(msg.audio) {
@@ -314,7 +354,7 @@
                                 <span style="font-size:10px; color:var(--gold); font-weight:bold;">▶ ${msg.sender}'s Note</span>
                                 <button onclick="deleteMsg('${id}')" style="background:none; border:none; color:var(--danger); font-size:10px; cursor:pointer;">DELETE</button>
                               </div>
-                              <audio preload="auto" controls src="${msg.audio}" onplay="if(this.currentTime < 1){this.load(); this.play();}"></audio>
+                              <audio controls src="${msg.audio}"></audio>
                           `;
                       }
                   });
@@ -336,14 +376,22 @@
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 onDrop: (source, target) => {
                     setTimeout(() => {
-                        db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
+                        // Only update DB if Coach, or Student in play mode
+                        if(isCoach || studentBoardMode === 'play') {
+                            db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
+                        }
                     }, 100);
                 }
             };
             masterBoard = ChessBoard('masterBoard', config);
             db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
                 const data = doc.data();
-                if(data?.fen && masterBoard.fen() !== data.fen) { masterBoard.position(data.fen); }
+                // Students ignore Coach updates if they are in 'analysis' mode
+                if(data?.fen && masterBoard.fen() !== data.fen) { 
+                    if(isCoach || studentBoardMode === 'play') {
+                        masterBoard.position(data.fen); 
+                    }
+                }
             });
         }
 
