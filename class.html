@@ -91,6 +91,7 @@
         .rec-label { position: absolute; bottom: -18px; font-size: 8px; color: var(--danger); font-weight: 900; white-space: nowrap; }
         
         audio { height: 35px; width: 100%; margin-top: 5px; filter: hue-rotate(90deg) brightness(1.5); }
+        .del-btn { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 14px; margin-left: 5px; vertical-align: middle;}
     </style>
 </head>
 <body>
@@ -141,6 +142,7 @@
                 <button class="tool-btn" onclick="syncMasterPosition('start')">🔄 RESET POS</button>
                 <button id="setup-mode-btn-coach" class="tool-btn" onclick="toggleSetupMode()">🧩 SETUP MODE</button>
                 <button id="toggle-draw-btn" class="tool-btn" onclick="toggleDrawMode()">✏️ DRAW MODE</button>
+                <button class="tool-btn" onclick="clearDrawing()">🧼 ERASE LINES</button>
                 <button class="tool-btn" onclick="emptyBoard()" style="color:var(--danger)">🕳️ EMPTY BOARD</button>
             </div>
         </div>
@@ -181,6 +183,7 @@
         let audioChunks = [];
         let isRecording = false;
         let wasCancelled = false;
+        let clickSource = null;
 
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
@@ -242,6 +245,22 @@
             };
             masterBoard = ChessBoard('masterBoard', config);
             
+            // Enable Click-to-Move
+            $('#masterBoard').on('click', '.square-55d63', function() {
+                const square = $(this).attr('data-square');
+                if (!clickSource) {
+                    if (masterBoard.position()[square]) {
+                        clickSource = square;
+                        $(this).css('background', 'rgba(251, 191, 36, 0.5)');
+                    }
+                } else {
+                    masterBoard.move(`${clickSource}-${square}`);
+                    $('.square-55d63').css('background', '');
+                    db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
+                    clickSource = null;
+                }
+            });
+
             db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
                 const data = doc.data();
                 if(data?.fen && masterBoard.fen() !== data.fen) { 
@@ -295,6 +314,12 @@
             });
         }
 
+        function deleteVN(docId) {
+            if(confirm("Delete this voice note?")) {
+                db.collection("special_rooms").doc("masterclass_arena").collection("messages").doc(docId).delete();
+            }
+        }
+
         function initChat() {
             db.collection("special_rooms").doc("masterclass_arena").collection("messages").orderBy("timestamp", "asc").onSnapshot(snap => {
                   const box = $("#master-chat-box");
@@ -302,9 +327,10 @@
                   let latestAudio = `<span style="font-size: 11px; color: #94a3b8; font-style: italic;">No voice notes yet...</span>`;
                   snap.forEach(doc => {
                       const msg = doc.data();
-                      let content = msg.audio ? `<audio controls src="${msg.audio}"></audio>` : `<span>${msg.text}</span>`;
+                      const delBtn = isCoach ? `<button class="del-btn" onclick="deleteVN('${doc.id}')">🗑️</button>` : '';
+                      let content = msg.audio ? `<div style="display:flex; align-items:center;"><audio controls src="${msg.audio}"></audio>${delBtn}</div>` : `<span>${msg.text}</span>`;
                       box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}</span>${content}</div>`);
-                      if(msg.audio) latestAudio = `<audio controls src="${msg.audio}"></audio>`;
+                      if(msg.audio) latestAudio = `<div style="display:flex; align-items:center;"><audio controls src="${msg.audio}"></audio>${delBtn}</div>`;
                   });
                   $("#latest-audio-container").html(latestAudio);
                   box.scrollTop(box[0].scrollHeight);
@@ -323,7 +349,14 @@
         function toggleDrawMode() {
             drawModeActive = !drawModeActive;
             canvas.style.pointerEvents = drawModeActive ? 'auto' : 'none';
+            $("#toggle-draw-btn").css('background', drawModeActive ? 'var(--gold)' : '');
+            $("#toggle-draw-btn").css('color', drawModeActive ? '#000' : '');
             if(drawModeActive) resizeCanvas();
+        }
+
+        function clearDrawing() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            db.collection("special_rooms").doc("masterclass_arena").update({ drawing: null });
         }
 
         function resizeCanvas() {
@@ -376,16 +409,16 @@
             isDrawing = true;
             ctx.beginPath();
             const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX || e.touches[0].clientX) - rect.left;
-            const y = (e.clientY || e.touches[0].clientY) - rect.top;
+            const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+            const y = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
             ctx.moveTo(x, y);
         }
 
         function draw(e) {
             if(!isDrawing) return;
             const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX || e.touches[0].clientX) - rect.left;
-            const y = (e.clientY || e.touches[0].clientY) - rect.top;
+            const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+            const y = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
             ctx.lineTo(x, y);
             ctx.strokeStyle='#fbbf24'; 
             ctx.lineWidth=4; 
