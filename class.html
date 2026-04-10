@@ -73,6 +73,11 @@
         #masterBoard { border: 6px solid #1e293b; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); width: 100%; }
         #drawingCanvas { position: absolute; top: 0; left: 0; z-index: 10; pointer-events: none; border-radius: 8px; }
         
+        /* Piece Selector Styling */
+        #piece-selector { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 12px; margin-bottom: 10px; border: 1px solid var(--gold); }
+        .spare-piece-item { width: 35px; height: 35px; cursor: pointer; transition: transform 0.2s; }
+        .spare-piece-item:hover { transform: scale(1.2); }
+
         .analysis-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
         .tool-btn { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text); padding: 12px; border-radius: 12px; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.2s; }
 
@@ -138,6 +143,7 @@
         <div id="student-mode-controls" class="mode-selector hidden">
             <button id="btn-play-mode" class="mode-btn active" onclick="setBoardMode('play')">🎮 PLAY MODE</button>
             <button id="btn-analysis-mode" class="mode-btn" onclick="setBoardMode('analysis')">🧪 ANALYSIS</button>
+            <button id="btn-setup-mode-student" class="mode-btn" onclick="toggleSetupMode()">🧩 SETUP</button>
         </div>
 
         <div class="top-vn-bar" id="notif-bar">
@@ -151,6 +157,23 @@
             </div>
         </div>
 
+        <div id="piece-selector" class="hidden">
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/wP.png" class="spare-piece-item" onclick="selectPiece('wP')">
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/wN.png" class="spare-piece-item" onclick="selectPiece('wN')">
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/wB.png" class="spare-piece-item" onclick="selectPiece('wB')">
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/wR.png" class="spare-piece-item" onclick="selectPiece('wR')">
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/wQ.png" class="spare-piece-item" onclick="selectPiece('wQ')">
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/wK.png" class="spare-piece-item" onclick="selectPiece('wK')">
+            <div style="width: 100%; height: 2px; background: rgba(255,255,255,0.1); margin: 5px 0;"></div>
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/bP.png" class="spare-piece-item" onclick="selectPiece('bP')">
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/bN.png" class="spare-piece-item" onclick="selectPiece('bN')">
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/bB.png" class="spare-piece-item" onclick="selectPiece('bB')">
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/bR.png" class="spare-piece-item" onclick="selectPiece('bR')">
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/bQ.png" class="spare-piece-item" onclick="selectPiece('bQ')">
+            <img src="https://chessboardjs.com/img/chesspieces/wikipedia/bK.png" class="spare-piece-item" onclick="selectPiece('bK')">
+            <button class="tool-btn" style="width: 40px; padding: 5px; background: var(--danger);" onclick="emptyBoard()">🗑️</button>
+        </div>
+
         <div id="board-wrapper">
             <div id="masterBoard"></div>
             <canvas id="drawingCanvas"></canvas>
@@ -160,7 +183,7 @@
             <div class="analysis-tools">
                 <button class="tool-btn" onclick="syncMasterPosition('start')">🔄 RESET POS</button>
                 <button id="global-move-btn" class="tool-btn" onclick="toggleGlobalMove()">🔓 STUDENT MOVE</button>
-                <button id="setup-mode-btn" class="tool-btn" onclick="toggleSetupMode()">🧩 SETUP MODE</button>
+                <button id="setup-mode-btn-coach" class="tool-btn" onclick="toggleSetupMode()">🧩 SETUP MODE</button>
                 <button id="toggle-draw-btn" class="tool-btn" onclick="toggleDrawMode()">✏️ DRAW MODE</button>
                 <button class="tool-btn" onclick="clearDrawings()" style="color:var(--gold)">🧹 ERASE ALL</button>
                 <button class="tool-btn" onclick="emptyBoard()" style="color:var(--danger)">🕳️ EMPTY BOARD</button>
@@ -228,6 +251,7 @@
         let studentBoardMode = 'play'; 
         let isDrawing = false;
         let drawModeActive = false;
+        let setupModeActive = false;
 
         // Voice Note Engine Variables
         let mediaRecorder;
@@ -259,7 +283,6 @@
                 $("#student-mode-controls").removeClass("hidden");
             } else { alert("Invalid Key"); return; }
 
-            // Functional Voice Recorder Initialization
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
@@ -288,7 +311,6 @@
             renderMicUI();
         }
 
-        // Voice Recorder Functions
         function toggleVN() {
             if (!mediaRecorder) { alert("Microphone not detected."); return; }
             if (!isRecording) {
@@ -379,10 +401,12 @@
         function initBoard() {
             const config = {
                 draggable: true,
+                dropOffBoard: 'trash',
+                sparePieces: false,
                 position: 'start',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 onDrop: (source, target) => {
-                    if (studentBoardMode === 'play') {
+                    if (!setupModeActive && studentBoardMode === 'play') {
                         let move = game.move({ from: source, to: target, promotion: 'q' });
                         if (move === null) return 'snapback';
                     }
@@ -415,6 +439,35 @@
             }
         }
 
+        function toggleSetupMode() {
+            setupModeActive = !setupModeActive;
+            const currentFen = masterBoard.fen();
+            
+            // Re-initialize board with sparePieces enabled/disabled
+            const config = {
+                draggable: true,
+                dropOffBoard: 'trash',
+                sparePieces: setupModeActive,
+                position: currentFen,
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+                onDrop: (source, target) => {
+                    setTimeout(() => {
+                        db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
+                    }, 100);
+                }
+            };
+            masterBoard = ChessBoard('masterBoard', config);
+            
+            if(setupModeActive) {
+                $("#piece-selector").removeClass("hidden");
+                $("#setup-mode-btn-coach, #btn-setup-mode-student").addClass("active").css("border-color", "var(--gold)");
+            } else {
+                $("#piece-selector").addClass("hidden");
+                $("#setup-mode-btn-coach, #btn-setup-mode-student").removeClass("active").css("border-color", "");
+                game.load(masterBoard.fen());
+            }
+        }
+
         function resizeCanvas() {
             const board = document.getElementById('masterBoard');
             canvas.width = board.clientWidth;
@@ -427,20 +480,43 @@
             $("#toggle-draw-btn").css("border-color", drawModeActive ? "var(--gold)" : "");
         }
 
-        canvas.addEventListener('mousedown', (e) => {
-            if (!isCoach || !drawModeActive) return;
-            isDrawing = true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY);
-        });
-        canvas.addEventListener('mousemove', (e) => {
+        // DRAWING LOGIC (Desktop + Mobile Touch)
+        function startDrawing(e) {
+            if (!drawModeActive) return;
+            isDrawing = true;
+            ctx.beginPath();
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX || e.touches[0].clientX) - rect.left;
+            const y = (e.clientY || e.touches[0].clientY) - rect.top;
+            ctx.moveTo(x, y);
+        }
+
+        function moveDrawing(e) {
             if (!isDrawing) return;
-            ctx.lineTo(e.offsetX, e.offsetY);
-            ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.stroke();
-        });
-        canvas.addEventListener('mouseup', () => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX || e.touches[0].clientX) - rect.left;
+            const y = (e.clientY || e.touches[0].clientY) - rect.top;
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = '#fbbf24'; 
+            ctx.lineWidth = 4; 
+            ctx.lineCap = 'round'; 
+            ctx.stroke();
+        }
+
+        function stopDrawing() {
             if (!isDrawing) return;
             isDrawing = false;
             db.collection("special_rooms").doc("masterclass_arena").update({ drawing: canvas.toDataURL() });
-        });
+        }
+
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', moveDrawing);
+        canvas.addEventListener('mouseup', stopDrawing);
+
+        canvas.addEventListener('touchstart', startDrawing);
+        canvas.addEventListener('touchmove', moveDrawing);
+        canvas.addEventListener('touchend', stopDrawing);
 
         function clearDrawings() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -498,7 +574,6 @@
 
         function clearFullChat() { if(confirm("Clear all?")) { db.collection("special_rooms").doc("masterclass_arena").collection("messages").get().then(s => s.forEach(d => d.ref.delete())); } }
         function toggleGlobalMove() {}
-        function toggleSetupMode() {}
         function loadPgnData() {}
         function pgnMove(dir) {}
         function handleFileUpload(e) {}
