@@ -69,9 +69,6 @@
         #masterBoard { border: 6px solid #1e293b; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); width: 100%; }
         #drawingCanvas { position: absolute; top: 6px; left: 6px; z-index: 10; pointer-events: none; border-radius: 8px; }
         
-        .draw-mode #drawingCanvas { pointer-events: auto; }
-        .draw-active { background: var(--secondary) !important; color: #000 !important; }
-
         .analysis-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
         .tool-btn { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text); padding: 12px; border-radius: 12px; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.2s; }
 
@@ -86,9 +83,9 @@
         .participant-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
 
         #chat-container { margin-top: 15px; background: rgba(2, 6, 23, 0.4); border-radius: 16px; padding: 15px; border: 1px solid rgba(255,255,255,0.05); }
-        #master-chat-box { height: 100px; overflow-y: auto; font-size: 12px; margin-bottom: 12px; padding-right: 5px; }
-        .chat-msg { margin-bottom: 8px; line-height: 1.4; display: flex; flex-direction: column; }
-        .chat-name { color: var(--gold); font-weight: bold; margin-bottom: 2px; }
+        #master-chat-box { height: 150px; overflow-y: auto; font-size: 12px; margin-bottom: 12px; padding-right: 5px; }
+        .chat-msg { margin-bottom: 12px; line-height: 1.4; display: flex; flex-direction: column; }
+        .chat-name { color: var(--gold); font-weight: bold; margin-bottom: 4px; }
         
         input, textarea { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px; border-radius: 12px; margin-bottom: 10px; width: 100%; box-sizing: border-box; font-family: inherit;}
         .chat-input-wrap { display: flex; gap: 8px; align-items: center; }
@@ -97,7 +94,7 @@
         /* VN ICON STYLE */
         .vn-btn { background: #334155; color: white; border: none; width: 45px; height: 45px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; }
         .vn-btn.recording { background: var(--danger); animation: pulse 1s infinite; }
-        audio { height: 28px; width: 100%; max-width: 180px; margin-top: 5px; filter: invert(1); }
+        audio { height: 35px; width: 100%; max-width: 220px; margin-top: 5px; filter: hue-rotate(90deg) brightness(1.5); }
     </style>
 </head>
 <body oncontextmenu="return false;">
@@ -202,7 +199,7 @@
         let micOn = false;
         let activeParticipants = {}; 
 
-        // VN Logic
+        // Voice Note Engine
         let mediaRecorder;
         let audioChunks = [];
         let isRecording = false;
@@ -226,18 +223,27 @@
                 $("#role-text").text("STUDENT");
             } else { alert("Invalid Key"); return; }
 
+            // Initialize Recording Capabilities
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                window.localMicStream = stream; 
                 mediaRecorder = new MediaRecorder(stream);
-                mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) audioChunks.push(e.data);
+                };
+
                 mediaRecorder.onstop = () => {
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     const reader = new FileReader();
                     reader.readAsDataURL(audioBlob);
-                    reader.onloadend = () => sendVN(reader.result);
+                    reader.onloadend = () => {
+                        sendVN(reader.result);
+                        audioChunks = [];
+                    };
                 };
-            } catch (err) { console.warn("Mic Access Error"); }
+            } catch (err) { 
+                console.warn("Microphone access denied for Voice Notes."); 
+            }
 
             $("#password-overlay").addClass("hidden");
             $("#section-lobby").addClass("hidden");
@@ -249,8 +255,12 @@
             renderMicUI();
         }
 
+        // Voice Note Logic
         function toggleVN() {
-            if (!mediaRecorder) return;
+            if (!mediaRecorder) {
+                alert("Microphone not detected.");
+                return;
+            }
             if (!isRecording) {
                 audioChunks = [];
                 mediaRecorder.start();
@@ -265,7 +275,9 @@
 
         function sendVN(base64) {
             db.collection("special_rooms").doc("masterclass_arena").collection("messages").add({
-                sender: myData.name, audio: base64, timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                sender: myData.name, 
+                audio: base64, 
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
             });
         }
 
@@ -284,11 +296,11 @@
         }
 
         function initBoard() {
-            // FIXED PIECE THEME LINK
+            // FIXED: Standard Wikipedia pieces loading from official repository
             const config = {
                 draggable: true,
                 position: 'start',
-                pieceTheme: 'https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/img/chesspieces/wikipedia/{piece}.png',
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 onDrop: (source, target) => {
                     setTimeout(() => {
                         db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
@@ -296,12 +308,15 @@
                 }
             };
             masterBoard = ChessBoard('masterBoard', config);
+            
             db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
-                if(doc.data()?.fen && masterBoard.fen() !== doc.data().fen) masterBoard.position(doc.data().fen);
+                const data = doc.data();
+                if(data?.fen && masterBoard.fen() !== data.fen) {
+                    masterBoard.position(data.fen);
+                }
             });
         }
 
-        // Restoring all original tools and structures
         function initAudio() {
             const domain = "meet.jit.si";
             const options = {
@@ -309,7 +324,12 @@
                 width: "100%", height: 1,
                 parentNode: document.querySelector('#jitsi-container'),
                 userInfo: { displayName: myData.name },
-                configOverwrite: { startWithAudioMuted: false, startWithVideoMuted: true, prejoinPageEnabled: false, p2p: { enabled: false } }
+                configOverwrite: { 
+                    startWithAudioMuted: false, 
+                    startWithVideoMuted: true, 
+                    prejoinPageEnabled: false, 
+                    p2p: { enabled: false } 
+                }
             };
             jitsiAPI = new JitsiMeetExternalAPI(domain, options);
             jitsiAPI.addEventListeners({
@@ -341,23 +361,30 @@
             const text = $("#master-chat-input").val().trim();
             if(!text) return;
             db.collection("special_rooms").doc("masterclass_arena").collection("messages").add({
-                sender: myData.name, text: text, timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                sender: myData.name, 
+                text: text, 
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
             });
             $("#master-chat-input").val("");
         }
 
-        // Placeholders for your original structure logic
-        function initCanvas() {}
+        // Functional Handlers
         function syncMasterPosition(pos) { masterBoard.position(pos); }
+        function emptyBoard() { masterBoard.clear(); db.collection("special_rooms").doc("masterclass_arena").update({ fen: '8/8/8/8/8/8/8/8 w - - 0 1' });}
+        function clearFullChat() { 
+            if(confirm("Clear all messages?")) {
+                db.collection("special_rooms").doc("masterclass_arena").collection("messages").get().then(s => s.forEach(d => d.ref.delete())); 
+            }
+        }
+        
+        // Placeholder stubs for drawing tools to avoid errors
         function toggleGlobalMove() {}
         function toggleSetupMode() {}
         function toggleDrawMode() {}
         function clearDrawings() {}
-        function emptyBoard() { masterBoard.clear(); }
         function loadPgnData() {}
         function pgnMove(dir) {}
         function handleFileUpload(e) {}
-        function clearFullChat() { db.collection("special_rooms").doc("masterclass_arena").collection("messages").get().then(s => s.forEach(d => d.ref.delete())); }
     </script>
 </body>
 </html>
