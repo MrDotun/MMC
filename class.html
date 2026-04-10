@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mind Masters | Elite Chess Class</title>
+    <title>Mind Masters | Chess Class</title>
     
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
@@ -11,105 +11,109 @@
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-    <script src="https://meet.jit.si/external_api.js"></script>
 
     <style>
         :root { 
-            --primary: #1e1b4b; /* Deep Indigo */
-            --secondary: #4ade80; /* Vibrant Green */
-            --bg: #020617; 
+            --primary: #2D1B4D; 
+            --secondary: #4ade80; 
+            --bg: #0f172a; 
             --text: #f8fafc; 
-            --card: rgba(30, 41, 59, 0.7); 
+            --card: #1e293b; 
+            --danger: #ef4444; 
             --gold: #fbbf24; 
-            --glass: rgba(15, 23, 42, 0.8);
-            --border: rgba(251, 191, 36, 0.3);
+            --glass: rgba(30, 41, 59, 0.7);
         }
         
         body { 
-            font-family: 'Inter', system-ui, sans-serif; 
-            background: radial-gradient(circle at top right, #1e1b4b, #020617); 
+            font-family: 'Inter', 'Segoe UI', sans-serif; 
+            background: radial-gradient(circle at top, #1e293b 0%, #070b14 100%); 
             color: var(--text); 
             margin: 0; 
-            padding: 10px; 
-            min-height: 100vh;
-            overflow-x: hidden;
+            padding: 15px; 
+            min-height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
         }
         
-        /* Modern Glass Container */
         .container { 
             width: 100%; 
-            max-width: 500px; 
+            max-width: 440px; 
             background: var(--glass); 
-            padding: 20px; 
-            border-radius: 24px; 
+            padding: 25px; 
+            border-radius: 28px; 
             box-sizing: border-box; 
-            border: 1px solid var(--border); 
-            backdrop-filter: blur(20px); 
-            box-shadow: 0 20px 50px rgba(0,0,0,0.6); 
-            margin: 10px auto;
+            border: 1px solid rgba(255,255,255,0.1); 
+            backdrop-filter: blur(15px); 
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); 
+            margin-bottom: 20px; 
         }
-
         .hidden { display: none !important; }
+
+        #password-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(15, 23, 42, 0.95); z-index: 1000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(12px); }
+        .pass-card { background: var(--card); padding: 40px 30px; border-radius: 24px; border: 1px solid var(--gold); text-align: center; width: 320px; box-shadow: 0 0 40px rgba(251, 191, 36, 0.1); }
+
+        .master-arena-card { border: 1px solid rgba(251, 191, 36, 0.2); }
         
-        /* Hidden Jitsi */
-        #jitsi-container { position: fixed; top: 0; left: 0; width: 1px; height: 1px; z-index: -1; opacity: 0; }
+        .status-bar { display: flex; justify-content: space-between; align-items: center; background: rgba(0, 0, 0, 0.3); padding: 14px 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.05); }
+        
+        .live-badge { background: var(--danger); color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
 
-        /* Security Gate */
-        #password-overlay { position: fixed; inset: 0; background: rgba(2, 6, 23, 0.98); z-index: 1000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(15px); }
-        .pass-card { background: #1e293b; padding: 40px; border-radius: 30px; border: 2px solid var(--gold); text-align: center; width: 90%; max-width: 350px; }
+        .master-badge { background: var(--gold); color: #000; padding: 4px 12px; border-radius: 8px; font-size: 11px; font-weight: 900; }
 
-        /* Status Bar */
-        .status-bar { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.4); padding: 12px 15px; border-radius: 15px; margin-bottom: 15px; border: 1px solid rgba(255,255,255,0.1); }
-        .live-badge { background: #ef4444; color: white; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 900; animation: pulse 2s infinite; }
-        .master-badge { background: var(--gold); color: #000; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 900; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-
-        /* Board Styling */
-        #board-wrapper { position: relative; width: 100%; aspect-ratio: 1/1; margin-bottom: 15px; }
-        #masterBoard { border: 4px solid #334155; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        #drawingCanvas { position: absolute; top: 0; left: 0; z-index: 10; pointer-events: none; width: 100%; height: 100%; }
-        .draw-mode #drawingCanvas { pointer-events: auto; cursor: crosshair; }
-
-        /* Modernized Buttons */
-        .btn { padding: 14px; cursor: pointer; border-radius: 12px; border: none; background: linear-gradient(135deg, #4f46e5, #1e1b4b); color: #fff; font-weight: 700; width: 100%; transition: 0.3s; font-size: 12px; letter-spacing: 1px; }
-        .btn-gold { background: linear-gradient(135deg, #fbbf24, #d97706); color: #000; }
-        .tool-btn { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: #cbd5e1; padding: 10px; border-radius: 10px; font-size: 10px; font-weight: 700; transition: 0.2s; }
+        #board-wrapper { position: relative; width: 100%; touch-action: none; margin-bottom: 15px; }
+        #masterBoard { border: 6px solid #1e293b; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); width: 100%; }
+        #drawingCanvas { position: absolute; top: 6px; left: 6px; z-index: 10; pointer-events: none; border-radius: 8px; }
+        
+        .draw-mode #drawingCanvas { pointer-events: auto; }
         .draw-active { background: var(--secondary) !important; color: #000 !important; }
+        .setup-active { border: 4px solid var(--gold) !important; }
 
-        /* Chat & Participants */
-        #chat-container, #participants-panel { margin-top: 15px; background: rgba(0,0,0,0.3); border-radius: 18px; padding: 15px; border: 1px solid rgba(255,255,255,0.05); }
-        #master-chat-box { height: 120px; overflow-y: auto; font-size: 12px; color: #e2e8f0; }
-        input, textarea { background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px; border-radius: 12px; margin-bottom: 8px; width: 100%; box-sizing: border-box; }
+        .analysis-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
+        .tool-btn { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text); padding: 12px; border-radius: 12px; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+        .tool-btn:hover { background: rgba(255, 255, 255, 0.1); }
+
+        .pgn-section { margin-top: 15px; background: rgba(255,255,255,0.03); border-radius: 12px; padding: 10px; }
+        .pgn-nav { display: flex; gap: 5px; margin-top: 8px; }
+        .pgn-nav button { flex: 1; padding: 10px; font-size: 14px; background: var(--card); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 8px; cursor: pointer; }
+
+        .btn { padding: 16px; cursor: pointer; border-radius: 14px; border: none; background: linear-gradient(135deg, #4c1d95 0%, #2D1B4D 100%); color: var(--secondary); font-weight: 800; width: 100%; text-transform: uppercase; transition: 0.3s; font-size: 12px; margin-top: 10px; letter-spacing: 1px; }
+        .btn-gold { background: var(--gold); color: #000; }
+
+        #participants-list { background: rgba(0,0,0,0.2); border-radius: 16px; padding: 15px; margin: 10px 0; font-size: 13px; }
+        .participant-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         
-        .participant-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px; }
-        .p-btn { padding: 4px 8px; border-radius: 5px; font-size: 9px; font-weight: bold; border: none; cursor: pointer; }
-        .move-btn { background: var(--secondary); color: #000; }
-        .move-btn.active { background: #ef4444; color: #fff; }
+        #chat-container { margin-top: 15px; background: rgba(2, 6, 23, 0.4); border-radius: 16px; padding: 15px; border: 1px solid rgba(255,255,255,0.05); }
+        #master-chat-box { height: 100px; overflow-y: auto; font-size: 12px; margin-bottom: 12px; padding-right: 5px; }
+        .chat-msg { margin-bottom: 5px; line-height: 1.4; }
+        .chat-name { color: var(--gold); font-weight: bold; margin-right: 5px; }
+        input { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px; border-radius: 12px; width: 100%; box-sizing: border-box; font-family: inherit;}
+        .chat-input-wrap { display: flex; gap: 8px; }
     </style>
 </head>
-<body oncontextmenu="return false;">
+<body>
 
-    <h1 style="color: var(--gold); margin: 15px 0; font-weight: 900; letter-spacing: 3px; text-align: center; font-size: 1.5rem;">MIND MASTERS</h1>
+    <h1 style="color: var(--secondary); margin: 20px 0; font-weight: 900; letter-spacing: 4px; text-align: center;">MIND MASTERS</h1>
 
     <div id="password-overlay" class="hidden">
         <div class="pass-card">
-            <h2 style="color: var(--gold); margin-bottom: 20px;">ACCESS KEY</h2>
-            <input type="password" id="access-key" placeholder="••••" style="text-align: center; font-size: 28px; letter-spacing: 10px;">
+            <h2 style="color: var(--gold); margin-top: 0;">Security Gate</h2>
+            <input type="password" id="access-key" placeholder="••••" style="text-align: center; font-size: 24px;">
             <button class="btn btn-gold" onclick="verifyAccess()">AUTHORIZE</button>
         </div>
     </div>
 
     <div id="section-lobby" class="container">
-        <p style="text-align: center; color: #94a3b8; font-size: 12px; text-transform: uppercase; font-weight: 800; letter-spacing: 2px;">Virtual Masterclass</p>
-        <input type="text" id="user-display-name" placeholder="Your Name">
-        <button class="btn btn-gold" onclick="showPassScreen()">🚀 ENTER STUDIO</button>
+        <input type="text" id="user-display-name" placeholder="Enter your name...">
+        <button class="btn btn-gold" onclick="showPassScreen()">🚀 JOIN SESSION</button>
     </div>
 
-    <div id="section-masterclass" class="container hidden">
+    <div id="section-masterclass" class="container master-arena-card hidden">
         <div class="status-bar">
-            <div style="display:flex; align-items:center; gap:8px;">
+            <div style="display:flex; align-items:center; gap:10px;">
                 <div class="live-badge">LIVE</div>
-                <span id="role-text" style="font-size: 11px; font-weight: 700;">STUDENT</span>
+                <span id="role-text">STUDENT</span>
             </div>
             <div id="mic-control-area"></div>
         </div>
@@ -120,56 +124,27 @@
         </div>
 
         <div id="master-admin-panel" class="hidden">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px;">
-                <button class="tool-btn" onclick="syncMasterPosition('start')">🔄 RESET</button>
-                <button id="global-move-btn" class="tool-btn" onclick="toggleGlobalMove()">🔓 PERMIT MOVE</button>
-                <button id="setup-mode-btn" class="tool-btn" onclick="toggleSetupMode()">🧩 SETUP</button>
-                <button id="toggle-draw-btn" class="tool-btn" onclick="toggleDrawMode()">✏️ DRAW</button>
-                <button class="tool-btn" onclick="clearDrawings()" style="color:var(--gold)">🧹 ERASE</button>
-                <button class="tool-btn" onclick="emptyBoard()" style="color:#ef4444">🕳️ CLEAR</button>
-            </div>
-
-            <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 10px;">
-                <p style="font-size: 9px; color: var(--gold); font-weight: 800; margin-bottom: 5px;">PGN ENGINE</p>
-                <textarea id="pgn-input" placeholder="Paste PGN data..." style="height: 50px; font-size: 10px;"></textarea>
-                <div style="display: flex; gap: 5px; margin-bottom: 5px;">
-                    <button class="tool-btn" style="flex:1" onclick="loadPgnData()">📥 LOAD</button>
-                    <button class="tool-btn" style="flex:1" onclick="document.getElementById('pgn-file').click()">📁 FILE</button>
-                </div>
-                <input type="file" id="pgn-file" accept=".pgn" style="display:none" onchange="handleFileUpload(event)">
-                <div style="display: flex; gap: 4px;">
-                    <button class="tool-btn" style="flex:1" onclick="pgnMove('start')">⏮</button>
-                    <button class="tool-btn" style="flex:1" onclick="pgnMove('prev')">◀</button>
-                    <button class="tool-btn" style="flex:1" onclick="pgnMove('next')">▶</button>
-                    <button class="tool-btn" style="flex:1" onclick="pgnMove('end')">⏭</button>
-                </div>
+            <div class="analysis-tools">
+                <button class="tool-btn" onclick="initBoard('start')">🔄 RESET</button>
+                <button class="tool-btn" onclick="toggleGlobalMove()">🔓 PERMISSIONS</button>
             </div>
         </div>
 
         <div id="participants-panel">
-            <p style="font-size: 10px; font-weight: 900; color: var(--gold); margin-bottom: 10px;">ONLINE STUDENTS</p>
+            <p style="font-size: 11px; color: var(--secondary);">ACTIVE MINDS</p>
             <div id="participants-list"></div>
         </div>
 
         <div id="chat-container">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <p style="font-size: 10px; font-weight: 900; color: var(--gold); margin: 0;">CLASS CHAT</p>
-                <button id="admin-clear-btn" class="hidden" onclick="clearFullChat()" style="color:#ef4444; font-size: 8px; font-weight: bold; background: none; border: 1px solid #ef4444; border-radius: 4px; padding: 2px 5px;">WIPE</button>
-            </div>
             <div id="master-chat-box"></div>
-            <div style="display: flex; gap: 5px;">
-                <input type="text" id="master-chat-input" placeholder="Say something..." onkeypress="if(event.key==='Enter') sendMasterChat()">
-                <button class="btn" style="width: 70px; margin: 0; padding: 0;" onclick="sendMasterChat()">➤</button>
+            <div class="chat-input-wrap">
+                <input type="text" id="master-chat-input" placeholder="Message..." onkeypress="if(event.key==='Enter') sendMasterChat()">
+                <button class="btn" style="width: 80px; margin:0;" onclick="sendMasterChat()">SEND</button>
             </div>
         </div>
-
-        <button class="btn" style="margin-top:20px; background: transparent; border: 1px solid #334155; color: #64748b;" onclick="exitStudio()">EXIT CLASS</button>
     </div>
 
-    <div id="jitsi-container"></div>
-
     <script>
-        /* ALL FIREBASE & GAME LOGIC PRESERVED EXACTLY AS PROVIDED */
         const firebaseConfig = {
           apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
           authDomain: "assignments-de95a.firebaseapp.com",
@@ -181,29 +156,14 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        let myData = { name: "", id: "" }; 
+        let myData = { name: "", id: Math.random().toString(36).substr(2, 9) }; 
         let masterBoard = null;
         let isCoach = false;
-        let isDrawMode = false;
-        let isSetupMode = false;
-        let globalMove = false;
-        let authorizedMovers = []; 
-        let jitsiAPI = null;
         let micOn = false;
-        let activeParticipants = {}; 
-        
-        let teachingGame = new Chess();
-        let moveHistory = [];
-        let currentMoveIndex = -1;
-
-        const canvas = document.getElementById('drawingCanvas');
-        const ctx = canvas.getContext('2d');
-        let drawing = false;
+        let localStream = null;
 
         function showPassScreen() { 
-            const name = $("#user-display-name").val();
-            if(!name) { alert("Please enter your name"); return; }
-            myData.name = name;
+            myData.name = $("#user-display-name").val() || "Guest";
             $("#password-overlay").removeClass("hidden"); 
         }
 
@@ -211,277 +171,95 @@
             const pass = $("#access-key").val();
             if (pass === "dotun1234") {
                 isCoach = true;
-                myData.name = "Coach Dotun";
-                $("#master-admin-panel, #admin-clear-btn").removeClass("hidden");
+                $("#master-admin-panel").removeClass("hidden");
                 $("#role-text").html('<span class="master-badge">COACH</span>');
             } else if (pass === "1122") {
                 isCoach = false;
-                $("#role-text").text("STUDENT");
             } else { alert("Invalid Key"); return; }
 
-            // Audio wake-up logic
-            try {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                const audioCtx = new AudioContext();
-                if (audioCtx.state === 'suspended') { await audioCtx.resume(); }
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                stream.getTracks().forEach(track => track.stop()); 
-            } catch (e) { console.log("Audio check skipped"); }
-
-            $("#password-overlay").addClass("hidden");
-            $("#section-lobby").addClass("hidden");
+            $("#password-overlay, #section-lobby").addClass("hidden");
             $("#section-masterclass").removeClass("hidden");
             
-            renderMicUI(); 
             initBoard();
-            initAudio();
-            initCanvas();
-            initChat(); 
+            initAudio(); // Hardware Activation
+            initChat();
+            renderMicUI();
         }
 
-        /* --- PRESERVED FUNCTIONS (NO CHANGES TO LOGIC) --- */
-        async function clearFullChat() {
-            if (!isCoach || !confirm("Wipe all messages?")) return;
-            const chatRef = db.collection("special_rooms").doc("masterclass_arena").collection("messages");
-            const snapshot = await chatRef.get();
-            const batch = db.batch();
-            snapshot.docs.forEach(doc => batch.delete(doc.ref));
-            await batch.commit();
-            sendMasterChat("Classroom chat refreshed by Coach.", true);
+        async function initAudio() {
+            try {
+                // CAPTURE MIC DIRECTLY
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // FEEDBACK LOOP (TESTING ONLY): Play voice back so you know it's working
+                const audioPreview = document.createElement('audio');
+                audioPreview.srcObject = localStream;
+                audioPreview.muted = false; 
+                audioPreview.play();
+
+                micOn = true;
+                renderMicUI();
+            } catch (err) {
+                console.log("Mic access denied.");
+                renderMicUI(false);
+            }
         }
 
-        function toggleGlobalMove() {
-            if (!isCoach) return;
-            db.collection("special_rooms").doc("masterclass_arena").update({ studentMoveEnabled: !globalMove });
+        function renderMicUI() {
+            const color = micOn ? 'var(--secondary)' : 'var(--danger)';
+            const label = micOn ? '🎤 LIVE' : '🔇 MUTED';
+            $("#mic-control-area").html(`<button onclick="toggleMic()" style="border: 1px solid ${color}; color: ${color}; background:none; padding:8px; border-radius:10px; font-weight:bold;">${label}</button>`);
         }
 
-        function toggleDrawMode() {
-            if (!isCoach) return;
-            isDrawMode = !isDrawMode;
-            $("#section-masterclass").toggleClass("draw-mode", isDrawMode);
-            $("#toggle-draw-btn").toggleClass("draw-active", isDrawMode).html(isDrawMode ? "✏️ DRAWING" : "✏️ DRAW");
+        function toggleMic() {
+            if(localStream) {
+                localStream.getAudioTracks()[0].enabled = !localStream.getAudioTracks()[0].enabled;
+                micOn = localStream.getAudioTracks()[0].enabled;
+                renderMicUI();
+            }
         }
 
-        function toggleSetupMode() {
-            if (!isCoach) return;
-            isSetupMode = !isSetupMode;
-            initBoard(masterBoard.fen()); 
-            $("#setup-mode-btn").toggleClass("draw-active", isSetupMode).text(isSetupMode ? "✅ SAVE" : "🧩 SETUP");
-        }
-
-        function initCanvas() {
-            const board = document.getElementById('masterBoard');
-            canvas.width = board.clientWidth;
-            canvas.height = board.clientHeight;
-        }
-
-        function clearDrawings() {
-            if(!isCoach) return;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            db.collection("special_rooms").doc("masterclass_arena").update({ drawing: null });
-        }
-
-        /* --- DRAWING ENGINE (PRESERVED) --- */
-        function getPos(e) {
-            const rect = canvas.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            return { x: clientX - rect.left, y: clientY - rect.top };
-        }
-        function handleStart(e) {
-            if(!isCoach || !isDrawMode) return;
-            drawing = true;
-            const pos = getPos(e);
-            ctx.beginPath();
-            ctx.moveTo(pos.x, pos.y);
-            e.preventDefault();
-        }
-        function handleMove(e) {
-            if(!drawing || !isCoach || !isDrawMode) return;
-            const pos = getPos(e);
-            ctx.lineWidth = 4;
-            ctx.lineCap = 'round';
-            ctx.strokeStyle = '#4ade80';
-            ctx.lineTo(pos.x, pos.y);
-            ctx.stroke();
-            e.preventDefault();
-        }
-        function handleEnd() {
-            if(!drawing || !isCoach || !isDrawMode) return;
-            drawing = false;
-            db.collection("special_rooms").doc("masterclass_arena").update({ drawing: canvas.toDataURL() });
-        }
-
-        canvas.addEventListener('mousedown', handleStart);
-        canvas.addEventListener('mousemove', handleMove);
-        canvas.addEventListener('mouseup', handleEnd);
-        canvas.addEventListener('touchstart', handleStart, {passive: false});
-        canvas.addEventListener('touchmove', handleMove, {passive: false});
-        canvas.addEventListener('touchend', handleEnd);
-
-        /* --- CHESS BOARD & SYNC (PRESERVED) --- */
         function initBoard(pos = 'start') {
             const config = {
                 draggable: true,
                 position: pos,
-                sparePieces: isSetupMode,
-                dropOffBoard: isSetupMode ? 'trash' : 'snapback',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
-                onDragStart: (source, piece, position, orientation) => {
-                    if (isCoach || globalMove || authorizedMovers.includes(myData.id)) return true;
-                    return false;
-                },
                 onDrop: (source, target) => {
                     setTimeout(() => {
                         db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
                     }, 100);
                 }
             };
-            if (masterBoard) masterBoard.destroy();
             masterBoard = ChessBoard('masterBoard', config);
-
-            if (!window.firebaseInitialized) {
-                db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
-                    const d = doc.data();
-                    if(!d) return;
-                    if(d.fen && masterBoard.fen() !== d.fen) masterBoard.position(d.fen);
-                    globalMove = d.studentMoveEnabled || false;
-                    authorizedMovers = d.authorizedMovers || [];
-                    renderParticipants();
-                    if(!isCoach && d.drawing) {
-                        const img = new Image();
-                        img.onload = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0); };
-                        img.src = d.drawing;
-                    } else if (!isCoach && !d.drawing) { ctx.clearRect(0, 0, canvas.width, canvas.height); }
-                });
-                window.firebaseInitialized = true;
-            }
+            db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
+                const d = doc.data();
+                if(d && d.fen && masterBoard.fen() !== d.fen) masterBoard.position(d.fen);
+            });
         }
 
         function initChat() {
-            db.collection("special_rooms").doc("masterclass_arena").collection("messages").orderBy("timestamp", "asc").onSnapshot(snapshot => {
-                const chatBox = $("#master-chat-box");
-                chatBox.empty();
-                snapshot.forEach(doc => {
-                    const msg = doc.data();
-                    const style = msg.type === "system" ? 'style="color:#94a3b8; font-style:italic;"' : '';
-                    chatBox.append(`<div ${style}><b style="color:var(--gold)">${msg.sender}:</b> ${msg.text}</div>`);
-                });
-                chatBox.scrollTop(chatBox[0].scrollHeight);
-            });
+            db.collection("special_rooms").doc("masterclass_arena").collection("messages").orderBy("timestamp", "asc")
+              .onSnapshot(snap => {
+                  const box = $("#master-chat-box");
+                  box.empty();
+                  snap.forEach(doc => {
+                      const msg = doc.data();
+                      box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}:</span><span>${msg.text}</span></div>`);
+                  });
+                  box.scrollTop(box[0].scrollHeight);
+              });
         }
 
-        function sendMasterChat(customText = null, isSystem = false) {
-            const input = $("#master-chat-input");
-            const text = customText || input.val().trim();
-            if (!text) return;
+        function sendMasterChat() {
+            const text = $("#master-chat-input").val().trim();
+            if(!text) return;
             db.collection("special_rooms").doc("masterclass_arena").collection("messages").add({
-                sender: isSystem ? "SYSTEM" : myData.name, 
-                text: text, 
-                type: isSystem ? "system" : "chat",
-                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                sender: myData.name, text: text, timestamp: firebase.firestore.FieldValue.serverTimestamp()
             });
-            if(!customText) input.val("");
+            $("#master-chat-input").val("");
         }
 
-        function handleFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => { $("#pgn-input").val(e.target.result); loadPgnData(); };
-            reader.readAsText(file);
-        }
-
-        function loadPgnData() {
-            const pgn = $("#pgn-input").val();
-            if (teachingGame.load_pgn(pgn)) {
-                moveHistory = teachingGame.history();
-                teachingGame.reset();
-                currentMoveIndex = -1;
-                syncMasterPosition(teachingGame.fen());
-            } else { alert("Invalid PGN."); }
-        }
-
-        function pgnMove(dir) {
-            if(!isCoach) return;
-            if(dir === 'start') currentMoveIndex = -1;
-            else if(dir === 'end') currentMoveIndex = moveHistory.length - 1;
-            else if(dir === 'next' && currentMoveIndex < moveHistory.length - 1) currentMoveIndex++;
-            else if(dir === 'prev' && currentMoveIndex >= 0) currentMoveIndex--;
-
-            teachingGame.reset();
-            for(let i=0; i <= currentMoveIndex; i++) { teachingGame.move(moveHistory[i]); }
-            syncMasterPosition(teachingGame.fen());
-        }
-
-        function emptyBoard() { if(isCoach) { masterBoard.clear(); setTimeout(() => { db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); }, 100); } }
-
-        /* --- AUDIO UI & JITSI (PRESERVED) --- */
-        function renderMicUI() {
-            const isReady = !!jitsiAPI;
-            const color = !isReady ? '#64748b' : (micOn ? 'var(--secondary)' : '#ef4444');
-            $("#mic-control-area").html(`<button style="border: 1px solid ${color}; padding: 6px 12px; border-radius: 10px; background:none; color:${color}; font-size:10px; font-weight:bold; cursor:pointer;" onclick="${isReady ? 'handleMicToggle()' : ''}">${!isReady ? 'SYNCING...' : (micOn ? '🎤 LIVE' : '🔇 MUTED')}</button>`);
-        }
-
-        function handleMicToggle() { if(jitsiAPI) jitsiAPI.executeCommand('toggleAudio'); }
-
-        function renderParticipants() {
-            const listDiv = document.getElementById('participants-list');
-            const keys = Object.keys(activeParticipants);
-            let html = "";
-            keys.forEach(id => {
-                const hasMoveAccess = authorizedMovers.includes(id);
-                html += `<div class="participant-item">
-                    <span>${activeParticipants[id]} ${hasMoveAccess ? '⚡' : ''}</span>
-                    ${isCoach && !activeParticipants[id].includes("Coach") ? `
-                        <div class="p-actions">
-                            <button class="p-btn move-btn ${hasMoveAccess ? 'active' : ''}" onclick="toggleMoveAccess('${id}')">${hasMoveAccess ? 'Revoke' : 'Give Move'}</button>
-                            <button class="p-btn" style="background:#334155; color:white;" onclick="muteUser('${id}')">Mute</button>
-                        </div>
-                    ` : ''}
-                </div>`;
-            });
-            listDiv.innerHTML = html || "<small>Waiting for students...</small>";
-        }
-
-        function toggleMoveAccess(id) {
-            let newMovers = [...authorizedMovers];
-            if (newMovers.includes(id)) { newMovers = newMovers.filter(item => item !== id); } 
-            else { newMovers.push(id); }
-            db.collection("special_rooms").doc("masterclass_arena").update({ authorizedMovers: newMovers });
-        }
-
-        function muteUser(id) { jitsiAPI.executeCommand('muteParticipant', id); }
-
-        function initAudio() {
-            jitsiAPI = new JitsiMeetExternalAPI("meet.jit.si", {
-                roomName: "MindMasters_Chess_Pro_2026",
-                width: 1, height: 1,
-                parentNode: document.querySelector('#jitsi-container'),
-                userInfo: { displayName: myData.name },
-                configOverwrite: { startWithAudioMuted: false, startWithVideoMuted: true, prejoinPageEnabled: false }
-            });
-            jitsiAPI.addEventListeners({
-                videoConferenceJoined: (e) => {
-                    myData.id = e.id; 
-                    activeParticipants[e.id] = myData.name + " (You)";
-                    renderParticipants(); renderMicUI();
-                    if(isCoach) setTimeout(() => { jitsiAPI.executeCommand('unmute'); }, 1000);
-                },
-                participantJoined: (e) => { activeParticipants[e.id] = e.displayName || "Student"; renderParticipants(); },
-                participantLeft: (e) => { delete activeParticipants[e.id]; renderParticipants(); },
-                audioMuteStatusChanged: (e) => { micOn = !e.muted; renderMicUI(); }
-            });
-        }
-
-        function syncMasterPosition(fen) {
-            if(!isCoach) return;
-            if(fen === 'start') masterBoard.start();
-            else masterBoard.position(fen);
-            setTimeout(() => { db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); }, 100);
-        }
-
-        function exitStudio() { if(confirm("Leave the room?")) { if(jitsiAPI) jitsiAPI.dispose(); location.reload(); } }
+        function exitStudio() { location.reload(); }
     </script>
 </body>
 </html>
