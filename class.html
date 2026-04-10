@@ -58,12 +58,16 @@
 
         .master-arena-card { border: 1px solid rgba(251, 191, 36, 0.2); }
         
-        .status-bar { display: flex; justify-content: space-between; align-items: center; background: rgba(0, 0, 0, 0.3); padding: 14px 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.05); }
+        .status-bar { display: flex; justify-content: space-between; align-items: center; background: rgba(0, 0, 0, 0.3); padding: 14px 20px; border-radius: 16px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.05); }
         
         .live-badge { background: var(--danger); color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
 
         .master-badge { background: var(--gold); color: #000; padding: 4px 12px; border-radius: 8px; font-size: 11px; font-weight: 900; }
+
+        /* NEW TOP VOICE NOTE BAR CSS */
+        .top-vn-bar { display: flex; align-items: center; gap: 12px; background: rgba(0,0,0,0.4); padding: 10px 15px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
+        .latest-audio-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
 
         #board-wrapper { position: relative; width: 100%; touch-action: none; margin-bottom: 15px; }
         #masterBoard { border: 6px solid #1e293b; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); width: 100%; }
@@ -92,9 +96,10 @@
         .chat-input-wrap input { margin-bottom: 0; }
 
         /* VN ICON STYLE */
-        .vn-btn { background: #334155; color: white; border: none; width: 45px; height: 45px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .vn-btn { background: #334155; color: white; border: none; width: 45px; height: 45px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
         .vn-btn.recording { background: var(--danger); animation: pulse 1s infinite; }
-        audio { height: 35px; width: 100%; max-width: 220px; margin-top: 5px; filter: hue-rotate(90deg) brightness(1.5); }
+        audio { height: 35px; width: 100%; margin-top: 5px; filter: hue-rotate(90deg) brightness(1.5); }
+        .latest-audio-wrap audio { margin-top: 0; height: 30px; }
     </style>
 </head>
 <body oncontextmenu="return false;">
@@ -122,6 +127,13 @@
                 <span id="role-text">STUDENT</span>
             </div>
             <div id="mic-control-area"></div>
+        </div>
+
+        <div class="top-vn-bar">
+            <button id="top-vn-btn" class="vn-btn" onclick="toggleVN()">🎤</button>
+            <div id="latest-audio-container" class="latest-audio-wrap">
+                <span style="font-size: 11px; color: #94a3b8; font-style: italic;">No voice notes yet...</span>
+            </div>
         </div>
 
         <div id="board-wrapper">
@@ -169,7 +181,6 @@
             </div>
             <div id="master-chat-box"></div>
             <div class="chat-input-wrap">
-                <button id="vn-icon-btn" class="vn-btn" onclick="toggleVN()">🎤</button>
                 <input type="text" id="master-chat-input" placeholder="Type..." onkeypress="if(event.key==='Enter') sendMasterChat()">
                 <button class="btn" style="width: 60px; padding: 12px; margin:0;" onclick="sendMasterChat()">➤</button>
             </div>
@@ -265,11 +276,11 @@
                 audioChunks = [];
                 mediaRecorder.start();
                 isRecording = true;
-                $("#vn-icon-btn").addClass("recording").text("🛑");
+                $("#top-vn-btn").addClass("recording").text("🛑"); // Updated to target top button
             } else {
                 mediaRecorder.stop();
                 isRecording = false;
-                $("#vn-icon-btn").removeClass("recording").text("🎤");
+                $("#top-vn-btn").removeClass("recording").text("🎤"); // Updated to target top button
             }
         }
 
@@ -286,17 +297,31 @@
               .onSnapshot(snap => {
                   const box = $("#master-chat-box");
                   box.empty();
+                  
+                  let latestAudioHTML = `<span style="font-size: 11px; color: #94a3b8; font-style: italic;">No voice notes yet...</span>`;
+                  
                   snap.forEach(doc => {
                       const msg = doc.data();
                       let content = msg.audio ? `<audio controls src="${msg.audio}"></audio>` : `<span>${msg.text}</span>`;
                       box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}</span>${content}</div>`);
+                      
+                      // If message is audio, update the top bar player to the latest one
+                      if(msg.audio) {
+                          latestAudioHTML = `
+                              <div style="font-size:10px; color:var(--gold); font-weight:bold; margin-bottom:4px;">▶ ${msg.sender}'s Note</div>
+                              <audio controls src="${msg.audio}"></audio>
+                          `;
+                      }
                   });
+                  
+                  // Push the newest audio to the top bar
+                  $("#latest-audio-container").html(latestAudioHTML);
+                  
                   box.scrollTop(box[0].scrollHeight);
               });
         }
 
         function initBoard() {
-            // FIXED: Standard Wikipedia pieces loading from official repository
             const config = {
                 draggable: true,
                 position: 'start',
@@ -368,7 +393,6 @@
             $("#master-chat-input").val("");
         }
 
-        // Functional Handlers
         function syncMasterPosition(pos) { masterBoard.position(pos); }
         function emptyBoard() { masterBoard.clear(); db.collection("special_rooms").doc("masterclass_arena").update({ fen: '8/8/8/8/8/8/8/8 w - - 0 1' });}
         function clearFullChat() { 
@@ -377,7 +401,7 @@
             }
         }
         
-        // Placeholder stubs for drawing tools to avoid errors
+        // Placeholder stubs
         function toggleGlobalMove() {}
         function toggleSetupMode() {}
         function toggleDrawMode() {}
