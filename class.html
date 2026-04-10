@@ -51,7 +51,6 @@
         }
         .hidden { display: none !important; }
         
-        /* FIXED: Increased size slightly and removed pointer-events none to ensure browser keeps the process active */
         #jitsi-container { 
             position: fixed; 
             bottom: 0;
@@ -97,18 +96,10 @@
         #participants-list { background: rgba(0,0,0,0.2); border-radius: 16px; padding: 15px; margin: 10px 0; font-size: 13px; }
         .participant-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         
-        .p-actions { display: flex; gap: 5px; }
-        .p-btn { padding: 5px 8px; border-radius: 6px; border: none; font-size: 9px; font-weight: bold; cursor: pointer; transition: 0.2s; text-transform: uppercase; }
-        .move-btn { background: var(--secondary); color: #000; }
-        .move-btn.active { background: var(--danger); color: #fff; }
-        .mute-btn { background: #475569; color: white; }
-        .kick-btn { background: #b91c1c; color: white; }
-
         #chat-container { margin-top: 15px; background: rgba(2, 6, 23, 0.4); border-radius: 16px; padding: 15px; border: 1px solid rgba(255,255,255,0.05); }
         #master-chat-box { height: 100px; overflow-y: auto; font-size: 12px; margin-bottom: 12px; padding-right: 5px; }
         .chat-msg { margin-bottom: 5px; line-height: 1.4; }
         .chat-name { color: var(--gold); font-weight: bold; margin-right: 5px; }
-        .system-msg { color: #94a3b8; font-style: italic; font-size: 11px; margin: 5px 0; text-align: center; border-bottom: 1px dashed rgba(255,255,255,0.05); }
         input, textarea { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px; border-radius: 12px; margin-bottom: 10px; width: 100%; box-sizing: border-box; font-family: inherit;}
         .chat-input-wrap { display: flex; gap: 8px; }
         .chat-input-wrap input { margin-bottom: 0; }
@@ -155,23 +146,6 @@
                 <button class="tool-btn" onclick="clearDrawings()" style="color:var(--gold)">🧹 ERASE ALL</button>
                 <button class="tool-btn" onclick="emptyBoard()" style="color:var(--danger)">🕳️ EMPTY BOARD</button>
             </div>
-
-            <div class="pgn-section">
-                <p style="font-size: 10px; color: var(--secondary); margin-bottom: 5px; font-weight: bold;">PGN TEACHING TOOL</p>
-                <textarea id="pgn-input" placeholder="Paste PGN here..." style="height: 60px; font-size: 11px;"></textarea>
-                <div style="display: flex; gap: 5px;">
-                    <button class="tool-btn" style="flex:1" onclick="loadPgnData()">📥 LOAD TEXT</button>
-                    <button class="tool-btn" style="flex:1" onclick="document.getElementById('pgn-file').click()">📁 UPLOAD PGN</button>
-                </div>
-                <input type="file" id="pgn-file" accept=".pgn" style="display:none" onchange="handleFileUpload(event)">
-
-                <div class="pgn-nav">
-                    <button onclick="pgnMove('start')">⏮</button>
-                    <button onclick="pgnMove('prev')">◀</button>
-                    <button onclick="pgnMove('next')">▶</button>
-                    <button onclick="pgnMove('end')">⏭</button>
-                </div>
-            </div>
         </div>
 
         <div id="participants-panel">
@@ -180,10 +154,6 @@
         </div>
 
         <div id="chat-container">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <p style="font-size: 11px; font-weight: 800; color: var(--secondary); margin: 0; letter-spacing: 1px;">SESSION CHAT</p>
-                <button id="admin-clear-btn" class="hidden" onclick="clearFullChat()" style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); color: var(--danger); padding: 4px 8px; border-radius: 6px; font-size: 9px; font-weight: bold; cursor: pointer;">WIPE CHAT</button>
-            </div>
             <div id="master-chat-box"></div>
             <div class="chat-input-wrap">
                 <input type="text" id="master-chat-input" placeholder="Type a message..." onkeypress="if(event.key==='Enter') sendMasterChat()">
@@ -215,7 +185,6 @@
         let micOn = false;
         let activeParticipants = {}; 
         let globalMove = false;
-        let authorizedMovers = []; 
 
         function showPassScreen() { 
             const name = $("#user-display-name").val();
@@ -229,20 +198,19 @@
             if (pass === "dotun1234") {
                 isCoach = true;
                 myData.name = "Coach Dotun";
-                $("#master-admin-panel, #admin-clear-btn").removeClass("hidden");
+                $("#master-admin-panel").removeClass("hidden");
                 $("#role-text").html('<span class="master-badge">COACH</span>');
             } else if (pass === "1122") {
                 isCoach = false;
                 $("#role-text").text("STUDENT VIEW");
             } else { alert("Invalid Key"); return; }
 
-            // FIXED: Request stream within the same click event to satisfy browser policies
+            // REPO FIX: Wake up hardware audio context during button click
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                window.localMicStream = stream; 
-            } catch (err) {
-                console.warn("Mic access refused or not available.");
-            }
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) { new AudioContext().resume(); }
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (err) { console.warn("Mic pre-check failed"); }
 
             $("#password-overlay").addClass("hidden");
             $("#section-lobby").addClass("hidden");
@@ -250,7 +218,6 @@
             
             initBoard();
             initAudio(); 
-            initCanvas();
             initChat(); 
             renderMicUI();
         }
@@ -258,21 +225,18 @@
         function initAudio() {
             const domain = "meet.jit.si";
             const options = {
-                roomName: "MindMasters_Chess_Pro_2026_Room", // Added Room suffix for uniqueness
+                roomName: "MindMasters_Arena_Secure_Room_2026",
                 width: "100%", 
-                height: "100%", // Set to 100% inside the hidden 10px container
+                height: "100%",
                 parentNode: document.querySelector('#jitsi-container'),
                 userInfo: { displayName: myData.name },
                 configOverwrite: { 
-                    startWithAudioMuted: true, // Recommended to start muted to bypass autoplay blocks
+                    startWithAudioMuted: false, // Forces the browser to ask for mic
                     startWithVideoMuted: true,
                     prejoinPageEnabled: false,
-                    disableDeepLinking: true,
-                    p2p: { enabled: false } 
+                    disableDeepLinking: true
                 },
-                interfaceConfigOverwrite: {
-                    TOOLBAR_BUTTONS: [] 
-                }
+                interfaceConfigOverwrite: { TOOLBAR_BUTTONS: [] }
             };
 
             jitsiAPI = new JitsiMeetExternalAPI(domain, options);
@@ -283,12 +247,11 @@
                     activeParticipants[e.id] = myData.name + " (You)";
                     renderParticipants();
                     
-                    // FIXED: Slight delay before unmuting helps Jitsi establish the stream
-                    if(isCoach) {
-                        setTimeout(() => {
-                            jitsiAPI.executeCommand('unmute');
-                        }, 1500);
-                    }
+                    // REPO FIX: Inject "allow" attribute to punch through iframe security
+                    const iframe = jitsiAPI.getIFrame();
+                    if (iframe) { iframe.setAttribute("allow", "microphone; autoplay;"); }
+                    
+                    if(isCoach) { setTimeout(() => { jitsiAPI.executeCommand('unmute'); }, 1000); }
                     renderMicUI();
                 },
                 participantJoined: (e) => {
@@ -304,42 +267,28 @@
                     renderMicUI();
                 }
             });
-
-            // FIXED: Setting attributes via the API method
-            const iframe = jitsiAPI.getIFrame();
-            if (iframe) { 
-                iframe.setAttribute("allow", "microphone; autoplay; display-capture"); 
-            }
         }
 
         function renderMicUI() {
             const isReady = !!jitsiAPI;
             const color = !isReady ? '#64748b' : (micOn ? 'var(--secondary)' : 'var(--danger)');
             const icon = !isReady ? '⌛ CONNECTING' : (micOn ? '🎤 ON' : '🔇 MUTED');
-            
             $("#mic-control-area").html(`
-                <button id="mic-toggle-btn" 
-                    style="background: rgba(255,255,255,0.05); border: 1px solid ${color}; padding: 8px 15px; border-radius: 12px; cursor:pointer; font-size:12px; font-weight:bold; color:${color}; transition: 0.3s;" 
-                    onclick="handleMicToggle()">
+                <button style="background: rgba(255,255,255,0.05); border: 1px solid ${color}; padding: 8px 15px; border-radius: 12px; cursor:pointer; font-size:12px; font-weight:bold; color:${color};" onclick="handleMicToggle()">
                     ${icon}
                 </button>
             `);
         }
 
-        function handleMicToggle() {
-            if(jitsiAPI) jitsiAPI.executeCommand('toggleAudio');
-        }
+        function handleMicToggle() { if(jitsiAPI) jitsiAPI.executeCommand('toggleAudio'); }
 
         function initBoard(pos = 'start') {
             const config = {
                 draggable: true,
                 position: pos,
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
-                onDragStart: (source, piece, position, orientation) => {
-                    if (isCoach || globalMove || authorizedMovers.includes(myData.id)) return true;
-                    return false;
-                },
-                onDrop: (source, target) => {
+                onDragStart: () => (isCoach || globalMove),
+                onDrop: () => {
                     setTimeout(() => {
                         db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
                     }, 100);
@@ -355,16 +304,15 @@
         }
 
         function initChat() {
-            db.collection("special_rooms").doc("masterclass_arena").collection("messages").orderBy("timestamp", "asc")
-              .onSnapshot(snap => {
-                  const box = $("#master-chat-box");
-                  box.empty();
-                  snap.forEach(doc => {
-                      const msg = doc.data();
-                      box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}:</span><span>${msg.text}</span></div>`);
-                  });
-                  box.scrollTop(box[0].scrollHeight);
-              });
+            db.collection("special_rooms").doc("masterclass_arena").collection("messages").orderBy("timestamp", "asc").onSnapshot(snap => {
+                const box = $("#master-chat-box");
+                box.empty();
+                snap.forEach(doc => {
+                    const msg = doc.data();
+                    box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}:</span><span>${msg.text}</span></div>`);
+                });
+                box.scrollTop(box[0].scrollHeight);
+            });
         }
 
         function sendMasterChat() {
@@ -384,7 +332,6 @@
             $("#participants-list").html(html || "<i style='opacity:0.5'>Waiting...</i>");
         }
 
-        function initCanvas() { /* Canvas logic remains unchanged */ }
         function exitStudio() { location.reload(); }
     </script>
 </body>
