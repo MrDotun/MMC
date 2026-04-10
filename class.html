@@ -69,7 +69,7 @@
         .top-vn-bar.new-note { background: rgba(251, 191, 36, 0.3); }
         .latest-audio-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
 
-        #board-wrapper { position: relative; width: 100%; touch-action: auto; margin-bottom: 15px; }
+        #board-wrapper { position: relative; width: 100%; touch-action: none; margin-bottom: 15px; }
         #masterBoard { border: 6px solid #1e293b; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); width: 100%; }
         #drawingCanvas { position: absolute; top: 0; left: 0; z-index: 10; pointer-events: none; border-radius: 8px; }
 
@@ -81,7 +81,9 @@
 
         #chat-container { margin-top: 15px; background: rgba(2, 6, 23, 0.4); border-radius: 16px; padding: 15px; border: 1px solid rgba(255,255,255,0.05); }
         #master-chat-box { height: 150px; overflow-y: auto; font-size: 12px; margin-bottom: 12px; padding-right: 5px; }
-        .chat-name { color: var(--gold); font-weight: bold; margin-bottom: 4px; }
+        .chat-msg { position: relative; margin-bottom: 10px; padding: 5px; background: rgba(255,255,255,0.03); border-radius: 8px; }
+        .chat-name { color: var(--gold); font-weight: bold; margin-bottom: 4px; display: block; }
+        .del-msg { color: var(--danger); cursor: pointer; font-size: 10px; text-decoration: underline; margin-top: 4px; display: inline-block; }
         
         input { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px; border-radius: 12px; margin-bottom: 10px; width: 100%; box-sizing: border-box; font-family: inherit;}
         .chat-input-wrap { display: flex; gap: 8px; align-items: center; }
@@ -91,10 +93,6 @@
         .rec-label { position: absolute; bottom: -18px; font-size: 8px; color: var(--danger); font-weight: 900; white-space: nowrap; }
         
         audio { height: 35px; width: 100%; margin-top: 5px; filter: hue-rotate(90deg) brightness(1.5); }
-        
-        .mode-selector { display: flex; gap: 10px; margin-bottom: 10px; }
-        .mode-btn { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.2); color: white; font-size: 10px; cursor: pointer; }
-        .mode-btn.active { border-color: var(--gold); color: var(--gold); background: rgba(251, 191, 36, 0.1); }
     </style>
 </head>
 <body>
@@ -145,6 +143,7 @@
                 <button class="tool-btn" onclick="syncMasterPosition('start')">🔄 RESET POS</button>
                 <button id="setup-mode-btn-coach" class="tool-btn" onclick="toggleSetupMode()">🧩 SETUP MODE</button>
                 <button id="toggle-draw-btn" class="tool-btn" onclick="toggleDrawMode()">✏️ DRAW MODE</button>
+                <button class="tool-btn" onclick="clearBoardDrawing()" style="color:var(--gold)">🧹 CLEAR LINES</button>
                 <button class="tool-btn" onclick="emptyBoard()" style="color:var(--danger)">🕳️ EMPTY BOARD</button>
             </div>
         </div>
@@ -208,7 +207,6 @@
                 $("#role-text").text("STUDENT");
             } else { alert("Invalid Key"); return; }
 
-            // VOICE RECORDER INITIALIZATION
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
@@ -235,23 +233,25 @@
 
         function initBoard() {
             const config = {
-                draggable: true,
+                draggable: true, // Both Student and Coach can move
                 dropOffBoard: 'snapback',
                 position: 'start',
                 onDrop: (source, target) => {
-                    setTimeout(() => { db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); }, 100);
+                    setTimeout(() => { 
+                        db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); 
+                    }, 100);
                 }
             };
             masterBoard = ChessBoard('masterBoard', config);
             
-            // Listen for changes from Firebase
             db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
                 const data = doc.data();
                 if(data?.fen && masterBoard.fen() !== data.fen) { 
                     masterBoard.position(data.fen); 
                 }
             });
-            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            setTimeout(resizeCanvas, 500);
         }
 
         function toggleSetupMode() {
@@ -266,6 +266,7 @@
                     setTimeout(() => { db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); }, 100);
                 }
             });
+            $("#setup-mode-btn-coach").text(setupModeActive ? "✅ FINISH SETUP" : "🧩 SETUP MODE");
         }
 
         function toggleVN() {
@@ -303,13 +304,22 @@
                   let latestAudio = `<span style="font-size: 11px; color: #94a3b8; font-style: italic;">No voice notes yet...</span>`;
                   snap.forEach(doc => {
                       const msg = doc.data();
+                      const isMyMsg = msg.sender === myData.name || isCoach;
+                      const delBtn = isMyMsg ? `<span class="del-msg" onclick="deleteMessage('${doc.id}')">Delete</span>` : '';
+                      
                       let content = msg.audio ? `<audio controls src="${msg.audio}"></audio>` : `<span>${msg.text}</span>`;
-                      box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}</span>${content}</div>`);
+                      box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}</span>${content}<br>${delBtn}</div>`);
                       if(msg.audio) latestAudio = `<audio controls src="${msg.audio}"></audio>`;
                   });
                   $("#latest-audio-container").html(latestAudio);
                   box.scrollTop(box[0].scrollHeight);
             });
+        }
+
+        function deleteMessage(id) {
+            if(confirm("Delete this message?")) {
+                db.collection("special_rooms").doc("masterclass_arena").collection("messages").doc(id).delete();
+            }
         }
 
         function sendMasterChat() {
@@ -324,11 +334,14 @@
         function toggleDrawMode() {
             drawModeActive = !drawModeActive;
             canvas.style.pointerEvents = drawModeActive ? 'auto' : 'none';
+            $("#toggle-draw-btn").css("background", drawModeActive ? "var(--gold)" : "rgba(255, 255, 255, 0.05)");
+            $("#toggle-draw-btn").css("color", drawModeActive ? "#000" : "var(--text)");
         }
 
         function resizeCanvas() {
             const board = document.getElementById('masterBoard');
-            canvas.width = board.clientWidth; canvas.height = board.clientHeight;
+            canvas.width = board.clientWidth; 
+            canvas.height = board.clientHeight;
         }
 
         function initDrawingSync() { 
@@ -340,6 +353,11 @@
                     img.src = data.drawing;
                 } else { ctx.clearRect(0, 0, canvas.width, canvas.height); }
             });
+        }
+
+        function clearBoardDrawing() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            db.collection("special_rooms").doc("masterclass_arena").update({ drawing: null });
         }
 
         function initAudio() {
@@ -367,14 +385,30 @@
             db.collection("special_rooms").doc("masterclass_arena").update({ fen: '8/8/8/8/8/8/8/8 w - - 0 1' });
         }
 
-        canvas.addEventListener('mousedown', (e) => { if(!drawModeActive) return; isDrawing=true; ctx.beginPath(); });
-        canvas.addEventListener('mousemove', (e) => { 
-            if(!isDrawing) return; 
+        // DRAWING LOGIC
+        function getCoords(e) {
             const rect = canvas.getBoundingClientRect();
-            ctx.lineTo((e.clientX || e.touches[0].clientX)-rect.left, (e.clientY || e.touches[0].clientY)-rect.top);
-            ctx.strokeStyle='#fbbf24'; ctx.lineWidth=4; ctx.stroke(); 
-        });
-        canvas.addEventListener('mouseup', () => { if(isDrawing) { isDrawing=false; db.collection("special_rooms").doc("masterclass_arena").update({ drawing: canvas.toDataURL() }); } });
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+
+        const startDraw = (e) => { if(!drawModeActive) return; isDrawing=true; const p = getCoords(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+        const moveDraw = (e) => { 
+            if(!isDrawing) return; 
+            const p = getCoords(e);
+            ctx.lineTo(p.x, p.y);
+            ctx.strokeStyle='#fbbf24'; ctx.lineWidth=4; ctx.lineCap = 'round'; ctx.stroke(); 
+        };
+        const endDraw = () => { if(isDrawing) { isDrawing=false; db.collection("special_rooms").doc("masterclass_arena").update({ drawing: canvas.toDataURL() }); } };
+
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', moveDraw);
+        canvas.addEventListener('mouseup', endDraw);
+        canvas.addEventListener('touchstart', startDraw);
+        canvas.addEventListener('touchmove', moveDraw);
+        canvas.addEventListener('touchend', endDraw);
+
     </script>
 </body>
 </html>
