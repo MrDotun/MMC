@@ -65,8 +65,9 @@
 
         .master-badge { background: var(--gold); color: #000; padding: 4px 12px; border-radius: 8px; font-size: 11px; font-weight: 900; }
 
-        /* NEW TOP VOICE NOTE BAR CSS */
-        .top-vn-bar { display: flex; align-items: center; gap: 12px; background: rgba(0,0,0,0.4); padding: 10px 15px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; }
+        /* TOP VOICE NOTE BAR */
+        .top-vn-bar { display: flex; align-items: center; gap: 12px; background: rgba(0,0,0,0.4); padding: 10px 15px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px; transition: background 0.5s; }
+        .top-vn-bar.new-note { background: rgba(251, 191, 36, 0.3); }
         .latest-audio-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
 
         #board-wrapper { position: relative; width: 100%; touch-action: none; margin-bottom: 15px; }
@@ -88,7 +89,7 @@
 
         #chat-container { margin-top: 15px; background: rgba(2, 6, 23, 0.4); border-radius: 16px; padding: 15px; border: 1px solid rgba(255,255,255,0.05); }
         #master-chat-box { height: 150px; overflow-y: auto; font-size: 12px; margin-bottom: 12px; padding-right: 5px; }
-        .chat-msg { margin-bottom: 12px; line-height: 1.4; display: flex; flex-direction: column; }
+        .chat-msg { margin-bottom: 12px; line-height: 1.4; display: flex; flex-direction: column; position: relative; }
         .chat-name { color: var(--gold); font-weight: bold; margin-bottom: 4px; }
         
         input, textarea { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px; border-radius: 12px; margin-bottom: 10px; width: 100%; box-sizing: border-box; font-family: inherit;}
@@ -96,10 +97,13 @@
         .chat-input-wrap input { margin-bottom: 0; }
 
         /* VN ICON STYLE */
-        .vn-btn { background: #334155; color: white; border: none; width: 45px; height: 45px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+        .vn-btn { background: #334155; color: white; border: none; width: 45px; height: 45px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; position: relative;}
         .vn-btn.recording { background: var(--danger); animation: pulse 1s infinite; }
+        .rec-label { position: absolute; bottom: -18px; font-size: 8px; color: var(--danger); font-weight: 900; white-space: nowrap; }
+        
         audio { height: 35px; width: 100%; margin-top: 5px; filter: hue-rotate(90deg) brightness(1.5); }
-        .latest-audio-wrap audio { margin-top: 0; height: 30px; }
+        .latest-audio-wrap audio { margin-top: 0; height: 28px; }
+        .del-msg { background: none; border: none; color: var(--danger); font-size: 14px; cursor: pointer; position: absolute; right: 0; top: 0; padding: 5px;}
     </style>
 </head>
 <body oncontextmenu="return false;">
@@ -129,8 +133,11 @@
             <div id="mic-control-area"></div>
         </div>
 
-        <div class="top-vn-bar">
-            <button id="top-vn-btn" class="vn-btn" onclick="toggleVN()">🎤</button>
+        <div class="top-vn-bar" id="notif-bar">
+            <div style="position:relative; display:flex; flex-direction:column; align-items:center;">
+                <button id="top-vn-btn" class="vn-btn" onclick="toggleVN()">🎤</button>
+                <span id="rec-indicator" class="rec-label hidden">RECORDING...</span>
+            </div>
             <div id="latest-audio-container" class="latest-audio-wrap">
                 <span style="font-size: 11px; color: #94a3b8; font-style: italic;">No voice notes yet...</span>
             </div>
@@ -234,27 +241,17 @@
                 $("#role-text").text("STUDENT");
             } else { alert("Invalid Key"); return; }
 
-            // Initialize Recording Capabilities
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
-                
-                mediaRecorder.ondataavailable = (e) => {
-                    if (e.data.size > 0) audioChunks.push(e.data);
-                };
-
+                mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
                 mediaRecorder.onstop = () => {
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     const reader = new FileReader();
                     reader.readAsDataURL(audioBlob);
-                    reader.onloadend = () => {
-                        sendVN(reader.result);
-                        audioChunks = [];
-                    };
+                    reader.onloadend = () => { sendVN(reader.result); audioChunks = []; };
                 };
-            } catch (err) { 
-                console.warn("Microphone access denied for Voice Notes."); 
-            }
+            } catch (err) { console.warn("Microphone access denied."); }
 
             $("#password-overlay").addClass("hidden");
             $("#section-lobby").addClass("hidden");
@@ -266,21 +263,19 @@
             renderMicUI();
         }
 
-        // Voice Note Logic
         function toggleVN() {
-            if (!mediaRecorder) {
-                alert("Microphone not detected.");
-                return;
-            }
+            if (!mediaRecorder) { alert("Microphone not detected."); return; }
             if (!isRecording) {
                 audioChunks = [];
                 mediaRecorder.start();
                 isRecording = true;
-                $("#top-vn-btn").addClass("recording").text("🛑"); // Updated to target top button
+                $("#top-vn-btn").addClass("recording").text("🛑");
+                $("#rec-indicator").removeClass("hidden");
             } else {
                 mediaRecorder.stop();
                 isRecording = false;
-                $("#top-vn-btn").removeClass("recording").text("🎤"); // Updated to target top button
+                $("#top-vn-btn").removeClass("recording").text("🎤");
+                $("#rec-indicator").addClass("hidden");
             }
         }
 
@@ -292,31 +287,46 @@
             });
         }
 
+        function deleteMsg(id) {
+            if(confirm("Delete this voice note?")) {
+                db.collection("special_rooms").doc("masterclass_arena").collection("messages").doc(id).delete();
+            }
+        }
+
         function initChat() {
             db.collection("special_rooms").doc("masterclass_arena").collection("messages").orderBy("timestamp", "asc")
               .onSnapshot(snap => {
                   const box = $("#master-chat-box");
+                  const bar = $("#notif-bar");
                   box.empty();
                   
                   let latestAudioHTML = `<span style="font-size: 11px; color: #94a3b8; font-style: italic;">No voice notes yet...</span>`;
-                  
+                  let hasNew = false;
+
                   snap.forEach(doc => {
                       const msg = doc.data();
+                      const id = doc.id;
                       let content = msg.audio ? `<audio controls src="${msg.audio}"></audio>` : `<span>${msg.text}</span>`;
-                      box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}</span>${content}</div>`);
+                      box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}</span>${content}<button class="del-msg" onclick="deleteMsg('${id}')">🗑️</button></div>`);
                       
-                      // If message is audio, update the top bar player to the latest one
                       if(msg.audio) {
+                          hasNew = true;
                           latestAudioHTML = `
-                              <div style="font-size:10px; color:var(--gold); font-weight:bold; margin-bottom:4px;">▶ ${msg.sender}'s Note</div>
+                              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                <span style="font-size:10px; color:var(--gold); font-weight:bold;">▶ ${msg.sender}'s Note</span>
+                                <button onclick="deleteMsg('${id}')" style="background:none; border:none; color:var(--danger); font-size:10px; cursor:pointer;">DELETE</button>
+                              </div>
                               <audio controls src="${msg.audio}"></audio>
                           `;
                       }
                   });
                   
-                  // Push the newest audio to the top bar
+                  if(hasNew) {
+                      bar.addClass("new-note");
+                      setTimeout(() => bar.removeClass("new-note"), 2000);
+                  }
+
                   $("#latest-audio-container").html(latestAudioHTML);
-                  
                   box.scrollTop(box[0].scrollHeight);
               });
         }
@@ -333,12 +343,9 @@
                 }
             };
             masterBoard = ChessBoard('masterBoard', config);
-            
             db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
                 const data = doc.data();
-                if(data?.fen && masterBoard.fen() !== data.fen) {
-                    masterBoard.position(data.fen);
-                }
+                if(data?.fen && masterBoard.fen() !== data.fen) { masterBoard.position(data.fen); }
             });
         }
 
@@ -401,7 +408,6 @@
             }
         }
         
-        // Placeholder stubs
         function toggleGlobalMove() {}
         function toggleSetupMode() {}
         function toggleDrawMode() {}
