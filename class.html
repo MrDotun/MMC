@@ -75,6 +75,7 @@
 
         .analysis-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
         .tool-btn { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text); padding: 12px; border-radius: 12px; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+        .tool-btn:hover { background: rgba(255, 255, 255, 0.15); }
 
         .btn { padding: 16px; cursor: pointer; border-radius: 14px; border: none; background: linear-gradient(135deg, #4c1d95 0%, #2D1B4D 100%); color: var(--secondary); font-weight: 800; width: 100%; text-transform: uppercase; transition: 0.3s; font-size: 12px; margin-top: 10px; letter-spacing: 1px; }
         .btn-gold { background: var(--gold); color: #000; }
@@ -92,6 +93,9 @@
         
         audio { height: 35px; width: 100%; margin-top: 5px; filter: hue-rotate(90deg) brightness(1.5); }
         .del-btn { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 14px; margin-left: 5px; vertical-align: middle;}
+        
+        /* Highlight for click-to-move */
+        .highlight-square { box-shadow: inset 0 0 3px 3px yellow; }
     </style>
 </head>
 <body>
@@ -137,13 +141,16 @@
             <canvas id="drawingCanvas"></canvas>
         </div>
 
+        <div id="student-tools" class="analysis-tools">
+            <button class="tool-btn" onclick="syncMasterPosition('start')">🔄 RESET POS</button>
+            <button id="setup-mode-btn" class="tool-btn" onclick="toggleSetupMode()">🧩 SETUP MODE</button>
+        </div>
+
         <div id="master-admin-panel" class="hidden">
-            <div class="analysis-tools">
-                <button class="tool-btn" onclick="syncMasterPosition('start')">🔄 RESET POS</button>
-                <button id="setup-mode-btn-coach" class="tool-btn" onclick="toggleSetupMode()">🧩 SETUP MODE</button>
+            <div class="analysis-tools" style="margin-top: 0;">
                 <button id="toggle-draw-btn" class="tool-btn" onclick="toggleDrawMode()">✏️ DRAW MODE</button>
                 <button class="tool-btn" onclick="clearDrawing()">🧼 ERASE LINES</button>
-                <button class="tool-btn" onclick="emptyBoard()" style="color:var(--danger)">🕳️ EMPTY BOARD</button>
+                <button class="tool-btn" onclick="emptyBoard()" style="color:var(--danger); grid-column: span 2;">🕳️ EMPTY BOARD</button>
             </div>
         </div>
 
@@ -245,18 +252,34 @@
             };
             masterBoard = ChessBoard('masterBoard', config);
             
-            // Enable Click-to-Move
+            // --- CLICK TO MOVE LOGIC ---
             $('#masterBoard').on('click', '.square-55d63', function() {
+                if (setupModeActive) return; // Disable click-to-move in setup mode to allow dragging spares
+
                 const square = $(this).attr('data-square');
+                const boardPos = masterBoard.position();
+
+                // First Click: Select Piece
                 if (!clickSource) {
-                    if (masterBoard.position()[square]) {
+                    if (boardPos[square]) {
                         clickSource = square;
-                        $(this).css('background', 'rgba(251, 191, 36, 0.5)');
+                        $('.square-55d63').removeClass('highlight-square');
+                        $(this).addClass('highlight-square');
                     }
-                } else {
-                    masterBoard.move(`${clickSource}-${square}`);
-                    $('.square-55d63').css('background', '');
-                    db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
+                } 
+                // Second Click: Move Piece
+                else {
+                    const move = clickSource + '-' + square;
+                    masterBoard.move(move);
+                    $('.square-55d63').removeClass('highlight-square');
+                    
+                    // Sync to Firebase
+                    setTimeout(() => {
+                        db.collection("special_rooms").doc("masterclass_arena").update({ 
+                            fen: masterBoard.fen() 
+                        });
+                    }, 100);
+                    
                     clickSource = null;
                 }
             });
@@ -274,6 +297,8 @@
         function toggleSetupMode() {
             setupModeActive = !setupModeActive;
             const currentFen = masterBoard.fen();
+            
+            // Re-initialize board with spare pieces
             masterBoard = ChessBoard('masterBoard', {
                 draggable: true, 
                 dropOffBoard: 'trash',
@@ -284,6 +309,14 @@
                     setTimeout(() => { db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); }, 100);
                 }
             });
+
+            // Update UI
+            const btnText = setupModeActive ? "✅ FINISH SETUP" : "🧩 SETUP MODE";
+            $("#setup-mode-btn").text(btnText).css("background", setupModeActive ? "var(--secondary)" : "");
+            
+            if(!setupModeActive) {
+                db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
+            }
         }
 
         function toggleVN() {
@@ -361,8 +394,10 @@
 
         function resizeCanvas() {
             const board = document.getElementById('masterBoard');
-            canvas.width = board.clientWidth; 
-            canvas.height = board.clientHeight;
+            if (board) {
+                canvas.width = board.clientWidth; 
+                canvas.height = board.clientHeight;
+            }
         }
 
         function initDrawingSync() { 
@@ -440,6 +475,8 @@
         canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e); });
         canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); });
         canvas.addEventListener('touchend', stopDrawing);
+
+        window.addEventListener('resize', resizeCanvas);
 
     </script>
 </body>
