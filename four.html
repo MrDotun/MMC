@@ -102,22 +102,25 @@
         // --- SUMMON DATA FROM GITHUB ---
         async function summonWorkstationData() {
             const GITHUB_URL = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/csvjson.json";
+            const statusDisplay = document.getElementById('level-selector-container');
+            
             try {
                 const response = await fetch(GITHUB_URL);
+                if (!response.ok) throw new Error('Network error');
                 const data = await response.json(); 
                 
                 allQuestions = [];
                 data.forEach((item) => {
-                    if (item && item.includes(',')) {
-                        const parts = item.split(',');
-                        const fen = parts[0].trim();
-                        const move = parts[1].trim();
+                    // Logic updated to handle JSON objects with "fen" and "best" keys
+                    if (item.fen && item.best) {
+                        const fen = item.fen.trim();
+                        const move = item.best.trim();
                         const isWhite = fen.split(' ')[1] === 'w';
 
-                        const qIndex = allQuestions.length;
-                        const weekNum = Math.floor(qIndex / 40) % 5 + 1;
-                        const termNum = Math.floor(qIndex / 200) % 3 + 1;
-                        const levelNum = Math.floor(qIndex / 600) + 1;
+                        const qIdx = allQuestions.length;
+                        const weekNum = Math.floor(qIdx / 40) % 5 + 1;
+                        const termNum = Math.floor(qIdx / 200) % 3 + 1;
+                        const levelNum = Math.floor(qIdx / 600) + 1;
 
                         allQuestions.push({
                             level: levelNum, term: termNum, week: weekNum,
@@ -131,11 +134,11 @@
                 if (allQuestions.length > 0) {
                     generateControlPanel();
                 } else {
-                    document.getElementById('level-selector-container').innerText = "Data Empty.";
+                    statusDisplay.innerText = "No puzzle data found in file.";
                 }
             } catch (e) {
                 console.error("Connection Error:", e);
-                document.getElementById('level-selector-container').innerText = "Offline. Check GitHub link.";
+                statusDisplay.innerText = "Offline. Please check GitHub link visibility.";
             }
         }
         summonWorkstationData();
@@ -143,24 +146,24 @@
         function generateControlPanel() {
             const container = document.getElementById('level-selector-container');
             container.innerHTML = "";
-            const maxLevel = Math.max(...allQuestions.map(q => q.level));
+            const levelsFound = [...new Set(allQuestions.map(q => q.level))].sort((a,b) => a-b);
 
-            for (let L = 1; L <= maxLevel; L++) {
+            levelsFound.forEach(L => {
                 container.innerHTML += `<div class="section-label">LEVEL ${L}</div>`;
                 for (let t = 1; t <= 3; t++) {
-                    const hasTermData = allQuestions.some(q => q.level == L && q.term == t);
-                    if (!hasTermData) continue;
+                    const hasTerm = allQuestions.some(q => q.level == L && q.term == t);
+                    if (!hasTerm) continue;
 
                     let grid = `<div style="font-size:0.8em; color:#94a3b8; margin: 8px 0;">Term ${t}</div><div class="week-grid">`;
                     for (let w = 1; w <= 5; w++) {
-                        const hasWeekData = allQuestions.some(q => q.level == L && q.term == t && q.week == w);
-                        if (hasWeekData) {
+                        const hasWeek = allQuestions.some(q => q.level == L && q.term == t && q.week == w);
+                        if (hasWeek) {
                             grid += `<button class="btn" style="padding:8px 0; font-size:12px;" onclick="initMission(${L}, ${t}, ${w})">W${w}</button>`;
                         }
                     }
                     container.innerHTML += grid + `</div>`;
                 }
-            }
+            });
         }
 
         window.initMission = function(l, t, w) {
@@ -256,12 +259,12 @@
                         }
                     }
                 });
-            } catch (e) { console.error("Database Error:", e); }
+            } catch (e) { console.error("Database Sync Error:", e); }
         }
 
         window.fetchLeaderboard = function() {
             const listArea = document.getElementById('leaderboard-data');
-            listArea.innerHTML = "Accessing Rankings...";
+            listArea.innerHTML = "Accessing Hall of Fame...";
             document.getElementById("results-modal").classList.remove("hidden");
             db.collection("student_progress").orderBy("totalScore", "desc").limit(50).get().then(snap => {
                 let h = "";
@@ -269,7 +272,7 @@
                     let s = d.data();
                     h += `<div class="leaderboard-entry"><span style="font-weight:bold;">${s.name}</span><span style="color:var(--secondary); font-weight:bold;">${s.totalScore} PTS</span></div>`;
                 });
-                listArea.innerHTML = h || "No data yet.";
+                listArea.innerHTML = h || "No data recorded yet.";
             });
         };
     </script>
