@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mission 4: The Gauntlet | Mind Masters</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+            authDomain: "assignments-de95a.firebaseapp.com",
+            projectId: "assignments-de95a",
+            storageBucket: "assignments-de95a.firebasestorage.app",
+            messagingSenderId: "1088073398299",
+            appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be",
+            databaseURL: "https://assignments-de95a-default-rtdb.firebaseio.com"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // YOUR 50 PUZZLES INTEGRATED HERE
+        const chessPuzzles = [
+            // Theme 1: Arabian Mate (Rook + Knight)
+            { fen: "7k/7p/5N2/8/8/8/8/6R1 w - - 0 1", solution: "Rg8#", theme: "Arabian Mate" },
+            { fen: "k7/p7/2N5/8/8/8/8/1R6 w - - 0 1", solution: "Rb8#", theme: "Arabian Mate" },
+            { fen: "6k1/6p1/4N3/8/8/8/8/5R1K w - - 0 1", solution: "Rf8#", theme: "Arabian Mate" },
+            { fen: "1k6/1p6/3N4/8/8/8/8/2R5 w - - 0 1", solution: "Rc8#", theme: "Arabian Mate" },
+            { fen: "8/8/8/4N3/6p1/6k1/8/5R1K w - - 0 1", solution: "Rf3#", theme: "Arabian Mate" },
+
+            // Theme 2: Anastasia's Mate
+            { fen: "r6k/7p/5N2/8/8/8/8/7R w - - 0 1", solution: "Rxh7#", theme: "Anastasia's Mate" },
+            { fen: "k7/p7/2N5/8/8/8/R7/7K w - - 0 1", solution: "Rxa7#", theme: "Anastasia's Mate" },
+            { fen: "1r5k/1p5p/p4N2/8/8/8/7R/7K w - - 0 1", solution: "Rxh7#", theme: "Anastasia's Mate" },
+            { fen: "1k5r/p6p/N7/8/8/8/R7/7K w - - 0 1", solution: "Rxa7#", theme: "Anastasia's Mate" },
+            { fen: "8/8/8/8/8/5N2/7p/R6k w - - 0 1", solution: "Rxa1#", theme: "Anastasia's Mate" },
+
+            // Theme 3: Smothered Mate
+            { fen: "6rk/6pp/7N/8/8/8/8/7K w - - 0 1", solution: "Nf7#", theme: "Smothered Mate" },
+            { fen: "k5rr/pp6/N7/8/8/8/8/7K w - - 0 1", solution: "Nc7#", theme: "Smothered Mate" },
+            { fen: "8/8/8/K7/8/8/1N1ppp2/3pkp2 w - - 0 1", solution: "Nd3#", theme: "Smothered Mate" },
+            { fen: "8/8/8/K7/8/2N5/5ppp/5pkp w - - 0 1", solution: "Ne2#", theme: "Smothered Mate" },
+            { fen: "8/8/8/K7/8/p2N4/6pp/6pk w - - 0 1", solution: "Nf2#", theme: "Smothered Mate" },
+
+            // Theme 4: Epaulette Mate
+            { fen: "4k3/3r1r2/8/8/8/8/8/4Q2K w - - 0 1", solution: "Qe8#", theme: "Epaulette Mate" },
+            { fen: "3k4/2r1r3/8/8/8/8/8/3Q3K w - - 0 1", solution: "Qd8#", theme: "Epaulette Mate" },
+            { fen: "5k2/4r1r1/8/8/8/8/8/5Q2 w - - 0 1", solution: "Qf8#", theme: "Epaulette Mate" },
+            { fen: "2k5/1r1r4/8/8/8/8/8/2Q5 w - - 0 1", solution: "Qc8#", theme: "Epaulette Mate" },
+            { fen: "1k6/r1r5/8/8/8/8/8/1Q5K w - - 0 1", solution: "Qb8#", theme: "Epaulette Mate" },
+
+            // Theme 5: Swallow's Tail Mate
+            { fen: "3rkr2/8/8/8/8/8/4Q3/4R2K w - - 0 1", solution: "Qe7#", theme: "Swallow's Tail" },
+            { fen: "2rkr3/8/8/8/8/8/3Q4/3R3K w - - 0 1", solution: "Qd7#", theme: "Swallow's Tail" },
+            { fen: "4rkr1/8/8/8/8/8/5Q2/5R2 w - - 0 1", solution: "Qf7#", theme: "Swallow's Tail" },
+            { fen: "8/2rkr3/8/8/8/8/3Q4/3R3K w - - 0 1", solution: "Qd7#", theme: "Swallow's Tail" },
+            { fen: "rkr5/8/8/8/8/8/1Q6/1R5K w - - 0 1", solution: "Qb7#", theme: "Swallow's Tail" },
+
+            // Theme 6: Damiano's Mate
+            { fen: "7k/5p1p/5P2/8/8/8/8/6QK w - - 0 1", solution: "Qg7#", theme: "Damiano's Mate" },
+            { fen: "k7/p1p5/2P5/8/8/8/8/KQ6 w - - 0 1", solution: "Qb7#", theme: "Damiano's Mate" },
+            { fen: "7k/5p1p/5P2/8/8/8/6Q1/7K w - - 0 1", solution: "Qg7#", theme: "Damiano's Mate" },
+            { fen: "k7/p1p5/2P5/8/8/1Q6/8/K7 w - - 0 1", solution: "Qb7#", theme: "Damiano's Mate" },
+            { fen: "7k/5p1p/5P2/8/7Q/8/8/7K w - - 0 1", solution: "Qxh7#", theme: "Damiano's Mate" },
+
+            // Theme 7: Morphy's Mate
+            { fen: "7k/7p/8/8/8/8/1B6/6R1 w - - 0 1", solution: "Bf6#", theme: "Morphy's Mate" },
+            { fen: "k7/p7/8/8/8/8/6B1/1R6 w - - 0 1", solution: "Bc6#", theme: "Morphy's Mate" },
+            { fen: "7k/7p/8/8/8/8/8/B5R1 w - - 0 1", solution: "Bf6#", theme: "Morphy's Mate" },
+            { fen: "k7/p7/8/8/8/8/8/1R4B1 w - - 0 1", solution: "Bc6#", theme: "Morphy's Mate" },
+            { fen: "7k/7p/8/8/8/2B5/8/6R1 w - - 0 1", solution: "Bf6#", theme: "Morphy's Mate" },
+
+            // Theme 8: Pillsbury's Mate
+            { fen: "7k/5R1p/8/8/8/8/1B6/7K w - - 0 1", solution: "Rf8#", theme: "Pillsbury's Mate" },
+            { fen: "k7/p1R5/8/8/8/8/8/K5B1 w - - 0 1", solution: "Rc8#", theme: "Pillsbury's Mate" },
+            { fen: "7k/5R1p/8/8/8/8/B7/7K w - - 0 1", solution: "Rf8#", theme: "Pillsbury's Mate" },
+            { fen: "k7/p1R5/8/8/8/8/6B1/K7 w - - 0 1", solution: "Rc8#", theme: "Pillsbury's Mate" },
+            { fen: "7k/2R4p/8/8/8/8/1B6/7K w - - 0 1", solution: "Rc8#", theme: "Pillsbury's Mate" },
+
+            // Theme 9: Scholar's Mate
+            { fen: "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1", solution: "Qxf7#", theme: "Scholar's variants" },
+            { fen: "rnbqk1nr/pppp1ppp/8/4p3/1bB1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 0 1", solution: "Qxf7#", theme: "Scholar's variants" },
+            { fen: "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 0 1", solution: "Qxf7#", theme: "Scholar's variants" },
+            { fen: "r1bqk1nr/pppp1ppp/2n5/4p3/1bB1P3/2N2Q2/PPPP1PPP/R1B1KBNR w KQkq - 0 1", solution: "Qxf7#", theme: "Scholar's variants" },
+            { fen: "rnbqk1nr/pppp1ppp/8/2b1p3/4P3/2N2Q2/PPPP1PPP/R1B1KBNR w KQkq - 0 1", solution: "Qxf7#", theme: "Scholar's variants" },
+
+            // Theme 10: Fool's / Weak Diagonal
+            { fen: "rnbqkbnr/ppppp2p/8/5pp1/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", solution: "Qh5#", theme: "Fool's Mate" },
+            { fen: "rnbqkbnr/ppppp2p/8/5pp1/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 2", solution: "Qh5#", theme: "Fool's Mate" },
+            { fen: "rnbqkbnr/pppp1p1p/8/6p1/4Pp2/8/PPPP2PP/RNBQKBNR w KQkq - 0 3", solution: "Qh5#", theme: "Fool's Mate" },
+            { fen: "rn1qkbnr/ppp1pppp/8/8/2B3b1/4PQ2/PP1P1PPP/RNB1K1NR w KQkq - 0 4", solution: "Qxf7#", theme: "Weak Diagonal" },
+            { fen: "rnbqkbnr/pppp1ppp/8/4p3/5PP1/8/PPPPP2P/RNBQKBNR b KQkq - 0 2", solution: "Qh4#", theme: "Fool's Mate" }
+        ];
+
+        let currentIndex = 0;
+        let game = new Chess();
+        let board = null;
+        let startTime, timerInterval;
+
+        function onDrop(source, target) {
+            let move = game.move({ from: source, to: target, promotion: 'q' });
+            if (move === null) return 'snapback';
+
+            if (game.in_checkmate()) {
+                currentIndex++;
+                updateUI();
+                if (currentIndex < chessPuzzles.length) {
+                    setTimeout(loadNext, 250);
+                } else {
+                    completeMission();
+                }
+            } else {
+                game.undo();
+                return 'snapback';
+            }
+        }
+
+        function loadNext() {
+            game.load(chessPuzzles[currentIndex].fen);
+            board.position(chessPuzzles[currentIndex].fen);
+            document.getElementById('pattern-name').textContent = chessPuzzles[currentIndex].theme;
+        }
+
+        function updateUI() {
+            document.getElementById('counter').textContent = `${currentIndex + 1} / 50`;
+            document.getElementById('bar').style.width = `${(currentIndex / 50) * 100}%`;
+        }
+
+        window.startMission = () => {
+            if (!document.getElementById('student-name').value) return alert("Enter details!");
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            
+            board = Chessboard('board', { draggable: true, position: 'start', onDrop: onDrop });
+            loadNext();
+            
+            startTime = Date.now();
+            timerInterval = setInterval(() => {
+                const s = Math.floor((Date.now() - startTime) / 1000);
+                document.getElementById('clock').textContent = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+            }, 1000);
+        };
+
+        window.completeMission = async () => {
+            clearInterval(timerInterval);
+            const totalSeconds = Math.floor((Date.now() - startTime) / 1000);
+            
+            await addDoc(collection(db, "mission4_results"), {
+                name: document.getElementById('student-name').value,
+                school: document.getElementById('student-school').value,
+                class: document.getElementById('student-class').value,
+                seconds: totalSeconds,
+                timestamp: serverTimestamp()
+            });
+
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('leaderboard-screen').classList.remove('hidden');
+        };
+
+        const q = query(collection(db, "mission4_results"), orderBy("seconds", "asc"), limit(5));
+        onSnapshot(q, (snap) => {
+            const list = document.getElementById('list');
+            const top = document.getElementById('champion');
+            list.innerHTML = "";
+            snap.docs.forEach((doc, i) => {
+                const d = doc.data();
+                const time = `${String(Math.floor(d.seconds/60)).padStart(2,'0')}:${String(d.seconds%60).padStart(2,'0')}`;
+                if (i === 0) {
+                    top.innerHTML = `
+                        <div class="bg-gradient-to-r from-yellow-400 to-yellow-600 p-1 rounded-2xl">
+                            <div class="bg-gray-800 p-4 rounded-xl text-center">
+                                <p class="text-yellow-400 text-[10px] font-bold uppercase tracking-[0.2em]">All-Time Leader</p>
+                                <h2 class="text-2xl font-black text-white">${d.name}</h2>
+                                <p class="text-gray-400 text-xs">${d.school} • ${d.class}</p>
+                                <p class="text-2xl font-mono text-yellow-500 mt-2">${time}</p>
+                            </div>
+                        </div>`;
+                }
+                list.innerHTML += `<div class="flex justify-between p-3 bg-gray-700 rounded-xl mb-2 border-l-4 border-blue-500">
+                    <span class="text-sm font-bold">${i+1}. ${d.name}</span>
+                    <span class="font-mono text-blue-300">${time}</span>
+                </div>`;
+            });
+        });
+    </script>
+    <style>#board { width: 100%; max-width: 340px; margin: 0 auto; }</style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex items-center justify-center p-4 font-sans">
+
+    <div class="w-full max-w-md bg-slate-800 rounded-[2rem] shadow-2xl border border-slate-700 overflow-hidden">
+        
+        <div class="bg-blue-600 p-5 text-center">
+            <h1 class="font-black text-xl tracking-tighter uppercase">Mission 4: 50 Mates</h1>
+            <p class="text-blue-200 text-[10px] uppercase tracking-widest">Mind Masters Academy</p>
+        </div>
+
+        <div id="start-screen" class="p-8 space-y-4">
+            <div class="text-center mb-4">
+                <p class="text-slate-400 text-sm">Solve 50 puzzles in record time to reach the top of the leaderboard.</p>
+            </div>
+            <input type="text" id="student-name" placeholder="Full Name" class="w-full p-4 rounded-2xl bg-slate-700 border border-slate-600 outline-none focus:border-blue-500 transition-all">
+            <input type="text" id="student-school" placeholder="School" class="w-full p-4 rounded-2xl bg-slate-700 border border-slate-600 outline-none">
+            <input type="text" id="student-class" placeholder="Class" class="w-full p-4 rounded-2xl bg-slate-700 border border-slate-600 outline-none">
+            <button onclick="startMission()" class="w-full bg-blue-600 py-5 rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-transform">BEGIN MISSION</button>
+        </div>
+
+        <div id="game-screen" class="hidden p-5">
+            <div class="flex justify-between items-end mb-4">
+                <div>
+                    <p id="pattern-name" class="text-blue-400 text-[10px] font-bold uppercase tracking-widest">Arabian Mate</p>
+                    <p id="counter" class="text-2xl font-black">1 / 50</p>
+                </div>
+                <div id="clock" class="text-3xl font-mono font-bold text-yellow-500">00:00</div>
+            </div>
+
+            <div class="w-full bg-slate-700 h-2 rounded-full mb-6 overflow-hidden">
+                <div id="bar" class="bg-blue-500 h-full w-0 transition-all duration-300"></div>
+            </div>
+
+            <div id="board" class="mb-6 rounded-lg overflow-hidden border-4 border-slate-700"></div>
+            
+            <p class="text-center text-slate-500 text-xs italic">Drag the piece to deliver Checkmate!</p>
+        </div>
+
+        <div id="leaderboard-screen" class="hidden p-8 space-y-6">
+            <div id="champion"></div>
+            <div id="list"></div>
+            <button onclick="location.reload()" class="w-full py-4 text-slate-500 text-sm font-bold uppercase tracking-widest hover:text-white transition-colors">Restart Mission</button>
+        </div>
+
+    </div>
+
+</body>
+</html>
