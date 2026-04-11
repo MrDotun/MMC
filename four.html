@@ -2,231 +2,142 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mission 4: 50 Mates | Mind Masters</title>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mr Dotun's Chess Workstation</title>
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
-            authDomain: "assignments-de95a.firebaseapp.com",
-            projectId: "assignments-de95a",
-            storageBucket: "assignments-de95a.firebasestorage.app",
-            messagingSenderId: "1088073398299",
-            appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        let chessPuzzles = [];
-        let currentIndex = 0;
-        let game = new Chess();
-        let board = null;
-        let startTime, timerInterval;
-        let selectedSquare = null;
-        let timePenalty = 0;
-
-        // LOAD DATA FROM VERIFIED LICHESS JSON
-        async function loadVerifiedPuzzles() {
-            const btn = document.getElementById('start-btn');
-            try {
-                const response = await fetch('https://raw.githubusercontent.com/pheyre/lichess-puzzles-json/master/puzzles.json');
-                const allData = await response.json();
-                const mateIn1 = allData.filter(p => p.themes.includes('mateIn1'));
-                chessPuzzles = mateIn1.sort(() => 0.5 - Math.random()).slice(0, 50);
-                
-                btn.disabled = false;
-                btn.innerText = "BEGIN MISSION";
-                btn.classList.replace('bg-slate-600', 'bg-blue-600');
-            } catch (error) {
-                console.error("Data fetch failed:", error);
-                btn.innerText = "Error Loading Puzzles";
-            }
-        }
-
-        function onSquareClick(square) {
-            const piece = game.get(square);
-            if (selectedSquare) {
-                const move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
-                if (move === null) {
-                    if (piece && piece.color === game.turn()) {
-                        selectedSquare = square;
-                        removeHighlights();
-                        $(`#board .square-${square}`).addClass('highlight-selected');
-                    } else {
-                        selectedSquare = null;
-                        removeHighlights();
-                    }
-                } else {
-                    if (game.in_checkmate()) {
-                        board.position(game.fen());
-                        currentIndex++;
-                        updateUI();
-                        if (currentIndex < chessPuzzles.length) setTimeout(loadNext, 400);
-                        else completeMission();
-                    } else {
-                        game.undo();
-                        selectedSquare = null;
-                        removeHighlights();
-                    }
-                }
-            } else {
-                if (piece && piece.color === game.turn()) {
-                    selectedSquare = square;
-                    $(`#board .square-${square}`).addClass('highlight-selected');
-                }
-            }
-        }
-
-        function loadNext() {
-            game.load(chessPuzzles[currentIndex].fen);
-            board.position(chessPuzzles[currentIndex].fen);
-            selectedSquare = null;
-            removeHighlights();
-        }
-
-        function removeHighlights() {
-            $('#board .square-55d63').removeClass('highlight-hint highlight-selected');
-        }
-
-        function updateUI() {
-            document.getElementById('counter').textContent = `${currentIndex + 1} / 50`;
-            document.getElementById('bar').style.width = `${(currentIndex / 50) * 100}%`;
-        }
-
-        window.startMission = () => {
-            if (!document.getElementById('student-name').value) return alert("Enter your name!");
-            document.getElementById('start-screen').classList.add('hidden');
-            document.getElementById('game-screen').classList.remove('hidden');
-            
-            board = Chessboard('board', {
-                position: 'start',
-                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-            });
-
-            $('#board').on('click', '.square-55d63', function() {
-                onSquareClick($(this).data('square'));
-            });
-
-            loadNext();
-            startTime = Date.now();
-            timerInterval = setInterval(() => {
-                const s = Math.floor((Date.now() - startTime) / 1000) + timePenalty;
-                document.getElementById('clock').textContent = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
-            }, 1000);
-        };
-
-        window.showHint = () => {
-            const moves = game.moves({verbose: true});
-            const mateMove = moves.find(m => {
-                game.move(m);
-                const isMate = game.in_checkmate();
-                game.undo();
-                return isMate;
-            });
-            if (mateMove) {
-                removeHighlights();
-                $(`#board .square-${mateMove.from}`).addClass('highlight-hint');
-            }
-        };
-
-        window.concede = () => {
-            if (confirm("Skip? (+20s penalty)")) {
-                timePenalty += 20;
-                currentIndex++;
-                updateUI();
-                if (currentIndex < chessPuzzles.length) loadNext();
-                else completeMission();
-            }
-        };
-
-        window.completeMission = async () => {
-            clearInterval(timerInterval);
-            const finalTime = Math.floor((Date.now() - startTime) / 1000) + timePenalty;
-            await addDoc(collection(db, "mission4_results"), {
-                name: document.getElementById('student-name').value,
-                school: document.getElementById('student-school').value,
-                class: document.getElementById('student-class').value,
-                seconds: finalTime,
-                timestamp: serverTimestamp()
-            });
-            document.getElementById('game-screen').classList.add('hidden');
-            document.getElementById('leaderboard-screen').classList.remove('hidden');
-        };
-
-        // Leaderboard Listener
-        const q = query(collection(db, "mission4_results"), orderBy("seconds", "asc"), limit(5));
-        onSnapshot(q, (snap) => {
-            const list = document.getElementById('list');
-            list.innerHTML = "";
-            snap.docs.forEach((doc, i) => {
-                const d = doc.data();
-                list.innerHTML += `<div class="flex justify-between p-3 bg-slate-700 rounded-xl mb-2 text-white border-l-4 border-blue-500">
-                    <span>${i+1}. ${d.name}</span>
-                    <span class="font-mono text-blue-300">${d.seconds}s</span>
-                </div>`;
-            });
-        });
-
-        loadVerifiedPuzzles();
-    </script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
     <style>
-        #board { width: 100%; max-width: 340px; margin: 0 auto; }
-        .highlight-selected { background-color: rgba(255, 255, 0, 0.4) !important; }
-        .highlight-hint { background-color: rgba(0, 255, 0, 0.5) !important; }
+        :root { --primary: #1e1b4b; --secondary: #fbbf24; --accent: #4ade80; --bg: #0f172a; --danger: #ef4444; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: white; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        
+        #board-container { width: 350px; max-width: 95vw; margin: 10px auto; border: 4px solid var(--secondary); border-radius: 12px; overflow: hidden; transition: 0.3s; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .hidden { display: none !important; }
+        
+        /* Buttons */
+        .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: 2px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; transition: 0.2s; box-sizing: border-box; outline: none; text-transform: uppercase; letter-spacing: 1px; }
+        .btn:hover { background: var(--secondary); color: var(--primary); transform: translateY(-2px); }
+        .btn-teacher { border-color: #6366f1; color: #6366f1; margin-top: 20px; font-size: 0.8em; }
+        
+        /* Progress & HUD */
+        #progress-container { width: 350px; max-width: 90vw; height: 10px; background: #334155; border-radius: 5px; margin-bottom: 15px; overflow: hidden; border: 1px solid #475569; }
+        #progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        #task-text { background: #1e293b; padding: 15px; border-radius: 8px; border-bottom: 4px solid var(--accent); margin-bottom: 15px; width: 350px; max-width: 90vw; text-align: center; font-weight: bold; font-size: 1.1em; }
+        
+        .summary-table { width: 100%; border-collapse: collapse; margin: 15px 0; background: #1e293b; border-radius: 8px; overflow: hidden; }
+        .summary-table th, .summary-table td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+        .summary-table th { background: var(--secondary); color: var(--primary); }
+        
+        .highlight-selected { background-color: rgba(251, 191, 36, 0.6) !important; }
+        .correct-flash { border-color: var(--accent) !important; box-shadow: 0 0 30px var(--accent); }
+        
+        .section-label { color: var(--secondary); text-align: center; margin-top: 25px; font-weight: 800; font-size: 1.3em; letter-spacing: 2px; border-top: 1px solid #334155; padding-top: 15px; }
+        .week-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 20px; width: 100%; max-width: 400px; }
+        
+        #results-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--primary); padding: 25px; border-radius: 16px; border: 3px solid var(--secondary); z-index: 2000; width: 85%; max-height: 80vh; overflow-y: auto; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+        .leaderboard-entry { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #334155; align-items: center; background: rgba(255,255,255,0.03); margin-bottom: 4px; border-radius: 4px; }
     </style>
 </head>
-<body class="bg-slate-900 text-white min-h-screen flex items-center justify-center p-4">
+<body>
 
-    <div class="w-full max-w-md bg-slate-800 rounded-[2rem] shadow-2xl border border-slate-700 overflow-hidden">
-        <div class="bg-blue-600 p-5 text-center">
-            <h1 class="font-black text-xl uppercase tracking-tighter">Mission 4: 50 Mates</h1>
-            <p class="text-blue-200 text-[10px] uppercase tracking-widest">Mind Masters Academy</p>
-        </div>
-
-        <div id="start-screen" class="p-8 space-y-4">
-            <input type="text" id="student-name" placeholder="Full Name" class="w-full p-4 rounded-2xl bg-slate-700 border border-slate-600 text-white outline-none">
-            <input type="text" id="student-school" placeholder="School" class="w-full p-4 rounded-2xl bg-slate-700 border border-slate-600 outline-none">
-            <input type="text" id="student-class" placeholder="Class" class="w-full p-4 rounded-2xl bg-slate-700 border border-slate-600 outline-none">
-            <button id="start-btn" disabled onclick="startMission()" class="w-full bg-slate-600 py-5 rounded-2xl font-black text-lg shadow-xl text-white">
-                LOADING MISSION...
-            </button>
-        </div>
-
-        <div id="game-screen" class="hidden p-5">
-            <div class="flex justify-between items-end mb-4">
-                <div>
-                    <p class="text-blue-400 text-[10px] font-bold uppercase tracking-widest">Mission Progress</p>
-                    <p id="counter" class="text-2xl font-black">1 / 50</p>
-                </div>
-                <div id="clock" class="text-3xl font-mono font-bold text-yellow-500">00:00</div>
-            </div>
-            <div class="w-full bg-slate-700 h-2 rounded-full mb-6 overflow-hidden">
-                <div id="bar" class="bg-blue-500 h-full w-0 transition-all duration-300"></div>
-            </div>
-            <div id="board" class="mb-6 rounded-lg overflow-hidden border-4 border-slate-700"></div>
-            <div class="flex gap-4">
-                <button onclick="showHint()" class="flex-1 bg-slate-700 py-3 rounded-xl text-xs font-bold uppercase">Hint</button>
-                <button onclick="concede()" class="flex-1 bg-red-900/40 py-3 rounded-xl text-xs font-bold uppercase text-red-200">Concede</button>
-            </div>
-        </div>
-
-        <div id="leaderboard-screen" class="hidden p-8">
-            <h2 class="text-xl font-black mb-4 text-center">TOP ACADEMY TIMES</h2>
-            <div id="list"></div>
-            <button onclick="location.reload()" class="w-full py-4 text-slate-500 text-sm font-bold uppercase tracking-widest hover:text-white">Restart Mission</button>
-        </div>
+    <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: var(--secondary); margin: 0; font-size: 1.8em; text-transform: uppercase;">Mr Dotun's</h1>
+        <h2 style="color: white; margin: 0; font-weight: 300; letter-spacing: 4px;">CHESS WORKSTATION</h2>
     </div>
 
-</body>
-</html>
+    <div id="setup-area">
+        <input type="text" id="studentName" placeholder="Enter Student Full Name" style="width:100%; padding:15px; margin-bottom:15px; border-radius:8px; border:2px solid var(--secondary); background:#1e293b; color:white; box-sizing: border-box; font-size: 16px; text-align: center;">
+        <div id="level-selector-container" style="text-align: center;">Syncing with Workstation...</div>
+        <button class="btn btn-teacher" onclick="fetchLeaderboard()">📊 Global Leaderboard</button>
+    </div>
+
+    <div id="game-area" class="hidden">
+        <div id="progress-container"><div id="progress-bar"></div></div>
+        <div style="display: flex; justify-content: space-between; width: 100%; max-width: 350px; align-items: center; margin-bottom: 10px;">
+            <h3 id="topic-title" style="color: var(--secondary); margin: 0; font-size: 1em;">Mate in 1</h3>
+            <div id="lives-display" style="font-size: 20px; filter: drop-shadow(0 0 5px red);">❤️❤️❤️</div>
+        </div>
+        <div id="task-text">Finding Mission...</div>
+        <div id="board-container"><div id="myBoard"></div></div>
+        <h3 style="color:var(--accent); text-align: center; font-size: 1.4em;">Score: <span id="current-score">0</span></h3>
+    </div>
+
+    <div id="post-game" class="hidden" style="text-align: center; width: 95%; max-width: 400px;">
+        <h2 style="color:var(--secondary); margin-bottom: 10px;">MISSION COMPLETE</h2>
+        <div id="summary-container" style="max-height: 250px; overflow-y: auto; border: 1px solid #334155; border-radius: 8px;"></div>
+        <h3 style="margin: 20px 0;">Points Earned: <span id="final-points" style="color:var(--accent)">0</span></h3>
+        <button class="btn" onclick="fetchLeaderboard()">🏆 View Hall of Fame</button>
+        <button class="btn" style="border-color: #94a3b8; color: #94a3b8;" onclick="location.reload()">🔄 Back to HQ</button>
+    </div>
+
+    <div id="results-modal" class="hidden">
+        <h2 style="color:var(--secondary); text-align: center; margin-top: 0; letter-spacing: 2px;">🏆 TOP STRATEGISTS</h2>
+        <div id="leaderboard-data" style="padding: 10px;">Loading Rankings...</div>
+        <button class="btn" onclick="document.getElementById('results-modal').classList.add('hidden')" style="margin-top: 20px;">Return</button>
+    </div>
+
+    <script>
+        // --- FIREBASE INITIALIZATION ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+          authDomain: "assignments-de95a.firebaseapp.com",
+          projectId: "assignments-de95a",
+          storageBucket: "assignments-de95a.firebasestorage.app",
+          messagingSenderId: "1088073398299",
+          appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let allQuestions = []; 
+        let game = new Chess();
+        let board, currentLevel, currentTerm, currentWeek, gradeSet, currentIdx, score, pName;
+        let lives = 3;
+        let squareSelected = null;
+        let missionResults = [];
+
+        // --- SUMMON DATA FROM GITHUB ---
+        async function summonWorkstationData() {
+            const GITHUB_URL = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/csvjson.json";
+            try {
+                const response = await fetch(GITHUB_URL);
+                const data = await response.json(); 
+                
+                allQuestions = data.map((item, index) => {
+                    const parts = item.split(',');
+                    const fen = parts[0];
+                    const move = parts[1];
+                    const isWhite = fen.split(' ')[1] === 'w';
+
+                    // Grouping logic: 40 questions per week
+                    const weekNum = Math.floor(index / 40) % 5 + 1;
+                    const termNum = Math.floor(index / 200) % 3 + 1;
+                    const levelNum = Math.floor(index / 600) + 1;
+
+                    return {
+                        level: levelNum, term: termNum, week: weekNum,
+                        topic: "Tactical Checkmate",
+                        task: isWhite ? "White to Move: Deliver Mate!" : "Black to Move: Deliver Mate!",
+                        fen: fen, move: move
+                    };
+                });
+                generateControlPanel();
+            } catch (e) {
+                console.error("Connection Error:", e);
+                document.getElementById('level-selector-container').innerText = "System Offline. Check GitHub Link.";
+            }
+        }
+        summonWorkstationData();
+
+        function generateControlPanel() {
+            const container = document.getElementById('level-selector-container');
+            container.innerHTML = "";
+            for (let L = 1; L <= 4; L++) {
+                container.innerHTML += `<div class="section-label">LEVEL ${L}</div>`;
+                for (let t = 1; t <= 3; t++) {
+                    let grid = `<div style="font-size:0.8em; color:#94a3
