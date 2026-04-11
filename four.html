@@ -19,12 +19,10 @@
         #board-container { width: 350px; max-width: 95vw; margin: 10px auto; border: 4px solid var(--secondary); border-radius: 12px; overflow: hidden; transition: 0.3s; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
         .hidden { display: none !important; }
         
-        /* Buttons */
         .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: 2px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; transition: 0.2s; box-sizing: border-box; outline: none; text-transform: uppercase; letter-spacing: 1px; }
         .btn:hover { background: var(--secondary); color: var(--primary); transform: translateY(-2px); }
         .btn-teacher { border-color: #6366f1; color: #6366f1; margin-top: 20px; font-size: 0.8em; }
         
-        /* Progress & HUD */
         #progress-container { width: 350px; max-width: 90vw; height: 10px; background: #334155; border-radius: 5px; margin-bottom: 15px; overflow: hidden; border: 1px solid #475569; }
         #progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         #task-text { background: #1e293b; padding: 15px; border-radius: 8px; border-bottom: 4px solid var(--accent); margin-bottom: 15px; width: 350px; max-width: 90vw; text-align: center; font-weight: bold; font-size: 1.1em; }
@@ -108,28 +106,36 @@
                 const response = await fetch(GITHUB_URL);
                 const data = await response.json(); 
                 
-                allQuestions = data.map((item, index) => {
-                    const parts = item.split(',');
-                    const fen = parts[0];
-                    const move = parts[1];
-                    const isWhite = fen.split(' ')[1] === 'w';
+                allQuestions = [];
+                data.forEach((item) => {
+                    if (item && item.includes(',')) {
+                        const parts = item.split(',');
+                        const fen = parts[0].trim();
+                        const move = parts[1].trim();
+                        const isWhite = fen.split(' ')[1] === 'w';
 
-                    // Grouping logic: 40 questions per week
-                    const weekNum = Math.floor(index / 40) % 5 + 1;
-                    const termNum = Math.floor(index / 200) % 3 + 1;
-                    const levelNum = Math.floor(index / 600) + 1;
+                        const qIndex = allQuestions.length;
+                        const weekNum = Math.floor(qIndex / 40) % 5 + 1;
+                        const termNum = Math.floor(qIndex / 200) % 3 + 1;
+                        const levelNum = Math.floor(qIndex / 600) + 1;
 
-                    return {
-                        level: levelNum, term: termNum, week: weekNum,
-                        topic: "Tactical Checkmate",
-                        task: isWhite ? "White to Move: Deliver Mate!" : "Black to Move: Deliver Mate!",
-                        fen: fen, move: move
-                    };
+                        allQuestions.push({
+                            level: levelNum, term: termNum, week: weekNum,
+                            topic: "Tactical Checkmate",
+                            task: isWhite ? "White to Move: Deliver Mate!" : "Black to Move: Deliver Mate!",
+                            fen: fen, move: move
+                        });
+                    }
                 });
-                generateControlPanel();
+                
+                if (allQuestions.length > 0) {
+                    generateControlPanel();
+                } else {
+                    document.getElementById('level-selector-container').innerText = "Data Empty.";
+                }
             } catch (e) {
                 console.error("Connection Error:", e);
-                document.getElementById('level-selector-container').innerText = "System Offline. Check GitHub Link.";
+                document.getElementById('level-selector-container').innerText = "Offline. Check GitHub link.";
             }
         }
         summonWorkstationData();
@@ -137,7 +143,135 @@
         function generateControlPanel() {
             const container = document.getElementById('level-selector-container');
             container.innerHTML = "";
-            for (let L = 1; L <= 4; L++) {
+            const maxLevel = Math.max(...allQuestions.map(q => q.level));
+
+            for (let L = 1; L <= maxLevel; L++) {
                 container.innerHTML += `<div class="section-label">LEVEL ${L}</div>`;
                 for (let t = 1; t <= 3; t++) {
-                    let grid = `<div style="font-size:0.8em; color:#94a3
+                    const hasTermData = allQuestions.some(q => q.level == L && q.term == t);
+                    if (!hasTermData) continue;
+
+                    let grid = `<div style="font-size:0.8em; color:#94a3b8; margin: 8px 0;">Term ${t}</div><div class="week-grid">`;
+                    for (let w = 1; w <= 5; w++) {
+                        const hasWeekData = allQuestions.some(q => q.level == L && q.term == t && q.week == w);
+                        if (hasWeekData) {
+                            grid += `<button class="btn" style="padding:8px 0; font-size:12px;" onclick="initMission(${L}, ${t}, ${w})">W${w}</button>`;
+                        }
+                    }
+                    container.innerHTML += grid + `</div>`;
+                }
+            }
+        }
+
+        window.initMission = function(l, t, w) {
+            pName = document.getElementById('studentName').value.trim();
+            if(!pName) { alert("Please enter student name."); return; }
+            currentLevel=l; currentTerm=t; currentWeek=w;
+            gradeSet = allQuestions.filter(q => q.level == l && q.term == t && q.week == w);
+            
+            document.getElementById("setup-area").classList.add("hidden");
+            document.getElementById("game-area").classList.remove("hidden");
+            currentIdx=0; score=0; missionResults=[];
+            loadQuestion();
+        };
+
+        function loadQuestion() {
+            if(currentIdx >= gradeSet.length) { finishGame(); return; }
+            const prog = (currentIdx / gradeSet.length) * 100;
+            document.getElementById("progress-bar").style.width = prog + "%";
+            lives = 3; updateLivesUI();
+            const q = gradeSet[currentIdx];
+            document.getElementById("topic-title").innerText = q.topic;
+            document.getElementById("task-text").innerText = q.task;
+            document.getElementById("current-score").innerText = score;
+
+            game.load(q.fen);
+            board = ChessBoard('myBoard', {
+                draggable: false, position: q.fen,
+                orientation: game.turn() === 'b' ? 'black' : 'white',
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+            });
+            $('.square-55d63').off('click').on('click', handleMove);
+        }
+
+        function handleMove() {
+            const sq = $(this).attr('data-square');
+            if(!squareSelected) {
+                const piece = game.get(sq);
+                if(piece && piece.color === game.turn()) { 
+                    squareSelected=sq; 
+                    $(`.square-${sq}`).addClass('highlight-selected'); 
+                }
+            } else {
+                const moveAttempt = squareSelected + sq;
+                $('.square-55d63').removeClass('highlight-selected');
+                
+                if(moveAttempt === gradeSet[currentIdx].move) {
+                    score++; missionResults.push({status: "Correct"});
+                    $('#board-container').addClass('correct-flash');
+                    setTimeout(() => {
+                        $('#board-container').removeClass('correct-flash');
+                        currentIdx++; squareSelected=null;
+                        loadQuestion();
+                    }, 350);
+                } else {
+                    lives--; updateLivesUI();
+                    squareSelected = null;
+                    if(lives <= 0) {
+                        missionResults.push({status: "Incorrect"});
+                        currentIdx++; setTimeout(loadQuestion, 350);
+                    }
+                }
+            }
+        }
+
+        function updateLivesUI() { document.getElementById("lives-display").innerText = "❤️".repeat(lives); }
+
+        async function finishGame() {
+            document.getElementById("progress-bar").style.width = "100%";
+            let table = `<table class="summary-table"><tr><th>Mission</th><th>Result</th></tr>`;
+            missionResults.forEach((r, i) => {
+                table += `<tr><td>Tactical #${i+1}</td><td style="color:${r.status=='Correct'?'#4ade80':'#ef4444'}">${r.status}</td></tr>`;
+            });
+            document.getElementById("summary-container").innerHTML = table + "</table>";
+            document.getElementById("final-points").innerText = score;
+            document.getElementById("game-area").classList.add("hidden");
+            document.getElementById("post-game").classList.remove("hidden");
+
+            const userRef = db.collection("student_progress").doc(pName.toLowerCase());
+            const mKey = `L${currentLevel}T${currentTerm}W${currentWeek}`;
+            try {
+                await db.runTransaction(async (t) => {
+                    const doc = await t.get(userRef);
+                    if(!doc.exists) {
+                        t.set(userRef, {name: pName, totalScore: score, completedMissions: [mKey]});
+                    } else {
+                        const data = doc.data();
+                        if(!data.completedMissions.includes(mKey)) {
+                            t.update(userRef, { 
+                                totalScore: (data.totalScore || 0) + score, 
+                                name: pName,
+                                completedMissions: firebase.firestore.FieldValue.arrayUnion(mKey) 
+                            });
+                        }
+                    }
+                });
+            } catch (e) { console.error("Database Error:", e); }
+        }
+
+        window.fetchLeaderboard = function() {
+            const listArea = document.getElementById('leaderboard-data');
+            listArea.innerHTML = "Accessing Rankings...";
+            document.getElementById("results-modal").classList.remove("hidden");
+            db.collection("student_progress").orderBy("totalScore", "desc").limit(50).get().then(snap => {
+                let h = "";
+                snap.forEach(d => {
+                    let s = d.data();
+                    h += `<div class="leaderboard-entry"><span style="font-weight:bold;">${s.name}</span><span style="color:var(--secondary); font-weight:bold;">${s.totalScore} PTS</span></div>`;
+                });
+                listArea.innerHTML = h || "No data yet.";
+            });
+        };
+    </script>
+</body>
+</html>
