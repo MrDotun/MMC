@@ -22,6 +22,7 @@
         .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: 2px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; transition: 0.2s; box-sizing: border-box; outline: none; text-transform: uppercase; letter-spacing: 1px; }
         .btn:hover { background: var(--secondary); color: var(--primary); transform: translateY(-2px); }
         .btn-teacher { border-color: #6366f1; color: #6366f1; margin-top: 20px; font-size: 0.8em; }
+        .btn-hint { border-color: #38bdf8; color: #38bdf8; margin-top: 10px; }
         
         #progress-container { width: 350px; max-width: 90vw; height: 10px; background: #334155; border-radius: 5px; margin-bottom: 15px; overflow: hidden; border: 1px solid #475569; }
         #progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
@@ -57,12 +58,13 @@
     <div id="game-area" class="hidden">
         <div id="progress-container"><div id="progress-bar"></div></div>
         <div style="display: flex; justify-content: space-between; width: 100%; max-width: 350px; align-items: center; margin-bottom: 10px;">
-            <h3 id="topic-title" style="color: var(--secondary); margin: 0; font-size: 1em;">Mate in 1</h3>
+            <h3 id="topic-title" style="color: var(--secondary); margin: 0; font-size: 1em;">Tactics</h3>
             <div id="lives-display" style="font-size: 20px; filter: drop-shadow(0 0 5px red);">❤️❤️❤️</div>
         </div>
         <div id="task-text">Finding Mission...</div>
         <div id="board-container"><div id="myBoard"></div></div>
-        <h3 style="color:var(--accent); text-align: center; font-size: 1.4em;">Score: <span id="current-score">0</span></h3>
+        <h3 style="color:var(--accent); text-align: center; font-size: 1.4em; margin-bottom: 5px;">Score: <span id="current-score">0</span></h3>
+        <button class="btn btn-hint" onclick="provideHint()" style="max-width: 350px;">💡 Need a Hint?</button>
     </div>
 
     <div id="post-game" class="hidden" style="text-align: center; width: 95%; max-width: 400px;">
@@ -98,47 +100,82 @@
         let lives = 3;
         let squareSelected = null;
         let missionResults = [];
+        let puzzleStep = 0; // Tracks if we are on move 1 or move 2 for the sequence
 
         async function summonWorkstationData() {
-            const GITHUB_URL = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/csvjson.json";
+            const URL_MATE_1 = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/csvjson.json";
+            const URL_MATE_2 = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/puzzles.json"; // UPDATE THIS IF NAMED DIFFERENTLY
+            
             const statusDisplay = document.getElementById('level-selector-container');
             
             try {
-                const response = await fetch(GITHUB_URL);
-                if (!response.ok) throw new Error('Network error');
-                const data = await response.json(); 
-                
+                // Fetch both files simultaneously
+                const [res1, res2] = await Promise.all([
+                    fetch(URL_MATE_1).catch(() => null),
+                    fetch(URL_MATE_2).catch(() => null)
+                ]);
+
                 allQuestions = [];
-                data.forEach((item) => {
-                    if (item.fen && item.best) {
-                        const fen = item.fen.trim();
-                        const move = item.best.trim();
-                        const isWhite = fen.split(' ')[1] === 'w';
 
-                        const qIdx = allQuestions.length;
-                        
-                        // Structure: 40 questions per week, 5 weeks per term, 3 terms per level
-                        // 40 * 5 * 3 = 600 questions per level
-                        const weekNum = Math.floor(qIdx / 40) % 5 + 1;
-                        const termNum = Math.floor(qIdx / 200) % 3 + 1;
-                        const levelNum = Math.floor(qIdx / 600) + 1;
+                // --- PROCESS LEVEL 1 & 2 (Mate in 1) ---
+                if (res1 && res1.ok) {
+                    const data1 = await res1.json();
+                    data1.forEach((item, index) => {
+                        if (item.fen && item.best) {
+                            const fen = item.fen.trim();
+                            const move = item.best.trim();
+                            const isWhite = fen.split(' ')[1] === 'w';
 
-                        // Only push if Level is within 1-6
-                        if (levelNum <= 6) {
-                            allQuestions.push({
-                                level: levelNum, term: termNum, week: weekNum,
-                                topic: "Tactical Checkmate",
-                                task: isWhite ? "White to Move: Deliver Mate!" : "Black to Move: Deliver Mate!",
-                                fen: fen, move: move
-                            });
+                            const weekNum = Math.floor(index / 40) % 5 + 1;
+                            const termNum = Math.floor(index / 200) % 3 + 1;
+                            const levelNum = Math.floor(index / 600) + 1;
+
+                            if (levelNum <= 2) {
+                                allQuestions.push({
+                                    level: levelNum, term: termNum, week: weekNum,
+                                    topic: "Mate in 1",
+                                    task: isWhite ? "White to Move: Deliver Mate!" : "Black to Move: Deliver Mate!",
+                                    fen: fen, 
+                                    expectedMoves: [move] // Store as array for the sequence controller
+                                });
+                            }
                         }
-                    }
-                });
+                    });
+                }
+
+                // --- PROCESS LEVEL 3 to 6 (Mate in 2) ---
+                if (res2 && res2.ok) {
+                    const data2 = await res2.json();
+                    data2.forEach((item, index) => {
+                        if (item.fen && item.solution) {
+                            const fen = item.fen.trim();
+                            // Parse solution string "1. Nf6+ gxf6 2. Bxf7#" into ["Nf6+", "gxf6", "Bxf7#"]
+                            let solutionStr = Array.isArray(item.solution) ? item.solution.join(' ') : item.solution;
+                            const cleanMoves = solutionStr.replace(/\d+\./g, '').trim().split(/\s+/);
+                            const isWhite = fen.split(' ')[1] === 'w';
+
+                            // 20 puzzles per week, 5 weeks per term, 3 terms per level = 300 per level
+                            const weekNum = Math.floor(index / 20) % 5 + 1;
+                            const termNum = Math.floor(index / 100) % 3 + 1;
+                            const levelNum = Math.floor(index / 300) + 3;
+
+                            if (levelNum >= 3 && levelNum <= 6) {
+                                allQuestions.push({
+                                    level: levelNum, term: termNum, week: weekNum,
+                                    topic: "Mate in 2",
+                                    task: isWhite ? "White to Move: Deliver Mate in 2!" : "Black to Move: Deliver Mate in 2!",
+                                    fen: fen, 
+                                    expectedMoves: cleanMoves
+                                });
+                            }
+                        }
+                    });
+                }
                 
                 if (allQuestions.length > 0) {
                     generateControlPanel();
                 } else {
-                    statusDisplay.innerText = "No puzzle data found.";
+                    statusDisplay.innerText = "No puzzle data found. Check GitHub links.";
                 }
             } catch (e) {
                 console.error("Connection Error:", e);
@@ -151,7 +188,6 @@
             const container = document.getElementById('level-selector-container');
             container.innerHTML = "";
             
-            // Strictly iterate 1 to 6
             for (let L = 1; L <= 6; L++) {
                 const hasLevelData = allQuestions.some(q => q.level == L);
                 if (!hasLevelData) continue;
@@ -187,25 +223,31 @@
 
         function loadQuestion() {
             if(currentIdx >= gradeSet.length) { finishGame(); return; }
+            
             const prog = (currentIdx / gradeSet.length) * 100;
             document.getElementById("progress-bar").style.width = prog + "%";
+            
             lives = 3; updateLivesUI();
+            puzzleStep = 0; // Reset sequence counter
+            squareSelected = null;
+
             const q = gradeSet[currentIdx];
             document.getElementById("topic-title").innerText = q.topic;
             document.getElementById("task-text").innerText = q.task;
             document.getElementById("current-score").innerText = score;
 
             game.load(q.fen);
-            board = ChessBoard('myBoard', {
+            board = Chessboard('myBoard', {
                 draggable: false, position: q.fen,
                 orientation: game.turn() === 'b' ? 'black' : 'white',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             });
-            $('.square-55d63').off('click').on('click', handleMove);
+            $('.square-55d63').off('click').on('click', handleSquareClick);
         }
 
-        function handleMove() {
+        function handleSquareClick() {
             const sq = $(this).attr('data-square');
+            
             if(!squareSelected) {
                 const piece = game.get(sq);
                 if(piece && piece.color === game.turn()) { 
@@ -213,24 +255,70 @@
                     $(`.square-${sq}`).addClass('highlight-selected'); 
                 }
             } else {
-                const moveAttempt = squareSelected + sq;
+                const source = squareSelected;
+                const target = sq;
                 $('.square-55d63').removeClass('highlight-selected');
+                squareSelected = null;
+
+                // Validate move legality
+                const moveAttempt = game.move({ from: source, to: target, promotion: 'q' });
                 
-                if(moveAttempt === gradeSet[currentIdx].move) {
-                    score++; missionResults.push({status: "Correct"});
-                    $('#board-container').addClass('correct-flash');
-                    setTimeout(() => {
-                        $('#board-container').removeClass('correct-flash');
-                        currentIdx++; squareSelected=null;
-                        loadQuestion();
-                    }, 350);
+                if (moveAttempt === null) {
+                    // Illegal move, ignore
+                    return; 
+                }
+
+                const expectedMoves = gradeSet[currentIdx].expectedMoves;
+                const expectedMove = expectedMoves[puzzleStep];
+                
+                // Match by SAN (e.g. Nf6+) OR raw string (e.g. e2e4) from older data
+                if(moveAttempt.san === expectedMove || (source+target) === expectedMove) {
+                    puzzleStep++;
+                    board.position(game.fen());
+
+                    if (puzzleStep === expectedMoves.length) {
+                        // Puzzle fully solved!
+                        score++; missionResults.push({status: "Correct"});
+                        $('#board-container').addClass('correct-flash');
+                        setTimeout(() => {
+                            $('#board-container').removeClass('correct-flash');
+                            currentIdx++; 
+                            loadQuestion();
+                        }, 500);
+                    } else {
+                        // It's a Mate in 2, auto-play the opponent's move
+                        setTimeout(() => {
+                            game.move(expectedMoves[puzzleStep]);
+                            board.position(game.fen());
+                            puzzleStep++; // Advance to final user move
+                        }, 400);
+                    }
                 } else {
+                    // Wrong move entirely
+                    game.undo(); // take the piece back
+                    board.position(game.fen());
                     lives--; updateLivesUI();
-                    squareSelected = null;
+                    
                     if(lives <= 0) {
                         missionResults.push({status: "Incorrect"});
-                        currentIdx++; setTimeout(loadQuestion, 350);
+                        currentIdx++; setTimeout(loadQuestion, 400);
                     }
+                }
+            }
+        }
+
+        function provideHint() {
+            if (lives > 0) {
+                // Peek at the solution silently using a cloned game state
+                const tempGame = new Chess(game.fen());
+                const expectedMove = gradeSet[currentIdx].expectedMoves[puzzleStep];
+                const moveObj = tempGame.move(expectedMove);
+                
+                if (moveObj) {
+                    // Highlight the piece they need to move
+                    $('.square-55d63').removeClass('highlight-selected');
+                    $(`.square-${moveObj.from}`).addClass('highlight-selected');
+                    lives--; updateLivesUI(); // Deduct a life for using a hint
                 }
             }
         }
@@ -241,7 +329,7 @@
             document.getElementById("progress-bar").style.width = "100%";
             let table = `<table class="summary-table"><tr><th>Mission</th><th>Result</th></tr>`;
             missionResults.forEach((r, i) => {
-                table += `<tr><td>Tactical #${i+1}</td><td style="color:${r.status=='Correct'?'#4ade80':'#ef4444'}">${r.status}</td></tr>`;
+                table += `<tr><td>Puzzle #${i+1}</td><td style="color:${r.status=='Correct'?'#4ade80':'#ef4444'}">${r.status}</td></tr>`;
             });
             document.getElementById("summary-container").innerHTML = table + "</table>";
             document.getElementById("final-points").innerText = score;
