@@ -46,14 +46,14 @@
     <div id="setup-area">
         <input type="text" id="studentName" placeholder="Enter Student Full Name" style="width:100%; padding:15px; margin-bottom:15px; border-radius:8px; border:2px solid var(--secondary); background:#1e293b; color:white; box-sizing: border-box; font-size: 16px; text-align: center;">
         <div id="level-selector-container" style="text-align: center;">Syncing with Workstation...</div>
-        <button class="btn btn-teacher" onclick="checkTeacherAccess()">📊 Global Leaderboard</button>
+        <button class="btn btn-teacher" onclick="teacherLogin()">📊 Global Leaderboard</button>
     </div>
 
     <div id="game-area" class="hidden">
         <div id="progress-container"><div id="progress-bar"></div></div>
         <div style="display: flex; justify-content: space-between; width: 100%; max-width: 350px; align-items: center; margin-bottom: 10px;">
             <h3 id="topic-title" style="color: var(--secondary); margin: 0; font-size: 1em;">Tactics</h3>
-            <div id="lives-display" style="font-size: 20px; filter: drop-shadow(0 0 5px red);">❤️</div>
+            <div id="lives-display" style="font-size: 20px; filter: drop-shadow(0 0 5px red);">❤️❤️❤️</div>
         </div>
         <div id="task-text">Finding Mission...</div>
         <div id="board-container">
@@ -67,7 +67,7 @@
         <h2 style="color:var(--secondary); margin-bottom: 10px;">MISSION COMPLETE</h2>
         <div id="summary-container" style="max-height: 250px; overflow-y: auto; border: 1px solid #334155; border-radius: 8px;"></div>
         <h3 style="margin: 20px 0;">Points Earned: <span id="final-points" style="color:var(--accent)">0</span></h3>
-        <button class="btn" onclick="viewWeeklyRank()">🏆 View Weekly Ranking</button>
+        <button class="btn" onclick="fetchLeaderboard(currentLevel, currentWeek)">🏆 View Weekly Ranking</button>
         <button class="btn" style="border-color: #94a3b8; color: #94a3b8;" onclick="location.reload()">🔄 Back to HQ</button>
     </div>
 
@@ -89,14 +89,65 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        const funnyComments = [ "You move like a Grandmaster! 👑", "Boom! Checkmate! 💥", "Pure genius! 🧠", "Victory! 🏆" ];
+        const funnyComments = [
+            "You move like a Grandmaster! 👑", "Is that Magnus Carlsen playing? 😲", "Boom! Checkmate! 💥", "You're making the computer sweat! 😅",
+            "That move was pure genius! 🧠", "Wait, are you a chess wizard? 🧙‍♂️", "Unstoppable! 🚂", "You're on fire today! 🔥",
+            "The King has left the building! 🕺", "Brain power: 1000% ⚡", "You're outsmarting the board! 🕵️‍♂️", "Call the fire department, you're too hot! 🚒",
+            "Legendary move! ⭐", "Calculated and executed! 🎯", "You're playing 4D chess! 🌌", "The pieces are dancing for you! 💃",
+            "That's a 'GG' right there! 🎮", "Strategy level: Expert! 📈", "Smooth like butter! 🧈", "You see everything! 🦅",
+            "Checkmate in style! 😎", "Your brain is a supercomputer! 🖥️", "Future World Champion alert! 🏆", "You're crushing it! 🔨",
+            "That move was delicious! 😋", "The King is crying now! 😭", "Perfect precision! 🏹", "Total domination! 🦖",
+            "You're a chess machine! 🤖", "Magic in every move! ✨", "Splendid! Simply splendid! 🧐", "Victory tastes sweet! 🍬",
+            "You're a tactical monster! 👹", "Lightning fast! 🌩️", "Top-tier strategy! 🥇", "You're the Boss! 👔",
+            "Even the Pawns are impressed! ♟️", "Grandmaster in the making! 🏗️", "Eagle eyes! 👀", "You just stole the show! 🎬",
+            "Epic win! 🎊", "Mega Mind move! 🧠", "You're a chess ninja! 🥷", "Too easy for you! 🍰",
+            "The board is your playground! 🎡", "You've got the moves! 🕺", "Outstanding! 🌟", "Bravo! 👏",
+            "Mind-blowing! 🤯", "You're a puzzle master! 🧩", "Checkmate speedrun? 🏎️", "King: 'I surrender!' 🏳️",
+            "Pure talent! 💎", "You're a chess rockstar! 🎸", "High-IQ play! 🎓", "Superb! 🌈",
+            "Masterful! 🖌️", "You're a chess legend! 📜", "King: 'Not again!' 🙅‍♂️", "Brilliant! 💡",
+            "A work of art! 🖼️", "You're the Captain now! 👨‍✈️", "Super Strength move! 💪", "Wicked smart! 👻",
+            "Total genius! 👽", "You're a chess beast! 🦁", "Flawless victory! 🥊", "The pieces love you! ❤️",
+            "You're making history! 📚", "Next level skills! 🚀", "Big Brain energy! 🔋", "Sharp as a razor! 🔪",
+            "You're a chess hero! 🦸‍♂️", "Simply unbeatable! 🛡️", "Gold medal performance! 🥇", "You're a chess titan! 🏛️",
+            "You make it look easy! 🎈", "Coolest move ever! 🧊", "You're the GOAT! 🐐", "Phenomenal! ☄️",
+            "You're a chess shark! 🦈", "Smarty pants! 👖", "You've got the spark! ⚡", "Incredible! 🙌",
+            "You're a chess dragon! 🐉", "Victorious! 🚩", "You're a chess comet! ☄️", "Wow! Just wow! 😲",
+            "King: 'I'm going home!' 🏠", "You're a chess explorer! 🧭", "Stellar performance! 🌌", "You're a chess owl! 🦉",
+            "Slick move! ⛸️", "You're a chess knight! 🛡️", "Magnificent! 🎇", "You're a chess ace! ♠️",
+            "King: 'I need a vacation!' 🏖️", "You're a chess pilot! ✈️", "Spectacular! 🎆", "You're the Master! 👑",
+            "You're a galaxy! 🌌", "Checkmate masterclass! 🏫", "The pieces are cheering! 📣", "Brainzilla! 🦖",
+            "You're an astronaut! 👩‍🚀", "Out of this world! 🛸", "Mind-bending logic! 🌀", "The King is dizzy! 😵",
+            "You're a gladiator! ⚔️", "Victory is yours! 🏆", "You're a diamond! 💎", "Sharp as a tack! 📌",
+            "You're a dynamo! ⚡", "Checkmate magic! 🪄", "The King is shook! 🫨", "You're a firework! 🎆",
+            "Mind-reading moves! 🔮", "You're a cyclone! 🌀", "The board's MVP! 🏅", "You're a rocket! 🚀",
+            "Checkmate champ! 🥊", "You're a supernova! 💥", "King: 'I'm retiring!' 👨‍🦳", "You're a lighthouse! 🚨",
+            "Guaranteed genius! ✅", "You're a whirlwind! 🌪️", "King: 'I'm done!' 🛑", "You're a phoenix! 🐦‍🔥",
+            "Untouchable skills! 🧤", "You're an architect! 🏗️", "Calculated victory! 🧮", "You're a chef! 👨‍🍳",
+            "Cooking up a win! 🍳", "You're a detective! 🕵️", "Solved like a pro! 🔍", "You're a marathoner! 🏃",
+            "Endless talent! ♾️", "You're a captain! ⚓", "Sailing to victory! ⛵", "You're a mountain! 🏔️",
+            "Peak performance! 🧗", "You're a thunderbolt! ⚡", "Boom shakalaka! 🏀", "You're a sun! ☀️",
+            "Shining bright! ✨", "You're an explorer! 🗺️", "Charting the win! 📍", "You're a gem! 💎",
+            "Polished play! ✨", "You're a monarch! 🤴", "Ruling the board! 🏰", "You're a prodigyy! 👶",
+            // 40 MORE COMMENTS ADDED BELOW
+            "Total chess domination! ♟️", "You're reading their mind! 🔮", "Absolutely clinical! 🏥", "A tactical masterpiece! 🎨",
+            "You're playing like a computer! 💻", "The board is shaking! 🌋", "Checkmate in 4K! 🎥", "You're a chess gladiator! ⚔️",
+            "Masterclass alert! 🔔", "You're a strategic hurricane! 🌀", "Too smart for the board! 💡", "Ice in your veins! ❄️",
+            "You're the chess whisperer! 🗣️", "Move of the century! 🕰️", "You're a puzzle crushing machine! ⚙️", "King: 'Is it over yet?' 🏳️",
+            "Pure elegance! 🦢", "You're a chess phantom! 👻", "Simply unstoppable force! 🌊", "The ultimate checkmate! 🏁",
+            "You're a chess pioneer! 🤠", "Bravo, Maestro! 🎻", "You're the King's nightmare! 👹", "A symphony of moves! 🎶",
+            "You're a chess meteor! ☄️", "Fast and furious chess! 🏎️", "You're a grandmaster in training! 🎓", "Precision 100! 🎯",
+            "The pieces obey you! 🙇‍♂️", "You're a board conqueror! 🚩", "Legendary status unlocked! 🔓", "You're a chess supernova! 🌟",
+            "King: 'I'm out of here!' 🏃‍♂️", "Tactical wizardry! 🪄", "You're the chess GOAT! 🐐", "Simply marvelous! ✨",
+            "You're a chess tsunami! 🌊", "King: 'Help me!' 🆘", "You're a tactical titan! 🏛️", "Mind-blowing strategy! 🧨"
+        ];
 
         let allQuestions = []; 
         let game = new Chess();
         let board, currentLevel, currentTerm, currentWeek, gradeSet, currentIdx, score, pName, missionStartTime;
-        let lives = 1;
+        let lives = 3;
         let squareSelected = null;
         let missionResults = [];
+        let puzzleStep = 0;
 
         async function summonWorkstationData() {
             const URL_MATE_1 = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/csvjson.json";
@@ -133,7 +184,7 @@
 
         window.initMission = function(l, t, w) {
             pName = document.getElementById('studentName').value.trim();
-            if(!pName) { alert("Please enter name."); return; }
+            if(!pName) { alert("Please enter student name."); return; }
             currentLevel=l; currentTerm=t; currentWeek=w;
             gradeSet = allQuestions.filter(q => q.level == l && q.term == t && q.week == w);
             document.getElementById("setup-area").classList.add("hidden");
@@ -145,8 +196,14 @@
 
         function loadQuestion() {
             if(currentIdx >= gradeSet.length) { finishGame(); return; }
-            lives = 1; updateLivesUI();
+            const prog = (currentIdx / gradeSet.length) * 100;
+            document.getElementById("progress-bar").style.width = prog + "%";
+            lives = 3; updateLivesUI();
+            puzzleStep = 0;
             const q = gradeSet[currentIdx];
+            document.getElementById("topic-title").innerText = q.topic;
+            document.getElementById("task-text").innerText = q.task;
+            document.getElementById("current-score").innerText = score;
             game.load(q.fen);
             board = Chessboard('myBoard', { draggable: false, position: q.fen, orientation: game.turn() === 'b' ? 'black' : 'white' });
             $('.square-55d63').off('click').on('click', handleSquareClick);
@@ -163,14 +220,21 @@
                 if (!moveAttempt) return;
                 const expected = gradeSet[currentIdx].expectedMoves[0];
                 if(moveAttempt.san === expected || (source+target) === expected) {
-                    board.position(game.fen()); score++; missionResults.push({status: "Correct"});
+                    puzzleStep++; board.position(game.fen());
+                    score++; missionResults.push({status: "Correct"});
+                    const notif = document.getElementById('applause-notif');
+                    notif.innerText = funnyComments[Math.floor(Math.random() * funnyComments.length)];
+                    notif.style.opacity = '1';
                     $('#board-container').addClass('correct-flash');
-                    setTimeout(() => { $('#board-container').removeClass('correct-flash'); currentIdx++; loadQuestion(); }, 1000);
+                    setTimeout(() => { notif.style.opacity = '0'; $('#board-container').removeClass('correct-flash'); currentIdx++; loadQuestion(); }, 1200);
                 } else {
-                    game.undo(); game.move(expected, {sloppy: true}); board.position(game.fen());
-                    document.getElementById('task-text').innerText = "Get hint from Mr Dotun. ❌";
-                    missionResults.push({status: "Incorrect"});
-                    setTimeout(() => { currentIdx++; loadQuestion(); }, 2000);
+                    game.undo(); board.position(game.fen());
+                    lives--; updateLivesUI();
+                    const taskBox = document.getElementById('task-text');
+                    taskBox.innerText = "WRONG MOVE! TRY AGAIN ❌";
+                    taskBox.classList.add('wrong-flash');
+                    setTimeout(() => { taskBox.innerText = gradeSet[currentIdx].task; taskBox.classList.remove('wrong-flash'); }, 1000);
+                    if(lives <= 0) { missionResults.push({status: "Incorrect"}); currentIdx++; setTimeout(loadQuestion, 400); }
                 }
             }
         }
@@ -179,51 +243,53 @@
 
         async function finishGame() {
             const timeTaken = Math.floor((Date.now() - missionStartTime) / 1000);
+            document.getElementById("progress-bar").style.width = "100%";
+            let table = `<table class="summary-table"><tr><th>Mission</th><th>Result</th></tr>`;
+            missionResults.forEach((r, i) => { table += `<tr><td>Puzzle #${i+1}</td><td style="color:${r.status=='Correct'?'#4ade80':'#ef4444'}">${r.status}</td></tr>`; });
+            document.getElementById("summary-container").innerHTML = table + "</table>";
+            document.getElementById("final-points").innerText = score;
             document.getElementById("game-area").classList.add("hidden");
             document.getElementById("post-game").classList.remove("hidden");
-            document.getElementById("final-points").innerText = score;
 
             const mKey = `L${currentLevel}W${currentWeek}`;
-            await db.collection("weekly_leaderboard").add({
+            await db.collection("weekly_records").add({
                 name: pName, weekKey: mKey, score: score, time: timeTaken, date: new Date().toLocaleDateString()
             });
         }
 
-        function viewWeeklyRank() {
-            fetchLeaderboard(`L${currentLevel}W${currentWeek}`);
+        function teacherLogin() {
+            if(prompt("Enter Admin Password:") === "dotun1234") { fetchLeaderboard(); }
+            else { alert("Wrong Password"); }
         }
 
-        function checkTeacherAccess() {
-            const pw = prompt("Enter Teacher Password:");
-            if(pw === "dotun1234") { fetchLeaderboard(null); } 
-            else { alert("Incorrect Password."); }
-        }
-
-        function fetchLeaderboard(weekFilter) {
+        function fetchLeaderboard(lvl = null, wk = null) {
+            const listArea = document.getElementById('leaderboard-data');
+            const modalTitle = document.getElementById('modal-title');
+            listArea.innerHTML = "Accessing Hall of Fame...";
             document.getElementById("results-modal").classList.remove("hidden");
-            const list = document.getElementById('leaderboard-data');
-            const title = document.getElementById('modal-title');
-            list.innerHTML = "Loading...";
 
-            let query = db.collection("weekly_leaderboard");
-            if(weekFilter) {
-                title.innerText = `WEEKLY RANK (${weekFilter})`;
-                query = query.where("weekKey", "==", weekFilter).orderBy("score", "desc").orderBy("time", "asc");
+            let query = db.collection("weekly_records");
+            if(lvl && wk) {
+                const key = `L${lvl}W${wk}`;
+                modalTitle.innerText = `🏆 WEEKLY BEST (${key})`;
+                query = query.where("weekKey", "==", key).orderBy("score", "desc").orderBy("time", "asc");
             } else {
-                title.innerText = "TEACHER VIEW: ALL SCORES";
+                modalTitle.innerText = "🕵️ TEACHER VIEW: ALL RECORDS";
                 query = query.orderBy("score", "desc");
             }
 
             query.get().then(snap => {
                 let h = "";
-                snap.forEach(doc => {
-                    const d = doc.data();
+                let rank = 1;
+                snap.forEach(d => {
+                    let s = d.data();
                     h += `<div class="leaderboard-entry">
-                            <span><b>${d.name}</b> (${d.weekKey})</span>
-                            <span>${d.score} pts | ${d.time}s</span>
+                            <span>${rank}. <b>${s.name}</b> ${!lvl ? '('+s.weekKey+')' : ''}</span>
+                            <span>${s.score} pts | ⏱️${s.time}s</span>
                           </div>`;
+                    rank++;
                 });
-                list.innerHTML = h || "No data yet.";
+                listArea.innerHTML = h || "No data recorded yet.";
             });
         }
     </script>
