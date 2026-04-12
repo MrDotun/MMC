@@ -33,8 +33,11 @@
         .summary-table th { background: var(--secondary); color: var(--primary); }
         
         .highlight-selected { background-color: rgba(251, 191, 36, 0.6) !important; }
+        /* Highlights for the correct move on error */
+        .highlight-correction { background-color: rgba(239, 68, 68, 0.5) !important; box-shadow: inset 0 0 10px var(--danger); }
+
         .correct-flash { border-color: var(--accent) !important; box-shadow: 0 0 30px var(--accent); }
-        .wrong-flash { border-bottom-color: var(--danger) !important; color: var(--danger) !important; }
+        .wrong-flash { background-color: var(--danger) !important; border-bottom-color: white !important; color: white !important; }
         
         .section-label { color: var(--secondary); text-align: center; margin-top: 25px; font-weight: 800; font-size: 1.3em; letter-spacing: 2px; border-top: 1px solid #334155; padding-top: 15px; }
         .week-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 20px; width: 100%; max-width: 400px; }
@@ -81,13 +84,8 @@
         <button class="btn" style="border-color: #94a3b8; color: #94a3b8;" onclick="location.reload()">🔄 Back to HQ</button>
     </div>
 
-    <div id="results-modal" class="hidden">
-        <h2 id="modal-title" style="color:var(--secondary); text-align: center; margin-top: 0; letter-spacing: 2px;">🏆 TOP STRATEGISTS</h2>
-        <div id="leaderboard-data" style="padding: 10px;">Loading Rankings...</div>
-        <button class="btn" onclick="document.getElementById('results-modal').classList.add('hidden')" style="margin-top: 20px;">Return</button>
-    </div>
-
     <script>
+        // ... (Firebase Config and Vars stay the same)
         const firebaseConfig = {
           apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
           authDomain: "assignments-de95a.firebaseapp.com",
@@ -113,6 +111,7 @@
         let missionResults = [];
         let canInteract = true;
 
+        // ... (summonWorkstationData, generateControlPanel, initMission stay the same)
         async function summonWorkstationData() {
             const URL_MATE_1 = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/csvjson.json";
             const statusDisplay = document.getElementById('level-selector-container');
@@ -239,16 +238,23 @@
                         currentIdx++; loadQuestion();
                     }, 1200);
                 } else {
-                    // WRONG MOVE - CORRECTION MODE
+                    // --- WRONG MOVE - CORRECTION MODE ---
                     canInteract = false;
-                    game.undo(); 
-                    game.move(expectedMove, {sloppy: true});
-                    board.position(game.fen());
+                    game.undo(); // Undo kid's wrong move
                     
+                    // Show correct move movement
+                    const moveObj = game.move(expectedMove, {sloppy: true});
+                    board.position(game.fen());
+
+                    // Visual Feedback like screenshot
                     const taskBox = document.getElementById('task-text');
                     taskBox.innerText = "LEARN THE MOVE! 🧠";
                     taskBox.classList.add('wrong-flash');
                     
+                    // Highlight the start and end squares in red
+                    $(`.square-${moveObj.from}`).addClass('highlight-correction');
+                    $(`.square-${moveObj.to}`).addClass('highlight-correction');
+
                     document.getElementById("continue-btn").style.display = "block";
                     lives = 0; updateLivesUI();
                     missionResults.push({status: "Incorrect"});
@@ -262,7 +268,7 @@
         }
 
         function updateLivesUI() { document.getElementById("lives-display").innerText = "❤️".repeat(lives); }
-
+        // ... (remaining Firebase/Leaderboard functions)
         async function finishGame() {
             const timeTaken = Math.floor((Date.now() - missionStartTime) / 1000);
             document.getElementById("progress-bar").style.width = "100%";
@@ -335,7 +341,7 @@
                 });
                 listArea.innerHTML = h || "No data recorded yet.";
             });
-        };
+        }
     </script>
 </body>
 </html>
