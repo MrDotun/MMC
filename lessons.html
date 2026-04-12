@@ -64,7 +64,7 @@
         <div id="task-text">Finding Mission...</div>
         <div id="board-container"><div id="myBoard"></div></div>
         <h3 style="color:var(--accent); text-align: center; font-size: 1.4em; margin-bottom: 5px;">Score: <span id="current-score">0</span></h3>
-        <button class="btn btn-hint" onclick="provideHint()" style="max-width: 350px;">💡 Need a Hint?</button>
+        <button id="hint-btn" class="btn btn-hint" onclick="provideHint()" style="max-width: 350px;">💡 Need a Hint?</button>
     </div>
 
     <div id="post-game" class="hidden" style="text-align: center; width: 95%; max-width: 400px;">
@@ -98,18 +98,18 @@
         let game = new Chess();
         let board, currentLevel, currentTerm, currentWeek, gradeSet, currentIdx, score, pName;
         let lives = 3;
+        let hintsRemaining = 5;
         let squareSelected = null;
         let missionResults = [];
-        let puzzleStep = 0; // Tracks if we are on move 1 or move 2 for the sequence
+        let puzzleStep = 0; 
 
         async function summonWorkstationData() {
             const URL_MATE_1 = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/csvjson.json";
-            const URL_MATE_2 = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/puzzles.json"; // UPDATE THIS IF NAMED DIFFERENTLY
+            const URL_MATE_2 = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/puzzles.json"; 
             
             const statusDisplay = document.getElementById('level-selector-container');
             
             try {
-                // Fetch both files simultaneously
                 const [res1, res2] = await Promise.all([
                     fetch(URL_MATE_1).catch(() => null),
                     fetch(URL_MATE_2).catch(() => null)
@@ -117,7 +117,6 @@
 
                 allQuestions = [];
 
-                // --- PROCESS LEVEL 1 & 2 (Mate in 1) ---
                 if (res1 && res1.ok) {
                     const data1 = await res1.json();
                     data1.forEach((item, index) => {
@@ -136,25 +135,22 @@
                                     topic: "Mate in 1",
                                     task: isWhite ? "White to Move: Deliver Mate!" : "Black to Move: Deliver Mate!",
                                     fen: fen, 
-                                    expectedMoves: [move] // Store as array for the sequence controller
+                                    expectedMoves: [move]
                                 });
                             }
                         }
                     });
                 }
 
-                // --- PROCESS LEVEL 3 to 6 (Mate in 2) ---
                 if (res2 && res2.ok) {
                     const data2 = await res2.json();
                     data2.forEach((item, index) => {
                         if (item.fen && item.solution) {
                             const fen = item.fen.trim();
-                            // Parse solution string "1. Nf6+ gxf6 2. Bxf7#" into ["Nf6+", "gxf6", "Bxf7#"]
                             let solutionStr = Array.isArray(item.solution) ? item.solution.join(' ') : item.solution;
                             const cleanMoves = solutionStr.replace(/\d+\./g, '').trim().split(/\s+/);
                             const isWhite = fen.split(' ')[1] === 'w';
 
-                            // 20 puzzles per week, 5 weeks per term, 3 terms per level = 300 per level
                             const weekNum = Math.floor(index / 20) % 5 + 1;
                             const termNum = Math.floor(index / 100) % 3 + 1;
                             const levelNum = Math.floor(index / 300) + 3;
@@ -217,7 +213,20 @@
             
             document.getElementById("setup-area").classList.add("hidden");
             document.getElementById("game-area").classList.remove("hidden");
+            
+            // Reset Assignment Variables
             currentIdx=0; score=0; missionResults=[];
+            hintsRemaining = 5; 
+            
+            // Handle Hint Button Visibility
+            const hintBtn = document.getElementById('hint-btn');
+            if (currentLevel <= 2) {
+                hintBtn.style.display = 'none';
+            } else {
+                hintBtn.style.display = 'block';
+                hintBtn.innerText = `💡 Need a Hint? (${hintsRemaining} left)`;
+            }
+
             loadQuestion();
         };
 
@@ -228,7 +237,7 @@
             document.getElementById("progress-bar").style.width = prog + "%";
             
             lives = 3; updateLivesUI();
-            puzzleStep = 0; // Reset sequence counter
+            puzzleStep = 0; 
             squareSelected = null;
 
             const q = gradeSet[currentIdx];
@@ -242,42 +251,60 @@
                 orientation: game.turn() === 'b' ? 'black' : 'white',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             });
-            $('.square-55d63').off('click').on('click', handleSquareClick);
+            
+            // FIX: Use event delegation so the board never loses click listeners
+            $('#myBoard').off('click', '.square-55d63').on('click', '.square-55d63', handleSquareClick);
         }
 
         function handleSquareClick() {
             const sq = $(this).attr('data-square');
+            const piece = game.get(sq);
             
             if(!squareSelected) {
-                const piece = game.get(sq);
                 if(piece && piece.color === game.turn()) { 
                     squareSelected=sq; 
                     $(`.square-${sq}`).addClass('highlight-selected'); 
                 }
             } else {
+                // Feature: Let them switch pieces if they misclicked
+                if (piece && piece.color === game.turn() && sq !== squareSelected) {
+                    $('.square-55d63').removeClass('highlight-selected');
+                    squareSelected = sq;
+                    $(`.square-${sq}`).addClass('highlight-selected');
+                    return;
+                }
+
+                if (squareSelected === sq) {
+                    // Deselect if clicking the same square twice
+                    $('.square-55d63').removeClass('highlight-selected');
+                    squareSelected = null;
+                    return;
+                }
+
                 const source = squareSelected;
                 const target = sq;
                 $('.square-55d63').removeClass('highlight-selected');
                 squareSelected = null;
 
-                // Validate move legality
                 const moveAttempt = game.move({ from: source, to: target, promotion: 'q' });
                 
                 if (moveAttempt === null) {
-                    // Illegal move, ignore
-                    return; 
+                    return; // Illegal move, ignore and don't penalize
                 }
 
                 const expectedMoves = gradeSet[currentIdx].expectedMoves;
                 const expectedMove = expectedMoves[puzzleStep];
                 
-                // Match by SAN (e.g. Nf6+) OR raw string (e.g. e2e4) from older data
-                if(moveAttempt.san === expectedMove || (source+target) === expectedMove) {
+                // Strip + and # to prevent formatting mismatches
+                const cleanAttempt = moveAttempt.san.replace(/[+#]/g, '');
+                const cleanExpected = expectedMove.replace(/[+#]/g, '');
+                
+                if(cleanAttempt === cleanExpected || (source+target) === expectedMove) {
                     puzzleStep++;
                     board.position(game.fen());
 
                     if (puzzleStep === expectedMoves.length) {
-                        // Puzzle fully solved!
+                        // Fully solved
                         score++; missionResults.push({status: "Correct"});
                         $('#board-container').addClass('correct-flash');
                         setTimeout(() => {
@@ -286,7 +313,7 @@
                             loadQuestion();
                         }, 500);
                     } else {
-                        // It's a Mate in 2, auto-play the opponent's move
+                        // Auto-play opponent response for Mate in 2
                         setTimeout(() => {
                             game.move(expectedMoves[puzzleStep]);
                             board.position(game.fen());
@@ -294,8 +321,8 @@
                         }, 400);
                     }
                 } else {
-                    // Wrong move entirely
-                    game.undo(); // take the piece back
+                    // Wrong move
+                    game.undo(); 
                     board.position(game.fen());
                     lives--; updateLivesUI();
                     
@@ -307,19 +334,21 @@
             }
         }
 
-        function provideHint() {
-            if (lives > 0) {
-                // Peek at the solution silently using a cloned game state
+        window.provideHint = function() {
+            if (hintsRemaining > 0 && lives > 0) {
                 const tempGame = new Chess(game.fen());
                 const expectedMove = gradeSet[currentIdx].expectedMoves[puzzleStep];
                 const moveObj = tempGame.move(expectedMove);
                 
                 if (moveObj) {
-                    // Highlight the piece they need to move
                     $('.square-55d63').removeClass('highlight-selected');
                     $(`.square-${moveObj.from}`).addClass('highlight-selected');
-                    lives--; updateLivesUI(); // Deduct a life for using a hint
+                    
+                    hintsRemaining--; // Deduct hint
+                    document.getElementById('hint-btn').innerText = `💡 Need a Hint? (${hintsRemaining} left)`;
                 }
+            } else if (hintsRemaining <= 0) {
+                alert("You have used all 5 hints for this assignment!");
             }
         }
 
