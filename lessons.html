@@ -16,13 +16,12 @@
         :root { --primary: #1e1b4b; --secondary: #fbbf24; --accent: #4ade80; --bg: #0f172a; --danger: #ef4444; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: white; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
         
-        #board-container { width: 350px; max-width: 95vw; margin: 10px auto; border: 4px solid var(--secondary); border-radius: 12px; overflow: hidden; transition: 0.3s; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        #board-container { width: 350px; max-width: 95vw; margin: 10px auto; border: 4px solid var(--secondary); border-radius: 12px; overflow: hidden; transition: 0.3s; box-shadow: 0 10px 25px rgba(0,0,0,0.5); position: relative; }
         .hidden { display: none !important; }
         
         .btn { padding: 12px 20px; margin: 5px; cursor: pointer; border-radius: 8px; border: 2px solid var(--secondary); background: var(--primary); color: var(--secondary); font-weight: bold; width: 100%; transition: 0.2s; box-sizing: border-box; outline: none; text-transform: uppercase; letter-spacing: 1px; }
         .btn:hover { background: var(--secondary); color: var(--primary); transform: translateY(-2px); }
         .btn-teacher { border-color: #6366f1; color: #6366f1; margin-top: 20px; font-size: 0.8em; }
-        .btn-hint { border-color: #38bdf8; color: #38bdf8; margin-top: 10px; }
         
         #progress-container { width: 350px; max-width: 90vw; height: 10px; background: #334155; border-radius: 5px; margin-bottom: 15px; overflow: hidden; border: 1px solid #475569; }
         #progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
@@ -40,6 +39,8 @@
         
         #results-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--primary); padding: 25px; border-radius: 16px; border: 3px solid var(--secondary); z-index: 2000; width: 85%; max-height: 80vh; overflow-y: auto; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
         .leaderboard-entry { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #334155; align-items: center; background: rgba(255,255,255,0.03); margin-bottom: 4px; border-radius: 4px; }
+        
+        #applause-notif { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--accent); color: var(--primary); padding: 10px 20px; border-radius: 50px; font-weight: 900; z-index: 100; pointer-events: none; opacity: 0; transition: 0.3s; }
     </style>
 </head>
 <body>
@@ -62,9 +63,11 @@
             <div id="lives-display" style="font-size: 20px; filter: drop-shadow(0 0 5px red);">❤️❤️❤️</div>
         </div>
         <div id="task-text">Finding Mission...</div>
-        <div id="board-container"><div id="myBoard"></div></div>
+        <div id="board-container">
+            <div id="myBoard"></div>
+            <div id="applause-notif">EXCELLENT! 👏</div>
+        </div>
         <h3 style="color:var(--accent); text-align: center; font-size: 1.4em; margin-bottom: 5px;">Score: <span id="current-score">0</span></h3>
-        <button id="hint-btn" class="btn btn-hint" onclick="provideHint()" style="max-width: 350px;">💡 Need a Hint?</button>
     </div>
 
     <div id="post-game" class="hidden" style="text-align: center; width: 95%; max-width: 400px;">
@@ -82,7 +85,6 @@
     </div>
 
     <script>
-        // --- FIREBASE INITIALIZATION ---
         const firebaseConfig = {
           apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
           authDomain: "assignments-de95a.firebaseapp.com",
@@ -98,15 +100,13 @@
         let game = new Chess();
         let board, currentLevel, currentTerm, currentWeek, gradeSet, currentIdx, score, pName;
         let lives = 3;
-        let hintsRemaining = 5;
         let squareSelected = null;
         let missionResults = [];
-        let puzzleStep = 0; 
+        let puzzleStep = 0;
 
         async function summonWorkstationData() {
             const URL_MATE_1 = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/csvjson.json";
-            const URL_MATE_2 = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/puzzles.json"; 
-            
+            const URL_MATE_2 = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/puzzles.json";
             const statusDisplay = document.getElementById('level-selector-container');
             
             try {
@@ -122,20 +122,17 @@
                     data1.forEach((item, index) => {
                         if (item.fen && item.best) {
                             const fen = item.fen.trim();
-                            const move = item.best.trim();
                             const isWhite = fen.split(' ')[1] === 'w';
-
                             const weekNum = Math.floor(index / 40) % 5 + 1;
                             const termNum = Math.floor(index / 200) % 3 + 1;
                             const levelNum = Math.floor(index / 600) + 1;
-
                             if (levelNum <= 2) {
                                 allQuestions.push({
                                     level: levelNum, term: termNum, week: weekNum,
                                     topic: "Mate in 1",
                                     task: isWhite ? "White to Move: Deliver Mate!" : "Black to Move: Deliver Mate!",
                                     fen: fen, 
-                                    expectedMoves: [move]
+                                    expectedMoves: [item.best.trim()]
                                 });
                             }
                         }
@@ -150,11 +147,9 @@
                             let solutionStr = Array.isArray(item.solution) ? item.solution.join(' ') : item.solution;
                             const cleanMoves = solutionStr.replace(/\d+\./g, '').trim().split(/\s+/);
                             const isWhite = fen.split(' ')[1] === 'w';
-
                             const weekNum = Math.floor(index / 20) % 5 + 1;
                             const termNum = Math.floor(index / 100) % 3 + 1;
                             const levelNum = Math.floor(index / 300) + 3;
-
                             if (levelNum >= 3 && levelNum <= 6) {
                                 allQuestions.push({
                                     level: levelNum, term: termNum, week: weekNum,
@@ -171,10 +166,9 @@
                 if (allQuestions.length > 0) {
                     generateControlPanel();
                 } else {
-                    statusDisplay.innerText = "No puzzle data found. Check GitHub links.";
+                    statusDisplay.innerText = "No puzzle data found.";
                 }
             } catch (e) {
-                console.error("Connection Error:", e);
                 statusDisplay.innerText = "Offline. Please check data source.";
             }
         }
@@ -183,20 +177,14 @@
         function generateControlPanel() {
             const container = document.getElementById('level-selector-container');
             container.innerHTML = "";
-            
             for (let L = 1; L <= 6; L++) {
-                const hasLevelData = allQuestions.some(q => q.level == L);
-                if (!hasLevelData) continue;
-
+                if (!allQuestions.some(q => q.level == L)) continue;
                 container.innerHTML += `<div class="section-label">LEVEL ${L}</div>`;
                 for (let t = 1; t <= 3; t++) {
-                    const hasTerm = allQuestions.some(q => q.level == L && q.term == t);
-                    if (!hasTerm) continue;
-
+                    if (!allQuestions.some(q => q.level == L && q.term == t)) continue;
                     let grid = `<div style="font-size:0.8em; color:#94a3b8; margin: 8px 0;">Term ${t}</div><div class="week-grid">`;
                     for (let w = 1; w <= 5; w++) {
-                        const hasWeek = allQuestions.some(q => q.level == L && q.term == t && q.week == w);
-                        if (hasWeek) {
+                        if (allQuestions.some(q => q.level == L && q.term == t && q.week == w)) {
                             grid += `<button class="btn" style="padding:8px 0; font-size:12px;" onclick="initMission(${L}, ${t}, ${w})">W${w}</button>`;
                         }
                     }
@@ -210,145 +198,88 @@
             if(!pName) { alert("Please enter student name."); return; }
             currentLevel=l; currentTerm=t; currentWeek=w;
             gradeSet = allQuestions.filter(q => q.level == l && q.term == t && q.week == w);
-            
             document.getElementById("setup-area").classList.add("hidden");
             document.getElementById("game-area").classList.remove("hidden");
-            
-            // Reset Assignment Variables
             currentIdx=0; score=0; missionResults=[];
-            hintsRemaining = 5; 
-            
-            // Handle Hint Button Visibility
-            const hintBtn = document.getElementById('hint-btn');
-            if (currentLevel <= 2) {
-                hintBtn.style.display = 'none';
-            } else {
-                hintBtn.style.display = 'block';
-                hintBtn.innerText = `💡 Need a Hint? (${hintsRemaining} left)`;
-            }
-
             loadQuestion();
         };
 
         function loadQuestion() {
             if(currentIdx >= gradeSet.length) { finishGame(); return; }
-            
             const prog = (currentIdx / gradeSet.length) * 100;
             document.getElementById("progress-bar").style.width = prog + "%";
-            
             lives = 3; updateLivesUI();
-            puzzleStep = 0; 
+            puzzleStep = 0;
             squareSelected = null;
-
             const q = gradeSet[currentIdx];
             document.getElementById("topic-title").innerText = q.topic;
             document.getElementById("task-text").innerText = q.task;
             document.getElementById("current-score").innerText = score;
-
             game.load(q.fen);
             board = Chessboard('myBoard', {
                 draggable: false, position: q.fen,
                 orientation: game.turn() === 'b' ? 'black' : 'white',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             });
-            
-            // FIX: Use event delegation so the board never loses click listeners
-            $('#myBoard').off('click', '.square-55d63').on('click', '.square-55d63', handleSquareClick);
+            $('.square-55d63').off('click').on('click', handleSquareClick);
         }
 
         function handleSquareClick() {
             const sq = $(this).attr('data-square');
-            const piece = game.get(sq);
-            
             if(!squareSelected) {
+                const piece = game.get(sq);
                 if(piece && piece.color === game.turn()) { 
                     squareSelected=sq; 
                     $(`.square-${sq}`).addClass('highlight-selected'); 
                 }
             } else {
-                // Feature: Let them switch pieces if they misclicked
-                if (piece && piece.color === game.turn() && sq !== squareSelected) {
-                    $('.square-55d63').removeClass('highlight-selected');
-                    squareSelected = sq;
-                    $(`.square-${sq}`).addClass('highlight-selected');
-                    return;
-                }
-
-                if (squareSelected === sq) {
-                    // Deselect if clicking the same square twice
-                    $('.square-55d63').removeClass('highlight-selected');
-                    squareSelected = null;
-                    return;
-                }
-
                 const source = squareSelected;
                 const target = sq;
                 $('.square-55d63').removeClass('highlight-selected');
                 squareSelected = null;
 
                 const moveAttempt = game.move({ from: source, to: target, promotion: 'q' });
-                
-                if (moveAttempt === null) {
-                    return; // Illegal move, ignore and don't penalize
-                }
+                if (moveAttempt === null) return; 
 
                 const expectedMoves = gradeSet[currentIdx].expectedMoves;
                 const expectedMove = expectedMoves[puzzleStep];
                 
-                // Strip + and # to prevent formatting mismatches
-                const cleanAttempt = moveAttempt.san.replace(/[+#]/g, '');
-                const cleanExpected = expectedMove.replace(/[+#]/g, '');
-                
-                if(cleanAttempt === cleanExpected || (source+target) === expectedMove) {
+                if(moveAttempt.san === expectedMove || (source+target) === expectedMove) {
                     puzzleStep++;
                     board.position(game.fen());
 
                     if (puzzleStep === expectedMoves.length) {
-                        // Fully solved
                         score++; missionResults.push({status: "Correct"});
+                        
+                        // NOTIFICATION START
+                        const notif = document.getElementById('applause-notif');
+                        notif.style.opacity = '1';
                         $('#board-container').addClass('correct-flash');
+                        
                         setTimeout(() => {
+                            notif.style.opacity = '0';
                             $('#board-container').removeClass('correct-flash');
                             currentIdx++; 
                             loadQuestion();
-                        }, 500);
+                        }, 800);
+                        // NOTIFICATION END
+
                     } else {
-                        // Auto-play opponent response for Mate in 2
                         setTimeout(() => {
                             game.move(expectedMoves[puzzleStep]);
                             board.position(game.fen());
-                            puzzleStep++; // Advance to final user move
+                            puzzleStep++;
                         }, 400);
                     }
                 } else {
-                    // Wrong move
-                    game.undo(); 
+                    game.undo();
                     board.position(game.fen());
                     lives--; updateLivesUI();
-                    
                     if(lives <= 0) {
                         missionResults.push({status: "Incorrect"});
                         currentIdx++; setTimeout(loadQuestion, 400);
                     }
                 }
-            }
-        }
-
-        window.provideHint = function() {
-            if (hintsRemaining > 0 && lives > 0) {
-                const tempGame = new Chess(game.fen());
-                const expectedMove = gradeSet[currentIdx].expectedMoves[puzzleStep];
-                const moveObj = tempGame.move(expectedMove);
-                
-                if (moveObj) {
-                    $('.square-55d63').removeClass('highlight-selected');
-                    $(`.square-${moveObj.from}`).addClass('highlight-selected');
-                    
-                    hintsRemaining--; // Deduct hint
-                    document.getElementById('hint-btn').innerText = `💡 Need a Hint? (${hintsRemaining} left)`;
-                }
-            } else if (hintsRemaining <= 0) {
-                alert("You have used all 5 hints for this assignment!");
             }
         }
 
