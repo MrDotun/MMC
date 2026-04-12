@@ -122,19 +122,19 @@
             "King: 'I'm going home!' 🏠", "You're a chess explorer! 🧭", "Stellar performance! 🌌", "You're a chess owl! 🦉",
             "Slick move! ⛸️", "You're a chess knight! 🛡️", "Magnificent! 🎇", "You're a chess ace! ♠️",
             "King: 'I need a vacation!' 🏖️", "You're a chess pilot! ✈️", "Spectacular! 🎆", "You're the Master! 👑",
-            "You're a galaxy! 🌌", "Checkmate masterclass! 🏫", "The pieces are cheering! 📣", "Brainzilla! 🦖",
-            "You're an astronaut! 👩‍🚀", "Out of this world! 🛸", "Mind-bending logic! 🌀", "The King is dizzy! 😵",
-            "You're a gladiator! ⚔️", "Victory is yours! 🏆", "You're a diamond! 💎", "Sharp as a tack! 📌",
-            "You're a dynamo! ⚡", "Checkmate magic! 🪄", "The King is shook! 🫨", "You're a firework! 🎆",
-            "Mind-reading moves! 🔮", "You're a cyclone! 🌀", "The board's MVP! 🏅", "You're a rocket! 🚀",
-            "Checkmate champ! 🥊", "You're a supernova! 💥", "King: 'I'm retiring!' 👨‍🦳", "You're a lighthouse! 🚨",
-            "Guaranteed genius! ✅", "You're a whirlwind! 🌪️", "King: 'I'm done!' 🛑", "You're a phoenix! 🐦‍🔥",
-            "Untouchable skills! 🧤", "You're an architect! 🏗️", "Calculated victory! 🧮", "You're a chef! 👨‍🍳",
-            "Cooking up a win! 🍳", "You're a detective! 🕵️", "Solved like a pro! 🔍", "You're a marathoner! 🏃",
-            "Endless talent! ♾️", "You're a captain! ⚓", "Sailing to victory! ⛵", "You're a mountain! 🏔️",
-            "Peak performance! 🧗", "You're a thunderbolt! ⚡", "Boom shakalaka! 🏀", "You're a sun! ☀️",
-            "Shining bright! ✨", "You're an explorer! 🗺️", "Charting the win! 📍", "You're a gem! 💎",
-            "Polished play! ✨", "You're a monarch! 🤴", "Ruling the board! 🏰", "You're a prodigy! 👶"
+            "You're a chess galaxy! 🌌", "Checkmate masterclass! 🏫", "The pieces are cheering! 📣", "Brainzilla! 🦖",
+            "You're a chess astronaut! 👩‍🚀", "Out of this world! 🛸", "Mind-bending logic! 🌀", "The King is dizzy! 😵",
+            "You're a chess gladiator! ⚔️", "Victory is yours! 🏆", "You're a chess diamond! 💎", "Sharp as a tack! 📌",
+            "You're a chess dynamo! ⚡", "Checkmate magic! 🪄", "The King is shook! 🫨", "You're a chess firework! 🎆",
+            "Mind-reading moves! 🔮", "You're a chess cyclone! 🌀", "The board's MVP! 🏅", "You're a chess rocket! 🚀",
+            "Checkmate champ! 🥊", "You're a chess supernova! 💥", "King: 'I'm retiring!' 👨‍🦳", "You're a chess lighthouse! 🚨",
+            "Guaranteed genius! ✅", "You're a chess whirlwind! 🌪️", "King: 'I'm done!' 🛑", "You're a chess phoenix! 🐦‍🔥",
+            "Untouchable skills! 🧤", "You're a chess architect! 🏗️", "Calculated victory! 🧮", "You're a chess chef! 👨‍🍳",
+            "Cooking up a win! 🍳", "You're a chess detective! 🕵️", "Solved like a pro! 🔍", "You're a chess marathoner! 🏃",
+            "Endless talent! ♾️", "You're a chess captain! ⚓", "Sailing to victory! ⛵", "You're a chess mountain! 🏔️",
+            "Peak performance! 🧗", "You're a chess thunderbolt! ⚡", "Boom shakalaka! 🏀", "You're a chess sun! ☀️",
+            "Shining bright! ✨", "You're a chess explorer! 🗺️", "Charting the win! 📍", "You're a chess gem! 💎",
+            "Polished play! ✨", "You're a chess monarch! 🤴", "Ruling the board! 🏰", "You're a chess prodigy! 👶"
         ];
 
         let allQuestions = []; 
@@ -156,7 +156,9 @@
                 if (res1.ok) {
                     const data1 = await res1.json();
                     data1.forEach((item, index) => {
-                        if (item.fen && item.best) {
+                        // Support both solution and best properties depending on JSON format
+                        const moveStr = item.solution || item.best;
+                        if (item.fen && moveStr) {
                             const fen = item.fen.trim();
                             const isWhite = fen.split(' ')[1] === 'w';
                             const weekNum = Math.floor(index / 40) % 5 + 1;
@@ -169,7 +171,8 @@
                                     topic: "Mate in 1",
                                     task: isWhite ? "White to Move: Deliver Mate!" : "Black to Move: Deliver Mate!",
                                     fen: fen, 
-                                    expectedMoves: [item.best.trim()]
+                                    // Extract ONLY the very first move to force all levels to be "Mate in 1"
+                                    expectedMoves: [moveStr.replace(/1\.\s+/g, '').split(' ')[0].trim()]
                                 });
                             }
                         }
@@ -256,38 +259,36 @@
                 const moveAttempt = game.move({ from: source, to: target, promotion: 'q' });
                 if (moveAttempt === null) return; 
 
-                const q = gradeSet[currentIdx];
-                const expectedMoves = q.expectedMoves;
-                const expectedMove = expectedMoves[puzzleStep];
+                const expectedMoves = gradeSet[currentIdx].expectedMoves;
+                // Because we forced it to be Mate in 1, we only check the first index
+                const expectedMove = expectedMoves[0]; 
                 
                 if(moveAttempt.san === expectedMove || (source+target) === expectedMove) {
-                    puzzleStep++;
+                    
                     board.position(game.fen());
+                    score++; missionResults.push({status: "Correct"});
+                    
+                    const randomMsg = funnyComments[Math.floor(Math.random() * funnyComments.length)];
+                    const notif = document.getElementById('applause-notif');
+                    notif.innerText = randomMsg;
+                    notif.style.opacity = '1';
+                    
+                    $('#board-container').addClass('correct-flash');
+                    
+                    setTimeout(() => {
+                        notif.style.opacity = '0';
+                        $('#board-container').removeClass('correct-flash');
+                        currentIdx++; 
+                        loadQuestion();
+                    }, 1200);
 
-                    if (puzzleStep === expectedMoves.length) {
-                        score++; missionResults.push({status: "Correct"});
-                        
-                        const randomMsg = funnyComments[Math.floor(Math.random() * funnyComments.length)];
-                        const notif = document.getElementById('applause-notif');
-                        notif.innerText = randomMsg;
-                        notif.style.opacity = '1';
-                        
-                        $('#board-container').addClass('correct-flash');
-                        
-                        setTimeout(() => {
-                            notif.style.opacity = '0';
-                            $('#board-container').removeClass('correct-flash');
-                            currentIdx++; 
-                            loadQuestion();
-                        }, 1200);
-                    }
                 } else {
                     game.undo();
                     board.position(game.fen());
-                    
-                    // WRONG MOVE FEEDBACK
+
+                    // Visual Feedback for Wrong Move
                     const taskBox = document.getElementById('task-text');
-                    const originalTask = q.task;
+                    const originalTask = gradeSet[currentIdx].task;
                     taskBox.innerText = "WRONG MOVE! TRY AGAIN ❌";
                     taskBox.classList.add('wrong-flash');
                     
@@ -340,4 +341,18 @@
         }
 
         window.fetchLeaderboard = function() {
-            const listArea = document
+            const listArea = document.getElementById('leaderboard-data');
+            listArea.innerHTML = "Accessing Hall of Fame...";
+            document.getElementById("results-modal").classList.remove("hidden");
+            db.collection("student_progress").orderBy("totalScore", "desc").limit(50).get().then(snap => {
+                let h = "";
+                snap.forEach(d => {
+                    let s = d.data();
+                    h += `<div class="leaderboard-entry"><span style="font-weight:bold;">${s.name}</span><span style="color:var(--secondary); font-weight:bold;">${s.totalScore} PTS</span></div>`;
+                });
+                listArea.innerHTML = h || "No data recorded yet.";
+            });
+        };
+    </script>
+</body>
+</html>
