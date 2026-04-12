@@ -33,7 +33,6 @@
         .summary-table th { background: var(--secondary); color: var(--primary); }
         
         .highlight-selected { background-color: rgba(251, 191, 36, 0.6) !important; }
-        /* Highlights for the correct move on error */
         .highlight-correction { background-color: rgba(239, 68, 68, 0.5) !important; box-shadow: inset 0 0 10px var(--danger); }
 
         .correct-flash { border-color: var(--accent) !important; box-shadow: 0 0 30px var(--accent); }
@@ -84,8 +83,13 @@
         <button class="btn" style="border-color: #94a3b8; color: #94a3b8;" onclick="location.reload()">🔄 Back to HQ</button>
     </div>
 
+    <div id="results-modal" class="hidden">
+        <h2 id="modal-title" style="color:var(--secondary); text-align: center;"></h2>
+        <div id="leaderboard-data"></div>
+        <button class="btn" onclick="document.getElementById('results-modal').classList.add('hidden')" style="margin-top:20px;">CLOSE</button>
+    </div>
+
     <script>
-        // ... (Firebase Config and Vars stay the same)
         const firebaseConfig = {
           apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
           authDomain: "assignments-de95a.firebaseapp.com",
@@ -100,7 +104,30 @@
         const funnyComments = [
             "You move like a Grandmaster! 👑", "Is that Magnus Carlsen playing? 😲", "Boom! Checkmate! 💥", "You're making the computer sweat! 😅",
             "That move was pure genius! 🧠", "Wait, are you a chess wizard? 🧙‍♂️", "Unstoppable! 🚂", "You're on fire today! 🔥",
-            "Legendary move! ⭐", "Calculated and executed! 🎯", "Checkmate in style! 😎", "Bravo! 👏", "Brilliant! 💡"
+            "Legendary move! ⭐", "Calculated and executed! 🎯", "Checkmate in style! 😎", "Bravo! 👏", "Brilliant! 💡",
+            "Absolute Masterclass! 🎓", "You have the vision of an eagle! 🦅", "Checkmate incoming! 💣", "Simply spectacular! 🌟",
+            "You're playing 4D Chess! 🌌", "The board is your kingdom! 🏰", "Future World Champion! 🏆", "You're a tactical beast! 🦁",
+            "Thinking like a computer! 🤖", "Sharp as a razor! 🔪", "Incredible technique! ✨", "Solid as a mountain! 🏔️",
+            "You're crushing it! 🔨", "A move of pure beauty! 🌹", "Total board dominance! 👊", "You're a chess ninja! 🥷",
+            "Ice cold precision! ❄️", "Magic on the 64 squares! 🪄", "The King is trembling! 🤴", "You're in the zone! 🌀",
+            "Lightning speed calculation! ⚡", "Magnificent play! 💎", "You're a strategy giant! 🦒", "No one can stop you! 🛑",
+            "Elite level thinking! 🚀", "You're the Chess Boss! 💼", "Perfectly executed! ✅", "A legendary finish! 🎖️",
+            "Mind-blowing strategy! 🤯", "You're a chess machine! ⚙️", "Pure tactical wizardry! 🔮", "Top of the class! 🔝",
+            "You're a chess rockstar! 🎸", "Victory is in your DNA! 🧬", "A master of the dark arts! 🌑", "Simply unstoppable! 🚂",
+            "You've got the magic touch! ✨", "The crowd goes wild! 🙌", "Brilliance at its finest! 💡", "You're a chess hero! 🦸",
+            "Calculated to perfection! 📐", "You make this look easy! 🍰", "A move for the ages! 📚", "The board belongs to you! 🗺️",
+            "You're a chess detective! 🕵️", "Found the winning path! 📍", "Unbelievable talent! 🌈", "You're the GOAT! 🐐",
+            "Chess excellence! 🏅", "You're a move ahead! 📈", "Grandmaster vibes! 🕶️", "Pure genius at work! 🚧",
+            "The King has nowhere to run! 🏃‍♂️", "Tactical mastery! 🎖️", "You're a chess artist! 🎨", "Every move is a masterpiece! 🖼️",
+            "High-IQ move! 🧠", "You're on a winning streak! 🎢", "Checkmate delivered! 📦", "You're a chess legend! 📜",
+            "Flawless execution! 🎯", "The board is bowing to you! 🙇", "You're a chess visionary! 🔭", "Simply superb! 👌",
+            "A move of pure class! 🥂", "You're the master of time! ⏳", "Unshakeable focus! 🧘", "The ultimate strategist! ♟️",
+            "You're a chess warrior! ⚔️", "A kingly victory! 👑", "Thinking like a pro! 💼", "You've got the skill! 🛠️",
+            "Chess power! 💪", "A truly inspiring move! 💡", "You're a chess pioneer! 🛶", "The smartest kid in the room! 🏫",
+            "You've cracked the code! 🔐", "The computer is crying! 😭", "You're a chess genius! 🧬", "Master of the middle game! 🏰",
+            "Endgame expert! 🏁", "You're a chess star! ⭐", "The galaxy's best player! 🌌", "Superhuman calculation! ⚡",
+            "You're a chess titan! 🏛️", "A move of legend! 🗡️", "You're the chess king! 👑", "Checkmate with flare! ✨",
+            "You're simply the best! 🥇", "Chess magic happens here! 🎪", "You're a chess icon! 🖼️", "The board is yours! 🌍"
         ];
 
         let allQuestions = []; 
@@ -111,7 +138,6 @@
         let missionResults = [];
         let canInteract = true;
 
-        // ... (summonWorkstationData, generateControlPanel, initMission stay the same)
         async function summonWorkstationData() {
             const URL_MATE_1 = "https://raw.githubusercontent.com/MrDotun/MMC/refs/heads/main/csvjson.json";
             const statusDisplay = document.getElementById('level-selector-container');
@@ -218,12 +244,14 @@
                 $('.square-55d63').removeClass('highlight-selected');
                 squareSelected = null;
 
+                // Handle Promotion logic
                 const moveAttempt = game.move({ from: source, to: target, promotion: 'q' });
                 if (moveAttempt === null) return; 
 
                 const expectedMove = gradeSet[currentIdx].expectedMoves[0]; 
                 
-                if(moveAttempt.san === expectedMove || (source+target) === expectedMove) {
+                // Compare SAN, coordinate, or coordinate+promotion (e.g. e7e8q)
+                if(moveAttempt.san === expectedMove || (source+target) === expectedMove || (source+target+'q') === expectedMove) {
                     board.position(game.fen());
                     score++; missionResults.push({status: "Correct"});
                     const randomMsg = funnyComments[Math.floor(Math.random() * funnyComments.length)];
@@ -238,20 +266,15 @@
                         currentIdx++; loadQuestion();
                     }, 1200);
                 } else {
-                    // --- WRONG MOVE - CORRECTION MODE ---
                     canInteract = false;
-                    game.undo(); // Undo kid's wrong move
-                    
-                    // Show correct move movement
+                    game.undo(); 
                     const moveObj = game.move(expectedMove, {sloppy: true});
                     board.position(game.fen());
 
-                    // Visual Feedback like screenshot
                     const taskBox = document.getElementById('task-text');
                     taskBox.innerText = "LEARN THE MOVE! 🧠";
                     taskBox.classList.add('wrong-flash');
                     
-                    // Highlight the start and end squares in red
                     $(`.square-${moveObj.from}`).addClass('highlight-correction');
                     $(`.square-${moveObj.to}`).addClass('highlight-correction');
 
@@ -268,7 +291,7 @@
         }
 
         function updateLivesUI() { document.getElementById("lives-display").innerText = "❤️".repeat(lives); }
-        // ... (remaining Firebase/Leaderboard functions)
+
         async function finishGame() {
             const timeTaken = Math.floor((Date.now() - missionStartTime) / 1000);
             document.getElementById("progress-bar").style.width = "100%";
