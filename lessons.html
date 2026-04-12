@@ -55,7 +55,9 @@
     </div>
 
     <div id="setup-area">
-        <input type="text" id="studentName" placeholder="Enter Student Full Name" style="width:100%; padding:15px; margin-bottom:15px; border-radius:8px; border:2px solid var(--secondary); background:#1e293b; color:white; box-sizing: border-box; font-size: 16px; text-align: center;">
+        <input type="text" id="studentName" placeholder="Enter Student Full Name" style="width:100%; padding:15px; margin-bottom:10px; border-radius:8px; border:2px solid var(--secondary); background:#1e293b; color:white; box-sizing: border-box; font-size: 16px; text-align: center;">
+        <input type="text" id="studentClass" placeholder="Enter Class (e.g., Grade 4)" style="width:100%; padding:15px; margin-bottom:15px; border-radius:8px; border:2px solid var(--secondary); background:#1e293b; color:white; box-sizing: border-box; font-size: 16px; text-align: center;">
+        
         <div id="level-selector-container" style="text-align: center;">Syncing with Workstation...</div>
         <button class="btn btn-teacher" onclick="teacherLogin()">📊 Global Leaderboard (Admin)</button>
     </div>
@@ -132,7 +134,7 @@
 
         let allQuestions = []; 
         let game = new Chess();
-        let board, currentLevel, currentTerm, currentWeek, gradeSet, currentIdx, score, pName, missionStartTime;
+        let board, currentLevel, currentTerm, currentWeek, gradeSet, currentIdx, score, pName, pClass, missionStartTime;
         let lives = 1;
         let squareSelected = null;
         let missionResults = [];
@@ -197,7 +199,10 @@
 
         window.initMission = function(l, t, w) {
             pName = document.getElementById('studentName').value.trim();
-            if(!pName) { alert("Please enter student name."); return; }
+            pClass = document.getElementById('studentClass').value.trim(); // Capture Class
+            
+            if(!pName || !pClass) { alert("Please enter both Name and Class."); return; }
+            
             currentLevel=l; currentTerm=t; currentWeek=w;
             gradeSet = allQuestions.filter(q => q.level == l && q.term == t && q.week == w);
             document.getElementById("setup-area").classList.add("hidden");
@@ -244,13 +249,11 @@
                 $('.square-55d63').removeClass('highlight-selected');
                 squareSelected = null;
 
-                // Handle Promotion logic
                 const moveAttempt = game.move({ from: source, to: target, promotion: 'q' });
                 if (moveAttempt === null) return; 
 
                 const expectedMove = gradeSet[currentIdx].expectedMoves[0]; 
                 
-                // Compare SAN, coordinate, or coordinate+promotion (e.g. e7e8q)
                 if(moveAttempt.san === expectedMove || (source+target) === expectedMove || (source+target+'q') === expectedMove) {
                     board.position(game.fen());
                     score++; missionResults.push({status: "Correct"});
@@ -304,18 +307,21 @@
             document.getElementById("game-area").classList.add("hidden");
             document.getElementById("post-game").classList.remove("hidden");
 
+            // Updated path to include Class in the database
             const userRef = db.collection("student_progress").doc(pName.toLowerCase());
             const mKey = `L${currentLevel}T${currentTerm}W${currentWeek}`;
             try {
                 await db.runTransaction(async (t) => {
                     const doc = await t.get(userRef);
-                    if(!doc.exists) { t.set(userRef, {name: pName, totalScore: score, completedMissions: [mKey]}); } 
-                    else {
+                    if(!doc.exists) { 
+                        t.set(userRef, {name: pName, class: pClass, totalScore: score, completedMissions: [mKey]}); 
+                    } else {
                         const data = doc.data();
                         if(!data.completedMissions.includes(mKey)) {
                             t.update(userRef, { 
                                 totalScore: (data.totalScore || 0) + score, 
                                 name: pName,
+                                class: pClass,
                                 completedMissions: firebase.firestore.FieldValue.arrayUnion(mKey) 
                             });
                         }
@@ -325,6 +331,7 @@
 
             await db.collection("weekly_grading").add({
                 name: pName,
+                class: pClass, // Store Class in Weekly record
                 weekKey: `L${currentLevel}W${currentWeek}`,
                 score: score,
                 time: timeTaken,
@@ -355,9 +362,13 @@
                 let h = "";
                 snap.forEach(d => {
                     let s = d.data();
+                    // LEADERBOARD NOW SHOWS NAME AND CLASS
                     h += `<div class="leaderboard-entry">
-                        <span style="font-weight:bold;">${s.name}</span>
-                        <span style="color:var(--secondary); font-weight:bold;">
+                        <div>
+                            <span style="font-weight:bold;">${s.name}</span><br>
+                            <span style="font-size:0.7em; color:#94a3b8;">${s.class || 'No Class'}</span>
+                        </div>
+                        <span style="color:var(--secondary); font-weight:bold; align-self:center;">
                             ${filter ? s.score + ' pts / ' + s.time + 's' : s.totalScore + ' PTS'}
                         </span>
                     </div>`;
