@@ -221,7 +221,10 @@
                 orientation: game.turn() === 'b' ? 'black' : 'white',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             });
-            $('.square-55d63').off('click').on('click', handleSquareClick);
+            // Re-bind click listener
+            setTimeout(() => {
+                $('.square-55d63').off('click').on('click', handleSquareClick);
+            }, 100);
         }
 
         function handleSquareClick() {
@@ -244,14 +247,13 @@
                 const expectedMoves = gradeSet[currentIdx].expectedMoves;
                 const expectedMove = expectedMoves[puzzleStep];
                 
+                // Validate move against solution (check SAN or square coordinate string)
                 if(moveAttempt.san === expectedMove || (source+target) === expectedMove) {
                     puzzleStep++;
                     board.position(game.fen());
 
                     if (puzzleStep === expectedMoves.length) {
                         score++; missionResults.push({status: "Correct"});
-                        
-                        // NOTIFICATION START
                         const notif = document.getElementById('applause-notif');
                         notif.style.opacity = '1';
                         $('#board-container').addClass('correct-flash');
@@ -262,14 +264,16 @@
                             currentIdx++; 
                             loadQuestion();
                         }, 800);
-                        // NOTIFICATION END
 
                     } else {
+                        // Level 3+ Multi-step: AI makes the opponent's move automatically
                         setTimeout(() => {
                             game.move(expectedMoves[puzzleStep]);
                             board.position(game.fen());
                             puzzleStep++;
-                        }, 400);
+                            // Re-bind listener after AI move to keep board interactive
+                            $('.square-55d63').off('click').on('click', handleSquareClick);
+                        }, 600);
                     }
                 } else {
                     game.undo();
