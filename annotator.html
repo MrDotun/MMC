@@ -57,44 +57,57 @@
 
             btn.disabled = true;
             document.getElementById('statusBox').classList.remove('hidden');
-            pgnOutput.value = "Initializing engine... fetching GM insights move by move.";
+            
+            // Clear output and start the live log
+            pgnOutput.value = "--- INITIATING GM ENGINE LIVE FEED ---\n";
 
-            // Tokenizer: Captures headers, moves, numbers, brackets, and NAGs
             const tokens = pgnInput.match(/\[.*?\]|\d+\.+|[a-zA-Z0-9+#=!-]+|\(|\)|\$[0-9]+|\*/g);
-            if (!tokens) return alert("Invalid PGN format.");
+            if (!tokens) {
+                btn.disabled = false;
+                return alert("Invalid PGN format.");
+            }
             
             let resultTokens = [...tokens];
             
             for (let i = 0; i < resultTokens.length; i++) {
                 const token = resultTokens[i];
 
-                // Skip non-move tokens (brackets, headers, move numbers like '1.')
                 if (token.startsWith('[') || token.match(/^[()]$/) || token.match(/^\d+\.+$/)) {
                     continue;
                 }
 
-                // Process tokens that look like moves (e.g., Nf3, O-O, e4)
                 if (token.match(/[a-zA-Z]/)) {
                     statusText.innerText = `Analyzing Move: ${token}`;
                     
-                    // Send move with a tiny bit of context for better AI accuracy
+                    // Show immediate activity in the output window
+                    pgnOutput.value += `\n[Processing ${token}... ]`;
+                    pgnOutput.scrollTop = pgnOutput.scrollHeight;
+
                     const context = resultTokens.slice(Math.max(0, i-2), i+1).join(" ");
                     const comment = await fetchGMInsight(apiKey, context);
 
                     if (comment) {
                         resultTokens[i] = `${token} {${comment}}`;
                         
-                        // UPDATE UI IN REAL-TIME
-                        pgnOutput.value = formatPGN(resultTokens);
+                        // Replace the "Processing" line with the actual GM insight
+                        const lines = pgnOutput.value.split('\n');
+                        lines[lines.length - 1] = `GM NOTE >> ${token}: ${comment}`;
+                        pgnOutput.value = lines.join('\n');
                         pgnOutput.scrollTop = pgnOutput.scrollHeight; 
+                    } else {
+                        const lines = pgnOutput.value.split('\n');
+                        lines[lines.length - 1] = `!! Error analyzing ${token}`;
+                        pgnOutput.value = lines.join('\n');
                     }
 
-                    // Respect Free Tier limits (approx 10-15 requests per minute)
+                    // Respect Free Tier limits
                     await new Promise(r => setTimeout(r, 5000));
                 }
             }
 
             statusText.innerText = "TRANSCRIPTION SUCCESSFUL";
+            pgnOutput.value += "\n\n--- FINAL ANNOTATED PGN ---\n" + formatPGN(resultTokens);
+            pgnOutput.scrollTop = pgnOutput.scrollHeight;
             btn.disabled = false;
         }
 
