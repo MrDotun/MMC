@@ -20,12 +20,10 @@
         :root { --primary: #1e293b; --accent: #4ade80; --gold: #fbbf24; }
         body { background: radial-gradient(circle at top, #1e293b 0%, #070b14 100%); color: #f8fafc; font-family: 'Inter', sans-serif; }
         
-        /* Board Customization */
         .white-1e1d7 { background-color: #f0fdaf !important; }
         .black-3c85d { background-color: #3b82f6 !important; }
         .highlight-square { box-shadow: inset 0 0 3px 3px rgba(251, 191, 36, 0.8); }
         
-        /* Animations */
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
         .error-shake { animation: shake 0.3s ease-in-out; border: 2px solid #ef4444 !important; }
         
@@ -58,7 +56,6 @@
     </div>
 
     <div id="game-arena" class="hidden w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
         <div class="lg:col-span-3 space-y-4">
             <div class="bg-slate-900/50 p-6 rounded-2xl border border-white/5">
                 <div class="flex justify-between items-center mb-4">
@@ -103,7 +100,6 @@
     </div>
 
     <script>
-        // --- YOUR EXTRACTED FIREBASE DETAILS ---
         const firebaseConfig = {
             apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
             authDomain: "assignments-de95a.firebaseapp.com",
@@ -112,10 +108,13 @@
             messagingSenderId: "1088073398299",
             appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
         };
-        firebase.initializeApp(firebaseConfig);
+        
+        try {
+            firebase.initializeApp(firebaseConfig);
+        } catch (e) { console.error("Firebase initialized fail", e); }
+        
         const db = firebase.firestore();
 
-        // --- PUZZLE DATA (All 50 Integrated) ---
         const puzzleSet = [
             { fen: 'r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 0', sol: ['Nf6+', 'gxf6', 'Bxf7#'] },
             { fen: '1rb4r/pkPp3p/1b1P3n/1Q6/N3Pp2/8/P1P3PP/7K w - - 1 0', sol: ['Qd5+', 'Ka6', 'cxb8=N#'] },
@@ -169,7 +168,6 @@
             { fen: 'r4R2/1b2n1pp/p2Np1k1/1pn5/4pP1P/8/PPP1B1P1/2K4R w - - 1 0', sol: ['h5+', 'Kh6', 'Nf7#'] }
         ];
 
-        // --- GAME STATE ---
         let user = { name: '', class: '', score: 0, lives: 10, hints: 3 };
         let currentIdx = 0, moveStep = 0, board, game, sourceSquare = null;
 
@@ -179,26 +177,33 @@
             success: new Audio('https://www.myinstants.com/media/sounds/level-up-188970.mp3')
         };
 
-        // --- AUTH LOGIC ---
         $('#startBtn').on('click', async () => {
             const name = $('#stuName').val().trim();
             const pass = $('#stuPass').val().trim();
-            if(!name || !pass) return;
+            const grade = $('#stuClass').val();
+            if(!name || !pass) { alert("Fill all fields"); return; }
 
-            const snap = await db.collection('students').doc(name).get();
-            if(snap.exists() && snap.data().password !== pass) {
-                $('#errorMsg').text("Wrong password! No impersonation allowed.").show();
-                return;
+            try {
+                const snap = await db.collection('students').doc(name).get();
+                if(snap.exists() && snap.data().password !== pass) {
+                    $('#errorMsg').text("Wrong password!").removeClass('hidden').show();
+                    return;
+                }
+                if(!snap.exists()) {
+                    await db.collection('students').doc(name).set({ name, password: pass, class: grade, score: 0 });
+                } else {
+                    user.score = snap.data().score || 0;
+                }
+                user.name = name; user.class = grade;
+                launchGame();
+            } catch (e) {
+                console.error("Auth failed, starting locally", e);
+                user.name = name; launchGame();
             }
-            if(!snap.exists()) {
-                await db.collection('students').doc(name).set({ name, password: pass, class: $('#stuClass').val(), score: 0 });
-            }
-            user.name = name; user.class = $('#stuClass').val();
-            launchGame();
         });
 
         function launchGame() {
-            $('#auth-screen').hide();
+            $('#auth-screen').addClass('hidden').hide();
             $('#game-arena').removeClass('hidden').addClass('grid');
             initBoard();
             syncChat();
@@ -207,7 +212,7 @@
 
         function initBoard() {
             game = new Chess();
-            loadPuzzle(0);
+            loadPuzzle(currentIdx);
         }
 
         function loadPuzzle(idx) {
@@ -226,15 +231,15 @@
             });
             updateUI();
             $('#moveFeedback').text("White to move & Mate in 2").removeClass('text-red-400 text-green-400');
-            attachClickToMove();
+            setTimeout(attachClickToMove, 500);
         }
 
         function handleUserMove(source, target) {
             const sol = puzzleSet[currentIdx].sol;
-            const valid = game.moves({ square: source, verbose: true });
-            const attempt = valid.find(m => m.to === target);
+            const move = game.move({ from: source, to: target, promotion: 'q' });
 
-            if(!attempt || attempt.san !== sol[moveStep]) {
+            if(!move || move.san !== sol[moveStep]) {
+                if(move) game.undo();
                 sounds.wrong.play();
                 user.lives--;
                 $('#board-container').addClass('error-shake');
@@ -244,8 +249,6 @@
                 return 'snapback';
             }
 
-            // Correct Move
-            game.move(attempt.san);
             sounds.move.play();
             moveStep++;
 
@@ -253,7 +256,7 @@
                 sounds.success.play();
                 user.score += 10;
                 $('#board-container').addClass('success-glow');
-                db.collection('students').doc(user.name).update({ score: user.score });
+                db.collection('students').doc(user.name).update({ score: user.score }).catch(e=>{});
                 setTimeout(() => {
                     $('#board-container').removeClass('success-glow');
                     currentIdx++;
@@ -268,14 +271,12 @@
             }
         }
 
-        // --- CLICK TO MOVE ---
         function attachClickToMove() {
             $('.square-55d63').off('click').on('click', function() {
                 const sq = $(this).data('square');
                 const piece = game.get(sq);
-
                 if(!sourceSquare) {
-                    if(piece && piece.color === 'w') {
+                    if(piece && piece.color === game.turn()) {
                         sourceSquare = sq;
                         $(this).addClass('highlight-square');
                     }
@@ -296,19 +297,16 @@
 
         function restartProgress() {
             user.lives = 10; user.score = 0; currentIdx = 0;
-            db.collection('students').doc(user.name).update({ score: 0 });
+            db.collection('students').doc(user.name).update({ score: 0 }).catch(e=>{});
             loadPuzzle(0);
         }
 
-        // --- FIREBASE SYNC ---
         function syncChat() {
             db.collection('chat').orderBy('time', 'desc').limit(20).onSnapshot(snap => {
                 $('#chat-messages').empty();
                 snap.forEach(doc => {
                     const m = doc.data();
-                    $('#chat-messages').prepend(`
-                        <div><span class="text-yellow-500 font-bold">${m.name}:</span> <span class="text-slate-300">${m.text}</span></div>
-                    `);
+                    $('#chat-messages').prepend(`<div><span class="text-yellow-500 font-bold">${m.name}:</span> <span class="text-slate-300">${m.text}</span></div>`);
                 });
             });
         }
@@ -321,17 +319,12 @@
         });
 
         function syncLeaderboard() {
-            db.collection('students').orderBy('score', 'desc').onSnapshot(snap => {
+            db.collection('students').orderBy('score', 'desc').limit(10).onSnapshot(snap => {
                 $('#leaderboard').empty();
                 let rank = 1;
                 snap.forEach(doc => {
                     const s = doc.data();
-                    $('#leaderboard').append(`
-                        <div class="flex justify-between p-2 rounded ${s.name === user.name ? 'bg-yellow-500/20' : 'bg-white/5'}">
-                            <span>${rank++}. ${s.name}</span>
-                            <span class="font-bold">${s.score}</span>
-                        </div>
-                    `);
+                    $('#leaderboard').append(`<div class="flex justify-between p-2 rounded ${s.name === user.name ? 'bg-yellow-500/20' : 'bg-white/5'}"><span>${rank++}. ${s.name}</span><span class="font-bold">${s.score}</span></div>`);
                 });
             });
         }
@@ -340,10 +333,12 @@
             if(user.hints > 0) {
                 user.hints--;
                 const sol = puzzleSet[currentIdx].sol[moveStep];
-                $('#moveFeedback').text(`HINT: Try moving the ${sol[0] === 'N' ? 'Knight' : sol[0] === 'B' ? 'Bishop' : 'Piece'}`).addClass('text-yellow-500');
+                $('#moveFeedback').text(`HINT: Piece starts with ${sol[0]}`).addClass('text-yellow-500');
                 updateUI();
             }
         });
+
+        $('#resetBtn').on('click', () => { loadPuzzle(currentIdx); });
     </script>
 </body>
 </html>
