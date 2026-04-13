@@ -34,7 +34,7 @@
                         <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                         <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
                     </div>
-                    <span id="statusText" class="text-blue-400 font-mono text-[11px] uppercase tracking-widest font-bold italic">Scanning Tree Structure...</span>
+                    <span id="statusText" class="text-blue-400 font-mono text-[11px] uppercase tracking-widest font-bold italic">Scanning...</span>
                 </div>
             </div>
 
@@ -57,57 +57,47 @@
 
             btn.disabled = true;
             document.getElementById('statusBox').classList.remove('hidden');
-            
-            // Clear output and start the live log
-            pgnOutput.value = "--- INITIATING GM ENGINE LIVE FEED ---\n";
+            pgnOutput.value = "Analyzing...";
 
-            const tokens = pgnInput.match(/\[.*?\]|\d+\.+|[a-zA-Z0-9+#=!-]+|\(|\)|\$[0-9]+|\*/g);
-            if (!tokens) {
-                btn.disabled = false;
-                return alert("Invalid PGN format.");
-            }
+            // Improved Regex: Specifically handles [%csl ...] and move numbers separately
+            const tokens = pgnInput.match(/\[%[^\]]*\]|\[.*?\]|\d+\.+|[a-zA-Z0-9+#=!-]+|\(|\)|\{[^}]*\}|\$[0-9]+|\*/g);
+            if (!tokens) return alert("PGN parse error.");
             
             let resultTokens = [...tokens];
             
             for (let i = 0; i < resultTokens.length; i++) {
                 const token = resultTokens[i];
 
-                if (token.startsWith('[') || token.match(/^[()]$/) || token.match(/^\d+\.+$/)) {
-                    continue;
-                }
+                // Logic: Only send "Clean" chess moves to the AI
+                const isMove = token.match(/^[a-zA-Z]/) && 
+                               !token.startsWith('[') && 
+                               !token.startsWith('{') && 
+                               !token.match(/^[()]$/);
 
-                if (token.match(/[a-zA-Z]/)) {
-                    statusText.innerText = `Analyzing Move: ${token}`;
+                if (isMove) {
+                    statusText.innerText = `ANALYZING MOVE: ${token}`;
                     
-                    // Show immediate activity in the output window
-                    pgnOutput.value += `\n[Processing ${token}... ]`;
-                    pgnOutput.scrollTop = pgnOutput.scrollHeight;
-
-                    const context = resultTokens.slice(Math.max(0, i-2), i+1).join(" ");
+                    // Grab context (last 3 tokens)
+                    const context = resultTokens.slice(Math.max(0, i-3), i+1).join(" ");
                     const comment = await fetchGMInsight(apiKey, context);
 
                     if (comment) {
                         resultTokens[i] = `${token} {${comment}}`;
-                        
-                        // Replace the "Processing" line with the actual GM insight
-                        const lines = pgnOutput.value.split('\n');
-                        lines[lines.length - 1] = `GM NOTE >> ${token}: ${comment}`;
-                        pgnOutput.value = lines.join('\n');
-                        pgnOutput.scrollTop = pgnOutput.scrollHeight; 
-                    } else {
-                        const lines = pgnOutput.value.split('\n');
-                        lines[lines.length - 1] = `!! Error analyzing ${token}`;
-                        pgnOutput.value = lines.join('\n');
                     }
 
-                    // Respect Free Tier limits
-                    await new Promise(r => setTimeout(r, 5000));
+                    // UPDATE THE BOX IMMEDIATELY AFTER EACH MOVE
+                    pgnOutput.value = formatPGN(resultTokens);
+                    pgnOutput.scrollTop = pgnOutput.scrollHeight;
+
+                    // Essential delay for Free Tier (4 seconds minimum per move)
+                    await new Promise(r => setTimeout(r, 4500));
+                } else {
+                    // Update PGN even if it's just a bracket or header so the user sees progress
+                    pgnOutput.value = formatPGN(resultTokens);
                 }
             }
 
             statusText.innerText = "TRANSCRIPTION SUCCESSFUL";
-            pgnOutput.value += "\n\n--- FINAL ANNOTATED PGN ---\n" + formatPGN(resultTokens);
-            pgnOutput.scrollTop = pgnOutput.scrollHeight;
             btn.disabled = false;
         }
 
@@ -116,15 +106,18 @@
                 .replace(/\s\)/g, ")")
                 .replace(/\(\s/g, "(")
                 .replace(/\s\./g, ".")
+                .replace(/\s\{/g, " {") // Keep comments clean
                 .trim();
         }
 
         async function fetchGMInsight(key, moveContext) {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
             
-            const prompt = `You are an elite Grandmaster. Provide a high-level positional insight (max 12 words) for the move: ${moveContext}. 
-            Use professional terminology (prophylaxis, leverage, outpost, etc.). 
-            Return ONLY the comment text, no quotes or JSON.`;
+            const prompt = `Act as an elite Chess Grandmaster. 
+            PGN Context: "${moveContext}"
+            Provide a 10-word positional observation for the last move. 
+            Use professional terms like "prophylaxis", "leverage", or "centrality".
+            Response must be TEXT ONLY. No JSON. No quotes.`;
 
             try {
                 const res = await fetch(url, {
@@ -135,7 +128,7 @@
                 const data = await res.json();
                 return data.candidates[0].content.parts[0].text.trim();
             } catch (e) { 
-                return null; 
+                return "Analysis error - check API key."; 
             }
         }
     </script>
