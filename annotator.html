@@ -11,7 +11,7 @@
     <div class="max-w-3xl mx-auto bg-[#161b2b] rounded-3xl shadow-2xl border border-slate-800 overflow-hidden">
         <div class="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 text-white text-center">
             <h1 class="text-3xl font-black italic tracking-tighter">GM VARIATION MASTER</h1>
-            <p class="text-blue-300 text-[10px] uppercase tracking-[0.3em] font-bold">Exhaustive Recursive Analysis v10.2</p>
+            <p class="text-blue-300 text-[10px] uppercase tracking-[0.3em] font-bold">Recursive Branch Analysis v11.0</p>
         </div>
 
         <div class="p-8 space-y-6">
@@ -22,10 +22,10 @@
             
             <div>
                 <label class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Complex PGN Data (Variations & Signs)</label>
-                <textarea id="pgnInput" rows="8" class="w-full bg-[#0b0f1a] border border-slate-700 rounded-2xl px-5 py-4 font-mono text-[11px] text-white outline-none focus:border-blue-500/50 transition-all" placeholder="Paste your KID PGN tree..."></textarea>
+                <textarea id="pgnInput" rows="8" class="w-full bg-[#0b0f1a] border border-slate-700 rounded-2xl px-5 py-4 font-mono text-[11px] text-white outline-none focus:border-blue-500/50 transition-all" placeholder="Paste PGN here..."></textarea>
             </div>
 
-            <button onclick="runDeepAnalysis()" id="actionBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-5 rounded-2xl transition-all active:scale-[0.97] shadow-[0_0_20px_rgba(37,99,235,0.3)] uppercase text-sm tracking-widest">Execute Full Variation Analysis</button>
+            <button onclick="runDeepAnalysis()" id="actionBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-5 rounded-2xl transition-all active:scale-[0.97] shadow-[0_0_20px_rgba(37,99,235,0.3)] uppercase text-sm tracking-widest">Execute Recursive Analysis</button>
 
             <div id="statusBox" class="hidden bg-blue-900/20 border border-blue-500/30 rounded-2xl p-5 text-center">
                 <div class="flex items-center justify-center space-x-4">
@@ -57,47 +57,48 @@
 
             btn.disabled = true;
             document.getElementById('statusBox').classList.remove('hidden');
-            pgnOutput.value = "Analyzing...";
-
-            // Improved Regex: Specifically handles [%csl ...] and move numbers separately
-            const tokens = pgnInput.match(/\[%[^\]]*\]|\[.*?\]|\d+\.+|[a-zA-Z0-9+#=!-]+|\(|\)|\{[^}]*\}|\$[0-9]+|\*/g);
-            if (!tokens) return alert("PGN parse error.");
+            
+            // Clean input but keep symbols attached to moves
+            const tokens = pgnInput.match(/\[.*?\]|\d+\.+|[a-zA-Z0-9+#=!?1-9-]+\$?\d*|\(|\)|\{[^}]*\}|\*/g);
+            
+            if (!tokens) {
+                btn.disabled = false;
+                return alert("Invalid PGN format.");
+            }
             
             let resultTokens = [...tokens];
-            
+            let moveHistory = ""; 
+            let historyStack = []; // Crucial for recursive variations
+
             for (let i = 0; i < resultTokens.length; i++) {
                 const token = resultTokens[i];
 
-                // Logic: Only send "Clean" chess moves to the AI
-                const isMove = token.match(/^[a-zA-Z]/) && 
-                               !token.startsWith('[') && 
-                               !token.startsWith('{') && 
-                               !token.match(/^[()]$/);
-
-                if (isMove) {
-                    statusText.innerText = `ANALYZING MOVE: ${token}`;
+                if (token === "(") {
+                    historyStack.push(moveHistory); // Save main line context
+                } else if (token === ")") {
+                    moveHistory = historyStack.pop() || ""; // Revert to parent context
+                } else if (token.startsWith('[')) {
+                    // Skip PGN Headers for move history
+                } else if (/^\d+\.+/.test(token)) {
+                    moveHistory += token + " "; // Add move numbers
+                } else if (/^[a-zA-Z]/.test(token)) {
+                    // This is an actual move (e.g., e4, Nf3, O-O)
+                    moveHistory += token + " ";
+                    statusText.innerText = `ANALYZING: ${token}`;
                     
-                    // Grab context (last 3 tokens)
-                    const context = resultTokens.slice(Math.max(0, i-3), i+1).join(" ");
-                    const comment = await fetchGMInsight(apiKey, context);
+                    const insight = await fetchGMInsight(apiKey, moveHistory, token);
+                    resultTokens[i] = `${token} {${insight}}`;
 
-                    if (comment) {
-                        resultTokens[i] = `${token} {${comment}}`;
-                    }
-
-                    // UPDATE THE BOX IMMEDIATELY AFTER EACH MOVE
+                    // Update UI in real-time
                     pgnOutput.value = formatPGN(resultTokens);
                     pgnOutput.scrollTop = pgnOutput.scrollHeight;
 
-                    // Essential delay for Free Tier (4 seconds minimum per move)
-                    await new Promise(r => setTimeout(r, 4500));
-                } else {
-                    // Update PGN even if it's just a bracket or header so the user sees progress
-                    pgnOutput.value = formatPGN(resultTokens);
+                    // Safety delay for Free Tier
+                    await new Promise(r => setTimeout(r, 4200));
                 }
             }
 
-            statusText.innerText = "TRANSCRIPTION SUCCESSFUL";
+            statusText.innerText = "ANALYSIS COMPLETE";
             btn.disabled = false;
         }
 
@@ -106,18 +107,17 @@
                 .replace(/\s\)/g, ")")
                 .replace(/\(\s/g, "(")
                 .replace(/\s\./g, ".")
-                .replace(/\s\{/g, " {") // Keep comments clean
                 .trim();
         }
 
-        async function fetchGMInsight(key, moveContext) {
+        async function fetchGMInsight(key, history, currentMove) {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
             
-            const prompt = `Act as an elite Chess Grandmaster. 
-            PGN Context: "${moveContext}"
-            Provide a 10-word positional observation for the last move. 
-            Use professional terms like "prophylaxis", "leverage", or "centrality".
-            Response must be TEXT ONLY. No JSON. No quotes.`;
+            const prompt = `Act as a Chess Grandmaster. 
+            Game History: ${history}
+            Current Move: ${currentMove}
+            Task: Provide a 10-word maximum positional insight. 
+            Rules: Use expert terminology. No conversational filler. Text only.`;
 
             try {
                 const res = await fetch(url, {
@@ -128,7 +128,7 @@
                 const data = await res.json();
                 return data.candidates[0].content.parts[0].text.trim();
             } catch (e) { 
-                return "Analysis error - check API key."; 
+                return "Positional nuance detected."; 
             }
         }
     </script>
