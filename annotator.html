@@ -3,83 +3,116 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Chess Annotator Pro | Dotun</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <title>GM Variation Master | Dotun</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-[#0f172a] text-slate-200 min-h-screen p-4">
+<body class="bg-[#0b0f1a] text-slate-200 min-h-screen p-4 font-sans">
 
-    <div class="max-w-3xl mx-auto bg-[#1e293b] rounded-xl shadow-2xl border border-slate-700">
-        <div class="bg-blue-600 p-6 text-white text-center">
-            <h1 class="text-2xl font-bold">Chess Annotator Pro</h1>
-            <p class="text-blue-100 text-xs uppercase tracking-widest">v3.0: 100% Identity Preservation</p>
+    <div class="max-w-3xl mx-auto bg-[#161b2b] rounded-3xl shadow-2xl border border-slate-800 overflow-hidden">
+        <div class="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 text-white text-center">
+            <h1 class="text-3xl font-black italic tracking-tighter">GM VARIATION MASTER</h1>
+            <p class="text-blue-300 text-[10px] uppercase tracking-[0.3em] font-bold">Exhaustive Recursive Analysis v10.2</p>
         </div>
 
-        <div class="p-6 space-y-6">
-            <input type="password" id="apiKey" class="w-full bg-[#0f172a] border border-slate-700 rounded-lg px-4 py-3 text-white outline-none" placeholder="Paste Gemini Key...">
+        <div class="p-8 space-y-6">
+            <div>
+                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Gemini API Key</label>
+                <input type="password" id="apiKey" class="w-full bg-[#0b0f1a] border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-inner" placeholder="Enter Key...">
+            </div>
             
-            <textarea id="pgnInput" rows="6" class="w-full bg-[#0f172a] border border-slate-700 rounded-lg px-4 py-3 font-mono text-[10px] text-white outline-none" placeholder="Paste PGN here..."></textarea>
-
-            <button onclick="startAnnotating()" id="actionBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-lg active:scale-95 transition">Annotate My File</button>
-
-            <div id="statusBox" class="hidden bg-[#0f172a] border border-blue-900/50 rounded-lg p-4 text-center text-blue-400 font-mono text-xs uppercase italic">
-                <span id="statusText">Ready...</span>
+            <div>
+                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Complex PGN Data (Variations & Signs)</label>
+                <textarea id="pgnInput" rows="8" class="w-full bg-[#0b0f1a] border border-slate-700 rounded-2xl px-5 py-4 font-mono text-[11px] text-white outline-none focus:border-blue-500/50 transition-all" placeholder="Paste your KID PGN tree..."></textarea>
             </div>
 
-            <textarea id="pgnOutput" rows="10" class="w-full bg-[#0f172a] border border-green-900/30 rounded-lg px-4 py-3 font-mono text-[10px] text-green-400 outline-none" readonly placeholder="Resulting PGN..."></textarea>
+            <button onclick="runDeepAnalysis()" id="actionBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-5 rounded-2xl transition-all active:scale-[0.97] shadow-[0_0_20px_rgba(37,99,235,0.3)] uppercase text-sm tracking-widest">Execute Full Variation Analysis</button>
+
+            <div id="statusBox" class="hidden bg-blue-900/20 border border-blue-500/30 rounded-2xl p-5 text-center">
+                <div class="flex items-center justify-center space-x-4">
+                    <div class="flex space-x-1">
+                        <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                        <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                        <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    </div>
+                    <span id="statusText" class="text-blue-400 font-mono text-[11px] uppercase tracking-widest font-bold italic">Scanning Tree Structure...</span>
+                </div>
+            </div>
+
+            <div>
+                <label class="text-[11px] font-bold text-emerald-500 uppercase tracking-widest mb-2 block">GM Annotated Results</label>
+                <textarea id="pgnOutput" rows="12" class="w-full bg-[#0b0f1a] border border-emerald-900/30 rounded-2xl px-5 py-4 font-mono text-[11px] text-emerald-400 outline-none" readonly></textarea>
+            </div>
         </div>
     </div>
 
     <script>
-        async function startAnnotating() {
+        async function runDeepAnalysis() {
             const apiKey = document.getElementById('apiKey').value.trim();
             const pgnInput = document.getElementById('pgnInput').value.trim();
-            const actionBtn = document.getElementById('actionBtn');
-            const statusBox = document.getElementById('statusBox');
             const statusText = document.getElementById('statusText');
             const pgnOutput = document.getElementById('pgnOutput');
+            const btn = document.getElementById('actionBtn');
+
+            if (!apiKey || !pgnInput) return alert("Key and PGN data are mandatory.");
+
+            btn.disabled = true;
+            document.getElementById('statusBox').classList.remove('hidden');
+
+            // Regex captures headers, moves, move numbers, brackets, and NAGs ($ signs)
+            const tokens = pgnInput.match(/\[.*?\]|\d+\.+|[a-zA-Z0-9+#=!-]+|\(|\)|\$[0-9]+|\*/g);
+            let resultTokens = [...tokens];
             
-            if (!apiKey || !pgnInput) return alert("Missing Info");
+            // SMALL STEP (5-6 tokens) ensures every move in a variation is hit
+            const step = 6; 
+            for (let i = 0; i < tokens.length; i += step) {
+                const chunk = tokens.slice(i, i + step).join(" ");
+                
+                // Only prompt Gemini if the chunk actually contains a move (to skip headers/brackets)
+                if (chunk.match(/[a-zA-Z]/) && !chunk.startsWith('[')) {
+                    statusText.innerText = `Analyzing Variation: ${chunk}`;
 
-            const chess = new Chess();
-            if (!chess.load_pgn(pgnInput)) return alert("Invalid PGN format!");
+                    const annotations = await fetchGMInsight(apiKey, chunk);
 
-            actionBtn.disabled = true;
-            statusBox.classList.remove('hidden');
-
-            // Get the list of moves from the library to use for FENs
-            const moveHistory = chess.history({ verbose: true });
-            
-            // We work with your ORIGINAL text to ensure 100% identity
-            let finalPgn = pgnInput;
-
-            for (let i = 0; i < moveHistory.length; i++) {
-                const move = moveHistory[i];
-
-                // Annotate every 3rd move
-                if (i % 3 === 0) {
-                    statusText.innerText = `Analyzing: ${move.san}`;
-                    
-                    const comment = await getGeminiComment(apiKey, move.before, move.san);
-                    
-                    // The "Identity Protection" Trick:
-                    // Find the move in the text and insert the comment right after it
-                    // We use a Regex to find the move followed by a space or a bracket
-                    const moveRegex = new RegExp(`(\\s${move.san})(\\s|\\)|\\$)`);
-                    finalPgn = finalPgn.replace(moveRegex, `$1 {${comment}} $2`);
-
-                    await new Promise(r => setTimeout(r, 4500)); 
+                    if (annotations) {
+                        for (const [moveText, comment] of Object.entries(annotations)) {
+                            for (let j = i; j < Math.min(i + step, resultTokens.length); j++) {
+                                // Match the move exactly, ignoring bracket tokens themselves
+                                if (resultTokens[j] === moveText && !resultTokens[j+1]?.startsWith('{')) {
+                                    resultTokens[j] = `${resultTokens[j]} {${comment}}`;
+                                }
+                            }
+                        }
+                    }
+                    // Crucial delay to keep the Free Tier key alive
+                    await new Promise(r => setTimeout(r, 7000));
                 }
             }
 
-            pgnOutput.value = finalPgn;
-            statusText.innerText = "DONE: FILE SAVED";
-            actionBtn.disabled = false;
+            // Clean reconstruction: ensures spacing around brackets is professional
+            pgnOutput.value = resultTokens.join(" ")
+                .replace(/\s\)/g, ")")
+                .replace(/\(\s/g, "(")
+                .replace(/\s\./g, ".")
+                .trim();
+
+            statusText.innerText = "TRANSCRIPTION SUCCESSFUL";
+            btn.disabled = false;
         }
 
-        async function getGeminiComment(key, fen, move) {
+        async function fetchGMInsight(key, chunk) {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
-            const prompt = `GM Chess Comment: In 10 words, why is ${move} played in this position? FEN: ${fen}`;
+            
+            const prompt = `You are an elite Grandmaster Chess Coach.
+            Current Study Segment: "${chunk}"
+            
+            TASK: 
+            Provide a unique, high-level positional insight (12 words max) for EVERY chess move here.
+            - If a move is in a bracket (), it is a variation. Explain its specific purpose.
+            - DO NOT skip moves.
+            - USE GM TERMS: "Prophylaxis", "Outpost", "Leverage", "Space advantage", "Zugzwang potential".
+            - AVOID: "Solid", "Good", "Normal".
+            
+            Return ONLY JSON: {"Move": "Comment"}`;
 
             try {
                 const res = await fetch(url, {
@@ -88,9 +121,10 @@
                     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
                 });
                 const data = await res.json();
-                return data.candidates[0].content.parts[0].text.trim().replace(/"/g, "'");
-            } catch (e) {
-                return "Solid positional move.";
+                const raw = data.candidates[0].content.parts[0].text.replace(/```json|```/g, "").trim();
+                return JSON.parse(raw);
+            } catch (e) { 
+                return null; 
             }
         }
     </script>
