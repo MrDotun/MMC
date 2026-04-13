@@ -3,92 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Master Annotator | Dotun</title>
+    <title>GM Variation Master | Dotun</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-[#0b0f1a] text-slate-200 min-h-screen p-4 font-sans">
 
     <div class="max-w-3xl mx-auto bg-[#161b2b] rounded-3xl shadow-2xl border border-slate-800 overflow-hidden">
-        <div class="bg-gradient-to-br from-indigo-700 to-blue-900 p-8 text-white text-center">
+        <div class="bg-gradient-to-br from-blue-700 to-indigo-900 p-8 text-white text-center">
             <h1 class="text-3xl font-black italic tracking-tighter">GM VARIATION MASTER</h1>
-            <p class="text-blue-300 text-[10px] uppercase tracking-[0.3em] font-bold">Theory Deep-Dive v10.3</p>
+            <p class="text-blue-300 text-[10px] uppercase tracking-[0.3em] font-bold">Exhaustive Recursive Analysis v10.2</p>
         </div>
 
         <div class="p-8 space-y-6">
-            <input type="password" id="apiKey" class="w-full bg-[#0b0f1a] border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all" placeholder="Enter Gemini Key...">
+            <div>
+                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Gemini API Key</label>
+                <input type="password" id="apiKey" class="w-full bg-[#0b0f1a] border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-inner" placeholder="Enter Key...">
+            </div>
             
-            <textarea id="pgnInput" rows="8" class="w-full bg-[#0b0f1a] border border-slate-700 rounded-2xl px-5 py-4 font-mono text-[11px] text-white outline-none" placeholder="Paste PGN..."></textarea>
-
-            <button onclick="runUltimateAnalysis()" id="actionBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-5 rounded-2xl shadow-lg uppercase text-sm tracking-widest">Execute Full Variation Analysis</button>
-
-            <div id="statusBox" class="hidden bg-blue-900/20 border border-blue-500/30 rounded-2xl p-5 text-center">
-                <span id="statusText" class="text-blue-400 font-mono text-[11px] uppercase tracking-widest font-bold italic">Initializing Grandmaster Brain...</span>
+            <div>
+                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Complex PGN Data (Variations & Signs)</label>
+                <textarea id="pgnInput" rows="8" class="w-full bg-[#0b0f1a] border border-slate-700 rounded-2xl px-5 py-4 font-mono text-[11px] text-white outline-none focus:border-blue-500/50 transition-all" placeholder="Paste your KID PGN tree..."></textarea>
             </div>
 
-            <textarea id="pgnOutput" rows="12" class="w-full bg-[#0b0f1a] border border-emerald-900/30 rounded-2xl px-5 py-4 font-mono text-[11px] text-emerald-400 outline-none" readonly placeholder="Annotated results will appear here..."></textarea>
+            <button onclick="runDeepAnalysis()" id="actionBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-5 rounded-2xl transition-all active:scale-[0.97] shadow-[0_0_20px_rgba(37,99,235,0.3)] uppercase text-sm tracking-widest">Execute Full Variation Analysis</button>
+
+            <div id="statusBox" class="hidden bg-blue-900/20 border border-blue-500/30 rounded-2xl p-5 text-center">
+                <div class="flex items-center justify-center space-x-4">
+                    <div class="flex space-x-1">
+                        <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                        <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                        <div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    </div>
+                    <span id="statusText" class="text-blue-400 font-mono text-[11px] uppercase tracking-widest font-bold italic">Scanning Tree Structure...</span>
+                </div>
+            </div>
+
+            <div>
+                <label class="text-[11px] font-bold text-emerald-500 uppercase tracking-widest mb-2 block">GM Annotated Results</label>
+                <textarea id="pgnOutput" rows="12" class="w-full bg-[#0b0f1a] border border-emerald-900/30 rounded-2xl px-5 py-4 font-mono text-[11px] text-emerald-400 outline-none" readonly></textarea>
+            </div>
         </div>
     </div>
 
     <script>
-        async function runUltimateAnalysis() {
+        async function runDeepAnalysis() {
             const apiKey = document.getElementById('apiKey').value.trim();
             const pgnInput = document.getElementById('pgnInput').value.trim();
             const statusText = document.getElementById('statusText');
             const pgnOutput = document.getElementById('pgnOutput');
             const btn = document.getElementById('actionBtn');
 
-            if (!apiKey || !pgnInput) return alert("Key and PGN required.");
+            if (!apiKey || !pgnInput) return alert("Key and PGN data are mandatory.");
 
             btn.disabled = true;
             document.getElementById('statusBox').classList.remove('hidden');
+            pgnOutput.value = "Initializing engine... fetching GM insights move by move.";
 
+            // Tokenizer: Captures headers, moves, numbers, brackets, and NAGs
             const tokens = pgnInput.match(/\[.*?\]|\d+\.+|[a-zA-Z0-9+#=!-]+|\(|\)|\$[0-9]+|\*/g);
+            if (!tokens) return alert("Invalid PGN format.");
+            
             let resultTokens = [...tokens];
             
-            // Increased window slightly to 12 for better context, while maintaining detail
-            const step = 12; 
-            for (let i = 0; i < tokens.length; i += step) {
-                const chunkTokens = tokens.slice(i, i + step);
-                const chunk = chunkTokens.join(" ");
-                
-                if (chunk.match(/[a-zA-Z]/) && !chunk.startsWith('[')) {
-                    statusText.innerText = `GM Thinking: ${chunk}`;
+            for (let i = 0; i < resultTokens.length; i++) {
+                const token = resultTokens[i];
 
-                    const annotations = await fetchGMInsight(apiKey, chunk);
+                // Skip non-move tokens (brackets, headers, move numbers like '1.')
+                if (token.startsWith('[') || token.match(/^[()]$/) || token.match(/^\d+\.+$/)) {
+                    continue;
+                }
 
-                    if (annotations) {
-                        for (const [moveText, comment] of Object.entries(annotations)) {
-                            // Search the specific chunk range for the move
-                            for (let j = i; j < Math.min(i + step, resultTokens.length); j++) {
-                                // Find the move and ensure no comment already exists
-                                if (resultTokens[j] === moveText && !resultTokens[j+1]?.includes('{')) {
-                                    resultTokens[j] = `${resultTokens[j]} {${comment}}`;
-                                }
-                            }
-                        }
-                    }
-                    // Update the UI after every chunk so you see progress
-                    pgnOutput.value = resultTokens.join(" ").replace(/\s\)/g, ")").replace(/\(\s/g, "(").replace(/\s\./g, ".");
+                // Process tokens that look like moves (e.g., Nf3, O-O, e4)
+                if (token.match(/[a-zA-Z]/)) {
+                    statusText.innerText = `Analyzing Move: ${token}`;
                     
-                    await new Promise(r => setTimeout(r, 6500)); 
+                    // Send move with a tiny bit of context for better AI accuracy
+                    const context = resultTokens.slice(Math.max(0, i-2), i+1).join(" ");
+                    const comment = await fetchGMInsight(apiKey, context);
+
+                    if (comment) {
+                        resultTokens[i] = `${token} {${comment}}`;
+                        
+                        // UPDATE UI IN REAL-TIME
+                        pgnOutput.value = formatPGN(resultTokens);
+                        pgnOutput.scrollTop = pgnOutput.scrollHeight; 
+                    }
+
+                    // Respect Free Tier limits (approx 10-15 requests per minute)
+                    await new Promise(r => setTimeout(r, 5000));
                 }
             }
 
-            statusText.innerText = "SUCCESS: FULL THEORY CAPTURED";
+            statusText.innerText = "TRANSCRIPTION SUCCESSFUL";
             btn.disabled = false;
         }
 
-        async function fetchGMInsight(key, chunk) {
+        function formatPGN(tokens) {
+            return tokens.join(" ")
+                .replace(/\s\)/g, ")")
+                .replace(/\(\s/g, "(")
+                .replace(/\s\./g, ".")
+                .trim();
+        }
+
+        async function fetchGMInsight(key, moveContext) {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
             
-            const prompt = `Act as a GM Chess Coach. Analyze this PGN snippet: "${chunk}"
-            
-            TASK: Provide a 12-word strategic comment for EVERY chess move. 
-            - Mention King's Indian Defense (KID) themes (e.g. prophylaxis, outpost, d4-pressure).
-            - DO NOT skip moves in brackets ().
-            - DO NOT use generic words like "good" or "solid".
-            
-            Return ONLY a JSON object: {"MoveText": "Your GM Insight"}`;
+            const prompt = `You are an elite Grandmaster. Provide a high-level positional insight (max 12 words) for the move: ${moveContext}. 
+            Use professional terminology (prophylaxis, leverage, outpost, etc.). 
+            Return ONLY the comment text, no quotes or JSON.`;
 
             try {
                 const res = await fetch(url, {
@@ -97,12 +120,8 @@
                     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
                 });
                 const data = await res.json();
-                let raw = data.candidates[0].content.parts[0].text;
-                // Extra safety to strip Markdown and hidden characters
-                raw = raw.replace(/```json|```/g, "").trim();
-                return JSON.parse(raw);
+                return data.candidates[0].content.parts[0].text.trim();
             } catch (e) { 
-                console.error("Parse Error for chunk:", chunk);
                 return null; 
             }
         }
