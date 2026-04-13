@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chess Annotator | Dotun</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loading-dot { animation: blink 1s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+    </style>
+</head>
+<body class="bg-[#0f172a] text-slate-200 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-3xl mx-auto bg-[#1e293b] rounded-xl shadow-2xl overflow-hidden border border-slate-700">
+        <div class="bg-blue-600 p-6 text-white text-center">
+            <h1 class="text-2xl font-bold tracking-tight">Chess Annotator Pro</h1>
+            <p class="text-blue-100 text-sm mt-1">Deconstructs PGN branches for AI Commentary</p>
+        </div>
+
+        <div class="p-6 space-y-6">
+            <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Gemini API Key</label>
+                <input type="password" id="apiKey" 
+                    class="w-full bg-[#0f172a] border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    placeholder="Paste your Google AI Studio Key...">
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">GM Analyzed PGN</label>
+                <textarea id="pgnInput" rows="6" 
+                    class="w-full bg-[#0f172a] border border-slate-700 rounded-lg px-4 py-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    placeholder="Paste PGN with symbols ($5, $15, etc.) here..."></textarea>
+            </div>
+
+            <button onclick="startAnnotating()" id="actionBtn"
+                class="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-bold py-4 rounded-lg transition-all transform active:scale-95 shadow-lg">
+                Start AI Annotation
+            </button>
+
+            <div id="statusBox" class="hidden bg-[#0f172a] border border-blue-900/50 rounded-lg p-4 text-center">
+                <span id="statusText" class="text-blue-400 font-mono text-sm uppercase tracking-widest">Ready</span>
+                <span class="loading-dot text-blue-400">...</span>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 text-green-500">Output PGN (Final Version)</label>
+                <textarea id="pgnOutput" rows="8" 
+                    class="w-full bg-[#0f172a] border border-green-900/30 rounded-lg px-4 py-3 font-mono text-xs text-green-400 focus:outline-none"
+                    readonly placeholder="Result will appear here..."></textarea>
+            </div>
+        </div>
+
+        <div class="bg-[#111827] p-4 text-center border-t border-slate-800">
+            <p class="text-slate-500 text-[10px]">Ensure screen stays awake during processing. Designed for KID Depth.</p>
+        </div>
+    </div>
+
+    <script>
+        async function startAnnotating() {
+            const apiKey = document.getElementById('apiKey').value;
+            const pgnInput = document.getElementById('pgnInput').value;
+            const actionBtn = document.getElementById('actionBtn');
+            const statusBox = document.getElementById('statusBox');
+            const statusText = document.getElementById('statusText');
+            const pgnOutput = document.getElementById('pgnOutput');
+            
+            if (!apiKey || !pgnInput) return alert("Please fill in both the API Key and PGN.");
+            
+            const chess = new Chess();
+            if (!chess.load_pgn(pgnInput)) return alert("Invalid PGN structure detected.");
+
+            // UI State
+            actionBtn.disabled = true;
+            statusBox.classList.remove('hidden');
+            pgnOutput.value = "";
+
+            // Recursive function to walk through the tree
+            async function walk(history) {
+                for (let i = 0; i < history.length; i++) {
+                    const move = history[i];
+
+                    // Process if: Every 3rd move OR move has a GM symbol (NAG)
+                    if (i % 3 === 0 || (move.nags && move.nags.length > 0)) {
+                        statusText.innerText = `Analyzing: ${move.san}`;
+                        
+                        // Call AI
+                        const comment = await getGeminiComment(apiKey, move.before, move.san, move.nags);
+                        move.comment = comment;
+
+                        // Essential Sleep: Prevent Free Tier API rate limiting
+                        await new Promise(r => setTimeout(r,
