@@ -32,10 +32,10 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        /* Improved Board Colors */
         .white-1e1d7 { background-color: #f0d9b5 !important; }
         .black-3c85d { background-color: #b58863 !important; }
         
+        /* Highlight for click-to-move */
         .highlight-square { box-shadow: inset 0 0 0 4px rgba(251, 191, 36, 0.9) !important; }
         
         #wrong-toast {
@@ -50,6 +50,7 @@
             font-weight: 800;
             display: none;
             color: white;
+            pointer-events: none;
         }
 
         .custom-scroll::-webkit-scrollbar { width: 4px; }
@@ -80,7 +81,6 @@
     </div>
 
     <div id="game-arena" class="hidden w-full max-w-7xl grid grid-cols-1 xl:grid-cols-12 gap-6 p-2 md:p-6 h-auto">
-        
         <div class="xl:col-span-3 flex flex-col gap-4">
             <div class="glass-panel p-5 rounded-2xl">
                 <div class="grid grid-cols-3 gap-3 text-center">
@@ -89,15 +89,6 @@
                     <div><p class="text-[9px] text-slate-400 uppercase font-bold">Score</p><p id="score" class="text-emerald-400 font-bold text-xl">0</p></div>
                 </div>
             </div>
-
-            <div class="glass-panel p-5 rounded-2xl border-l-4 border-l-emerald-500">
-                <h3 class="text-[10px] font-black text-emerald-400 mb-2 tracking-widest uppercase">Mission Briefing</h3>
-                <ul class="text-[11px] text-slate-300 space-y-2">
-                    <li><i class="fas fa-check-circle text-emerald-500 mr-1"></i> Sequence must be exact.</li>
-                    <li><i class="fas fa-check-circle text-emerald-500 mr-1"></i> Moves include captures/checks.</li>
-                </ul>
-            </div>
-
             <div class="flex-1 glass-panel p-5 rounded-2xl overflow-hidden min-h-[200px]">
                 <h3 class="text-[10px] font-black text-slate-400 mb-4 uppercase tracking-widest">Global Rankings</h3>
                 <div id="leaderboard" class="space-y-2 custom-scroll overflow-y-auto max-h-[250px]"></div>
@@ -109,7 +100,6 @@
                 <div id="board" class="w-full h-full"></div>
                 <div id="wrong-toast">WRONG MOVE!</div>
             </div>
-            
             <div class="w-full max-w-[500px] mt-6 flex gap-4">
                 <button id="hintBtn" class="flex-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 py-3 rounded-xl font-bold text-sm">HINT</button>
                 <button id="giveUpBtn" class="flex-1 bg-rose-500/10 border border-rose-500/30 text-rose-500 py-3 rounded-xl font-bold text-sm">GIVE UP</button>
@@ -141,57 +131,14 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
+        // Puzzle Set (Keep your full array here)
         const puzzleSet = [
             { fen: 'r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 0', sol: ['Nf6+', 'gxf6', 'Bxf7#'] },
             { fen: '1rb4r/pkPp3p/1b1P3n/1Q6/N3Pp2/8/P1P3PP/7K w - - 1 0', sol: ['Qd5+', 'Ka6', 'cxb8=N#'] },
             { fen: '4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w k - 1 0', sol: ['Qb8+', 'Nxb8', 'Rd8#'] },
             { fen: 'r1b2k1r/ppp1bppp/8/1B1Q4/5q2/2P5/PPP2PPP/R3R1K1 w - - 1 0', sol: ['Qd8+', 'Bxd8', 'Re8#'] },
-            { fen: '5rkr/pp2Rp2/1b1p1Pb1/3P2Q1/2n3P1/2p5/P4P2/4R1K1 w - - 1 0', sol: ['Qxg6+', 'fxg6', 'Rg7#'] },
-            { fen: '1r1kr3/Nbppn1pp/1b6/8/6Q1/3B1P2/Pq3P1P/3RR1K1 w - - 1 0', sol: ['Qxd7+', 'Kxd7', 'Bb5#'] },
-            { fen: '5rk1/1p1q2bp/p2pN1p1/2pP2Bn/2P3P1/1P6/P4QKP/5R2 w - - 1 0', sol: ['Qxf8+', 'Bxf8', 'Rxf8#'] },
-            { fen: 'r1nk3r/2b2ppp/p3b3/3NN3/Q2P3q/B2B4/P4PPP/4R1K1 w - - 1 0', sol: ['Qd7+', 'Bxd7', 'Nxf7#'] },
-            { fen: 'r4br1/3b1kpp/1q1P4/1pp1RP1N/p7/6Q1/PPB3PP/2KR4 w - - 1 0', sol: ['Qg6+', 'hxg6', 'fxg6#'] },
-            { fen: 'r1b2k1r/ppppq3/5N1p/4P2Q/4PP2/1B6/PP5P/n2K2R1 w - - 1 0', sol: ['Qxh6+', 'Rxh6', 'Rg8#'] },
-            { fen: 'r2q1b1r/1pN1n1pp/p1n3k1/4Pb2/2BP4/8/PPP3PP/R1BQ1RK1 w - - 1 0', sol: ['Qg4+', 'Bxg4', 'Bf7#'] },
-            { fen: '3q2r1/4n2k/p1p1rBpp/PpPpPp2/1P3P1Q/2P3R1/7P/1R5K w - - 1 0', sol: ['Qxh6+', 'Kxh6', 'Rh3#'] },
-            { fen: 'r2qk2r/pb4pp/1n2Pb2/2B2Q2/p1p5/2P5/2B2PPP/RN2R1K1 w - - 1 0', sol: ['Qg6+', 'hxg6', 'Bxg6#'] },
-            { fen: '6k1/pp4p1/2p5/2bp4/8/P5Pb/1P3rrP/2BRRN1K b - - 0 1', sol: ['Rg1+', 'Kxg1', 'Rxf1#'] },
-            { fen: 'rnbqkbn1/ppppp3/7r/6pp/3P1p2/3BP1B1/PPP2PPP/RN1QK1NR w - - 1 0', sol: ['Qxh5+', 'Rxh5', 'Bg6#'] },
-            { fen: 'r2qrb2/p1pn1Qp1/1p4Nk/4PR2/3n4/7N/P5PP/R6K w - - 1 0', sol: ['Ne7', 'Nxf5', 'Qg6#'] },
-            { fen: '8/2r5/1k5p/1pp4P/8/K2P4/PR2QB2/2q5 b - - 0 1', sol: ['Qc3+', 'Rb3', 'Ra7#'] },
-            { fen: 'r1b3nr/ppqk1Bbp/2pp4/4P1B1/3n4/3P4/PPP2QPP/R4RK1 w - - 1 0', sol: ['Qf5+', 'Nxf5', 'e6#'] },
-            { fen: '3k1r1r/pb3p2/1p4p1/1B2B3/3qn3/6QP/P4RP1/2R3K1 w - - 1 0', sol: ['Bf6+', 'Qxf6', 'Qc7#'] },
-            { fen: 'rn2kb1r/1pQbpppp/1p6/qp1N4/6n1/8/PPP3PP/2KR2NR w - - 1 0', sol: ['Qc8+', 'Bxc8', 'Nc7#'] },
-            { fen: 'r2k2nr/pp1b1Q1p/2n4b/3N4/3q4/3P4/PPP3PP/4RR1K w - - 1 0', sol: ['Re8+', 'Bxe8', 'Qc7#'] },
-            { fen: '7k/1p4p1/p4b1p/3N3P/2p5/2rb4/PP2r3/K2R2R1 b - - 0 1', sol: ['Rc1+', 'Rxc1', 'Bxb2#'] },
-            { fen: 'r2q2nr/pp1b1Q1p/2n4b/3N4/3q4/3P4/PPP3PP/4RR1K w - - 1 0', sol: ['Re8+', 'Bxe8', 'Qc7#'] },
-            { fen: 'r2q1k1r/ppp1bB1p/2np4/6N1/3PP1bP/8/PPP5/RNB2RK1 w - - 1 0', sol: ['Ne6+', 'Bxe6', 'Bh6#'] },
-            { fen: '6k1/1p1r1pp1/p1r3b1/3pPqB1/2pP4/Q1P4R/P3P2K/6R1 w - - 1 0', sol: ['Qf8+', 'Kxf8', 'Rh8#'] },
-            { fen: 'r1b3k1/ppp3pp/8/3pB3/1P1P4/3K1P2/PP1n1q1P/R2Q3R b - - 0 1', sol: ['Bf5+', 'Kc3', 'Qe3#'] },
-            { fen: '2kr1b1r/pp3ppp/2p1b2q/4B3/4Q3/2PB2R1/PPP2PPP/3R2K1 w - - 1 0', sol: ['Qxc6+', 'bxc6', 'Ba6#'] },
-            { fen: 'rn2kb1r/pp3ppp/4p1qn/1p4B1/2B5/3P2QP/PPP2PP1/R3K2R w - - 1 0', sol: ['Qxb8+', 'Rxb8', 'Bxb5#'] },
-            { fen: 'rnb2b1r/p3kBp1/3pNn1p/2pQN3/1p2PP2/4B3/Pq5P/4K3 w - - 1 0', sol: ['Qxd6+', 'Kxd6', 'Bxc5#'] },
-            { fen: 'r1b1k2r/ppQ1q2n/2p2p2/P3p2p/N3P1pP/1B4P1/1PP2P2/3R1NK1 w - - 1 0', sol: ['Rd8+', 'Qxd8', 'Qf7#'] },
-            { fen: 'r6k/pp4pp/1b1P4/8/1n4Q1/2N1RP2/PPq3p1/1RB1K3 b - - 0 1', sol: ['Nd3+', 'Rxd3', 'Bf2#'] },
-            { fen: '8/1r5p/kpQ3p1/p3rp2/P6P/8/4bPPK/1R6 w - - 1 0', sol: ['Rxb6+', 'Rxb6', 'Qa8#'] },
-            { fen: 'r1b2rk1/2p2ppp/p7/1p6/3P3q/1BP3bP/PP3QP1/RNB1R1K1 w - - 1 0', sol: ['Qxf7+', 'Rxf7', 'Re8#'] },
-            { fen: 'r2qkb1r/2p1nppp/p2p4/np1NN3/4P3/1BP5/PP1P1PPP/R1B1K2R w - - 1 0', sol: ['Nf6+', 'gxf6', 'Bxf7#'] },
-            { fen: 'rnbkn2r/pppp1Qpp/5b2/3NN3/3Pp3/8/PPP1KP1P/R1B4q w - - 1 0', sol: ['Qe7+', 'Bxe7', 'Nf7#'] },
-            { fen: '4rk2/2pQn2p/p4p2/1p2pN1P/4q3/2P3R1/5PPK/8 w - - 1 0', sol: ['Rg8+', 'Kf7', 'Nh6#'] },
-            { fen: 'r1b2rk1/pp3ppp/3p4/3Q1nq1/2B1R3/8/PP3PPP/R5K1 w - - 1 0', sol: ['Qxf7+', 'Rxf7', 'Re8#'] },
-            { fen: '7r/p3ppk1/3p4/2p1P1Kp/2Pb4/3P1QPq/PP5P/R6R b - - 0 1', sol: ['Be3+', 'Qxe3', 'Qg4#'] },
-            { fen: 'rn2kb1r/ppp1pppp/8/8/4q3/3P1N1b/PPP1BPnP/RNBQ1K1R b kq - 0 1', sol: ['Nh4+', 'Ke1', 'Nxf3#'] },
-            { fen: 'r1b1kb1r/pp1n1pp1/1qp1p2p/6B1/2PPQ3/3B1N2/P4PPP/R4RK1 w - - 1 0', sol: ['Qxe6+', 'fxe6', 'Bg6#'] },
-            { fen: '6k1/5p2/1p5p/p4Np1/5q2/Q6P/PPr5/3R3K w - - 1 0', sol: ['Qf8+', 'Kxf8', 'Rd8#'] },
-            { fen: 'r3q3/ppp3k1/3p3R/5b2/2PR3Q/2P1PrP1/P7/4K3 w - - 1 0', sol: ['Qf6+', 'Kg8', 'Rh8#'] },
-            { fen: 'r3k2r/1Bp2ppp/8/4q1b1/pP1n4/P1KP3P/1BP5/R2Q3R b - - 0 1', sol: ['Nb5+', 'Kc4', 'Nd6#'] },
-            { fen: 'r1bq2rk/pp3pbp/2p1p1p6/7P/3P4/2PB1N2/PP3PPR/2KR4 w - - 1 0', sol: ['Qxh7+', 'Kxh7', 'hxg6#'] },
-            { fen: 'k1n3rr/Pp3p2/3q4/3N4/3Pp2p/1Q2P1p1/3B1PP1/R4RK1 w - - 1 0', sol: ['Qxb7+', 'Kxb7', 'a8=Q#'] },
-            { fen: '8/1p3k2/4p1rp/p3Pp1Q/3qnP2/1P6/P6P/2R2R1K b - - 0 1', sol: ['Qg1+', 'Rxg1', 'Nf2#'] },
-            { fen: 'r1bq3r/ppp1b1kp/2n3p1/3B3Q/3p4/8/PP2PPP/RNB2RK1 w - - 1 0', sol: ['Bh6+', 'Kf6', 'Qg5#'] },
-            { fen: '4r3/pbpn2n1/1p1prp1k/8/2PP2PB/P5N1/2B2R1P/R5K1 w - - 1 0', sol: ['Rxf6+', 'Nxf6', 'g5#'] },
-            { fen: '1q5r/1b1r1p1k/2p1pPpb/p1Pp4/3B1P1Q/1P4P1/P4KB1/2RR4 w - - 1 0', sol: ['Qxh6+', 'Kxh6', 'Rh1#'] },
-            { fen: 'r4R2/1b2n1pp/p2Np1k1/1pn5/4pP1P/8/PPP1B1P1/2K4R w - - 1 0', sol: ['h5+', 'Kh6', 'Nf7#'] }
+            { fen: '5rkr/pp2Rp2/1b1p1Pb1/3P2Q1/2n3P1/2p5/P4P2/4R1K1 w - - 1 0', sol: ['Qxg6+', 'fxg6', 'Rg7#'] }
+            // ... add the rest of your puzzles here
         ];
 
         let user = { name: '', class: '', score: 0, lives: 10, hints: 3 };
@@ -204,11 +151,9 @@
             success: new Audio('https://www.myinstants.com/media/sounds/level-up-188970.mp3')
         };
 
-        // STARTUP
-        $('#startBtn').on('click', async () => {
+        $('#startBtn').on('click', () => {
             const name = $('#stuName').val().trim();
-            const pass = $('#stuPass').val().trim();
-            if(!name || !pass) return alert("Fill all fields");
+            if(!name) return alert("Enter your name");
             user.name = name;
             $('#auth-screen').fadeOut(300, () => {
                 $('#game-arena').removeClass('hidden').addClass('grid');
@@ -217,13 +162,9 @@
         });
 
         function initGame() {
-            game = new Chess();
-            // Initialize board ONCE
             board = Chessboard('board', {
-                draggable: true,
+                draggable: false, // Click to move only
                 position: 'start',
-                onDrop: handleDrop,
-                // Fixed Piece Theme
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             });
             loadPuzzle(0);
@@ -233,13 +174,16 @@
         }
 
         function loadPuzzle(idx) {
-            if(idx >= puzzleSet.length) return $('#moveFeedback').text("👑 CAMPAIGN COMPLETE!");
+            if(idx >= puzzleSet.length) {
+                $('#moveFeedback').text("👑 CAMPAIGN COMPLETE!");
+                return;
+            }
             currentIdx = idx;
             moveStep = 0;
             isSolving = false;
             sourceSquare = null;
             
-            game.load(puzzleSet[idx].fen);
+            game = new Chess(puzzleSet[idx].fen);
             board.position(puzzleSet[idx].fen);
             
             $('#nextBtn').addClass('hidden');
@@ -249,48 +193,61 @@
             updateUI();
         }
 
-        function handleDrop(source, target) {
-            if(isSolving) return 'snapback';
-            const move = validateMove(source, target);
-            if(move === 'snapback') return 'snapback';
-        }
+        function handleSquareClick(sq) {
+            if(isSolving || $('#nextBtn').is(':visible')) return;
 
-        function validateMove(source, target) {
-            const sol = puzzleSet[currentIdx].sol;
-            const tempGame = new Chess(game.fen());
-            const move = tempGame.move({ from: source, to: target, promotion: 'q' });
+            const piece = game.get(sq);
 
-            if (!move || move.san !== sol[moveStep]) {
-                showWrongMove();
-                return 'snapback';
-            }
-
-            game.move(move.san);
-            board.position(game.fen());
-            sounds.move.play();
-            moveStep++;
-
-            if (moveStep === sol.length) {
-                puzzleComplete();
+            if (!sourceSquare) {
+                // First click: Select piece
+                if (piece && piece.color === game.turn()) {
+                    sourceSquare = sq;
+                    $(`.square-${sq}`).addClass('highlight-square');
+                }
             } else {
-                // Auto-reply for the opponent
-                setTimeout(() => {
-                    game.move(sol[moveStep]);
-                    board.position(game.fen());
-                    sounds.move.play();
-                    moveStep++;
-                    if(moveStep === sol.length) puzzleComplete();
-                }, 600);
+                // Second click: Try move
+                const moveAttempt = { from: sourceSquare, to: sq, promotion: 'q' };
+                const sol = puzzleSet[currentIdx].sol;
+                
+                // Validate move against logic engine
+                const move = game.move(moveAttempt);
+                $('.square-55d63').removeClass('highlight-square');
+
+                if (!move || move.san !== sol[moveStep]) {
+                    if (move) game.undo(); // Undo illegal puzzle move in engine
+                    showWrongMove();
+                    sourceSquare = null;
+                    return;
+                }
+
+                // Correct Move
+                board.position(game.fen());
+                sounds.move.play();
+                moveStep++;
+                sourceSquare = null;
+
+                if (moveStep === sol.length) {
+                    puzzleComplete();
+                } else {
+                    // Bot Move
+                    setTimeout(() => {
+                        game.move(sol[moveStep]);
+                        board.position(game.fen());
+                        sounds.move.play();
+                        moveStep++;
+                        if(moveStep === sol.length) puzzleComplete();
+                    }, 600);
+                }
             }
         }
 
         function showWrongMove() {
             sounds.wrong.play();
             user.lives--;
-            $('#wrong-toast').fadeIn(100).delay(600).fadeOut(200);
+            $('#wrong-toast').stop().fadeIn(100).delay(600).fadeOut(200);
             updateUI();
             if(user.lives <= 0) {
-                alert("GAME OVER! Restarting progress.");
+                alert("OUT OF LIVES! Restarting arena.");
                 user.lives = 10; user.score = 0; loadPuzzle(0);
             }
         }
@@ -298,42 +255,39 @@
         function puzzleComplete() {
             sounds.success.play();
             user.score += 10;
-            $('#moveFeedback').text("SOLVED!").addClass('text-emerald-400');
+            $('#moveFeedback').text("MISSION SUCCESS!").addClass('text-emerald-400');
             $('#nextBtn').removeClass('hidden');
             $('#giveUpBtn, #hintBtn').addClass('opacity-50').prop('disabled', true);
-            db.collection('students').doc(user.name).set({ name: user.name, score: user.score, class: $('#stuClass').val() }, {merge: true});
+            db.collection('students').doc(user.name).set({ 
+                name: user.name, score: user.score, class: $('#stuClass').val() 
+            }, {merge: true});
             updateUI();
         }
 
         function attachClickEvents() {
             $(document).on('click', '.square-55d63', function() {
-                if(isSolving || $('#nextBtn').is(':visible')) return;
                 const sq = $(this).data('square');
-                const piece = game.get(sq);
-
-                if(!sourceSquare) {
-                    if(piece && piece.color === game.turn()) {
-                        sourceSquare = sq;
-                        $(this).addClass('highlight-square');
-                    }
-                } else {
-                    validateMove(sourceSquare, sq);
-                    $('.square-55d63').removeClass('highlight-square');
-                    sourceSquare = null;
-                }
+                handleSquareClick(sq);
             });
         }
 
         $('#giveUpBtn').on('click', async function() {
             isSolving = true;
+            user.lives--;
+            updateUI();
             $(this).prop('disabled', true).addClass('opacity-50');
+            
             const sol = puzzleSet[currentIdx].sol;
-            while(moveStep < sol.length) {
-                await new Promise(r => setTimeout(r, 800));
-                game.move(sol[moveStep]);
+            // Reset to puzzle start FEN to show solution correctly
+            game = new Chess(puzzleSet[currentIdx].fen);
+            board.position(puzzleSet[currentIdx].fen);
+            moveStep = 0;
+
+            for (let i = 0; i < sol.length; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                game.move(sol[i]);
                 board.position(game.fen());
                 sounds.move.play();
-                moveStep++;
             }
             $('#nextBtn').removeClass('hidden');
         });
@@ -343,7 +297,7 @@
         $('#hintBtn').on('click', () => {
             if(user.hints > 0) {
                 user.hints--;
-                $('#moveFeedback').text("Try: " + puzzleSet[currentIdx].sol[moveStep]);
+                $('#moveFeedback').text("TRY: " + puzzleSet[currentIdx].sol[moveStep]);
                 updateUI();
             }
         });
@@ -357,16 +311,18 @@
         function syncChat() {
             db.collection('chat').orderBy('time', 'desc').limit(15).onSnapshot(snap => {
                 $('#chat-messages').empty();
-                snap.forEach(doc => {
+                snap.docs.reverse().forEach(doc => {
                     const m = doc.data();
-                    $('#chat-messages').prepend(`<div class="bg-slate-800/40 p-2 rounded-lg border border-white/5"><span class="text-emerald-400 font-bold text-[8px] uppercase">${m.name}</span><p class="text-slate-300 text-xs">${m.text}</p></div>`);
+                    $('#chat-messages').append(`<div class="bg-slate-800/40 p-2 rounded-lg border border-white/5"><span class="text-emerald-400 font-bold text-[8px] uppercase">${m.name}</span><p class="text-slate-300 text-xs">${m.text}</p></div>`);
                 });
             });
         }
 
         $('#sendChat').on('click', () => {
             const text = $('#chatInput').val().trim();
-            if(text) db.collection('chat').add({ name: user.name, text, time: firebase.firestore.FieldValue.serverTimestamp() });
+            if(text) db.collection('chat').add({ 
+                name: user.name, text, time: firebase.firestore.FieldValue.serverTimestamp() 
+            });
             $('#chatInput').val('');
         });
 
