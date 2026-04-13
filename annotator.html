@@ -6,17 +6,13 @@
     <title>AI Chess Annotator Pro | Dotun</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        .loading-dot { animation: blink 1s infinite; }
-        @keyframes blink { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
-    </style>
 </head>
 <body class="bg-[#0f172a] text-slate-200 min-h-screen p-4">
 
     <div class="max-w-3xl mx-auto bg-[#1e293b] rounded-xl shadow-2xl border border-slate-700">
         <div class="bg-blue-600 p-6 text-white text-center">
             <h1 class="text-2xl font-bold italic">Chess Annotator Pro</h1>
-            <p class="text-blue-100 text-xs">V2.0: Now with Full Variation Support</p>
+            <p class="text-blue-100 text-xs text-uppercase">v2.1: Corrected Header Logic</p>
         </div>
 
         <div class="p-6 space-y-6">
@@ -34,7 +30,6 @@
 
             <div id="statusBox" class="hidden bg-[#0f172a] border border-blue-900/50 rounded-lg p-4 text-center">
                 <span id="statusText" class="text-blue-400 font-mono text-xs uppercase tracking-widest italic">Starting...</span>
-                <span class="loading-dot text-blue-400">...</span>
             </div>
 
             <div>
@@ -61,19 +56,14 @@
             actionBtn.disabled = true;
             statusBox.classList.remove('hidden');
 
-            // 1. Recursive Walker: We process every move in every branch
             async function processTree(history, depth = 0) {
                 for (let i = 0; i < history.length; i++) {
                     const move = history[i];
-
-                    // ANNOTATE: Every 3rd move OR if it has a NAG ($)
                     if (i % 3 === 0 || (move.nags && move.nags.length > 0)) {
                         statusText.innerText = `Analyzing: ${move.san} (Depth ${depth})`;
                         move.comment = await getGeminiComment(apiKey, move.before, move.san, move.nags);
-                        await new Promise(r => setTimeout(r, 4500)); // Rate limit
+                        await new Promise(r => setTimeout(r, 4500)); 
                     }
-
-                    // Traverse sub-variations
                     if (move.variations && move.variations.length > 0) {
                         for (let v of move.variations) {
                             await processTree(v, depth + 1);
@@ -82,25 +72,15 @@
                 }
             }
 
-            // 2. Manual PGN Rebuilder: This preserves the tree structure
             function buildPgnTree(history, isMainLine = true) {
                 let pgn = "";
                 history.forEach((move, i) => {
-                    // Move Number logic
                     if (move.color === 'w' || i === 0 || isMainLine === false) {
                         pgn += move.move_number + (move.color === 'w' ? ". " : "... ");
                     }
-                    
-                    // The move itself
                     pgn += move.san + " ";
-
-                    // Add GM Symbols ($) back in
                     if (move.nags) move.nags.forEach(n => pgn += "$" + n + " ");
-
-                    // Add our AI comment
                     if (move.comment) pgn += "{" + move.comment + "} ";
-
-                    // Add Variations (The Brackets)
                     if (move.variations && move.variations.length > 0) {
                         move.variations.forEach(v => {
                             pgn += "(" + buildPgnTree(v, false) + ") ";
@@ -114,14 +94,19 @@
                 const mainHistory = chess.history({ verbose: true });
                 await processTree(mainHistory);
                 
-                // Re-build the final string manually
-                let finalPgn = chess.header().map(h => `[${h}]`).join('\n') + "\n\n";
-                finalPgn += buildPgnTree(mainHistory);
+                // FIXED HEADER LOGIC:
+                const headerObj = chess.header();
+                let finalPgn = "";
+                for (const key in headerObj) {
+                    finalPgn += `[${key} "${headerObj[key]}"]\n`;
+                }
+                finalPgn += "\n" + buildPgnTree(mainHistory) + " *";
                 
-                pgnOutput.value = finalPgn + " *";
+                pgnOutput.value = finalPgn;
                 statusText.innerText = "DONE: FULL TREE ANNOTATED";
             } catch (err) {
-                statusText.innerText = "CRASHED: " + err.message;
+                statusText.innerText = "CRASHED: " + err.message.toUpperCase();
+                console.error(err);
             } finally {
                 actionBtn.disabled = false;
             }
@@ -129,8 +114,7 @@
 
         async function getGeminiComment(key, fen, move, nags) {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
-            const symbolDesc = nags ? ` (GM Symbol: $${nags.join(', ')})` : "";
-            const prompt = `Act as a GM. 15 words max. Explain move ${move}${symbolDesc} in this FEN: ${fen}. Use professional chess terminology.`;
+            const prompt = `Act as a GM. 15 words max. Explain move ${move} in FEN: ${fen}. Use professional chess terminology.`;
 
             try {
                 const res = await fetch(url, {
@@ -141,7 +125,7 @@
                 const data = await res.json();
                 return data.candidates[0].content.parts[0].text.trim();
             } catch (e) {
-                return "Strategically sound continuation.";
+                return "Strategic continuation.";
             }
         }
     </script>
