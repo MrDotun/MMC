@@ -1,109 +1,46 @@
-// Ensure this filename matches your uploaded file exactly!
-const worker = new Worker('garbochess (3).js');
-let board = null;
-let game = null;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chess Annotator | Mr Dotun</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <style>
+        #gm-stream::-webkit-scrollbar { width: 4px; }
+        #gm-stream::-webkit-scrollbar-thumb { background: #16a34a; border-radius: 10px; }
+        .variation-log { color: #3b82f6; font-size: 0.7rem; font-style: italic; margin: 8px 0; border-left: 2px solid #1e3a8a; padding-left: 8px; }
+    </style>
+</head>
+<body class="bg-black text-white h-screen overflow-hidden">
 
-async function startAnalysis() {
-    const apiKey = document.getElementById('api-key').value;
-    const pgn = document.getElementById('pgn-data').value;
-
-    if (!apiKey || !pgn) {
-        alert("Please provide both the API Key and PGN data.");
-        return;
-    }
-
-    window.USER_KEY = apiKey;
-    game = new Chess();
-    
-    if (!game.load_pgn(pgn)) {
-        alert("Invalid PGN format. Please check your text.");
-        return;
-    }
-
-    document.getElementById('setup-overlay').style.display = 'none';
-    document.getElementById('main-ui').classList.remove('hidden');
-
-    board = ChessBoard('myBoard', {
-        position: 'start',
-        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-    });
-
-    const history = game.history({ verbose: true });
-    await analyzeRecursive(history);
-}
-
-async function analyzeRecursive(moves) {
-    for (const move of moves) {
-        const fen = move.after;
-        board.position(fen);
-        document.getElementById('engine-status').innerText = `Analyzing: ${move.san}`;
-
-        const score = await getGarboEval(fen);
-        const commentary = await fetchGemini(move, score, fen);
-        
-        renderMoveToBox(move, score, commentary);
-
-        if (move.variations && move.variations.length > 0) {
-            for (const v of move.variations) {
-                logSubInfo(`>> Entering Variation after ${move.san}`);
-                await analyzeRecursive(v);
-                logSubInfo(`>> Returning to Mainline`);
-            }
-        }
-    }
-    document.getElementById('engine-status').innerText = "Analysis Complete";
-}
-
-function getGarboEval(fen) {
-    return new Promise(resolve => {
-        worker.postMessage("position " + fen);
-        worker.postMessage("search 1000"); // 1 second search
-        worker.onmessage = (e) => {
-            if (e.data.indexOf("pv") === 0) {
-                const match = e.data.match(/Score:(-?\d+)/);
-                resolve(match ? (parseInt(match[1]) / 100).toFixed(2) : "0.00");
-            }
-        };
-    });
-}
-
-async function fetchGemini(move, score, fen) {
-    const prompt = `You are a Chess Grandmaster. Annotate the move ${move.san}. 
-    Engine Eval: ${score}. FEN: ${fen}. Symbols: ${move.nags || 'none'}.
-    Explain the strategy in 2 sentences. Keep symbols intact.`;
-
-    try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${window.USER_KEY}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-        });
-        const data = await response.json();
-        return data.candidates[0].content.parts[0].text;
-    } catch (e) {
-        return "Could not reach AI. Check your API key.";
-    }
-}
-
-function renderMoveToBox(move, score, text) {
-    const stream = document.getElementById('gm-stream');
-    const div = document.createElement('div');
-    div.className = "border-l-2 border-green-600 pl-4 py-2 bg-gray-900/30 rounded-r";
-    div.innerHTML = `
-        <div class="flex justify-between items-center font-mono">
-            <span class="text-white font-bold text-lg">${move.san} <span class="text-yellow-500 text-sm">${move.nags || ''}</span></span>
-            <span class="text-blue-400 text-xs">[Eval: ${score}]</span>
+    <div id="setup-overlay" class="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4">
+        <div class="bg-gray-900 border-2 border-green-900 p-6 rounded-2xl max-w-lg w-full shadow-2xl">
+            <h2 class="text-green-500 font-mono text-lg mb-4 font-bold uppercase tracking-tighter text-center">AI Grandmaster Initialization</h2>
+            <input type="password" id="api-key" placeholder="Paste Gemini API Key" class="w-full bg-black border border-gray-800 p-3 rounded mb-4 outline-none focus:border-green-500 text-white text-sm">
+            <textarea id="pgn-data" placeholder="Paste your PGN game here..." class="w-full bg-black border border-gray-800 p-3 rounded h-40 mb-6 outline-none focus:border-green-500 font-mono text-xs text-white"></textarea>
+            <button onclick="startAnalysis()" class="w-full bg-green-700 hover:bg-green-600 py-3 rounded-lg font-bold transition-all uppercase text-sm">Begin Annotation</button>
         </div>
-        <p class="text-gray-300 mt-2 text-sm italic font-serif leading-relaxed">"${text}"</p>
-    `;
-    stream.appendChild(div);
-    stream.scrollTop = stream.scrollHeight;
-}
+    </div>
 
-function logSubInfo(msg) {
-    const stream = document.getElementById('gm-stream');
-    const div = document.createElement('div');
-    div.className = "variation-log";
-    div.innerText = msg;
-    stream.appendChild(div);
-}
+    <div id="main-ui" class="hidden grid grid-cols-1 lg:grid-cols-2 h-full">
+        <div class="flex flex-col items-center justify-center p-4 bg-gray-900">
+            <div id="myBoard" class="w-full max-w-[450px]"></div>
+            <div id="engine-status" class="mt-4 font-mono text-[10px] text-green-600 uppercase">Engine Standing By...</div>
+        </div>
+        <div class="flex flex-col border-l border-gray-800">
+            <div class="p-3 bg-black border-b border-gray-800 font-mono text-green-500 text-xs flex justify-between">
+                <span>GM ANALYSIS STREAM</span>
+                <span id="move-count" class="text-gray-600">0 Moves</span>
+            </div>
+            <div id="gm-stream" class="flex-grow overflow-y-auto p-4 space-y-6 bg-black">
+                </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
