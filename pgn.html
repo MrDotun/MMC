@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGN GM Annotator</title>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:#0e0f0e; --bg2:#161814; --bg3:#1e2020; --bg4:#252826;
+  --border:#2e3230; --border2:#3a3e3c;
+  --text:#e8ebe6; --text2:#9da89a; --text3:#616b5e;
+  --gold:#c8a84b; --gold2:#e6c96a; --gold-bg:rgba(200,168,75,0.08);
+  --green:#4a7c59; --green2:#5d9970;
+  --red:#8b3a3a; --red2:#b04444;
+  --blue:#3a6b8b; --blue2:#4a8ab0; --blue-bg:rgba(58,107,139,0.12);
+  --mono:'JetBrains Mono',monospace;
+  --serif:'Crimson Pro',Georgia,serif;
+  --sans:'DM Sans',sans-serif;
+  --r:6px; --r2:10px;
+}
+html { background:var(--bg); color:var(--text); font-family:var(--sans); font-size:15px; line-height:1.6; }
+body { min-height:100vh; display:flex; flex-direction:column; }
+
+.topbar { border-bottom:1px solid var(--border); padding:0 1.5rem; height:56px; display:flex; align-items:center; gap:.75rem; background:var(--bg2); position:sticky; top:0; z-index:10; }
+.logo { font-family:var(--serif); font-size:19px; color:var(--gold2); display:flex; align-items:center; gap:9px; }
+.logo-icon { width:28px; height:28px; background:var(--gold-bg); border:1px solid var(--gold); border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:15px; }
+.topbar-sub { font-size:11px; color:var(--text3); margin-left:auto; }
+.badge { display:inline-block; font-size:9px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; padding:2px 7px; border-radius:3px; vertical-align:middle; }
+.bg  { background:var(--blue-bg);  color:var(--blue2); border:1px solid rgba(58,107,139,.3); }
+.gg  { background:var(--gold-bg);  color:var(--gold);  border:1px solid rgba(200,168,75,.25); }
+.grn { background:rgba(74,124,89,.15); color:var(--green2); border:1px solid rgba(74,124,89,.3); }
+
+.main { display:flex; flex:1; min-height:0; }
+.sidebar { width:340px; min-width:280px; border-right:1px solid var(--border); background:var(--bg2); padding:1.25rem; display:flex; flex-direction:column; gap:1rem; overflow-y:auto; }
+.content { flex:1; padding:1.5rem; overflow-y:auto; display:flex; flex-direction:column; gap:1.25rem; }
+
+.sec-lbl { font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--text3); margin-bottom:6px; }
+.field { display:flex; flex-direction:column; gap:5px; }
+.field label { font-size:11px; color:var(--text3); }
+
+input[type="text"],input[type="password"],input[type="number"],select,textarea {
+  background:var(--bg3); border:1px solid var(--border); border-radius:var(--r);
+  color:var(--text); font-family:var(--sans); font-size:13px; padding:8px 10px;
+  outline:none; transition:border-color .15s; width:100%;
+}
+input:focus,select:focus,textarea:focus { border-color:var(--gold); }
+input[type="password"] { font-family:var(--mono); letter-spacing:.08em; }
+
+.provider-tabs { display:flex; border:1px solid var(--border); border-radius:var(--r); overflow:hidden; }
+.ptab { flex:1; padding:8px 6px; font-size:12px; font-weight:600; text-align:center; cursor:pointer; background:var(--bg3); color:var(--text3); border:none; font-family:var(--sans); transition:background .15s,color .15s; }
+.ptab.ag { background:var(--blue-bg); color:var(--blue2); }
+.ptab.aa { background:var(--gold-bg); color:var(--gold2); }
+.ptab:hover { color:var(--text); }
+
+.key-row { display:flex; gap:6px; }
+.key-row input { flex:1; }
+.tkey { background:var(--bg3); border:1px solid var(--border); border-radius:var(--r); color:var(--text2); cursor:pointer; padding:0 10px; font-size:11px; white-space:nowrap; }
+.tkey:hover { border-color:var(--border2); color:var(--text); }
+
+.key-hint { font-size:11px; color:var(--text3); padding:7px 10px; background:var(--bg4); border-radius:var(--r); line-height:1.5; border:1px solid var(--border); }
+.key-hint a { color:var(--blue2); text-decoration:none; }
+.key-hint a:hover { text-decoration:underline; }
+
+.mini-row { display:flex; gap:8px; }
+.mini-row .field { flex:1; }
+
+.run-btn { width:100%; padding:11px; border:none; border-radius:var(--r2); font-family:var(--sans); font-size:14px; font-weight:600; cursor:pointer; transition:background .15s,transform .1s; display:flex; align-items:center; justify-content:center; gap:8px; }
+.run-btn.rg { background:var(--blue2); color:#fff; }
+.run-btn.ra { background:var(--gold); color:#0a0b0a; }
+.run-btn.rg:hover { background:#5a9fc4; }
+.run-btn.ra:hover { background:var(--gold2); }
+.run-btn:active { transform:scale(.98); }
+.run-btn:disabled { background:var(--bg4); color:var(--text3); cursor:not-allowed; transform:none; }
+
+.divider { height:1px; background:var(--border); flex-shrink:0; }
+
+.pw { display:none; flex-direction:column; gap:6px; }
+.track { height:3px; background:var(--bg4); border-radius:2px; overflow:hidden; }
+.bar { height:3px; border-radius:2px; width:0; transition:width .4s ease; }
+.bar.bg { background:var(--blue2); } .bar.ba { background:var(--gold); }
+.pi { display:flex; justify-content:space-between; font-size:11px; color:var(--text3); }
+
+.sr { display:flex; gap:8px; }
+.sp { flex:1; background:var(--bg3); border:1px solid var(--border); border-radius:var(--r); padding:8px 10px; text-align:center; }
+.sn { font-size:20px; font-weight:600; color:var(--gold2); font-family:var(--mono); }
+.sl { font-size:10px; color:var(--text3); text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
+
+.steps-row { display:flex; }
+.step { flex:1; font-size:10px; text-align:center; padding:6px 4px; color:var(--text3); border-bottom:2px solid var(--border); letter-spacing:.04em; text-transform:uppercase; transition:color .2s,border-color .2s; }
+.step.active { color:var(--gold2); border-bottom-color:var(--gold); }
+.step.done   { color:var(--green2); border-bottom-color:var(--green); }
+
+.err { display:none; background:rgba(139,58,58,.15); border:1px solid var(--red); border-radius:var(--r); padding:10px 14px; font-size:12px; color:#e08080; line-height:1.5; }
+
+.panel { background:var(--bg2); border:1px solid var(--border); border-radius:var(--r2); overflow:hidden; }
+.ph { padding:10px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background:var(--bg3); }
+.pt { font-size:12px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:.07em; }
+
+textarea.ti { height:240px; resize:vertical; border:none; border-radius:0; background:var(--bg2); font-family:var(--mono); font-size:12px; line-height:1.7; padding:14px 16px; color:var(--text); }
+textarea.to { height:320px; resize:vertical; border:none; border-radius:0; background:var(--bg2); font-family:var(--mono); font-size:12px; line-height:1.7; padding:14px 16px; color:var(--text); }
+
+.lf { max-height:200px; overflow-y:auto; padding:10px 16px; font-family:var(--mono); font-size:11px; line-height:1.8; display:flex; flex-direction:column; gap:1px; }
+.li { display:flex; gap:10px; }
+.lt { color:var(--text3); min-width:50px; }
+.lm { color:var(--text2); flex:1; }
+.lok { color:var(--green2); } .ler { color:var(--red2); } .lmv { color:var(--gold); }
+
+.ab { display:flex; gap:8px; padding:10px 16px; border-top:1px solid var(--border); background:var(--bg3); }
+.ab button { padding:7px 14px; background:var(--bg4); border:1px solid var(--border); border-radius:var(--r); color:var(--text2); font-size:12px; cursor:pointer; display:flex; align-items:center; gap:6px; font-family:var(--sans); transition:border-color .15s,color .15s; }
+.ab button:hover { border-color:var(--gold); color:var(--gold2); }
+
+.uz { border:1px dashed var(--border2); border-radius:var(--r); padding:12px; text-align:center; cursor:pointer; font-size:12px; color:var(--text3); transition:border-color .15s,background .15s; }
+.uz:hover { border-color:var(--gold); background:var(--gold-bg); color:var(--gold2); }
+
+.tip { background:var(--gold-bg); border:1px solid rgba(200,168,75,.2); border-left:3px solid var(--gold); border-radius:var(--r); padding:9px 12px; font-size:11.5px; color:var(--text2); line-height:1.6; }
+.tip strong { color:var(--gold2); font-weight:500; }
+
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+@media(max-width:680px){.main{flex-direction:column}.sidebar{width:100%;border-right:none;border-bottom:1px solid var(--border)}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><div class="logo-icon">♟</div>GM Annotator</div>
+  <span class="badge gg">chess.js</span>
+  <span class="badge bg" id="pbadge">Gemini Free</span>
+  <div class="topbar-sub">Every move &amp; branch · Full board context per position</div>
+</div>
+
+<div class="main">
+
+<div class="sidebar">
+
+  <div>
+    <div class="sec-lbl">AI Provider</div>
+    <div class="provider-tabs">
+      <button class="ptab ag" id="tg" onclick="switchProvider('gemini')">✦ Gemini (Free)</button>
+      <button class="ptab"    id="ta" onclick="switchProvider('anthropic')">Claude API</button>
+    </div>
+  </div>
+
+  <div id="gs">
+    <div class="sec-lbl">Gemini API Key</div>
+    <div class="field">
+      <div class="key-row">
+        <input type="password" id="kg" placeholder="AIzaSy..." autocomplete="off" />
+        <button class="tkey" onclick="tv('kg',this)">show</button>
+      </div>
+    </div>
+    <div class="key-hint">
+      Free at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a> → Get API Key<br>
+      Key starts with <code>AIza...</code> · No billing needed
+    </div>
+  </div>
+
+  <div id="as" style="display:none">
+    <div class="sec-lbl">Anthropic API Key</div>
+    <div class="field">
+      <div class="key-row">
+        <input type="password" id="ka" placeholder="sk-ant-api03-..." autocomplete="off" />
+        <button class="tkey" onclick="tv('ka',this)">show</button>
+      </div>
+    </div>
+    <div class="key-hint">
+      <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a> → API Keys → Create Key<br>
+      Requires credits in account
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div>
+    <div class="sec-lbl">Settings</div>
+    <div class="mini-row">
+      <div class="field"><label>Every N moves</label><input type="number" id="en" value="3" min="1" max="10" style="width:70px" /></div>
+      <div class="field"><label>Language</label><input type="text" id="al" value="English" /></div>
+    </div>
+    <div class="field" style="margin-top:8px">
+      <label>Annotation style</label>
+      <select id="as2">
+        <option value="gm">GM — strategic depth, plans, structures</option>
+        <option value="coach">Coach — instructive, explains ideas</option>
+        <option value="engine">Engine — concrete lines and evaluation</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div>
+    <div class="sec-lbl">Upload PGN</div>
+    <div class="uz" id="dz" onclick="document.getElementById('fi').click()">↑ Drop .pgn file or click to browse</div>
+    <input type="file" id="fi" accept=".pgn,.txt" style="display:none" />
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="steps-row">
+    <div class="step active" id="s1">Input</div>
+    <div class="step" id="s2">Parse</div>
+    <div class="step" id="s3">Annotate</div>
+    <div class="step" id="s4">Done</div>
+  </div>
+
+  <div class="pw" id="pw">
+    <div class="track"><div class="bar bg" id="pb"></div></div>
+    <div class="pi"><span id="pm">Ready</span><span id="pp">0%</span></div>
+  </div>
+
+  <div class="sr" id="sr" style="display:none">
+    <div class="sp"><div class="sn" id="ss">0</div><div class="sl">Slots</div></div>
+    <div class="sp"><div class="sn" id="sb">0</div><div class="sl">Branches</div></div>
+    <div class="sp"><div class="sn" id="sd">0</div><div class="sl">Done</div></div>
+  </div>
+
+  <div class="err" id="eb"></div>
+
+  <button class="run-btn rg" id="rb" onclick="run()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+    Annotate PGN
+  </button>
+
+  <div class="tip">
+    <strong>What the AI sees per position:</strong> FEN · last 5 moves · material balance · open &amp; semi-open files · passed/doubled/isolated pawns · both kings · castling rights · game phase. Nothing is guessed.
+  </div>
+
+</div>
+
+<div class="content">
+
+  <div class="panel">
+    <div class="ph">
+      <span class="pt">PGN Input</span>
+      <span style="font-size:11px;color:var(--text3)" id="mcl"></span>
+    </div>
+    <textarea class="ti" id="pi" placeholder="Paste PGN here — main line and all nested variations will be fully annotated..."></textarea>
+  </div>
+
+  <div class="panel" id="lp" style="display:none">
+    <div class="ph"><span class="pt">Annotation Log</span><span style="font-size:11px;color:var(--text3)" id="lc">0 entries</span></div>
+    <div class="lf" id="lf"></div>
+  </div>
+
+  <div class="panel" id="op" style="display:none">
+    <div class="ph">
+      <span class="pt">Annotated PGN Output</span>
+      <span class="badge grn">READY</span>
+    </div>
+    <textarea class="to" id="po" readonly></textarea>
+    <div class="ab">
+      <button onclick="copyOut()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy
+      </button>
+      <button onclick="dlOut()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download .pgn
+      </button>
+      <button onclick="resetAll()" style="margin-left:auto">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>New
+      </button>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script>
+// ── Provider ──────────────────────────────────────
+let provider = 'gemini';
+function switchProvider(p) {
+  provider = p;
+  document.getElementById('gs').style.display = p==='gemini' ? '' : 'none';
+  document.getElementById('as').style.display = p==='anthropic' ? '' : 'none';
+  document.getElementById('tg').className = 'ptab'+(p==='gemini'?' ag':'');
+  document.getElementById('ta').className = 'ptab'+(p==='anthropic'?' aa':'');
+  document.getElementById('rb').className = 'run-btn '+(p==='gemini'?'rg':'ra');
+  document.getElementById('pb').className = 'bar '+(p==='gemini'?'bg':'ba');
+  document.getElementById('pbadge').textContent = p==='gemini'?'Gemini Free':'Claude API';
+  document.getElementById('pbadge').className = 'badge '+(p==='gemini'?'bg':'gg');
+}
+function tv(id, btn) {
+  const el=document.getElementById(id);
+  if(el.type==='password'){el.type='text';btn.textContent='hide';}
+  else{el.type='password';btn.textContent='show';}
+}
+
+// ── File upload ───────────────────────────────────
+document.getElementById('fi').onchange = e => {
+  const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{document.getElementById('pi').value=ev.target.result;mc();};
+  r.readAsText(f);
+};
+const dz=document.getElementById('dz');
+dz.ondragover=e=>{e.preventDefault();dz.style.borderColor='var(--gold)';};
+dz.ondragleave=()=>{dz.style.borderColor='';};
+dz.ondrop=e=>{
+  e.preventDefault();dz.style.borderColor='';
+  const f=e.dataTransfer.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{document.getElementById('pi').value=ev.target.result;mc();};
+  r.readAsText(f);
+};
+document.getElementById('pi').addEventListener('input',mc);
+function mc(){
+  const pgn=document.getElementById('pi').value.trim();
+  const m=pgn.match(/\b[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBRQ])?[+#]?\b|O-O(?:-O)?/g);
+  document.getElementById('mcl').textContent=m?m.length+' moves detected':'';
+}
+
+// ── UI helpers ────────────────────────────────────
+let lc=0;
+function log(msg,t){
+  document.getElementById('lp').style.display='block';
+  const f=document.getElementById('lf');
+  const ts=new Date().toTimeString().slice(0,8);
+  const d=document.createElement('div'); d.className='li';
+  d.innerHTML='<span class="lt">'+ts+'</span><span class="lm '+(t?'l'+t:'')+'">'+msg+'</span>';
+  f.appendChild(d); f.scrollTop=f.scrollHeight;
+  document.getElementById('lc').textContent=(++lc)+' entries';
+}
+function step(n){['s1','s2','s3','s4'].forEach((id,i)=>{document.getElementById(id).className='step'+(i+1<n?' done':i+1===n?' active':'');});}
+function prog(pct,msg){
+  document.getElementById('pw').style.display='flex';
+  document.getElementById('pb').style.width=pct+'%';
+  document.getElementById('pm').textContent=msg;
+  document.getElementById('pp').textContent=Math.round(pct)+'%';
+}
+function err(msg){const b=document.getElementById('eb');b.textContent=msg;b.style.display='block';log('ERROR: '+msg,'er');}
+function resetAll(){
+  ['op','lp','pw','sr'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('eb').style.display='none';
+  document.getElementById('po').value='';
+  document.getElementById('lf').innerHTML='';
+  lc=0; step(1); prog(0,'Ready');
+  document.getElementById('rb').disabled=false;
+}
+
+// ── PGN TOKENIZER  (preserves every character) ───
+function tokenize(pgn){
+  const T=[];let i=0;
+  while(i<pgn.length){
+    if(/\s/.test(pgn[i])){T.push({t:'ws',v:pgn[i]});i++;continue;}
+    if(pgn[i]==='{'){
+      let j=i+1,d=1;
+      while(j<pgn.length){if(pgn[j]==='{')d++;else if(pgn[j]==='}'){d--;if(!d)break;}j++;}
+      T.push({t:'cm',v:pgn.slice(i,j+1)});i=j+1;continue;
+    }
+    if(pgn[i]==='('){T.push({t:'vo',v:'('});i++;continue;}
+    if(pgn[i]===')'){T.push({t:'vc',v:')'});i++;continue;}
+    if(pgn[i]==='$'){
+      let j=i+1;while(j<pgn.length&&/\d/.test(pgn[j]))j++;
+      T.push({t:'gl',v:pgn.slice(i,j)});i=j;continue;
+    }
+    if(pgn[i]==='*'){T.push({t:'rs',v:'*'});i++;continue;}
+    if(/\d/.test(pgn[i])){
+      let j=i;while(j<pgn.length&&(/\d/.test(pgn[j])||pgn[j]==='.'))j++;
+      const s=pgn.slice(i,j);
+      if(/^\d+$/.test(s)&&j<pgn.length&&(pgn[j]==='-'||pgn[j]==='/')){
+        let k=j;while(k<pgn.length&&!/\s/.test(pgn[k]))k++;
+        T.push({t:'rs',v:pgn.slice(i,k)});i=k;continue;
+      }
+      T.push({t:'mn',v:s});i=j;continue;
+    }
+    if(/[A-Za-z]/.test(pgn[i])){
+      let j=i;while(j<pgn.length&&!/[\s{}()$]/.test(pgn[j]))j++;
+      const s=pgn.slice(i,j);
+      if(s==='1-0'||s==='0-1'||s==='1/2-1/2'){T.push({t:'rs',v:s});i=j;continue;}
+      T.push({t:'mv',v:s});i=j;continue;
+    }
+    T.push({t:'ot',v:pgn[i]});i++;
+  }
+  return T;
+}
+
+// ── POSITION CONTEXT BUILDER ──────────────────────
+function ctx(chess, san, bh, bd){
+  const fen=chess.fen();
+  const hist=chess.history({verbose:true});
+  const lm=hist[hist.length-1];
+  const board=chess.board();
+  const pv={p:1,n:3,b:3,r:5,q:9};
+  let wm=0,bm=0;
+  for(const row of board)for(const sq of row){if(!sq)continue;const v=pv[sq.type]||0;if(sq.color==='w')wm+=v;else bm+=v;}
+  const fl='abcdefgh';
+  const of2=[],sf=[];
+  for(const f of fl){
+    let wp=0,bp=0;
+    for(let r=1;r<=8;r++){const p=chess.get(f+r);if(p&&p.type==='p'){if(p.color==='w')wp++;else bp++;}}
+    if(!wp&&!bp)of2.push(f);
+    else if(!wp||!bp)sf.push(f+(wp===0?'(b)':'(w)'));
+  }
+  const recent=hist.slice(-5).map((m,i)=>{const n=Math.floor((hist.length-5+i)/2)+1;return(m.color==='w'?n+'.':'')+m.san;}).join(' ');
+  function fk(col){for(let r=0;r<8;r++)for(let f=0;f<8;f++){const s=board[r][f];if(s&&s.type==='k'&&s.color===col)return fl[f]+(8-r);}return '?';}
+  // passed pawns
+  const pp=[];
+  for(let f=0;f<8;f++)for(let r=0;r<8;r++){
+    const sq=board[r][f];if(!sq||sq.type!=='p')continue;
+    const rk=8-r,fc=fl[f];
+    if(sq.color==='w'){
+      let ok=true;
+      for(let rr=r-1;rr>=0;rr--){const l=f>0?board[rr][f-1]:null,m=board[rr][f],ri=f<7?board[rr][f+1]:null;if((l&&l.type==='p'&&l.color==='b')||(m&&m.type==='p'&&m.color==='b')||(ri&&ri.type==='p'&&ri.color==='b')){ok=false;break;}}
+      if(ok&&rk>=5)pp.push('W:'+fc+rk);
+    }else{
+      let ok=true;
+      for(let rr=r+1;rr<8;rr++){const l=f>0?board[rr][f-1]:null,m=board[rr][f],ri=f<7?board[rr][f+1]:null;if((l&&l.type==='p'&&l.color==='w')||(m&&m.type==='p'&&m.color==='w')||(ri&&ri.type==='p'&&ri.color==='w')){ok=false;break;}}
+      if(ok&&rk<=4)pp.push('B:'+fc+rk);
+    }
+  }
+  // pawn structure
+  const wpf=Array(8).fill(0),bpf=Array(8).fill(0);
+  for(let r=0;r<8;r++)for(let f=0;f<8;f++){const sq=board[r][f];if(sq&&sq.type==='p'){if(sq.color==='w')wpf[f]++;else bpf[f]++;}}
+  const db=[],is=[];
+  for(let f=0;f<8;f++){
+    if(wpf[f]>1)db.push('W:'+fl[f]);if(bpf[f]>1)db.push('B:'+fl[f]);
+    if(wpf[f]>0&&(f===0||wpf[f-1]===0)&&(f===7||wpf[f+1]===0))is.push('W:'+fl[f]);
+    if(bpf[f]>0&&(f===0||bpf[f-1]===0)&&(f===7||bpf[f+1]===0))is.push('B:'+fl[f]);
+  }
+  return {
+    fen,san,
+    side:chess.turn()==='w'?'White':'Black',
+    color:lm?(lm.color==='w'?'White':'Black'):'?',
+    mn:Math.ceil(hist.length/2),
+    recent,bd,
+    bh:bh.slice(-8).join(' '),
+    mat:{w:wm,b:bm,d:wm-bm},
+    of:of2,sf,
+    castling:fen.split(' ')[2],
+    check:chess.in_check(),
+    cap:lm&&lm.captured?lm.captured.toUpperCase():null,
+    promo:lm&&lm.promotion?lm.promotion:null,
+    pp,db,is,
+    wk:fk('w'),bk:fk('b'),
+    eg:(wm+bm)<=14
+  };
+}
+
+// ── PROMPT BUILDER ────────────────────────────────
+function buildPrompt(c, style, lang){
+  const st={
+    gm:'You are annotating as a grandmaster. Focus on strategic depth, long-term plans, pawn structures, piece coordination.',
+    coach:'You are a chess coach. Be instructive — explain the idea, what both sides should plan, what students should learn.',
+    engine:'You are an engine analyst. Mention concrete continuations, tactical threats, and evaluation.'
+  }[style]||'';
+  return [
+    st,'',
+    '=== POSITION ===',
+    'FEN: '+c.fen,
+    c.color+' played: '+c.san+' (move '+c.mn+')',
+    'Side to move next: '+c.side,
+    c.check?'*** CHECK ***':'',
+    c.cap?'Captured piece: '+c.cap:'',
+    c.promo?'Promoted to: '+c.promo:'',
+    '',
+    '=== LAST 5 MOVES ===',
+    c.recent||'N/A',
+    '',
+    '=== VARIATION CONTEXT ===',
+    'Branch depth: '+c.bd+' (0=main line)',
+    'Branch moves: '+(c.bh||'main line'),
+    '',
+    '=== MATERIAL ===',
+    'White: '+c.mat.w+' pts | Black: '+c.mat.b+' pts',
+    'Balance: '+(c.mat.d>0?'White +'+c.mat.d:c.mat.d<0?'Black +'+Math.abs(c.mat.d):'Equal'),
+    c.eg?'Phase: ENDGAME':'Phase: MIDDLEGAME',
+    '',
+    '=== PAWN STRUCTURE ===',
+    'Passed: '+(c.pp.length?c.pp.join(', '):'none'),
+    'Doubled: '+(c.db.length?c.db.join(', '):'none'),
+    'Isolated: '+(c.is.length?c.is.join(', '):'none'),
+    '',
+    '=== FILES & KINGS ===',
+    'Open files: '+(c.of.length?c.of.join(', '):'none'),
+    'Semi-open: '+(c.sf.length?c.sf.join(', '):'none'),
+    'White king: '+c.wk+' | Black king: '+c.bk,
+    'Castling: '+(c.castling==='-'?'none':c.castling),
+    '',
+    '=== YOUR TASK ===',
+    'Write a GM-level annotation in '+lang+' for the move '+c.san+'.',
+    '(1) What does the move do, (2) strategic/tactical idea, (3) plans for both sides.',
+    'Reference pawn structure, files, king safety from the data above.',
+    'Output ONLY the annotation. No quotes, no labels, no intro.'
+  ].filter(Boolean).join('\n');
+}
+
+// ── API CALLS ─────────────────────────────────────
+async function callGemini(prompt, key){
+  const url='https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+key;
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      contents:[{parts:[{text:prompt}]}],
+      generationConfig:{maxOutputTokens:250,temperature:0.4},
+      systemInstruction:{parts:[{text:'You are a grandmaster-level chess annotator. Respond only with the annotation text — no labels, no quotes, no preamble.'}]}
+    })
+  });
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error?.message||'HTTP '+r.status);}
+  const d=await r.json();
+  const t=d.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if(!t)throw new Error('Empty Gemini response');
+  return t;
+}
+
+async function callClaude(prompt, key){
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:220,
+      system:'You are a grandmaster-level chess annotator. Respond only with the annotation text — no labels, no quotes, no preamble.',
+      messages:[{role:'user',content:prompt}]})
+  });
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error?.message||'HTTP '+r.status);}
+  const d=await r.json();
+  const t=d.content?.[0]?.text?.trim();
+  if(!t)throw new Error('Empty Claude response');
+  return t;
+}
+
+async function callAI(prompt,key){return provider==='gemini'?callGemini(prompt,key):callClaude(prompt,key);}
+
+// ── COLLECT SLOTS (branch-aware) ──────────────────
+function collectSlots(tokens, N){
+  const slots=[]; let id=0, branches=0;
+  function walk(T,i,chess,cnt,bd,bh){
+    while(i<T.length){
+      const tok=T[i];
+      if(tok.t==='vo'){
+        branches++;
+        const sf=chess.fen(),sc=cnt;
+        chess.undo();
+        const pbh=chess.history({verbose:true}).slice(-6).map(m=>m.san);
+        const res=walk(T,i+1,chess,cnt-1,bd+1,pbh);
+        i=res+1; chess.load(sf); cnt=sc; continue;
+      }
+      if(tok.t==='vc')return i;
+      if(tok.t==='mv'){
+        let ok=false;
+        try{ok=!!chess.move(tok.v,{sloppy:true});}catch(e){}
+        if(ok){cnt++;bh.push(tok.v);if(cnt%N===0){slots.push({id:id++,c:ctx(chess,tok.v,bh,bd)});}}
+      }
+      i++;
+    }
+    return i;
+  }
+  walk(tokens,0,new Chess(),0,0,[]);
+  return{slots,branches};
+}
+
+// ── BUILD ANNOTATED PGN ───────────────────────────
+function buildPGN(tokens, amap, N){
+  let out=''; let id=0;
+  function walk(T,i,chess,cnt){
+    while(i<T.length){
+      const tok=T[i];
+      if(tok.t==='vo'){
+        out+='('; const sf=chess.fen(),sc=cnt;
+        chess.undo();
+        i=walk(T,i+1,chess,cnt-1)+1;
+        chess.load(sf); cnt=sc; continue;
+      }
+      if(tok.t==='vc'){out+=')';return i;}
+      if(tok.t==='mv'){
+        out+=tok.v;
+        let ok=false;
+        try{ok=!!chess.move(tok.v,{sloppy:true});}catch(e){}
+        if(ok){cnt++;if(cnt%N===0){const a=amap[id];if(a){const cl=a.replace(/\{/g,'[').replace(/\}/g,']');out+=' { '+cl+' }';}id++;}}
+        i++;continue;
+      }
+      out+=tok.v||''; i++;
+    }
+    return i;
+  }
+  walk(tokens,0,new Chess(),0);
+  return out;
+}
+
+// ── MAIN ──────────────────────────────────────────
+async function run(){
+  document.getElementById('eb').style.display='none';
+  document.getElementById('op').style.display='none';
+  document.getElementById('lp').style.display='none';
+  document.getElementById('lf').innerHTML='';
+  lc=0;
+
+  const key=provider==='gemini'?document.getElementById('kg').value.trim():document.getElementById('ka').value.trim();
+  const pgn=document.getElementById('pi').value.trim();
+  const N=parseInt(document.getElementById('en').value)||3;
+  const lang=document.getElementById('al').value.trim()||'English';
+  const style=document.getElementById('as2').value;
+
+  if(!key){err('Please enter your '+(provider==='gemini'?'Gemini':'Anthropic')+' API key.');return;}
+  if(!pgn){err('Please paste or upload a PGN.');return;}
+
+  document.getElementById('rb').disabled=true;
+  step(2); prog(5,'Splitting headers...');
+  log('Pipeline start — provider: '+provider,'ok');
+
+  const lines=pgn.split('\n');
+  const hl=[],bl=[];let ib=false;
+  for(const l of lines){if(!ib&&l.trim().startsWith('['))hl.push(l);else{ib=true;bl.push(l);}}
+  const headers=hl.join('\n'), body=bl.join('\n').trim();
+
+  prog(10,'Tokenizing PGN...');
+  log('Tokenizing — preserving all glyphs, [%csl], brackets');
+  let tokens;
+  try{tokens=tokenize(body);}
+  catch(e){err('Parse error: '+e.message);document.getElementById('rb').disabled=false;return;}
+  log('Tokens: '+tokens.length,'ok');
+
+  prog(18,'Walking all branches...'); step(2);
+  let slots,branches;
+  try{const r=collectSlots(tokens,N);slots=r.slots;branches=r.branches;}
+  catch(e){err('Branch error: '+e.message);document.getElementById('rb').disabled=false;return;}
+
+  if(!slots.length){err('No slots found. Check PGN validity.');document.getElementById('rb').disabled=false;return;}
+
+  document.getElementById('sr').style.display='flex';
+  document.getElementById('ss').textContent=slots.length;
+  document.getElementById('sb').textContent=branches;
+  document.getElementById('sd').textContent='0';
+  log('Found '+slots.length+' slots across '+branches+' branches','ok');
+
+  step(3);
+  const amap={};
+
+  for(let s=0;s<slots.length;s++){
+    const sl=slots[s];
+    const pct=20+Math.round((s/slots.length)*75);
+    prog(pct,'Annotating '+(s+1)+'/'+slots.length+' — '+sl.c.san);
+    log('Slot '+(s+1)+'/'+slots.length+' | '+sl.c.color[0]+':'+sl.c.san+' mv'+sl.c.mn+' depth:'+sl.c.bd,'mv');
+    try{
+      const ann=await callAI(buildPrompt(sl.c,style,lang),key);
+      amap[sl.id]=ann;
+      document.getElementById('sd').textContent=s+1;
+      log('  ✓ '+ann.slice(0,90)+(ann.length>90?'...':''),'ok');
+    }catch(e){
+      err('API error at slot '+(s+1)+' ('+sl.c.san+'): '+e.message);
+      document.getElementById('rb').disabled=false; return;
+    }
+    if(s<slots.length-1)await new Promise(r=>setTimeout(r,300));
+  }
+
+  prog(97,'Rebuilding PGN...');
+  log('Injecting annotations...','ok');
+  let ab;
+  try{ab=buildPGN(tokens,amap,N);}
+  catch(e){err('Rebuild error: '+e.message);document.getElementById('rb').disabled=false;return;}
+
+  const final=(headers?headers+'\n\n':'')+ab;
+  document.getElementById('po').value=final;
+  document.getElementById('op').style.display='block';
+  step(4); prog(100,'Complete — '+slots.length+' annotations added');
+  log('Done! '+slots.length+' GM annotations injected across all branches.','ok');
+  document.getElementById('rb').disabled=false;
+}
+
+function copyOut(){const ta=document.getElementById('po');navigator.clipboard.writeText(ta.value).catch(()=>{ta.select();document.execCommand('copy');});}
+function dlOut(){const a=document.createElement('a');a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(document.getElementById('po').value);a.download='annotated_gm.pgn';document.body.appendChild(a);a.click();document.body.removeChild(a);}
+</script>
+</body>
+</html>
