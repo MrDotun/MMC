@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGN GM Annotator</title>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0e0f0e;
+    --bg2:      #161814;
+    --bg3:      #1e2020;
+    --bg4:      #252826;
+    --border:   #2e3230;
+    --border2:  #3a3e3c;
+    --text:     #e8ebe6;
+    --text2:    #9da89a;
+    --text3:    #616b5e;
+    --gold:     #c8a84b;
+    --gold2:    #e6c96a;
+    --gold-bg:  rgba(200,168,75,0.08);
+    --green:    #4a7c59;
+    --green2:   #5d9970;
+    --red:      #8b3a3a;
+    --red2:     #b04444;
+    --mono:     'JetBrains Mono', monospace;
+    --serif:    'Crimson Pro', Georgia, serif;
+    --sans:     'DM Sans', sans-serif;
+    --radius:   6px;
+    --radius2:  10px;
+  }
+
+  html { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; line-height: 1.6; }
+
+  body { min-height: 100vh; display: flex; flex-direction: column; }
+
+  /* ── Layout ── */
+  .topbar {
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: var(--bg2);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .logo {
+    font-family: var(--serif);
+    font-size: 20px;
+    color: var(--gold2);
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 28px;
+    height: 28px;
+    background: var(--gold-bg);
+    border: 1px solid var(--gold);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+  }
+
+  .topbar-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text3);
+  }
+
+  .main { display: flex; flex: 1; min-height: 0; }
+
+  .sidebar {
+    width: 340px;
+    min-width: 300px;
+    border-right: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    overflow-y: auto;
+  }
+
+  .content {
+    flex: 1;
+    padding: 2rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* ── Sidebar sections ── */
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 8px;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+
+  input[type="text"], input[type="password"], input[type="number"], select, textarea {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--gold);
+  }
+
+  input[type="password"] { font-family: var(--mono); letter-spacing: 0.1em; }
+
+  .key-row { display: flex; gap: 6px; }
+  .key-row input { flex: 1; }
+
+  .toggle-key {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text2);
+    cursor: pointer;
+    padding: 0 10px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .toggle-key:hover { border-color: var(--border2); color: var(--text); }
+
+  .mini-row { display: flex; gap: 8px; }
+  .mini-row .field { flex: 1; }
+
+  /* ── Run button ── */
+  .run-btn {
+    width: 100%;
+    padding: 11px;
+    background: var(--gold);
+    color: #0a0b0a;
+    border: none;
+    border-radius: var(--radius2);
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    letter-spacing: 0.01em;
+  }
+
+  .run-btn:hover { background: var(--gold2); }
+  .run-btn:active { transform: scale(0.98); }
+  .run-btn:disabled { background: var(--bg4); color: var(--text3); cursor: not-allowed; transform: none; }
+
+  /* ── Progress ── */
+  .progress-wrap { display: none; flex-direction: column; gap: 8px; }
+  .track { height: 3px; background: var(--bg4); border-radius: 2px; overflow: hidden; }
+  .bar { height: 3px; background: var(--gold); border-radius: 2px; width: 0; transition: width 0.4s ease; }
+  .progress-info { display: flex; justify-content: space-between; font-size: 11px; color: var(--text3); }
+
+  /* ── Stats row ── */
+  .stats-row { display: flex; gap: 8px; }
+  .stat-pill {
+    flex: 1;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    text-align: center;
+  }
+  .stat-num { font-size: 20px; font-weight: 600; color: var(--gold2); font-family: var(--mono); }
+  .stat-lbl { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+
+  /* ── Content panels ── */
+  .panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius2);
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg3);
+  }
+
+  .panel-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+
+  .panel-body { padding: 0; }
+
+  textarea.pgn-in {
+    height: 260px;
+    resize: vertical;
+    border: none;
+    border-radius: 0;
+    background: var(--bg2);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    padding: 14px 16px;
+    color: var(--text);
+  }
+
+  textarea.pgn-out {
+    height: 340px;
+    resize: vertical;
+    border: none;
+    border-radius: 0;
+    background: var(--bg2);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    padding: 14px 16px;
+    color: var(--text);
+  }
+
+  /* ── Log feed ── */
+  .log-feed {
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 10px 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.8;
+    color: var(--text3);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .log-item { display: flex; gap: 10px; }
+  .log-time { color: var(--text3); min-width: 50px; }
+  .log-msg  { color: var(--text2); flex: 1; }
+  .log-ok   { color: var(--green2); }
+  .log-err  { color: var(--red2); }
+  .log-move { color: var(--gold); }
+
+  /* ── Action bar ── */
+  .action-bar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg3);
+  }
+
+  .act-btn {
+    padding: 7px 14px;
+    background: var(--bg4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text2);
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--sans);
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .act-btn:hover { border-color: var(--gold); color: var(--gold2); }
+
+  /* ── Error box ── */
+  .err-box {
+    display: none;
+    background: rgba(139,58,58,0.15);
+    border: 1px solid var(--red);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #e08080;
+    line-height: 1.5;
+  }
+
+  /* ── Upload zone ── */
+  .upload-zone {
+    border: 1px dashed var(--border2);
+    border-radius: var(--radius);
+    padding: 12px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text3);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .upload-zone:hover { border-color: var(--gold); background: var(--gold-bg); color: var(--gold2); }
+
+  /* ── Tip box ── */
+  .tip {
+    background: var(--gold-bg);
+    border: 1px solid rgba(200,168,75,0.2);
+    border-left: 3px solid var(--gold);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.6;
+  }
+  .tip strong { color: var(--gold2); font-weight: 500; }
+
+  .divider { height: 1px; background: var(--border); }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* ── Step indicators ── */
+  .steps-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 0.5rem;
+  }
+  .step {
+    flex: 1;
+    font-size: 10px;
+    text-align: center;
+    padding: 6px 4px;
+    color: var(--text3);
+    border-bottom: 2px solid var(--border);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .step.active { color: var(--gold2); border-bottom-color: var(--gold); }
+  .step.done   { color: var(--green2); border-bottom-color: var(--green); }
+
+  .badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 3px;
+    background: var(--gold-bg);
+    color: var(--gold);
+    border: 1px solid rgba(200,168,75,0.25);
+    vertical-align: middle;
+    margin-left: 8px;
+  }
+
+  @media (max-width: 700px) {
+    .main { flex-direction: column; }
+    .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon">♟</div>
+    GM Annotator
+  </div>
+  <span class="badge">chess.js + Claude API</span>
+  <div class="topbar-right">
+    Every move &amp; branch covered · Full position context fed to AI
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- ── Sidebar ── -->
+  <div class="sidebar">
+
+    <div>
+      <div class="section-label">API Key</div>
+      <div class="field">
+        <div class="key-row">
+          <input type="password" id="apikey" placeholder="sk-ant-api03-..." autocomplete="off" />
+          <button class="toggle-key" onclick="toggleKey()">show</button>
+        </div>
+        <div style="font-size:11px;color:var(--text3)">Used only in this browser. Never stored or sent elsewhere.</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div>
+      <div class="section-label">Settings</div>
+      <div class="mini-row">
+        <div class="field">
+          <label style="font-size:11px;color:var(--text3)">Annotate every N moves</label>
+          <input type="number" id="every-n" value="3" min="1" max="10" style="width:80px" />
+        </div>
+        <div class="field">
+          <label style="font-size:11px;color:var(--text3)">Language</label>
+          <input type="text" id="ann-lang" value="English" style="width:110px" />
+        </div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label style="font-size:11px;color:var(--text3)">Annotation style</label>
+        <select id="ann-style">
+          <option value="gm">GM — strategic depth, plans, structures</option>
+          <option value="coach">Coach — instructive, explains ideas</option>
+          <option value="engine">Engine — concrete lines and eval</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div>
+      <div class="section-label">Upload PGN</div>
+      <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-in').click()">
+        ↑ Drop .pgn file or click to browse
+      </div>
+      <input type="file" id="file-in" accept=".pgn,.txt" style="display:none" />
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Progress -->
+    <div class="steps-row">
+      <div class="step active" id="s1">Input</div>
+      <div class="step" id="s2">Parse</div>
+      <div class="step" id="s3">Annotate</div>
+      <div class="step" id="s4">Done</div>
+    </div>
+
+    <div class="progress-wrap" id="prog-wrap">
+      <div class="track"><div class="bar" id="pbar"></div></div>
+      <div class="progress-info">
+        <span id="prog-msg">Ready</span>
+        <span id="prog-pct">0%</span>
+      </div>
+    </div>
+
+    <div class="stats-row" id="stats-row" style="display:none">
+      <div class="stat-pill"><div class="stat-num" id="stat-slots">0</div><div class="stat-lbl">Slots</div></div>
+      <div class="stat-pill"><div class="stat-num" id="stat-branches">0</div><div class="stat-lbl">Branches</div></div>
+      <div class="stat-pill"><div class="stat-num" id="stat-done">0</div><div class="stat-lbl">Done</div></div>
+    </div>
+
+    <div class="err-box" id="err-box"></div>
+
+    <button class="run-btn" id="run-btn" onclick="runAnnotation()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      Annotate PGN
+    </button>
+
+    <div class="tip">
+      <strong>How context works:</strong> Each position is described to Claude with the FEN, full move history, piece activity score, pawn structure, material balance, open files, and the last 5 moves — so it always knows exactly what's happening on the board.
+    </div>
+
+  </div>
+
+  <!-- ── Content ── -->
+  <div class="content">
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">PGN Input</span>
+        <span style="font-size:11px;color:var(--text3)" id="move-count-lbl"></span>
+      </div>
+      <div class="panel-body">
+        <textarea class="pgn-in" id="pgn-input" placeholder="Paste your PGN here — main line and all variations will be fully annotated..."></textarea>
+      </div>
+    </div>
+
+    <div class="panel" id="log-panel" style="display:none">
+      <div class="panel-header">
+        <span class="panel-title">Annotation Log</span>
+        <span style="font-size:11px;color:var(--text3)" id="log-count">0 entries</span>
+      </div>
+      <div class="log-feed" id="log-feed"></div>
+    </div>
+
+    <div class="panel" id="out-panel" style="display:none">
+      <div class="panel-header">
+        <span class="panel-title">Annotated PGN Output</span>
+        <span class="badge" style="color:var(--green2);border-color:rgba(74,124,89,0.4);background:rgba(74,124,89,0.08)">READY</span>
+      </div>
+      <div class="panel-body">
+        <textarea class="pgn-out" id="pgn-out" readonly></textarea>
+      </div>
+      <div class="action-bar">
+        <button class="act-btn" onclick="copyOut()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy to clipboard
+        </button>
+        <button class="act-btn" onclick="downloadOut()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download .pgn
+        </button>
+        <button class="act-btn" onclick="resetAll()" style="margin-left:auto">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          New annotation
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════
+
+function toggleKey() {
+  const inp = document.getElementById('apikey');
+  const btn = event.currentTarget;
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = 'hide'; }
+  else { inp.type = 'password'; btn.textContent = 'show'; }
+}
+
+const fileIn = document.getElementById('file-in');
+fileIn.onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => { document.getElementById('pgn-input').value = ev.target.result; updateMoveCount(); };
+  r.readAsText(f);
+};
+
+const dz = document.getElementById('drop-zone');
+dz.ondragover = e => { e.preventDefault(); dz.style.borderColor = 'var(--gold)'; };
+dz.ondragleave = () => { dz.style.borderColor = ''; };
+dz.ondrop = e => {
+  e.preventDefault(); dz.style.borderColor = '';
+  const f = e.dataTransfer.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => { document.getElementById('pgn-input').value = ev.target.result; updateMoveCount(); };
+  r.readAsText(f);
+};
+
+document.getElementById('pgn-input').addEventListener('input', updateMoveCount);
+
+function updateMoveCount() {
+  const pgn = document.getElementById('pgn-input').value.trim();
+  const moves = pgn.match(/\b[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBRQ])?[+#]?\b|O-O(?:-O)?/g);
+  document.getElementById('move-count-lbl').textContent = moves ? moves.length + ' moves detected' : '';
+}
+
+let logCount = 0;
+function addLog(msg, type='') {
+  const feed = document.getElementById('log-feed');
+  document.getElementById('log-panel').style.display = 'block';
+  const now = new Date();
+  const ts = now.toTimeString().slice(0,8);
+  const div = document.createElement('div');
+  div.className = 'log-item';
+  div.innerHTML = `<span class="log-time">${ts}</span><span class="log-msg ${type ? 'log-'+type : ''}">${msg}</span>`;
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+  logCount++;
+  document.getElementById('log-count').textContent = logCount + ' entries';
+}
+
+function setStep(n) {
+  ['s1','s2','s3','s4'].forEach((id,i) => {
+    const el = document.getElementById(id);
+    el.className = 'step' + (i+1 < n ? ' done' : i+1 === n ? ' active' : '');
+  });
+}
+
+function setProgress(pct, msg) {
+  document.getElementById('prog-wrap').style.display = 'flex';
+  document.getElementById('pbar').style.width = pct + '%';
+  document.getElementById('prog-msg').textContent = msg;
+  document.getElementById('prog-pct').textContent = Math.round(pct) + '%';
+}
+
+function showErr(msg) {
+  const b = document.getElementById('err-box');
+  b.textContent = msg; b.style.display = 'block';
+  addLog('ERROR: ' + msg, 'err');
+}
+
+function resetAll() {
+  document.getElementById('out-panel').style.display = 'none';
+  document.getElementById('pgn-out').value = '';
+  document.getElementById('err-box').style.display = 'none';
+  document.getElementById('prog-wrap').style.display = 'none';
+  document.getElementById('stats-row').style.display = 'none';
+  document.getElementById('log-panel').style.display = 'none';
+  document.getElementById('log-feed').innerHTML = '';
+  logCount = 0;
+  setStep(1);
+  setProgress(0,'Ready');
+  document.getElementById('run-btn').disabled = false;
+}
+
+// ═══════════════════════════════════════════════════════
+//  PGN TOKEN PARSER
+//  Preserves every character: glyphs, [%csl ...], comments, brackets
+// ═══════════════════════════════════════════════════════
+function tokenizePGN(pgn) {
+  const tokens = [];
+  let i = 0;
+  while (i < pgn.length) {
+    if (/\s/.test(pgn[i])) { tokens.push({type:'ws', text:pgn[i]}); i++; continue; }
+
+    if (pgn[i] === '{') {
+      let j = i + 1, depth = 1;
+      while (j < pgn.length) {
+        if (pgn[j] === '{') depth++;
+        else if (pgn[j] === '}') { depth--; if (depth === 0) break; }
+        j++;
+      }
+      tokens.push({type:'comment', text: pgn.slice(i, j+1)});
+      i = j + 1; continue;
+    }
+
+    if (pgn[i] === '(') { tokens.push({type:'var_open', text:'('}); i++; continue; }
+    if (pgn[i] === ')') { tokens.push({type:'var_close', text:')'}); i++; continue; }
+
+    if (pgn[i] === '$') {
+      let j = i + 1;
+      while (j < pgn.length && /\d/.test(pgn[j])) j++;
+      tokens.push({type:'glyph', text: pgn.slice(i, j)});
+      i = j; continue;
+    }
+
+    // move number (1. or 1...)
+    if (/\d/.test(pgn[i])) {
+      let j = i;
+      while (j < pgn.length && (/\d/.test(pgn[j]) || pgn[j] === '.')) j++;
+      const txt = pgn.slice(i, j);
+      // check if it's a result like 1-0
+      if (/^\d+$/.test(txt) && (pgn[j] === '-' || pgn[j] === '/')) {
+        let k = j;
+        while (k < pgn.length && !/\s/.test(pgn[k])) k++;
+        tokens.push({type:'result', text: pgn.slice(i, k)});
+        i = k; continue;
+      }
+      tokens.push({type:'movenum', text: txt});
+      i = j; continue;
+    }
+
+    if (pgn[i] === '*') { tokens.push({type:'result', text:'*'}); i++; continue; }
+
+    if (/[A-Za-z]/.test(pgn[i])) {
+      let j = i;
+      while (j < pgn.length && !/[\s{}()\$]/.test(pgn[j])) j++;
+      const txt = pgn.slice(i, j);
+      // check for result strings
+      if (txt === '1-0' || txt === '0-1' || txt === '1/2-1/2') {
+        tokens.push({type:'result', text: txt}); i = j; continue;
+      }
+      tokens.push({type:'move', text: txt});
+      i = j; continue;
+    }
+
+    tokens.push({type:'other', text: pgn[i]}); i++;
+  }
+  return tokens;
+}
+
+// ═══════════════════════════════════════════════════════
+//  RICH POSITION CONTEXT BUILDER
+//  Gives Claude everything it needs to understand the position
+// ═══════════════════════════════════════════════════════
+function buildPositionContext(chess, moveSan, branchHistory, branchDepth) {
+  const fen = chess.fen();
+  const history = chess.history({verbose: true});
+  const lastMove = history[history.length - 1];
+
+  // Material count
+  const board = chess.board();
+  const pieceValues = {p:1, n:3, b:3, r:5, q:9};
+  let wMat = 0, bMat = 0;
+  for (const row of board) {
+    for (const sq of row) {
+      if (!sq) continue;
+      const val = pieceValues[sq.type] || 0;
+      if (sq.color === 'w') wMat += val;
+      else bMat += val;
+    }
+  }
+  const matDiff = wMat - bMat;
+
+  // Open/semi-open files
+  const files = ['a','b','c','d','e','f','g','h'];
+  const openFiles = [], semiOpen = [];
+  for (const file of files) {
+    let wPawns = 0, bPawns = 0;
+    for (let rank = 1; rank <= 8; rank++) {
+      const piece = chess.get(file + rank);
+      if (piece && piece.type === 'p') {
+        if (piece.color === 'w') wPawns++;
+        else bPawns++;
+      }
+    }
+    if (wPawns === 0 && bPawns === 0) openFiles.push(file);
+    else if (wPawns === 0 || bPawns === 0) semiOpen.push(file + (wPawns===0?'(b)':'(w)'));
+  }
+
+  // Piece activity — count squares attacked
+  function countMobility(color) {
+    let mobility = 0;
+    for (const row of board) {
+      for (const sq of row) {
+        if (!sq || sq.color !== color || sq.type === 'p' || sq.type === 'k') continue;
+        // rough mobility proxy: count legal moves for each piece
+      }
+    }
+    return mobility;
+  }
+
+  // Castling rights
+  const castling = fen.split(' ')[2];
+
+  // Last 5 moves context
+  const recentMoves = history.slice(-5).map((m,i) => {
+    const num = Math.floor((history.length - 5 + i) / 2) + 1;
+    return (m.color === 'w' ? num + '.' : '') + m.san;
+  }).join(' ');
+
+  // King safety (simple: is king on back rank, has pawn shield)
+  const wKingPos = findKing(board, 'w');
+  const bKingPos = findKing(board, 'b');
+
+  // Passed pawns
+  const passedPawns = findPassedPawns(board);
+
+  // Doubled/isolated pawns
+  const pawnStructure = analyzePawnStructure(board);
+
+  // Check / captured piece info
+  const isCheck = chess.in_check();
+  const captured = lastMove && lastMove.captured ? lastMove.captured.toUpperCase() : null;
+  const isPromotion = lastMove && lastMove.promotion;
+
+  return {
+    fen,
+    moveSan,
+    sideToMove: chess.turn() === 'w' ? 'White' : 'Black',
+    movingColor: lastMove ? (lastMove.color === 'w' ? 'White' : 'Black') : '?',
+    moveNumber: Math.ceil(history.length / 2),
+    fullMoveNum: history.length,
+    recentMoves,
+    branchDepth,
+    branchHistory: branchHistory.slice(-8).join(' '),
+    material: { white: wMat, black: bMat, diff: matDiff },
+    openFiles,
+    semiOpenFiles: semiOpen,
+    castling,
+    isCheck,
+    captured,
+    isPromotion,
+    passedPawns,
+    pawnStructure,
+    wKingPos,
+    bKingPos,
+    inEndgame: (wMat + bMat) <= 14
+  };
+}
+
+function findKing(board, color) {
+  const files = 'abcdefgh';
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const sq = board[r][f];
+      if (sq && sq.type === 'k' && sq.color === color) {
+        return files[f] + (8 - r);
+      }
+    }
+  }
+  return '?';
+}
+
+function findPassedPawns(board) {
+  const passed = [];
+  const files = 'abcdefgh';
+  for (let f = 0; f < 8; f++) {
+    for (let r = 0; r < 8; r++) {
+      const sq = board[r][f];
+      if (!sq || sq.type !== 'p') continue;
+      const rank = 8 - r;
+      const fileChar = files[f];
+      if (sq.color === 'w') {
+        let isPassed = true;
+        for (let rr = r - 1; rr >= 0; rr--) {
+          const left  = f > 0 ? board[rr][f-1] : null;
+          const mid   = board[rr][f];
+          const right = f < 7 ? board[rr][f+1] : null;
+          if ((left && left.type==='p' && left.color==='b') ||
+              (mid  && mid.type==='p'  && mid.color==='b') ||
+              (right&& right.type==='p'&& right.color==='b')) {
+            isPassed = false; break;
+          }
+        }
+        if (isPassed && rank >= 5) passed.push('W:' + fileChar + rank);
+      } else {
+        let isPassed = true;
+        for (let rr = r + 1; rr < 8; rr++) {
+          const left  = f > 0 ? board[rr][f-1] : null;
+          const mid   = board[rr][f];
+          const right = f < 7 ? board[rr][f+1] : null;
+          if ((left && left.type==='p' && left.color==='w') ||
+              (mid  && mid.type==='p'  && mid.color==='w') ||
+              (right&& right.type==='p'&& right.color==='w')) {
+            isPassed = false; break;
+          }
+        }
+        if (isPassed && rank <= 4) passed.push('B:' + fileChar + rank);
+      }
+    }
+  }
+  return passed;
+}
+
+function analyzePawnStructure(board) {
+  const files = 'abcdefgh';
+  const wPawnFiles = Array(8).fill(0);
+  const bPawnFiles = Array(8).fill(0);
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const sq = board[r][f];
+      if (sq && sq.type === 'p') {
+        if (sq.color === 'w') wPawnFiles[f]++;
+        else bPawnFiles[f]++;
+      }
+    }
+  }
+  const doubled = [], isolated = [];
+  for (let f = 0; f < 8; f++) {
+    if (wPawnFiles[f] > 1) doubled.push('W:' + files[f]);
+    if (bPawnFiles[f] > 1) doubled.push('B:' + files[f]);
+    const wLeft  = f > 0 ? wPawnFiles[f-1] : 0;
+    const wRight = f < 7 ? wPawnFiles[f+1] : 0;
+    if (wPawnFiles[f] > 0 && wLeft === 0 && wRight === 0) isolated.push('W:' + files[f]);
+    const bLeft  = f > 0 ? bPawnFiles[f-1] : 0;
+    const bRight = f < 7 ? bPawnFiles[f+1] : 0;
+    if (bPawnFiles[f] > 0 && bLeft === 0 && bRight === 0) isolated.push('B:' + files[f]);
+  }
+  return { doubled, isolated };
+}
+
+// ═══════════════════════════════════════════════════════
+//  BUILD ANNOTATION PROMPT
+// ═══════════════════════════════════════════════════════
+function buildPrompt(ctx, style, lang) {
+  const styleInstructions = {
+    gm: 'You are annotating as a grandmaster. Focus on strategic depth, long-term plans, pawn structures, piece coordination, and key positional ideas. Be precise and insightful.',
+    coach: 'You are annotating as a chess coach. Be instructive — explain the idea behind the move, what plan both sides should follow, and what a student should learn from this position.',
+    engine: 'You are annotating as an engine analyst. Mention concrete continuations, tactical threats, and evaluation with specific lines where relevant.'
+  };
+
+  const lines = [
+    styleInstructions[style] || styleInstructions.gm,
+    '',
+    `=== POSITION DATA ===`,
+    `FEN: ${ctx.fen}`,
+    `Move just played: ${ctx.movingColor} played ${ctx.moveSan} (move ${ctx.moveNumber})`,
+    `Side to move next: ${ctx.sideToMove}`,
+    ctx.isCheck ? `*** Position is CHECK ***` : '',
+    ctx.captured ? `Captured piece: ${ctx.captured}` : '',
+    ctx.isPromotion ? `Promotion to: ${ctx.isPromotion}` : '',
+    '',
+    `=== RECENT MOVES (last 5) ===`,
+    ctx.recentMoves || 'N/A',
+    '',
+    `=== BRANCH CONTEXT ===`,
+    `Variation depth: ${ctx.branchDepth} (0 = main line)`,
+    `Branch move history: ${ctx.branchHistory || 'main line'}`,
+    '',
+    `=== MATERIAL ===`,
+    `White material: ${ctx.material.white} pts | Black material: ${ctx.material.black} pts`,
+    `Material balance: ${ctx.material.diff > 0 ? 'White +'+ctx.material.diff : ctx.material.diff < 0 ? 'Black +'+Math.abs(ctx.material.diff) : 'Equal'}`,
+    ctx.inEndgame ? '*** ENDGAME phase ***' : '*** MIDDLEGAME phase ***',
+    '',
+    `=== PAWN STRUCTURE ===`,
+    `Passed pawns: ${ctx.passedPawns.length ? ctx.passedPawns.join(', ') : 'none'}`,
+    `Doubled pawns: ${ctx.pawnStructure.doubled.length ? ctx.pawnStructure.doubled.join(', ') : 'none'}`,
+    `Isolated pawns: ${ctx.pawnStructure.isolated.length ? ctx.pawnStructure.isolated.join(', ') : 'none'}`,
+    '',
+    `=== FILES & KING SAFETY ===`,
+    `Open files: ${ctx.openFiles.length ? ctx.openFiles.join(', ') : 'none'}`,
+    `Semi-open files: ${ctx.semiOpenFiles.length ? ctx.semiOpenFiles.join(', ') : 'none'}`,
+    `White king: ${ctx.wKingPos} | Black king: ${ctx.bKingPos}`,
+    `Castling rights: ${ctx.castling === '-' ? 'none remaining' : ctx.castling}`,
+    '',
+    `=== TASK ===`,
+    `Write a GM-level annotation of 2–4 sentences in ${lang} for the move ${ctx.moveSan}.`,
+    `Explain: (1) what the move does, (2) the key strategic or tactical idea, (3) what both sides should aim for next.`,
+    `Reference the specific pawn structure, piece coordination, or king safety details above where relevant.`,
+    `Output ONLY the annotation text. No quotes, no labels, no preamble.`
+  ].filter(l => l !== undefined);
+
+  return lines.join('\n');
+}
+
+// ═══════════════════════════════════════════════════════
+//  COLLECT ALL ANNOTATION SLOTS (branch-aware)
+// ═══════════════════════════════════════════════════════
+function collectSlots(tokens, everyN) {
+  const slots = [];
+  let slotId = 0;
+  let totalBranches = 0;
+
+  function walk(tokArr, startIdx, chess, moveCount, branchDepth, branchHistory) {
+    let i = startIdx;
+
+    while (i < tokArr.length) {
+      const tok = tokArr[i];
+
+      if (tok.type === 'var_open') {
+        totalBranches++;
+        // Save current chess state
+        const savedFen = chess.fen();
+        const savedCount = moveCount;
+        const savedHistory = [...branchHistory];
+
+        // Undo last move to get to parent position for the variation
+        chess.undo();
+        const parentHistory = chess.history({verbose:true});
+        const parentBranchHistory = parentHistory.slice(-6).map(m => m.san);
+
+        const res = walk(tokArr, i + 1, chess, moveCount - 1, branchDepth + 1, parentBranchHistory);
+        i = res.endIdx + 1;
+
+        // Restore
+        chess.load(savedFen);
+        moveCount = savedCount;
+        continue;
+      }
+
+      if (tok.type === 'var_close') {
+        return { endIdx: i };
+      }
+
+      if (tok.type === 'move') {
+        const san = tok.text;
+        let moved = false;
+        try {
+          const result = chess.move(san, {sloppy: true});
+          moved = !!result;
+        } catch(e) { moved = false; }
+
+        if (moved) {
+          moveCount++;
+          branchHistory.push(san);
+
+          if (moveCount % everyN === 0) {
+            const ctx = buildPositionContext(chess, san, branchHistory, branchDepth);
+            slots.push({ slotId: slotId++, ctx });
+          }
+        }
+      }
+
+      i++;
+    }
+
+    return { endIdx: i };
+  }
+
+  const chess = new Chess();
+  walk(tokens, 0, chess, 0, 0, []);
+  return { slots, totalBranches };
+}
+
+// ═══════════════════════════════════════════════════════
+//  BUILD FINAL PGN (inject annotations, preserve everything)
+// ═══════════════════════════════════════════════════════
+function buildAnnotatedPGN(tokens, annotationMap, everyN) {
+  let out = '';
+  let slotId = 0;
+
+  function walk(tokArr, startIdx, chess, moveCount) {
+    let i = startIdx;
+
+    while (i < tokArr.length) {
+      const tok = tokArr[i];
+
+      if (tok.type === 'var_open') {
+        out += '(';
+        const savedFen = chess.fen();
+        const savedCount = moveCount;
+        chess.undo();
+        const res = walk(tokArr, i + 1, chess, moveCount - 1);
+        i = res.endIdx + 1;
+        chess.load(savedFen);
+        moveCount = savedCount;
+        continue;
+      }
+
+      if (tok.type === 'var_close') {
+        out += ')';
+        return { endIdx: i };
+      }
+
+      if (tok.type === 'ws')      { out += tok.text; i++; continue; }
+      if (tok.type === 'comment') { out += tok.text; i++; continue; }
+      if (tok.type === 'glyph')   { out += tok.text; i++; continue; }
+      if (tok.type === 'movenum') { out += tok.text; i++; continue; }
+      if (tok.type === 'result')  { out += tok.text; i++; continue; }
+      if (tok.type === 'other')   { out += tok.text; i++; continue; }
+
+      if (tok.type === 'move') {
+        const san = tok.text;
+        out += san;
+        let moved = false;
+        try {
+          const result = chess.move(san, {sloppy: true});
+          moved = !!result;
+        } catch(e) {}
+
+        if (moved) {
+          moveCount++;
+          if (moveCount % everyN === 0) {
+            const ann = annotationMap[slotId];
+            if (ann) {
+              const cleaned = ann.replace(/\{/g,'[').replace(/\}/g,']');
+              out += ' { ' + cleaned + ' }';
+            }
+            slotId++;
+          }
+        }
+        i++; continue;
+      }
+
+      out += tok.text || '';
+      i++;
+    }
+
+    return { endIdx: i };
+  }
+
+  const chess = new Chess();
+  walk(tokens, 0, chess, 0);
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════
+//  MAIN RUNNER
+// ═══════════════════════════════════════════════════════
+async function runAnnotation() {
+  document.getElementById('err-box').style.display = 'none';
+  document.getElementById('out-panel').style.display = 'none';
+  document.getElementById('log-panel').style.display = 'none';
+  document.getElementById('log-feed').innerHTML = '';
+  logCount = 0;
+
+  const apiKey  = document.getElementById('apikey').value.trim();
+  const pgn     = document.getElementById('pgn-input').value.trim();
+  const everyN  = parseInt(document.getElementById('every-n').value) || 3;
+  const lang    = document.getElementById('ann-lang').value.trim() || 'English';
+  const style   = document.getElementById('ann-style').value;
+
+  if (!apiKey) { showErr('Please enter your Anthropic API key.'); return; }
+  if (!pgn)    { showErr('Please paste or upload a PGN.'); return; }
+
+  document.getElementById('run-btn').disabled = true;
+  setStep(2);
+  setProgress(5, 'Splitting headers and body...');
+  addLog('Starting annotation pipeline', 'ok');
+
+  // Split headers from body
+  const lines = pgn.split('\n');
+  const headerLines = [], bodyLines = [];
+  let inBody = false;
+  for (const l of lines) {
+    if (!inBody && l.trim().startsWith('[')) headerLines.push(l);
+    else { inBody = true; bodyLines.push(l); }
+  }
+  const headers = headerLines.join('\n');
+  const body = bodyLines.join('\n').trim();
+
+  setProgress(10, 'Tokenizing PGN tree...');
+  addLog('Tokenizing PGN — preserving all glyphs, [%csl], brackets');
+  let tokens;
+  try {
+    tokens = tokenizePGN(body);
+  } catch(e) {
+    showErr('PGN parse error: ' + e.message);
+    document.getElementById('run-btn').disabled = false;
+    return;
+  }
+  addLog('Tokens extracted: ' + tokens.length, 'ok');
+
+  setProgress(18, 'Walking all branches...');
+  setStep(2);
+  let slots, totalBranches;
+  try {
+    const result = collectSlots(tokens, everyN);
+    slots = result.slots;
+    totalBranches = result.totalBranches;
+  } catch(e) {
+    showErr('Branch walk error: ' + e.message);
+    document.getElementById('run-btn').disabled = false;
+    return;
+  }
+
+  if (slots.length === 0) {
+    showErr('No annotation slots found. Verify your PGN is valid.');
+    document.getElementById('run-btn').disabled = false;
+    return;
+  }
+
+  document.getElementById('stats-row').style.display = 'flex';
+  document.getElementById('stat-slots').textContent = slots.length;
+  document.getElementById('stat-branches').textContent = totalBranches;
+  document.getElementById('stat-done').textContent = '0';
+  addLog(`Found ${slots.length} annotation slots across ${totalBranches} branches`, 'ok');
+
+  setStep(3);
+  const annotationMap = {};
+
+  for (let s = 0; s < slots.length; s++) {
+    const slot = slots[s];
+    const pct = 20 + Math.round((s / slots.length) * 75);
+    const moveLabel = slot.ctx.movingColor[0] + ': ' + slot.ctx.moveSan + ' (mv ' + slot.ctx.moveNumber + ')';
+    setProgress(pct, `Annotating ${s+1}/${slots.length} — ${slot.ctx.moveSan}`);
+    addLog(`Slot ${s+1}/${slots.length} — ${moveLabel} — depth:${slot.ctx.branchDepth}`, 'move');
+
+    try {
+      const prompt = buildPrompt(slot.ctx, style, lang);
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 220,
+          system: 'You are a grandmaster-level chess annotator. Respond only with the annotation text — no labels, no quotes, no preamble.',
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error?.message || 'HTTP ' + resp.status);
+      }
+
+      const data = await resp.json();
+      const ann = data.content?.[0]?.text?.trim() || '';
+      annotationMap[slot.slotId] = ann;
+      document.getElementById('stat-done').textContent = s + 1;
+      addLog('  ✓ ' + ann.slice(0, 80) + (ann.length > 80 ? '...' : ''), 'ok');
+
+    } catch(e) {
+      showErr('API error at slot ' + (s+1) + ' (' + slot.ctx.moveSan + '): ' + e.message);
+      document.getElementById('run-btn').disabled = false;
+      return;
+    }
+
+    // Rate limit buffer
+    if (s < slots.length - 1) await new Promise(r => setTimeout(r, 350));
+  }
+
+  setProgress(97, 'Rebuilding annotated PGN...');
+  addLog('Injecting annotations into PGN tree...', 'ok');
+
+  let annotatedBody;
+  try {
+    annotatedBody = buildAnnotatedPGN(tokens, annotationMap, everyN);
+  } catch(e) {
+    showErr('PGN rebuild error: ' + e.message);
+    document.getElementById('run-btn').disabled = false;
+    return;
+  }
+
+  const final = (headers ? headers + '\n\n' : '') + annotatedBody;
+  document.getElementById('pgn-out').value = final;
+  document.getElementById('out-panel').style.display = 'block';
+
+  setStep(4);
+  setProgress(100, `Complete — ${slots.length} annotations added`);
+  addLog(`Done! ${slots.length} GM annotations injected across all branches and variations.`, 'ok');
+  document.getElementById('run-btn').disabled = false;
+}
+
+function copyOut() {
+  const ta = document.getElementById('pgn-out');
+  navigator.clipboard.writeText(ta.value).catch(() => { ta.select(); document.execCommand('copy'); });
+}
+
+function downloadOut() {
+  const txt = document.getElementById('pgn-out').value;
+  const a = document.createElement('a');
+  a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(txt);
+  a.download = 'annotated_gm.pgn';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+</script>
+</body>
+</html>
