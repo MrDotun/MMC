@@ -2,137 +2,214 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Mission 4 | Mind Masters</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PGN GM Annotator</title>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
-body { font-family: Arial, sans-serif; background: linear-gradient(135deg,#1e293b,#020617); color: white; text-align: center; margin:0; }
-h1 { margin: 20px; color: gold; }
-#login, #game { padding: 20px; }
-#board { width: 400px; margin: 20px auto; }
-button { padding: 10px 20px; margin: 10px; border:none; border-radius:5px; background:gold; color:black; font-weight:bold; cursor:pointer; }
-#scores { list-style: none; padding: 0; }
-#scores li { margin: 5px 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:#0e0f0e; --bg2:#161814; --bg3:#1e2020; --bg4:#252826;
+  --border:#2e3230; --border2:#3a3e3c;
+  --text:#e8ebe6; --text2:#9da89a; --text3:#616b5e;
+  --gold:#c8a84b; --gold2:#e6c96a; --gold-bg:rgba(200,168,75,0.08);
+  --green:#4a7c59; --green2:#5d9970;
+  --red:#8b3a3a; --red2:#b04444;
+  --blue:#3a6b8b; --blue2:#4a8ab0; --blue-bg:rgba(58,107,139,0.12);
+  --mono:'JetBrains Mono',monospace;
+  --serif:'Crimson Pro',Georgia,serif;
+  --sans:'DM Sans',sans-serif;
+  --r:6px; --r2:10px;
+}
+html { background:var(--bg); color:var(--text); font-family:var(--sans); font-size:15px; line-height:1.6; }
+body { min-height:100vh; display:flex; flex-direction:column; }
+
+.topbar { border-bottom:1px solid var(--border); padding:0 1.5rem; height:56px; display:flex; align-items:center; gap:.75rem; background:var(--bg2); position:sticky; top:0; z-index:10; }
+.logo { font-family:var(--serif); font-size:19px; color:var(--gold2); display:flex; align-items:center; gap:9px; }
+.logo-icon { width:28px; height:28px; background:var(--gold-bg); border:1px solid var(--gold); border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:15px; }
+.topbar-sub { font-size:11px; color:var(--text3); margin-left:auto; }
+.badge { display:inline-block; font-size:9px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; padding:2px 7px; border-radius:3px; vertical-align:middle; }
+.bg  { background:var(--blue-bg);  color:var(--blue2); border:1px solid rgba(58,107,139,.3); }
+.gg  { background:var(--gold-bg);  color:var(--gold);  border:1px solid rgba(200,168,75,.25); }
+.grn { background:rgba(74,124,89,.15); color:var(--green2); border:1px solid rgba(74,124,89,.3); }
+
+.main { display:flex; flex:1; min-height:0; }
+.sidebar { width:340px; min-width:280px; border-right:1px solid var(--border); background:var(--bg2); padding:1.25rem; display:flex; flex-direction:column; gap:1rem; overflow-y:auto; }
+.content { flex:1; padding:1.5rem; overflow-y:auto; display:flex; flex-direction:column; gap:1.25rem; }
+
+.sec-lbl { font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--text3); margin-bottom:6px; }
+.field { display:flex; flex-direction:column; gap:5px; }
+.field label { font-size:11px; color:var(--text3); }
+
+input[type="text"],input[type="password"],input[type="number"],select,textarea {
+  background:var(--bg3); border:1px solid var(--border); border-radius:var(--r);
+  color:var(--text); font-family:var(--sans); font-size:13px; padding:8px 10px;
+  outline:none; transition:border-color .15s; width:100%;
+}
+input:focus,select:focus,textarea:focus { border-color:var(--gold); }
+input[type="password"] { font-family:var(--mono); letter-spacing:.08em; }
+
+.provider-tabs { display:flex; border:1px solid var(--border); border-radius:var(--r); overflow:hidden; }
+.ptab { flex:1; padding:8px 6px; font-size:12px; font-weight:600; text-align:center; cursor:pointer; background:var(--bg3); color:var(--text3); border:none; font-family:var(--sans); transition:background .15s,color .15s; }
+.ptab.ag { background:var(--blue-bg); color:var(--blue2); }
+.ptab.aa { background:var(--gold-bg); color:var(--gold2); }
+.ptab:hover { color:var(--text); }
+
+.key-row { display:flex; gap:6px; }
+.key-row input { flex:1; }
+.tkey { background:var(--bg3); border:1px solid var(--border); border-radius:var(--r); color:var(--text2); cursor:pointer; padding:0 10px; font-size:11px; white-space:nowrap; }
+.tkey:hover { border-color:var(--border2); color:var(--text); }
+
+.key-hint { font-size:11px; color:var(--text3); padding:7px 10px; background:var(--bg4); border-radius:var(--r); line-height:1.5; border:1px solid var(--border); }
+.key-hint a { color:var(--blue2); text-decoration:none; }
+.key-hint a:hover { text-decoration:underline; }
+
+.mini-row { display:flex; gap:8px; }
+.mini-row .field { flex:1; }
+
+.run-btn { width:100%; padding:11px; border:none; border-radius:var(--r2); font-family:var(--sans); font-size:14px; font-weight:600; cursor:pointer; transition:background .15s,transform .1s; display:flex; align-items:center; justify-content:center; gap:8px; }
+.run-btn.rg { background:var(--blue2); color:#fff; }
+.run-btn.ra { background:var(--gold); color:#0a0b0a; }
+.run-btn.rg:hover { background:#5a9fc4; }
+.run-btn.ra:hover { background:var(--gold2); }
+.run-btn:active { transform:scale(.98); }
+.run-btn:disabled { background:var(--bg4); color:var(--text3); cursor:not-allowed; transform:none; }
+
+.divider { height:1px; background:var(--border); flex-shrink:0; }
+
+.pw { display:none; flex-direction:column; gap:6px; }
+.track { height:3px; background:var(--bg4); border-radius:2px; overflow:hidden; }
+.bar { height:3px; border-radius:2px; width:0; transition:width .4s ease; }
+.bar.bg { background:var(--blue2); } .bar.ba { background:var(--gold); }
+.pi { display:flex; justify-content:space-between; font-size:11px; color:var(--text3); }
+
+.sr { display:flex; gap:8px; }
+.sp { flex:1; background:var(--bg3); border:1px solid var(--border); border-radius:var(--r); padding:8px 10px; text-align:center; }
+.sn { font-size:20px; font-weight:600; color:var(--gold2); font-family:var(--mono); }
+.sl { font-size:10px; color:var(--text3); text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
+
+.steps-row { display:flex; }
+.step { flex:1; font-size:10px; text-align:center; padding:6px 4px; color:var(--text3); border-bottom:2px solid var(--border); letter-spacing:.04em; text-transform:uppercase; transition:color .2s,border-color .2s; }
+.step.active { color:var(--gold2); border-bottom-color:var(--gold); }
+.step.done   { color:var(--green2); border-bottom-color:var(--green); }
+
+.err { display:none; background:rgba(139,58,58,.15); border:1px solid var(--red); border-radius:var(--r); padding:10px 14px; font-size:12px; color:#e08080; line-height:1.5; }
+
+.panel { background:var(--bg2); border:1px solid var(--border); border-radius:var(--r2); overflow:hidden; }
+.ph { padding:10px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background:var(--bg3); }
+.pt { font-size:12px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:.07em; }
+
+textarea.ti { height:240px; resize:vertical; border:none; border-radius:0; background:var(--bg2); font-family:var(--mono); font-size:12px; line-height:1.7; padding:14px 16px; color:var(--text); }
+textarea.to { height:320px; resize:vertical; border:none; border-radius:0; background:var(--bg2); font-family:var(--mono); font-size:12px; line-height:1.7; padding:14px 16px; color:var(--text); }
+
+.lf { max-height:200px; overflow-y:auto; padding:10px 16px; font-family:var(--mono); font-size:11px; line-height:1.8; display:flex; flex-direction:column; gap:1px; }
+.li { display:flex; gap:10px; }
+.lt { color:var(--text3); min-width:50px; }
+.lm { color:var(--text2); flex:1; }
+.lok { color:var(--green2); } .ler { color:var(--red2); } .lmv { color:var(--gold); }
+
+.ab { display:flex; gap:8px; padding:10px 16px; border-top:1px solid var(--border); background:var(--bg3); }
+.ab button { padding:7px 14px; background:var(--bg4); border:1px solid var(--border); border-radius:var(--r); color:var(--text2); font-size:12px; cursor:pointer; display:flex; align-items:center; gap:6px; font-family:var(--sans); transition:border-color .15s,color .15s; }
+.ab button:hover { border-color:var(--gold); color:var(--gold2); }
+
+.uz { border:1px dashed var(--border2); border-radius:var(--r); padding:12px; text-align:center; cursor:pointer; font-size:12px; color:var(--text3); transition:border-color .15s,background .15s; }
+.uz:hover { border-color:var(--gold); background:var(--gold-bg); color:var(--gold2); }
+
+.tip { background:var(--gold-bg); border:1px solid rgba(200,168,75,.2); border-left:3px solid var(--gold); border-radius:var(--r); padding:9px 12px; font-size:11.5px; color:var(--text2); line-height:1.6; }
+.tip strong { color:var(--gold2); font-weight:500; }
+
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+@media(max-width:680px){.main{flex-direction:column}.sidebar{width:100%;border-right:none;border-bottom:1px solid var(--border)}}
 </style>
 </head>
 <body>
 
-<h1>🎯 Mission 4: Mate in Two (Mind Masters)</h1>
-
-<div id="login">
-  <p>Enter your name to start:</p>
-  <input id="name" type="text" placeholder="Your name"><br>
-  <button onclick="startGame()">Start Mission</button>
+<div class="topbar">
+  <div class="logo"><div class="logo-icon">♟</div>GM Annotator</div>
+  <span class="badge gg">chess.js</span>
+  <span class="badge bg" id="pbadge">Gemini Free</span>
+  <div class="topbar-sub">Every move &amp; branch · Full board context per position</div>
 </div>
 
-<div id="game" style="display:none;">
-  <div id="board"></div>
-  <p id="status">Find mate in 2 moves!</p>
-  <button onclick="nextPuzzle()">Next Puzzle</button>
-  <h2>🏆 Top Mind Masters</h2>
-  <ul id="scores"></ul>
-</div>
+<div class="main">
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-<script>
-// Firebase config (provided by site owner)
-const firebaseConfig = {
-  apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
-  authDomain: "assignments-de95a.firebaseapp.com",
-  projectId: "assignments-de95a",
-  storageBucket: "assignments-de95a.firebasestorage.app",
-  messagingSenderId: "1088073398299",
-  appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+<div class="sidebar">
 
-let board, game;
-let playerName = "";
-let score = 0;
-const puzzles = [
-  { fen: "8/8/8/8/8/5K2/6Q1/7k w - - 0 1", solution: "Qg1#" },
-  { fen: "6k1/5ppp/8/8/8/5Q2/6PP/6K1 w - - 0 1", solution: "Qa8#" }
-];
-let current = 0;
+  <div>
+    <div class="sec-lbl">AI Provider</div>
+    <div class="provider-tabs">
+      <button class="ptab ag" id="tg" onclick="switchProvider('gemini')">✦ Gemini (Free)</button>
+      <button class="ptab"    id="ta" onclick="switchProvider('anthropic')">Claude API</button>
+    </div>
+  </div>
 
-// Start game
-function startGame() {
-  playerName = document.getElementById("name").value.trim();
-  if (!playerName) { alert("Please enter your name."); return; }
-  document.getElementById("login").style.display = "none";
-  document.getElementById("game").style.display = "block";
-  loadPuzzle();
-  loadLeaderboard();
-}
+  <div id="gs">
+    <div class="sec-lbl">Gemini API Key</div>
+    <div class="field">
+      <div class="key-row">
+        <input type="password" id="kg" placeholder="AIzaSy..." autocomplete="off" />
+        <button class="tkey" onclick="tv('kg',this)">show</button>
+      </div>
+    </div>
+    <div class="key-hint">
+      Free at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a> → Get API Key<br>
+      Key starts with <code>AIza...</code> · No billing needed
+    </div>
+  </div>
 
-// Load current puzzle
-function loadPuzzle() {
-  game = new Chess(puzzles[current].fen);
-  if (board) board.destroy();
-  board = Chessboard('board', {
-    position: puzzles[current].fen,
-    draggable: true,
-    onDrop: onDrop
-  });
-  document.getElementById("status").innerText = "Find mate in 2 moves!";
-}
+  <div id="as" style="display:none">
+    <div class="sec-lbl">Anthropic API Key</div>
+    <div class="field">
+      <div class="key-row">
+        <input type="password" id="ka" placeholder="sk-ant-api03-..." autocomplete="off" />
+        <button class="tkey" onclick="tv('ka',this)">show</button>
+      </div>
+    </div>
+    <div class="key-hint">
+      <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a> → API Keys → Create Key<br>
+      Requires credits in account
+    </div>
+  </div>
 
-// Handle piece drop
-function onDrop(src, dst) {
-  let move = game.move({ from: src, to: dst, promotion: 'q' });
-  if (move === null) return 'snapback';
-  if (move.san === puzzles[current].solution) {
-    document.getElementById("status").innerText = "🎉 Correct! Mate.";
-    score++;
-    saveScore();
-    setTimeout(nextPuzzle, 1000);
-  } else {
-    document.getElementById("status").innerText = "❌ Try again!";
-    game.undo();
-    return 'snapback';
-  }
-}
+  <div class="divider"></div>
 
-// Next puzzle
-function nextPuzzle() {
-  current = (current + 1) % puzzles.length;
-  loadPuzzle();
-}
+  <div>
+    <div class="sec-lbl">Settings</div>
+    <div class="mini-row">
+      <div class="field"><label>Every N moves</label><input type="number" id="en" value="3" min="1" max="10" style="width:70px" /></div>
+      <div class="field"><label>Language</label><input type="text" id="al" value="English" /></div>
+    </div>
+    <div class="field" style="margin-top:8px">
+      <label>Annotation style</label>
+      <select id="as2">
+        <option value="gm">GM — strategic depth, plans, structures</option>
+        <option value="coach">Coach — instructive, explains ideas</option>
+        <option value="engine">Engine — concrete lines and evaluation</option>
+      </select>
+    </div>
+  </div>
 
-// Save score to Firestore
-function saveScore() {
-  db.collection("leaderboard").add({
-    name: playerName,
-    score: score,
-    time: Date.now()
-  });
-}
+  <div class="divider"></div>
 
-// Load leaderboard
-function loadLeaderboard() {
-  db.collection("leaderboard")
-    .orderBy("score", "desc")
-    .limit(10)
-    .onSnapshot(snapshot => {
-      let list = document.getElementById("scores");
-      list.innerHTML = "";
-      snapshot.forEach(doc => {
-        let data = doc.data();
-        let li = document.createElement("li");
-        li.textContent = `${data.name} - ⭐ ${data.score}`;
-        list.appendChild(li);
-      });
-    });
-}
-</script>
+  <div>
+    <div class="sec-lbl">Upload PGN</div>
+    <div class="uz" id="dz" onclick="document.getElementById('fi').click()">↑ Drop .pgn file or click to browse</div>
+    <input type="file" id="fi" accept=".pgn,.txt" style="display:none" />
+  </div>
 
-</body>
-</html>
-``` 
+  <div class="divider"></div>
 
-This HTML file uses standard chess pieces (via Chessboard.js), draggable moves validated by Chess.js, and integrates Firebase Firestore for the leaderboard. It requires entering a player name, then presents two sample mate-in-two puzzles with animated piece movement. The page is single-column and mobile-responsive. Scoring is saved in Firestore and displayed live.
+  <div class="steps-row">
+    <div class="step active" id="s1">Input</div>
+    <div class="step" id="s2">Parse</div>
+    <div class="step" id="s3">Annotate</div>
+    <div class="step" id="s4">Done</div>
+  </div>
+
+  <div class="pw" id="pw">
+    <div class="track"><div class="bar bg" id="pb"></div></div>
+    <div class="pi"><span id="pm">Ready</span><span id="pp">0%</span></div>
+  </div>
+
+  <div class="sr" id="sr" style="display:none">
+    <div class="sp"><div class="sn" id="ss">0</div><div class="sl
