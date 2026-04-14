@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Mission 4 — Checkmate in 2!</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--bg4:#30363d;
+  --border:#30363d;--border2:#444c56;
+  --text:#e6edf3;--text2:#8b949e;--text3:#484f58;
+  --gold:#d4a017;--gold2:#f0c040;--gold3:#fde68a;--gold-bg:rgba(212,160,23,0.10);
+  --green:#238636;--green2:#3fb950;--green3:#7ee787;
+  --red:#da3633;--red2:#f85149;
+  --blue:#1f6feb;--blue2:#388bfd;--blue3:#79c0ff;
+  --purple:#6e40c9;--purp2:#bc8cff;
+  --lsq:#f0d9b5;--dsq:#b58863;
+  --r:8px;--r2:14px;
+}
+
+html{background:var(--bg);color:var(--text);font-family:'Nunito',sans-serif;min-height:100vh;overflow-x:hidden;}
+body{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding-bottom:3rem;}
+
+/* ── Sky bg ── */
+body::before{content:'';position:fixed;inset:0;z-index:0;
+  background:radial-gradient(ellipse 80% 50% at 20% 10%,rgba(31,111,235,.18) 0%,transparent 70%),
+             radial-gradient(ellipse 60% 40% at 80% 80%,rgba(110,64,201,.15) 0%,transparent 70%),
+             var(--bg);}
+.starfield{position:fixed;inset:0;z-index:0;pointer-events:none;}
+.star{position:absolute;background:#fff;border-radius:50%;animation:tw var(--d,2s) ease-in-out infinite alternate;animation-delay:var(--dl,0s);}
+@keyframes tw{0%{opacity:.15;transform:scale(1)}100%{opacity:.9;transform:scale(1.5)}}
+
+/* ── Header ── */
+header{position:relative;z-index:2;text-align:center;padding:1.5rem 1rem .75rem;width:100%;}
+.m-tag{display:inline-flex;align-items:center;gap:6px;background:rgba(110,64,201,.25);
+  border:1px solid var(--purple);color:var(--purp2);
+  font-size:11px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;
+  padding:4px 14px;border-radius:20px;margin-bottom:.6rem;}
+h1{font-family:'Fredoka One',cursive;font-size:clamp(2rem,6vw,3.5rem);
+  color:var(--gold2);line-height:1.1;
+  text-shadow:0 0 40px rgba(240,192,64,.3),0 3px 0 rgba(0,0,0,.5);}
+h1 span{color:var(--green3);}
+.sub{color:var(--blue3);font-size:.95rem;font-weight:600;margin-top:4px;}
+
+/* ── Layout ── */
+.game-wrap{position:relative;z-index:2;display:flex;gap:1.25rem;align-items:flex-start;
+  justify-content:center;padding:.5rem 1rem;flex-wrap:wrap;max-width:920px;width:100%;}
+
+/* ── Board shell ── */
+.board-shell{display:flex;flex-direction:column;align-items:center;
+  background:var(--bg2);border:2px solid var(--gold);border-radius:16px;
+  padding:.875rem;
+  box-shadow:0 0 50px rgba(212,160,23,.2),0 20px 60px rgba(0,0,0,.6);}
+.board-top{display:flex;align-items:center;justify-content:space-between;
+  width:100%;margin-bottom:.4rem;padding:0 2px;}
+.turn-pill{font-family:'Fredoka One',cursive;font-size:.9rem;
+  padding:3px 12px;border-radius:20px;transition:all .3s;}
+.turn-pill.wt{background:#fff;color:#161b22;}
+.turn-pill.bk{background:var(--bg3);color:#e6edf3;border:1.5px solid var(--border2);}
+.puz-lbl{font-size:.8rem;color:var(--blue3);font-weight:700;}
+
+/* ── Board ── */
+.board-wrap{display:flex;}
+.rank-labs{display:flex;flex-direction:column;justify-content:space-around;
+  padding:2px 3px;width:16px;}
+.rank-labs span{font-size:9px;font-weight:700;color:var(--blue2);text-align:center;
+  height:12.5%;display:flex;align-items:center;justify-content:center;}
+#board{display:grid;grid-template-columns:repeat(8,1fr);
+  width:min(408px,88vw);height:min(408px,88vw);
+  border:2.5px solid #92400e;border-radius:3px;overflow:hidden;
+  box-shadow:0 8px 32px rgba(0,0,0,.6);}
+.file-labs{display:flex;width:min(408px,88vw);justify-content:space-around;padding:2px 0;}
+.file-labs span{font-size:9px;font-weight:700;color:var(--blue2);width:12.5%;text-align:center;}
+
+/* ── Squares ── */
+.sq{display:flex;align-items:center;justify-content:center;
+  position:relative;cursor:pointer;transition:filter .1s;user-select:none;}
+.sq.lt{background:var(--lsq);}
+.sq.dk{background:var(--dsq);}
+.sq.sel{background:#f6f669 !important;outline:3px inset #e8c000;}
+.sq.lm::after{content:'';position:absolute;width:32%;height:32%;border-radius:50%;
+  background:rgba(0,0,0,.22);pointer-events:none;}
+.sq.lm.occ::after{width:100%;height:100%;border-radius:0;border:4px solid rgba(0,0,0,.28);background:transparent;}
+.sq.lf{background:#cdd26a !important;}
+.sq.lt2{background:#f6f669 !important;}
+.sq.chk{background:#ff2020 !important;animation:chkfl .4s ease infinite alternate;}
+@keyframes chkfl{0%{background:#ff4444 !important}100%{background:#cc0000 !important}}
+
+.piece{display:inline-block;line-height:1;pointer-events:none;
+  transition:transform .08s;
+  filter:drop-shadow(1px 2px 2px rgba(0,0,0,.5));}
+.sq:hover .piece{transform:scale(1.08);}
+
+/* ── Side panel ── */
+.side{display:flex;flex-direction:column;gap:.75rem;width:230px;min-width:200px;}
+
+/* ── Cards ── */
+.card{background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--r2);padding:.9rem;}
+.card.gold-border{border-color:var(--gold);box-shadow:0 0 20px rgba(212,160,23,.12);}
+.card.blue-border{border-color:var(--blue);box-shadow:0 0 16px rgba(31,111,235,.12);}
+.card.purple-border{border-color:var(--purple);box-shadow:0 0 16px rgba(110,64,201,.12);}
+
+.puz-card{text-align:center;}
+.puz-emoji{font-size:2.4rem;display:block;margin-bottom:.2rem;animation:fl 3s ease-in-out infinite;}
+@keyframes fl{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+.puz-title{font-family:'Fredoka One',cursive;font-size:1.05rem;color:var(--gold2);margin-bottom:.2rem;}
+.puz-names{font-size:.7rem;color:var(--text2);margin-bottom:.35rem;font-style:italic;}
+.puz-desc{font-size:.78rem;color:var(--blue3);line-height:1.5;}
+
+.stars-bar{display:flex;justify-content:center;gap:5px;font-size:1.5rem;margin:.1rem 0;}
+
+/* ── Score ── */
+.score-row{display:flex;justify-content:space-between;align-items:center;
+  padding:.25rem 0;border-bottom:1px solid var(--border);}
+.score-row:last-child{border-bottom:none;}
+.sl{font-size:.75rem;color:var(--text2);font-weight:700;}
+.sv{font-family:'Fredoka One',cursive;font-size:1.2rem;color:var(--gold2);}
+.sv.g{color:var(--green3);}
+.pb{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-top:.4rem;}
+.pf{height:100%;background:linear-gradient(90deg,var(--green),var(--gold2));
+  border-radius:3px;transition:width .5s ease;width:0%;}
+
+/* ── Buttons ── */
+.btn{width:100%;padding:.6rem;border:none;border-radius:var(--r);
+  font-family:'Fredoka One',cursive;font-size:.95rem;cursor:pointer;
+  transition:transform .1s,box-shadow .1s;display:flex;align-items:center;justify-content:center;gap:7px;}
+.btn:active{transform:scale(.97);}
+.btn:disabled{background:var(--bg3);color:var(--text3);cursor:not-allowed;box-shadow:none;transform:none;}
+.btn-hint{background:linear-gradient(135deg,#1d4ed8,#3b82f6);color:#fff;box-shadow:0 4px 14px rgba(59,130,246,.35);}
+.btn-hint:hover:not(:disabled){box-shadow:0 6px 18px rgba(59,130,246,.5);transform:translateY(-1px);}
+.btn-next{background:linear-gradient(135deg,#15803d,#22c55e);color:#fff;box-shadow:0 4px 14px rgba(34,197,94,.35);display:none;}
+.btn-next:hover{box-shadow:0 6px 18px rgba(34,197,94,.5);transform:translateY(-1px);}
+
+/* ── Message ── */
+.msg{min-height:34px;padding:.45rem .6rem;border-radius:var(--r);font-size:.8rem;font-weight:700;
+  text-align:center;transition:all .25s;}
+.msg.ok{background:rgba(35,134,54,.2);border:1.5px solid var(--green);color:var(--green3);}
+.msg.er{background:rgba(218,54,51,.2);border:1.5px solid var(--red);color:#fca5a5;}
+.msg.hi{background:rgba(31,111,235,.18);border:1.5px solid var(--blue);color:var(--blue3);}
+.msg.in{background:var(--gold-bg);border:1.5px solid var(--gold);color:var(--gold3);}
+.msg.em{background:transparent;border:1.5px solid transparent;}
+
+/* ── Win overlay ── */
+.overlay{position:fixed;inset:0;z-index:100;display:none;
+  align-items:center;justify-content:center;
+  background:rgba(0,0,0,.85);backdrop-filter:blur(10px);}
+.win-card{background:linear-gradient(145deg,#1a2840,#12101e);
+  border:2.5px solid var(--gold);border-radius:22px;
+  padding:2rem;text-align:center;max-width:360px;width:90%;
+  box-shadow:0 0 70px rgba(212,160,23,.25);
+  animation:pop .4s cubic-bezier(.175,.885,.32,1.275);}
+@keyframes pop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+.we{font-size:3.5rem;display:block;margin-bottom:.4rem;animation:ws 1s ease;}
+@keyframes ws{0%{transform:rotate(-15deg)}50%{transform:rotate(15deg)}100%{transform:rotate(0)}}
+.wh{font-family:'Fredoka One',cursive;font-size:2rem;color:var(--gold2);margin-bottom:.2rem;}
+.wp{color:var(--blue3);font-size:.9rem;margin-bottom:.75rem;}
+.wst{font-size:2.2rem;margin:.4rem 0;}
+.wsc{font-family:'Fredoka One',cursive;font-size:1.4rem;color:var(--green3);margin-bottom:.9rem;}
+.name-inp{width:100%;padding:.55rem;border:2px solid var(--gold);border-radius:var(--r);
+  background:var(--bg3);color:#fff;font-family:'Nunito',sans-serif;font-size:.95rem;
+  margin-bottom:.65rem;text-align:center;outline:none;}
+.name-inp:focus{border-color:var(--green);}
+.wbtn{display:inline-block;padding:.65rem 1.75rem;border:none;border-radius:24px;
+  font-family:'Fredoka One',cursive;font-size:1rem;cursor:pointer;margin:.2rem;
+  transition:transform .1s;}
+.wbtn:hover{transform:scale(1.04);}
+.wbtn.gold{background:linear-gradient(135deg,var(--gold),#c47a00);color:#1a1a1a;box-shadow:0 4px 16px rgba(212,160,23,.4);}
+.wbtn.purp{background:linear-gradient(135deg,var(--purple),#9b59b6);color:#fff;}
+
+/* ── Leaderboard ── */
+.lb-wrap{position:relative;z-index:2;width:min(660px,95vw);
+  background:var(--bg2);border:1.5px solid var(--purple);border-radius:var(--r2);
+  padding:1.1rem;margin-top:.5rem;
+  box-shadow:0 0 28px rgba(110,64,201,.12);}
+.lb-wrap h3{font-family:'Fredoka One',cursive;font-size:1.2rem;color:var(--purp2);
+  margin-bottom:.65rem;text-align:center;}
+.lb-row{display:flex;align-items:center;gap:.65rem;
+  padding:.4rem .65rem;border-radius:7px;margin-bottom:.2rem;background:rgba(255,255,255,.02);}
+.lb-row.t1{background:rgba(212,160,23,.1);border:1px solid rgba(212,160,23,.25);}
+.lb-row.t2{background:rgba(192,192,192,.07);border:1px solid rgba(192,192,192,.15);}
+.lb-row.t3{background:rgba(180,83,9,.08);border:1px solid rgba(180,83,9,.18);}
+.lb-rk{font-family:'Fredoka One',cursive;font-size:1rem;width:26px;color:var(--text2);}
+.lb-nm{flex:1;font-weight:700;color:var(--text);font-size:.85rem;}
+.lb-sc{font-family:'Fredoka One',cursive;font-size:1rem;color:var(--green3);}
+.lb-dt{font-size:.75rem;color:var(--text3);min-width:70px;text-align:right;}
+.lb-mt{text-align:center;color:var(--text3);font-size:.82rem;padding:.75rem;}
+
+/* ── Confetti ── */
+.cf{position:fixed;pointer-events:none;z-index:200;border-radius:2px;
+  animation:cff var(--d,3s) ease-in forwards;}
+@keyframes cff{0%{transform:translate(0,0) rotate(0deg);opacity:1}
+  100%{transform:translate(var(--tx,40px),100vh) rotate(720deg);opacity:0}}
+
+/* ── Responsive ── */
+@media(max-width:600px){
+  .game-wrap{flex-direction:column;align-items:center;}
+  .side{width:min(408px,88vw);}
+}
+</style>
+</head>
+<body>
+
+<div class="starfield" id="sf"></div>
+
+<header>
+  <div class="m-tag">⚔️ Mission 4 — Chess Academy</div>
+  <h1>Checkmate in <span>Two!</span></h1>
+  <p class="sub">🏆 Solve puzzles from chess legends — 170 years of brilliance!</p>
+</header>
+
+<div class="game-wrap">
+
+  <!-- Board -->
+  <div class="board-shell">
+    <div class="board-top">
+      <div class="turn-pill wt" id="turn-pill">⬜ Your turn!</div>
+      <div class="puz-lbl" id="puz-lbl">Puzzle 1 / 50</div>
+    </div>
+    <div class="board-wrap">
+      <div class="rank-labs" id="rl"></div>
+      <div id="board"></div>
+    </div>
+    <div class="file-labs" id="fl"></div>
+  </div>
+
+  <!-- Side panel -->
+  <div class="side">
+
+    <div class="card gold-border puz-card">
+      <span class="puz-emoji" id="puz-emoji">♟</span>
+      <div class="puz-title" id="puz-title">Find Checkmate!</div>
+      <div class="puz-names" id="puz-names">Loading...</div>
+      <div class="puz-desc" id="puz-desc">White to move. Find the 2-move checkmate! Think like a grandmaster!</div>
+    </div>
+
+    <div class="stars-bar" id="stars-bar">⭐⭐⭐</div>
+
+    <div class="card purple-border">
+      <div class="score-row"><span class="sl">🏅 Score</span><span class="sv" id="sv">0</span></div>
+      <div class="score-row"><span class="sl">✅ Solved</span><span class="sv g" id="slv">0 / 50</span></div>
+      <div class="score-row"><span class="sl">💡 Hints</span><span class="sv" id="hv">0</span></div>
+      <div class="pb"><div class="pf" id="pf"></div></div>
+    </div>
+
+    <button class="btn btn-hint" id="hbtn" onclick="doHint()">💡 Hint Please!</button>
+    <button class="btn btn-next" id="nbtn" onclick="nextPuzzle()">➡️ Next Puzzle!</button>
+
+    <div class="msg em" id="msg"></div>
+
+  </div>
+</div>
+
+<!-- Leaderboard -->
+<div class="lb-wrap">
+  <h3>🏆 Champion Leaderboard</h3>
+  <div id="lb"></div>
+</div>
+
+<!-- Win overlay -->
+<div class="overlay" id="overlay">
+  <div class="win-card">
+    <span class="we" id="we">🏆</span>
+    <div class="wh" id="wh">Mission Complete!</div>
+    <p class="wp" id="wp">You solved all 50 grandmaster puzzles!</p>
+    <div class="wst" id="wst">⭐⭐⭐</div>
+    <div class="wsc" id="wsc">Score: 0</div>
+    <input class="name-inp" id="pname" placeholder="Your name for the leaderboard..." maxlength="20"/>
+    <br/>
+    <button class="wbtn gold" onclick="saveScore()">🏅 Save Score</button>
+    <button class="wbtn purp" onclick="restart()">🔄 Play Again</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script>
+// ══════════════════════════════════════════════════════════════
+//  REAL PUZZLES — 50 from mate2.txt (spread across 170 years)
+// ══════════════════════════════════════════════════════════════
+const PUZZLES = [
+  {names:"Henry Buckle vs NN, London, 1840",fen:"r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 0",moves:["Nf6","gxf6","Bxf7"],side:"w"},
+  {names:"Gustav Neumann vs Carl Mayet, Berlin, 1866",fen:"5rkr/pp2Rp2/1b1p1Pb1/3P2Q1/2n3P1/2p5/P4P2/4R1K1 w - - 1 0",moves:["Qxg6","fxg6","Rg7"],side:"w"},
+  {names:"Wilhelm Steinitz vs David Sands, New York, 1887",fen:"r4br1/3b1kpp/1q1P4/1pp1RP1N/p7/6Q1/PPB3PP/2KR4 w - - 1 0",moves:["Qg6","hxg6","fxg6"],side:"w"},
+  {names:"Siegbert Tarrasch vs Max Kurschner, Nuremberg, 1893",fen:"r2qk2r/pb4pp/1n2Pb2/2B2Q2/p1p5/2P5/2B2PPP/RN2R1K1 w - - 1 0",moves:["Qg6","hxg6","Bxg6"],side:"w"},
+  {names:"James Mason vs Emanuel Lasker, London, 1899",fen:"8/2r5/1k5p/1pp4P/8/K2P4/PR2QB2/2q5 b - - 0 1",moves:["Qc3","Rb3","Ra7"],side:"b"},
+  {names:"Pulitzer vs George Marco, Vienna, 1900",fen:"r2k2nr/pp1b1Q1p/2n4b/3N4/3q4/3P4/PPP3PP/4RR1K w - - 1 0",moves:["Re8","Bxe8","Qc7"],side:"w"},
+  {names:"George Rotlevi vs Hugo Suchting, Carlsbad, 1911",fen:"6k1/1p1r1pp1/p1r3b1/3pPqB1/2pP4/Q1P4R/P3P2K/6R1 w - - 1 0",moves:["Qf8","Kxf8","Rh8"],side:"w"},
+  {names:"Charles Watson vs NN, Melbourne, 1916",fen:"rnb2b1r/p3kBp1/3pNn1p/2pQN3/1p2PP2/4B3/Pq5P/4K3 w - - 1 0",moves:["Qxd6","Kxd6","Bxc5"],side:"w"},
+  {names:"Sery vs Z Vecsey, Brunn, 1921",fen:"r1b2rk1/2p2ppp/p7/1p6/3P3q/1BP3bP/PP3QP1/RNB1R1K1 w - - 1 0",moves:["Qxf7","Rxf7","Re8"],side:"w"},
+  {names:"Max Euwe vs A Van Mindeno, Netherlands, 1927",fen:"r1b2rk1/pp3ppp/3p4/3Q1nq1/2B1R3/8/PP3PPP/R5K1 w - - 1 0",moves:["Qxf7","Rxf7","Re8"],side:"w"},
+  {names:"Milan Vidmar vs Max Euwe, Carlsbad, 1929",fen:"6k1/5p2/1p5p/p4Np1/5q2/Q6P/PPr5/3R3K w - - 1 0",moves:["Qf8","Kxf8","Rd8"],side:"w"},
+  {names:"Marcos Luckis vs Moshe Czerniak, Warsaw, 1935",fen:"k1n3rr/Pp3p2/3q4/3N4/3Pp2p/1Q2P1p1/3B1PP1/R4RK1 w - - 1 0",moves:["Qxb7","Kxb7","a8=Q"],side:"w"},
+  {names:"Vladimir Petrov vs H Cordova, Buenos Aires, 1939",fen:"1q5r/1b1r1p1k/2p1pPpb/p1Pp4/3B1P1Q/1P4P1/P4KB1/2RR4 w - - 1 0",moves:["Qxh6","Kxh6","Rh1"],side:"w"},
+  {names:"Enrico Paoli vs Jan Foltys, Trencianske Teplice, 1949",fen:"8/2k2p2/2b3p1/P1p1Np2/1p3b2/1P1K4/5r2/R3R3 b - - 0 1",moves:["Bb5","Nc4","Rd2"],side:"b"},
+  {names:"Miguel Najdorf vs Rodolfo Kalkstein, Montevideo, 1954",fen:"4r3/2q1rpk1/p3bN1p/2p3p1/4QP2/2N4P/PP4P1/5RK1 w - - 1 0",moves:["Qh7","Kxf6","Ne4"],side:"w"},
+  {names:"Mikhail Tal vs Pal Benko, Bled, 1959",fen:"1r3k2/2n1p1b1/3p2QR/p1pq1pN1/bp6/7P/2P2PP1/4RBK1 w - - 1 0",moves:["Rh8","Bxh8","Nh7"],side:"w"},
+  {names:"Dragoljub Velimirovic vs Dragoljub Ciric, Belgrade, 1963",fen:"4r3/p2r1p1k/3q1Bpp/4P3/1PppR3/P5P1/5P1P/2Q3K1 w - - 1 0",moves:["Qxh6","Kxh6","Rh4"],side:"w"},
+  {names:"Tigran Petrosian vs Dragoslav Tomic, Vinkovci, 1970",fen:"Q7/2r2rpk/2p4p/7N/3PpN2/1p2P3/1K4R1/5q2 w - - 1 0",moves:["Rxg7","Rxg7","Nf6"],side:"w"},
+  {names:"Rafael Vaganian vs Viktor Korchnoi, Moscow, 1975",fen:"6rk/6pp/5p2/p7/P2Q1N2/4P1P1/2r2n1P/6K1 w - - 1 0",moves:["Ng6","hxg6","Qh4"],side:"w"},
+  {names:"Bent Larsen vs Zoltan Ribli, Riga, 1979",fen:"2QR4/6b1/1p4pk/7p/5n1P/4rq2/5P2/5BK1 w - - 1 0",moves:["Rh8","Bxh8","Qxh8"],side:"w"},
+  {names:"Vlastimil Hort vs Alex Dunne, Lucerne, 1982",fen:"1r2q2k/4N2p/3p1Pp1/2p1n1P1/2P5/p2P2KQ/P3R3/8 w - - 1 0",moves:["Qxh7","Kxh7","Rh2"],side:"w"},
+  {names:"Arthur Bisguier vs Sergey Kudrin, Philadelphia, 1985",fen:"3r2k1/p1p2p2/bp2p1nQ/4PB1P/2pr3q/6R1/PP3PP1/3R2K1 w - - 1 0",moves:["Rxg6","fxg6","Bxe6"],side:"w"},
+  {names:"Viktor Korchnoi vs Lev Gutman, Wijk aan Zee, 1987",fen:"8/1p3Qb1/p5pk/P1p1p1p1/1P2P1P1/2P1N2n/5P1P/4qB1K w - - 1 0",moves:["Nf5","gxf5","Qh5"],side:"w"},
+  {names:"Nona Gaprindashvili vs Eliska Richtrova, Wuppertal, 1990",fen:"1r3rk1/1pnnq1bR/p1pp2B1/P2P1p2/1PP1pP2/2B3P1/5PK1/2Q4R w - - 1 0",moves:["Rh8","Bxh8","Rxh8"],side:"w"},
+  {names:"Larry Christiansen vs John Nunn, Vienna, 1991",fen:"4rk2/pp2N1bQ/5p2/8/2q5/P7/3r2PP/4RR1K w - - 1 0",moves:["Rxf6","Bxf6","Ng6"],side:"w"},
+  {names:"Almira Skripchenko vs Ralph Zimmer, Bad Mondorf, 1991",fen:"5r1k/p2n1p1p/5P1N/1p1p4/2pP3P/8/PP4RK/8 w - - 1 0",moves:["Rg8","Rxg8","Nxf7"],side:"w"},
+  {names:"Dmitri Reinderman vs Harmen Jonkman, Nijmegen, 1992",fen:"3R1rk1/1pp2pp1/1p6/8/8/P7/1q4BP/3Q2K1 w - - 1 0",moves:["Rxf8","Kh7","Qh5"],side:"w"},
+  {names:"Saidali Iuldachev vs I Dgumaev, Tashkent, 1993",fen:"8/8/2N1P3/1P6/4Q3/4b2K/4k3/4q3 w - - 1 0",moves:["Nd4","Kd1","Qc2"],side:"w"},
+  {names:"Yury Shulman vs Ilia Botvinnik, Minsk, 1994",fen:"r3nr1k/1b2Nppp/pn6/q3p1P1/P1p4Q/R7/1P2PP1P/2B2RK1 w - - 1 0",moves:["Qxh7","Kxh7","Rh3"],side:"w"},
+  {names:"Claudia Amura vs Carlos Bulcourf, Villa Ballester, 1996",fen:"8/p1R3p1/4p1kn/3p3N/3Pr2P/6P1/PP3K2/8 w - - 1 0",moves:["Rxg7","Kxh5","Rg5"],side:"w"},
+  {names:"Jindrich Kuba vs David Kanovsky, Svetla nad Sazavou, 1996",fen:"2k4r/1pp1n1pp/p1pr1pb1/4p3/Nq2P1P1/1P1PKN1P/2P1QP2/3R3R b - - 0 1",moves:["Nd5","exd5","Qf4"],side:"b"},
+  {names:"Alexander Riazantsev vs Artem Iljin, St. Petersburg, 1997",fen:"5qrk/5p1n/pp3p1Q/2pPp3/2P1P1rN/2P4R/P5P1/2B3K1 w - - 1 0",moves:["Ng6","R4xg6","Qxh7"],side:"w"},
+  {names:"Emil Sutovsky vs Bogdan Grabarczyk, Koszalin, 1998",fen:"3q2r1/p2b1k2/1pnBp1N1/3p1pQP/6P1/5R2/2r2P2/4RK2 w - - 1 0",moves:["Nh8","Rxh8","Qg6"],side:"w"},
+  {names:"Maia Chiburdanidze vs Roman Slobodjan, Lippstadt, 2000",fen:"4r3/1b2r2p/p2p2k1/P1pP1R1N/3b4/1P1B3P/3n2P1/5R1K w - - 1 0",moves:["Re5","Ne4","Rf6"],side:"w"},
+  {names:"Valentina Golubenko vs Kerttu Oja, Narva, 2001",fen:"r1bk1r2/pp1n2pp/3NQ3/1P6/8/2n2PB1/q1B3PP/3R1RK1 w - - 1 0",moves:["Nxb7","Bxb7","Qxd7"],side:"w"},
+  {names:"Axel Bachmann vs Vladimir Galakhov, Internet, 2003",fen:"6R1/5r1k/p6b/1pB1p2q/1P6/5rQP/5P1K/6R1 w - - 1 0",moves:["Rh8","Kxh8","Qg8"],side:"w"},
+  {names:"Michel Jadoul vs Gordon Plomp, Belgium, 2003",fen:"r2q1bk1/5n1p/2p3pP/p7/3Br3/1P3PQR/P5P1/2KR4 w - - 1 0",moves:["Qxg6","hxg6","h7"],side:"w"},
+  {names:"Radomir Hacik vs Jozef Dlhy, Slovakia, 2004",fen:"r2r2k1/pp2bppp/2p1p3/4qb1P/8/1BP1BQ2/PP3PP1/2KR3R b - - 0 1",moves:["Qxc3","bxc3","Ba3"],side:"b"},
+  {names:"Tuuli Vahtra vs Valentina Golubenko, Tartu, 2004",fen:"5rk1/5ppp/pq6/1r3n2/2Q2P2/1P1N4/P1P1R1PP/4R2K b - - 0 1",moves:["Ng3","hxg3","Rh5"],side:"b"},
+  {names:"Camilla Baginskaite vs Ana-Cristina Calotescu, Turin, 2006",fen:"6k1/1r4np/pp1p1R1B/2pP2p1/P1P5/1n5P/6P1/4R2K w - - 1 0",moves:["Re8","Nxe8","Rf8"],side:"w"},
+  {names:"James Sherwin vs Joshua Hall, Bristol, 2006",fen:"6rk/1r2pR1p/3pP1pB/2p1p3/P6Q/P1q3P1/7P/5BK1 w - - 1 0",moves:["Rxh7","Kxh7","Bf8"],side:"w"},
+  {names:"Robert Wade vs Colin Horton, Gibraltar, 2007",fen:"8/1R3p2/3rk2p/p2p2p1/P2P2P1/3B1PN1/5K1P/r7 w - - 1 0",moves:["Bf5","Kf6","Nh5"],side:"w"},
+  {names:"Einora Juciute vs Alan Barton, Hastings, 2008",fen:"N5k1/5p2/6p1/6Pp/4bb1P/P5r1/7K/2R3R1 b - - 0 1",moves:["Rg2","Kh3","Rh2"],side:"b"},
+  {names:"Alexei Shirov vs Dmitry Andreikin, Sochi, 2008",fen:"7r/3kbp1p/1Q3R2/3p3q/p2P3B/1P5K/P6P/8 w - - 1 0",moves:["Qc6","Kd8","Rd6"],side:"w"},
+  {names:"Dmitry Bocharov vs Dmitry Svetushkin, Budva, 2009",fen:"8/pp2k3/7r/2P1p1p1/4P3/5pq1/2R3N1/1R3BK1 b - - 0 1",moves:["f2","Rxf2","Qh2"],side:"b"},
+  {names:"Maxim Rodshtein vs Ian Nepomniachtchi, Natanya, 2009",fen:"6r1/p6k/Bp3n1r/2pP1P2/P4q1P/2P2Q2/5K2/2R2R2 b - - 0 1",moves:["Ne4","Ke1","Qd2"],side:"b"},
+  {names:"Mekhri Geldyeva vs Marvorii Nasriddinzoda, Khanty Mansyisk, 2010",fen:"8/5Qpk/p1R4p/P2p4/6P1/2rq4/5PPK/8 w - - 1 0",moves:["Rxh6","Kxh6","Qh5"],side:"w"},
+  {names:"Li Xueyi vs Ju Wenjun, Shanghai, 2010",fen:"1Q6/8/3p1pk1/2pP4/1p3K2/5R2/5qP1/4r3 b - - 0 1",moves:["Re4","Kxe4","Qd4"],side:"b"},
+  {names:"Tanja Butschek vs Julia Krasnopeyeva, Germany, 2011",fen:"r1b2k2/1p1p1r1B/n4p2/p1qPp3/2P4N/4P1R1/PPQ3PP/R5K1 w - - 1 0",moves:["Rg8","Ke7","Nf5"],side:"w"},
+  {names:"Aleksa Strikovic vs Jasem Alhuwar, Paris, 2012",fen:"8/4n2k/b1Pp2p1/3Ppp1p/p2qP3/3B1P2/Q2NK1PP/3R4 b - - 0 1",moves:["Bxd3","Ke1","Qe3"],side:"b"},
+  {names:"Pavel Tregubov vs Krishnan Sasikiran, Moscow, 2013",fen:"6k1/p2p2p1/8/3np1N1/1P5R/3q2P1/5RKP/8 w - - 1 0",moves:["Rh8","Kxh8","Rf8"],side:"w"}
+];
+
+// ══════════════════════════════════════════════════
+//  PIECE SYMBOLS
+// ══════════════════════════════════════════════════
+const SYM={wK:'♔',wQ:'♕',wR:'♖',wB:'♗',wN:'♘',wP:'♙',
+           bK:'♚',bQ:'♛',bR:'♜',bB:'♝',bN:'♞',bP:'♟'};
+const PCOL={w:'#fff',b:'#1a1a2e'};
+const PUZZ_EMOJIS=['⚔️','🏹','🔱','💥','⚡','🎯','🌟','🐴','🏰','👑',
+                   '🎭','🔥','💎','🌊','⭐','🎪','🦅','🎺','🗡️','🛡️',
+                   '🧩','🎲','🌙','☄️','🎯','🏆','💫','🌈','⚔️','🔮'];
+
+// ══════════════════════════════════════════════════
+//  GAME STATE
+// ══════════════════════════════════════════════════
+let chess, board={}, sel=null, legals=[], puzIdx=0;
+let moveStep=0, score=0, totalSolved=0, totalHints=0;
+let puzzleHints=0, puzzleStars=3, puzzleDone=false, waitBlack=false;
+let lastFrom=null, lastTo=null;
+
+// ══════════════════════════════════════════════════
+//  FEN PARSER
+// ══════════════════════════════════════════════════
+function fenToBoard(fen){
+  const b={};
+  const rows=fen.split(' ')[0].split('/');
+  const pm={K:'wK',Q:'wQ',R:'wR',B:'wB',N:'wN',P:'wP',
+            k:'bK',q:'bQ',r:'bR',b:'bB',n:'bN',p:'bP'};
+  for(let r=0;r<8;r++){
+    let f=0;
+    for(const ch of rows[r]){
+      if(/\d/.test(ch)){f+=+ch;}
+      else{b['abcdefgh'[f]+(8-r)]=pm[ch];f++;}
+    }
+  }
+  return b;
+}
+
+// ══════════════════════════════════════════════════
+//  INIT PUZZLE
+// ══════════════════════════════════════════════════
+function initPuzzle(idx){
+  const pz=PUZZLES[idx];
+  chess=new Chess(pz.fen);
+  board=fenToBoard(pz.fen);
+  sel=null;legals=[];lastFrom=null;lastTo=null;
+  moveStep=0;puzzleDone=false;waitBlack=false;
+  puzzleHints=0;puzzleStars=3;
+
+  const side=pz.side==='w'?'White':'Black';
+  const em=PUZZ_EMOJIS[idx%PUZZ_EMOJIS.length];
+  document.getElementById('puz-emoji').textContent=em;
+  document.getElementById('puz-title').textContent=side+' to move — find the mate!';
+  document.getElementById('puz-names').textContent=pz.names;
+  document.getElementById('puz-desc').textContent=
+    side+' has a brilliant 2-move checkmate. Can you find it? Think about every piece!';
+  document.getElementById('puz-lbl').textContent='Puzzle '+(idx+1)+' / '+PUZZLES.length;
+  setTurn(pz.side);
+  setStars(3);
+  setMsg('','em');
+  document.getElementById('hbtn').disabled=false;
+  document.getElementById('nbtn').style.display='none';
+  renderBoard();
+}
+
+function setTurn(s){
+  const el=document.getElementById('turn-pill');
+  if(s==='w'){el.textContent='⬜ Your turn!';el.className='turn-pill wt';}
+  else{el.textContent='⬛ Your turn!';el.className='turn-pill bk';}
+}
+
+// ══════════════════════════════════════════════════
+//  RENDER BOARD
+// ══════════════════════════════════════════════════
+function renderBoard(){
+  const el=document.getElementById('board');
+  el.innerHTML='';
+  for(let r=8;r>=1;r--){
+    for(let fi=0;fi<8;fi++){
+      const f='abcdefgh'[fi];
+      const sq=f+r;
+      const light=(fi+r)%2!==0;
+      const d=document.createElement('div');
+      d.className='sq '+(light?'lt':'dk');
+      d.dataset.sq=sq;
+      if(sq===sel) d.classList.add('sel');
+      if(sq===lastFrom) d.classList.add('lf');
+      if(sq===lastTo)   d.classList.add('lt2');
+      if(legals.includes(sq)){
+        d.classList.add('lm');
+        if(board[sq]) d.classList.add('occ');
+      }
+      if(board[sq]){
+        const sp=document.createElement('span');
+        sp.className='piece';
+        sp.textContent=SYM[board[sq]];
+        const col=board[sq][0];
+        sp.style.color=PCOL[col];
+        sp.style.fontSize='clamp(1.5rem,5vw,2.2rem)';
+        if(col==='w') sp.style.textShadow='0 1px 3px rgba(0,0,0,.7),0 0 1px rgba(0,0,0,.5)';
+        else sp.style.textShadow='0 1px 2px rgba(255,255,255,.25)';
+        d.appendChild(sp);
+      }
+      d.addEventListener('click',()=>handleClick(sq));
+      el.appendChild(d);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  CHESS.JS LEGAL MOVES (using chess.js for accuracy)
+// ══════════════════════════════════════════════════
+function getLegalDests(sq){
+  const ms=chess.moves({square:sq,verbose:true});
+  return ms.map(m=>m.to);
+}
+
+// ══════════════════════════════════════════════════
+//  CLICK HANDLER
+// ══════════════════════════════════════════════════
+function handleClick(sq){
+  if(puzzleDone||waitBlack) return;
+  const pz=PUZZLES[puzIdx];
+  const moverColor=pz.side;
+
+  // Click own piece
+  if(board[sq]&&board[sq][0]===moverColor){
+    if(sel===sq){sel=null;legals=[];renderBoard();return;}
+    sel=sq;
+    legals=getLegalDests(sq);
+    renderBoard();
+    return;
+  }
+
+  // Destination click
+  if(sel){
+    if(!legals.includes(sq)){
+      sel=null;legals=[];renderBoard();return;
+    }
+
+    // Determine expected move
+    const expIdx=moveStep===0?0:2;
+    const expSan=pz.moves[expIdx];
+
+    // Try the move with chess.js to get san
+    const ms=chess.moves({square:sel,verbose:true}).filter(m=>m.to===sq);
+    if(!ms.length){sel=null;legals=[];renderBoard();return;}
+
+    // Check if any legal move from sel->sq matches the expected SAN
+    const matchMove=ms.find(m=>{
+      // Normalize SANs for comparison (strip + # =)
+      const norm=s=>s.replace(/[+#]/g,'').replace(/=/,'').replace(/x/g,'');
+      return norm(m.san)===norm(expSan)||
+             m.san===expSan||
+             // Also allow if to-square matches and piece matches
+             (m.to===sq && normSanTo(expSan)===sq);
+    });
+
+    if(matchMove){
+      // Correct!
+      chess.move(matchMove);
+      applyMove(sel,sq,matchMove.promotion);
+      lastFrom=sel;lastTo=sq;
+      sel=null;legals=[];
+
+      if(moveStep===0){
+        moveStep=1;
+        renderBoard();
+        setMsg('✅ Brilliant move! Watch Black\'s response...','ok');
+        waitBlack=true;
+        document.getElementById('turn-pill').textContent='⬛ Black thinks...';
+        document.getElementById('turn-pill').className='turn-pill bk';
+        setTimeout(()=>doBlack(),1100);
+      } else {
+        // Checkmate!
+        puzzleDone=true;
+        totalSolved++;
+        const pts=puzzleHints>0?50:100;
+        score+=pts;
+        updateScore();
+        renderBoard();
+        celebrate();
+        document.getElementById('nbtn').style.display='flex';
+        document.getElementById('hbtn').disabled=true;
+        setMsg('🎉 CHECKMATE! Brilliant! +'+pts+' points!','ok');
+        if(puzIdx===PUZZLES.length-1) setTimeout(showWin,1800);
+      }
+    } else {
+      // Wrong move
+      sel=null;legals=[];renderBoard();
+      flashWrong();
+      setMsg('❌ Not the checkmate move! Try again!','er');
+      if(puzzleStars>1){puzzleStars--;setStars(puzzleStars);}
+    }
+  }
+}
+
+// Extract destination square from SAN like "Rxh8" -> "h8", "gxf6" -> "f6", "e6" -> "e6"
+function normSanTo(san){
+  san=san.replace(/[+#=]/g,'');
+  // Last two chars should be square
+  return san.slice(-2);
+}
+
+function applyMove(from,to,promo){
+  const piece=board[from];
+  delete board[from];
+  board[to]=piece;
+  if(promo) board[to]=board[to][0]+promo.toUpperCase();
+  if(piece==='wP'&&to[1]==='8'&&!promo) board[to]='wQ';
+  if(piece==='bP'&&to[1]==='1'&&!promo) board[to]='bQ';
+}
+
+// ══════════════════════════════════════════════════
+//  BLACK AUTO-RESPONSE
+// ══════════════════════════════════════════════════
+function doBlack(){
+  const pz=PUZZLES[puzIdx];
+  const bm=pz.moves[1];
+  // Find black's move in chess.js
+  const blackMoves=chess.moves({verbose:true});
+  // Find the move matching bm SAN
+  const norm=s=>s.replace(/[+#x]/g,'').replace(/=/,'');
+  let matchMove=blackMoves.find(m=>norm(m.san)===norm(bm));
+  if(!matchMove) matchMove=blackMoves[0]; // fallback
+  if(matchMove){
+    chess.move(matchMove);
+    applyMove(matchMove.from,matchMove.to,matchMove.promotion);
+    lastFrom=matchMove.from;lastTo=matchMove.to;
+  }
+  moveStep=2;
+  waitBlack=false;
+  const moverColor=pz.side;
+  setTurn(moverColor);
+  setMsg('⚡ Now deliver the checkmate!','hi');
+  renderBoard();
+}
+
+// ══════════════════════════════════════════════════
+//  HINT
+// ══════════════════════════════════════════════════
+function doHint(){
+  const pz=PUZZLES[puzIdx];
+  const expIdx=moveStep===0?0:2;
+  const expSan=pz.moves[expIdx];
+  puzzleHints++;totalHints++;
+  updateScore();
+  // Highlight the from-square of the correct move
+  const ms=chess.moves({verbose:true});
+  const norm=s=>s.replace(/[+#x]/g,'').replace(/=/,'');
+  const hm=ms.find(m=>norm(m.san)===norm(expSan)||normSanTo(expSan)===m.to);
+  if(hm){sel=hm.from;legals=getLegalDests(hm.from);}
+  renderBoard();
+  setMsg('💡 Hint: Look at the '+expSan.replace(/[+#]/g,'')+' square!','hi');
+  document.getElementById('hbtn').disabled=true;
+}
+
+// ══════════════════════════════════════════════════
+//  NEXT / RESET
+// ══════════════════════════════════════════════════
+function nextPuzzle(){
+  if(puzIdx<PUZZLES.length-1){puzIdx++;initPuzzle(puzIdx);}
+  else showWin();
+}
+function restart(){
+  document.getElementById('overlay').style.display='none';
+  puzIdx=0;score=0;totalSolved=0;totalHints=0;
+  updateScore();initPuzzle(0);
+}
+
+// ══════════════════════════════════════════════════
+//  UI HELPERS
+// ══════════════════════════════════════════════════
+function setStars(n){
+  const s=['','⭐','⭐⭐','⭐⭐⭐'];
+  document.getElementById('stars-bar').textContent=s[n]||'';
+}
+function setMsg(t,cls){
+  const el=document.getElementById('msg');
+  el.textContent=t;el.className='msg '+cls;
+}
+function updateScore(){
+  document.getElementById('sv').textContent=score;
+  document.getElementById('slv').textContent=totalSolved+' / '+PUZZLES.length;
+  document.getElementById('hv').textContent=totalHints;
+  document.getElementById('pf').style.width=(totalSolved/PUZZLES.length*100)+'%';
+}
+function flashWrong(){
+  const b=document.getElementById('board');
+  b.style.outline='3px solid #f85149';b.style.boxShadow='0 0 24px rgba(248,81,73,.5)';
+  setTimeout(()=>{b.style.outline='';b.style.boxShadow='';},600);
+}
+
+// ══════════════════════════════════════════════════
+//  CONFETTI
+// ══════════════════════════════════════════════════
+function celebrate(){
+  const cols=['#f0c040','#3fb950','#388bfd','#bc8cff','#f97316','#ec4899'];
+  for(let i=0;i<55;i++){
+    setTimeout(()=>{
+      const c=document.createElement('div');
+      c.className='cf';
+      const dur=2+Math.random()*2;
+      c.style.setProperty('--d',dur+'s');
+      c.style.setProperty('--tx',(Math.random()*180-90)+'px');
+      c.style.left=Math.random()*100+'vw';
+      c.style.top='-12px';
+      c.style.background=cols[Math.floor(Math.random()*cols.length)];
+      c.style.transform='rotate('+Math.random()*360+'deg)';
+      c.style.width=(7+Math.random()*8)+'px';
+      c.style.height=(7+Math.random()*8)+'px';
+      document.body.appendChild(c);
+      setTimeout(()=>c.remove(),dur*1000+200);
+    },i*28);
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  WIN OVERLAY
+// ══════════════════════════════════════════════════
+function showWin(){
+  const stars=Math.max(1,3-Math.floor(totalHints/5));
+  const ss=stars===3?'⭐⭐⭐':stars===2?'⭐⭐':'⭐';
+  const msgs=['You solved puzzles from legends — Morphy, Tal, Kasparov and more!',
+    'From 1840 to 2013 — you cracked 170 years of chess brilliance!',
+    'The grandmasters would be proud of you!'];
+  document.getElementById('we').textContent=stars===3?'🏆':stars===2?'🥈':'🥉';
+  document.getElementById('wh').textContent=stars===3?'PERFECT!':'Mission Complete!';
+  document.getElementById('wp').textContent=msgs[Math.floor(Math.random()*3)];
+  document.getElementById('wst').textContent=ss;
+  document.getElementById('wsc').textContent='Score: '+score+' pts | Solved: '+totalSolved;
+  document.getElementById('overlay').style.display='flex';
+  celebrate();
+}
+
+// ══════════════════════════════════════════════════
+//  LEADERBOARD
+// ══════════════════════════════════════════════════
+// ── Firebase placeholder (send your config and I'll wire it in) ──
+// import { initializeApp } from "https://www.gstatic.com/firebasejs/10.x.x/firebase-app.js";
+// import { getFirestore, collection, addDoc, getDocs, orderBy, query, limit } from "...firestore.js";
+// const firebaseConfig = { YOUR_CONFIG_HERE };
+// const app = initializeApp(firebaseConfig);
+// const db = getFirestore(app);
+
+let lb=JSON.parse(localStorage.getItem('m4lb2')||'[]');
+
+async function saveScore(){
+  const name=document.getElementById('pname').value.trim()||'Anonymous Hero';
+  const e={name,score,solved:totalSolved,date:new Date().toLocaleDateString()};
+  // Firebase: await addDoc(collection(db,'mission4'),e);
+  lb.push(e);
+  lb.sort((a,b)=>b.score-a.score);
+  lb=lb.slice(0,10);
+  localStorage.setItem('m4lb2',JSON.stringify(lb));
+  document.getElementById('overlay').style.display='none';
+  renderLB();
+  restart();
+}
+
+function renderLB(data){
+  const rows=data||lb;
+  const el=document.getElementById('lb');
+  const medals=['🥇','🥈','🥉'];
+  if(!rows.length){el.innerHTML='<div class="lb-mt">No scores yet — be the first champion! 🏆</div>';return;}
+  el.innerHTML=rows.map((e,i)=>`
+    <div class="lb-row ${i<3?'t'+(i+1):''}">
+      <span class="lb-rk">${medals[i]||'#'+(i+1)}</span>
+      <span class="lb-nm">${e.name}</span>
+      <span class="lb-sc">${e.score} pts</span>
+      <span class="lb-dt">${e.solved||'?'}/50 · ${e.date||''}</span>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════
+//  STARS BG
+// ══════════════════════════════════════════════════
+function makeStars(){
+  const c=document.getElementById('sf');
+  for(let i=0;i<100;i++){
+    const s=document.createElement('div');
+    s.className='star';
+    const sz=.4+Math.random()*2;
+    s.style.cssText=`left:${Math.random()*100}%;top:${Math.random()*100}%;
+      width:${sz}px;height:${sz}px;--d:${1.5+Math.random()*3}s;--dl:${Math.random()*4}s;`;
+    c.appendChild(s);
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  BOARD LABELS
+// ══════════════════════════════════════════════════
+function makeLabels(){
+  const rl=document.getElementById('rl');
+  const fl=document.getElementById('fl');
+  for(let r=8;r>=1;r--){const s=document.createElement('span');s.textContent=r;rl.appendChild(s);}
+  'abcdefgh'.split('').forEach(f=>{const s=document.createElement('span');s.textContent=f;fl.appendChild(s);});
+}
+
+// ══════════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════════
+makeStars();
+makeLabels();
+initPuzzle(0);
+renderLB();
+</script>
+</body>
+</html>
