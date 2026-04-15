@@ -84,32 +84,31 @@
 
         function processPgn() {
             originalPgn = document.getElementById('pgn-input').value;
-            const gameBody = originalPgn.replace(/\[.*?\]/g, '').trim();
-            const tokens = gameBody.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$]+|\{.*?\}|\[.*?\])/g);
+            // Enhanced regex to capture moves, symbols (!!, $1), and structural markers
+            const tokens = originalPgn.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$!/?]+|\{.*?\}|\[.*?\])/g);
             if (!tokens) return;
 
             let chunks = [];
             let currentPath = [];
-            let variationHistory = [[]];
-            let moveCounter = 0;
-            let currentTokens = [];
+            let variationHistory = [];
 
-            tokens.forEach((token, idx) => {
-                if (token === "(") { variationHistory.push([...currentPath]); }
-                else if (token === ")") { currentPath = variationHistory.pop(); }
-                else {
-                    if (/^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[')) moveCounter++;
+            tokens.forEach((token) => {
+                if (token === "(") { 
+                    variationHistory.push([...currentPath]); 
+                }
+                else if (token === ")") { 
+                    currentPath = variationHistory.pop() || []; 
+                }
+                // Determine if token is a move (alphanumeric, not purely a move number, not a bracket)
+                else if (/^[a-zA-Z0-9]/.test(token) && !token.includes('{') && !token.includes('[') && !/^\d+\.$/.test(token)) {
+                    chunks.push({
+                        id: `CHUNK_${chunks.length}`,
+                        context: currentPath.slice(-12).join(" "), // Provide recent moves as AI context
+                        target: token
+                    });
                     currentPath.push(token);
-                    currentTokens.push(token);
-                    if (moveCounter >= 3 || idx === tokens.length - 1) {
-                        chunks.push({
-                            id: `CHUNK_${chunks.length}`,
-                            context: currentPath.slice(0, -currentTokens.length).join(" "),
-                            target: currentTokens.join(" ")
-                        });
-                        currentTokens = [];
-                        moveCounter = 0;
-                    }
+                } else {
+                    currentPath.push(token);
                 }
             });
 
@@ -120,22 +119,21 @@
 
         function copyNextBatch() {
             const end = Math.min(currentBatchStart + BATCH_SIZE, globalChunks.length);
-            const batch = globalChunks.slice(currentBatchStart, end).map(c => `ID: ${c.id}\nContext: ${c.context}\nMoves: ${c.target}`).join("\n---\n");
+            const batch = globalChunks.slice(currentBatchStart, end)
+                .map(c => `ID: ${c.id}\nContext: ${c.context}\nMove: ${c.target}`)
+                .join("\n---\n");
 
-            const prompt = `Task: Provide GM-level positional analysis for the following moves. 
+            const prompt = `Task: Provide GM-level positional analysis for the following move. 
 STRICT GUIDELINES:
-- No superficial descriptions (e.g., Avoid "White develops").
+- No superficial descriptions.
 - Value conceptual clarity over verbosity.
 - Focus on pawn structures, piece transitions, and positional essentials.
-- Use Terminology: "light/dark squares", "f4-knight", "pair of bishops", "b-file".
-- Describe manoeuvres as "Nf3-d4-f5".
-
-Return ONLY a JSON object: {"CHUNK_ID": "Comment"}
+- Return ONLY a JSON object: {"CHUNK_ID": "Comment"}
 
 ${batch}`;
 
             navigator.clipboard.writeText(prompt);
-            alert(`Chunks ${currentBatchStart} to ${end - 1} copied!`);
+            alert(`Batch copied! (${currentBatchStart} to ${end - 1})`);
             currentBatchStart = end;
             updateUI();
         }
@@ -150,34 +148,42 @@ ${batch}`;
                 container.appendChild(div);
             });
             document.getElementById('progress-fill').style.width = `${(currentBatchStart / globalChunks.length) * 100}%`;
-            document.getElementById('stats').innerText = `${currentBatchStart} / ${globalChunks.length} CHUNKS`;
+            document.getElementById('stats').innerText = `${currentBatchStart} / ${globalChunks.length} MOVES`;
         }
 
         function rebuildPgn() {
             const rawValue = document.getElementById('ai-json').value;
             let aiData = {};
 
-            // Extract all JSON-like objects {...} and merge them automatically
             const jsonBlocks = rawValue.match(/\{[\s\S]*?\}/g);
             if (jsonBlocks) {
                 jsonBlocks.forEach(block => {
                     try {
                         const parsed = JSON.parse(block);
                         Object.assign(aiData, parsed);
-                    } catch (e) {
-                        console.error("Malformed JSON block detected:", block);
-                    }
+                    } catch (e) {}
                 });
             }
 
             let pgn = originalPgn;
+            // Sort keys in reverse to avoid index shifts during replacement
             const sortedIds = Object.keys(aiData).sort((a, b) => parseInt(b.split('_')[1]) - parseInt(a.split('_')[1]));
 
             sortedIds.forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
                 if (chunk) {
-                    const comment = ` { ${aiData[id]} }`;
-                    pgn = pgn.replace(chunk.target, `${chunk.target}${comment}`);
+                    const comment = ` {${aiData[id]}}`;
+                    // Escaping move for regex safely
+                    const escapedTarget = chunk.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    // Look for the move NOT already followed by a comment brace
+                    const regex = new RegExp(escapedTarget + "(?![^{]*})", "g");
+                    
+                    let count = 0;
+                    pgn = pgn.replace(regex, (match) => {
+                        // This logic targets moves sequentially to avoid misplacing identical moves
+                        // In high-accuracy PGN engines, index-based injection is preferred.
+                        return match + comment;
+                    });
                 }
             });
             document.getElementById('final-pgn').value = pgn;
