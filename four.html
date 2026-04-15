@@ -62,6 +62,10 @@
                     <div class="space-y-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase">Final Output PGN</label>
                         <textarea id="final-pgn" rows="12" class="w-full p-4 rounded-xl text-xs text-blue-300" readonly></textarea>
+                        <div class="flex gap-2">
+                            <button onclick="copyFinalPgn()" class="flex-1 py-2 bg-slate-800 text-xs font-bold rounded-lg hover:bg-slate-700 uppercase">Copy to Clipboard</button>
+                            <button onclick="downloadPgn()" class="flex-1 py-2 bg-slate-800 text-xs font-bold rounded-lg hover:bg-slate-700 uppercase">Download .pgn</button>
+                        </div>
                     </div>
                 </div>
                 <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold">MERGE ANNOTATIONS & REBUILD</button>
@@ -84,34 +88,35 @@
 
         function processPgn() {
             originalPgn = document.getElementById('pgn-input').value;
-            const tokens = originalPgn.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$!/?]+|\{.*?\}|\[.*?\])/g);
+            const gameBody = originalPgn.replace(/\[.*?\]/g, '').trim();
+            const tokens = gameBody.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$]+|\{.*?\}|\[.*?\])/g);
             if (!tokens) return;
 
             let chunks = [];
-            let currentPath = [];
-            let variationHistory = [];
+            let variationStack = []; 
+            let moveCounter = 0;
+            let currentTokens = [];
 
-            tokens.forEach((token) => {
+            tokens.forEach((token, idx) => {
                 if (token === "(") { 
-                    variationHistory.push([...currentPath]); 
+                    variationStack.push(moveCounter);
+                    moveCounter = 0;
                 }
                 else if (token === ")") { 
-                    currentPath = variationHistory.pop() || []; 
+                    moveCounter = variationStack.pop() || 0;
                 }
-                // Skip PGN header tags [Tag "Value"]
-                else if (token.startsWith('[')) {
-                    currentPath.push(token);
-                }
-                // Only create chunks for actual chess moves
-                else if (/^[a-zA-Z0-9]/.test(token) && !token.includes('{') && !/^\d+\.$/.test(token)) {
-                    chunks.push({
-                        id: `CHUNK_${chunks.length}`,
-                        context: currentPath.slice(-12).join(" "),
-                        target: token
-                    });
-                    currentPath.push(token);
-                } else {
-                    currentPath.push(token);
+                else {
+                    const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                    if (isMove) moveCounter++;
+                    
+                    if ((isMove && moveCounter === 3) || idx === tokens.length - 1) {
+                        chunks.push({
+                            id: `CHUNK_${chunks.length}`,
+                            context: tokens.slice(Math.max(0, idx-10), idx).join(" "),
+                            target: token 
+                        });
+                        moveCounter = 0; 
+                    }
                 }
             });
 
@@ -122,21 +127,16 @@
 
         function copyNextBatch() {
             const end = Math.min(currentBatchStart + BATCH_SIZE, globalChunks.length);
-            const batch = globalChunks.slice(currentBatchStart, end)
-                .map(c => `ID: ${c.id}\nContext: ${c.context}\nMove: ${c.target}`)
-                .join("\n---\n");
+            const batch = globalChunks.slice(currentBatchStart, end).map(c => `ID: ${c.id}\nContext: ...${c.context}\nTarget: ${c.target}`).join("\n---\n");
 
-            const prompt = `Task: Provide GM-level positional analysis for the following move. 
+            const prompt = `Task: Provide GM-level positional analysis for the target move. 
 STRICT GUIDELINES:
 - No superficial descriptions.
-- Value conceptual clarity over verbosity.
-- Focus on pawn structures, piece transitions, and positional essentials.
-- Return ONLY a JSON object: {"CHUNK_ID": "Comment"}
+- Use Terminology: "light/dark squares", "pawn structure", "bishop pair".
+- Return ONLY JSON: {"CHUNK_ID": "Comment"}`;
 
-${batch}`;
-
-            navigator.clipboard.writeText(prompt);
-            alert(`Batch copied! (${currentBatchStart} to ${end - 1})`);
+            navigator.clipboard.writeText(prompt + "\n\n" + batch);
+            alert(`Batch ${currentBatchStart} to ${end - 1} copied!`);
             currentBatchStart = end;
             updateUI();
         }
@@ -147,23 +147,21 @@ ${batch}`;
             globalChunks.forEach((c, i) => {
                 const div = document.createElement('div');
                 div.className = `chunk-card glass p-3 rounded-lg ${i < currentBatchStart ? 'completed' : ''}`;
-                div.innerHTML = `<span class="text-[9px] gold-text font-black">${c.id}</span><p class="text-xs font-bold truncate">${c.target}</p>`;
+                div.innerHTML = `<span class="text-[9px] gold-text font-black">${c.id}</span><p class="text-xs font-bold truncate">After: ${c.target}</p>`;
                 container.appendChild(div);
             });
             document.getElementById('progress-fill').style.width = `${(currentBatchStart / globalChunks.length) * 100}%`;
-            document.getElementById('stats').innerText = `${currentBatchStart} / ${globalChunks.length} MOVES`;
+            document.getElementById('stats').innerText = `${currentBatchStart} / ${globalChunks.length} ANALYSES`;
         }
 
         function rebuildPgn() {
             const rawValue = document.getElementById('ai-json').value;
             let aiData = {};
-
             const jsonBlocks = rawValue.match(/\{[\s\S]*?\}/g);
             if (jsonBlocks) {
                 jsonBlocks.forEach(block => {
                     try {
-                        const parsed = JSON.parse(block);
-                        Object.assign(aiData, parsed);
+                        Object.assign(aiData, JSON.parse(block));
                     } catch (e) {}
                 });
             }
@@ -174,18 +172,31 @@ ${batch}`;
             sortedIds.forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
                 if (chunk) {
-                    const comment = ` {${aiData[id]}}`;
-                    const escapedTarget = chunk.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    
-                    // Uses negative lookbehind to ensure we don't annotate moves inside header tags
-                    const regex = new RegExp("(?<!\\[[^\\n]*)" + escapedTarget + "(?![^{]*})", "g");
-                    
-                    pgn = pgn.replace(regex, (match) => {
-                        return match + comment;
-                    });
+                    const comment = ` { ${aiData[id]} }`;
+                    pgn = pgn.replace(chunk.target, `${chunk.target}${comment}`);
                 }
             });
             document.getElementById('final-pgn').value = pgn;
+        }
+
+        // New Helper Functions
+        function copyFinalPgn() {
+            const output = document.getElementById('final-pgn');
+            if (!output.value) return alert("Nothing to copy yet!");
+            navigator.clipboard.writeText(output.value);
+            alert("PGN copied to clipboard!");
+        }
+
+        function downloadPgn() {
+            const content = document.getElementById('final-pgn').value;
+            if (!content) return alert("Generate the PGN first!");
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Annotated_Game_${new Date().getTime()}.pgn`;
+            a.click();
+            window.URL.revokeObjectURL(url);
         }
     </script>
 </body>
