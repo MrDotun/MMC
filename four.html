@@ -7,14 +7,15 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
         .gold-text { color: #d4af37; }
         .gold-bg { background-color: #d4af37; color: #1e293b; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .chunk-card { border-left: 4px solid #d4af37; transition: transform 0.2s; }
-        .chunk-card:hover { transform: translateX(5px); background: rgba(212, 175, 55, 0.05); }
-        textarea { background: #1e293b !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; }
-        textarea:focus { border-color: #d4af37 !important; outline: none; box-shadow: 0 0 10px rgba(212, 175, 55, 0.2); }
+        .glass { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .chunk-card { border-left: 4px solid #d4af37; transition: all 0.2s; }
+        .chunk-card.completed { border-left-color: #10b981; opacity: 0.6; }
+        textarea { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; }
+        textarea:focus { border-color: #d4af37 !important; outline: none; }
+        #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.3s; }
     </style>
 </head>
 <body class="p-4 md:p-10">
@@ -22,8 +23,8 @@
     <div class="max-w-6xl mx-auto">
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
-                <h1 class="text-3xl font-bold gold-text tracking-tight">GM VARIATION MASTER</h1>
-                <p class="text-slate-400 text-sm">Professional Recursive PGN Annotator</p>
+                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER</span></h1>
+                <p class="text-slate-400 text-sm font-light">Advanced Pedagogy & Structural PGN Re-assembler</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -33,35 +34,37 @@
 
         <div id="view-fragmenter" class="space-y-6">
             <div class="glass p-6 rounded-2xl">
-                <div class="flex justify-between mb-2">
-                    <label class="text-xs font-bold uppercase text-slate-500">Original PGN Input</label>
-                    <span id="move-count" class="text-xs text-slate-500">0 tokens detected</span>
+                <div class="flex justify-between items-center mb-4">
+                    <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
+                    <div class="text-right">
+                        <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Engine Idle</div>
+                        <div class="w-32 h-1 bg-slate-800 mt-1"><div id="progress-fill"></div></div>
+                    </div>
                 </div>
-                <textarea id="pgn-input" rows="10" class="w-full p-4 rounded-xl text-sm" placeholder="Paste your PGN here (including headers)..."></textarea>
-                <div class="mt-4 flex flex-wrap gap-4">
-                    <button onclick="processPgn()" class="px-8 py-3 gold-bg rounded-xl font-bold hover:opacity-90 transition-all">GENERATE CHUNKS</button>
-                    <button onclick="copyCurrentBatch()" class="px-8 py-3 bg-slate-700 rounded-xl font-bold hover:bg-slate-600">COPY BATCH FOR AI</button>
+                <textarea id="pgn-input" rows="8" class="w-full p-4 rounded-xl text-sm" placeholder="Paste your master PGN here..."></textarea>
+                
+                <div class="mt-6 flex flex-wrap gap-3">
+                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200">INITIALIZE ENGINE</button>
+                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden">COPY NEXT BATCH (10)</button>
                 </div>
             </div>
-
-            <div id="chunks-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                </div>
+            <div id="chunks-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"></div>
         </div>
 
         <div id="view-reassembler" class="hidden space-y-6">
             <div class="glass p-6 rounded-2xl">
-                <h2 class="text-xl font-bold gold-text mb-4">Rebuild Master PGN</h2>
+                <h2 class="text-xl font-bold gold-text mb-4 uppercase tracking-widest">The Re-Assembler</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 mb-2 uppercase">AI Annotations (JSON format)</label>
-                        <textarea id="ai-json" rows="12" class="w-full p-4 rounded-xl text-xs" placeholder='{"CHUNK_0": "Excellent prophylaxis...", "CHUNK_1": "..."}'></textarea>
+                    <div class="space-y-4">
+                        <label class="block text-xs font-bold text-slate-500 uppercase">AI JSON Batch Response</label>
+                        <textarea id="ai-json" rows="12" class="w-full p-4 rounded-xl text-xs" placeholder='{"CHUNK_0": "..."}'></textarea>
                     </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 mb-2 uppercase">Final Annotated PGN</label>
-                        <textarea id="final-pgn" rows="12" class="w-full p-4 rounded-xl text-xs text-green-400" readonly></textarea>
+                    <div class="space-y-4">
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Final Output PGN</label>
+                        <textarea id="final-pgn" rows="12" class="w-full p-4 rounded-xl text-xs text-blue-300" readonly></textarea>
                     </div>
                 </div>
-                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold shadow-lg">MERGE ANNOTATIONS & DOWNLOAD</button>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold">MERGE ANNOTATIONS & REBUILD</button>
             </div>
         </div>
     </div>
@@ -69,6 +72,8 @@
     <script>
         let globalChunks = [];
         let originalPgn = "";
+        let currentBatchStart = 0;
+        const BATCH_SIZE = 10;
 
         function switchTab(tab) {
             document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
@@ -79,113 +84,88 @@
 
         function processPgn() {
             originalPgn = document.getElementById('pgn-input').value;
-            if (!originalPgn) return;
-
-            // Extract game body (strip headers)
             const gameBody = originalPgn.replace(/\[.*?\]/g, '').trim();
-            
-            // Tokenizer that respects brackets, NAGs, and existing comments
             const tokens = gameBody.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$]+|\{.*?\}|\[.*?\])/g);
             if (!tokens) return;
-
-            document.getElementById('move-count').innerText = `${tokens.length} tokens detected`;
 
             let chunks = [];
             let currentPath = [];
             let variationHistory = [[]];
             let moveCounter = 0;
-            let currentChunk = [];
+            let currentTokens = [];
 
             tokens.forEach((token, idx) => {
-                if (token === "(") {
-                    variationHistory.push([...currentPath]);
-                } else if (token === ")") {
-                    currentPath = variationHistory.pop();
-                } else {
-                    // It's a move or symbol
-                    if (/^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[')) {
-                        moveCounter++;
-                    }
+                if (token === "(") { variationHistory.push([...currentPath]); }
+                else if (token === ")") { currentPath = variationHistory.pop(); }
+                else {
+                    if (/^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[')) moveCounter++;
                     currentPath.push(token);
-                    currentChunk.push(token);
-
-                    // Chunk every 3 moves or at the end
+                    currentTokens.push(token);
                     if (moveCounter >= 3 || idx === tokens.length - 1) {
-                        const id = `CHUNK_${chunks.length}`;
                         chunks.push({
-                            id: id,
-                            context: currentPath.slice(0, -currentChunk.length).join(" "),
-                            target: currentChunk.join(" "),
-                            rawTokens: [...currentChunk]
+                            id: `CHUNK_${chunks.length}`,
+                            context: currentPath.slice(0, -currentTokens.length).join(" "),
+                            target: currentTokens.join(" ")
                         });
-                        currentChunk = [];
+                        currentTokens = [];
                         moveCounter = 0;
                     }
                 }
             });
 
             globalChunks = chunks;
-            renderChunks();
+            document.getElementById('batch-btn').classList.remove('hidden');
+            updateUI();
         }
 
-        function renderChunks() {
+        function copyNextBatch() {
+            const end = Math.min(currentBatchStart + BATCH_SIZE, globalChunks.length);
+            const batch = globalChunks.slice(currentBatchStart, end).map(c => `ID: ${c.id}\nContext: ${c.context}\nMoves: ${c.target}`).join("\n---\n");
+
+            const prompt = `Task: Provide GM-level positional analysis for the following moves. 
+STRICT GUIDELINES:
+- No superficial descriptions (e.g., Avoid "White develops").
+- Value conceptual clarity over verbosity.
+- Focus on pawn structures, piece transitions, and positional essentials.
+- Use Terminology: "light/dark squares", "f4-knight", "pair of bishops", "b-file".
+- Describe manoeuvres as "Nf3-d4-f5".
+
+Return ONLY a JSON object: {"CHUNK_ID": "Comment"}
+
+${batch}`;
+
+            navigator.clipboard.writeText(prompt);
+            alert(`Chunks ${currentBatchStart} to ${end - 1} copied!`);
+            currentBatchStart = end;
+            updateUI();
+        }
+
+        function updateUI() {
             const container = document.getElementById('chunks-container');
             container.innerHTML = "";
-            globalChunks.forEach(c => {
+            globalChunks.forEach((c, i) => {
                 const div = document.createElement('div');
-                div.className = "chunk-card glass p-4 rounded-xl";
-                div.innerHTML = `
-                    <div class="flex justify-between items-center mb-2">
-                        <span class="text-[10px] font-black gold-text">${c.id}</span>
-                        <span class="text-[10px] text-slate-500 uppercase">Recursive Path Depth: ${c.context.split('(').length - 1}</span>
-                    </div>
-                    <p class="text-[10px] text-slate-400 font-mono mb-1 truncate">History: ${c.context || 'Start'}</p>
-                    <p class="text-lg font-bold">${c.target}</p>
-                `;
+                div.className = `chunk-card glass p-3 rounded-lg ${i < currentBatchStart ? 'completed' : ''}`;
+                div.innerHTML = `<span class="text-[9px] gold-text font-black">${c.id}</span><p class="text-xs font-bold truncate">${c.target}</p>`;
                 container.appendChild(div);
             });
-        }
-
-        function copyCurrentBatch() {
-            if (globalChunks.length === 0) return alert("No chunks generated!");
-            
-            // We'll copy 10 chunks at a time for efficiency
-            const batch = globalChunks.slice(0, 10).map(c => {
-                return `ID: ${c.id}\nContext: ${c.context}\nMoves: ${c.target}\n---`;
-            }).join("\n");
-
-            const prompt = `Task: Provide GM-level positional analysis for these 10 chunks. Return your response in a JSON object format: {"CHUNK_ID": "Your comment"}\n\n${batch}`;
-            
-            navigator.clipboard.writeText(prompt);
-            alert("Batch of 10 chunks copied! Paste them into the AI chat.");
+            document.getElementById('progress-fill').style.width = `${(currentBatchStart / globalChunks.length) * 100}%`;
+            document.getElementById('stats').innerText = `${currentBatchStart} / ${globalChunks.length} CHUNKS`;
         }
 
         function rebuildPgn() {
-            let aiData;
-            try {
-                aiData = JSON.parse(document.getElementById('ai-json').value);
-            } catch (e) {
-                return alert("Invalid JSON format. Please paste the AI response correctly.");
-            }
-
-            let resultPgn = originalPgn;
-            
-            // We use reverse order to prevent string index shifting
-            const sortedIds = Object.keys(aiData).sort((a, b) => {
-                return parseInt(b.split('_')[1]) - parseInt(a.split('_')[1]);
-            });
+            let aiData = JSON.parse(document.getElementById('ai-json').value);
+            let pgn = originalPgn;
+            const sortedIds = Object.keys(aiData).sort((a, b) => parseInt(b.split('_')[1]) - parseInt(a.split('_')[1]));
 
             sortedIds.forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
                 if (chunk) {
                     const comment = ` { ${aiData[id]} }`;
-                    // Locate the move in the PGN and append the comment
-                    // We use a safe replacement that looks for the specific move sequence
-                    resultPgn = resultPgn.replace(chunk.target, `${chunk.target}${comment}`);
+                    pgn = pgn.replace(chunk.target, `${chunk.target}${comment}`);
                 }
             });
-
-            document.getElementById('final-pgn').value = resultPgn;
+            document.getElementById('final-pgn').value = pgn;
         }
     </script>
 </body>
