@@ -105,13 +105,19 @@
             
             let chunks = [];
             let moveNumber = 0;
-            let plyCount = 0;
             let variationLevel = 0;
             let currentPath = [];
+            // Keep track of plies at each depth to ensure variations get analyzed
+            let depthPlyCounts = { 0: 0 }; 
 
             pgnTokens.forEach((token, index) => {
-                if (token === "(") variationLevel++;
-                if (token === ")") variationLevel--;
+                if (token === "(") {
+                    variationLevel++;
+                    depthPlyCounts[variationLevel] = 0; // Start fresh count for branch
+                }
+                if (token === ")") {
+                    variationLevel--;
+                }
                 
                 const isMoveNum = /^\d+\./.test(token);
                 if (isMoveNum) moveNumber = parseInt(token);
@@ -119,13 +125,11 @@
                 const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
                 
                 if (isMove) {
-                    plyCount++;
+                    depthPlyCounts[variationLevel]++;
                     currentPath.push(token);
 
-                    // Skip the first 5 moves (10 plies)
                     if (moveNumber > 5 || variationLevel > 0) {
                         
-                        // SYMBOL DETECTION
                         let evalSymbol = "";
                         let nextToken = pgnTokens[index + 1];
                         if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
@@ -133,12 +137,12 @@
                         }
 
                         const hasImportantSymbol = evalSymbol.includes('!') || evalSymbol.includes('?');
-                        // STRIDE LOGIC: Every 3 moves (Every 6th ply)
-                        const isStrideMove = (plyCount % 6 === 0);
+                        // Stride logic applied to current variation depth
+                        const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0);
 
                         if (isStrideMove || hasImportantSymbol) {
                             let subsequent = [];
-                            for(let i = index + 1; i < index + 10 && i < pgnTokens.length; i++) {
+                            for(let i = index + 1; i < index + 15 && i < pgnTokens.length; i++) {
                                 if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
                             }
 
@@ -146,7 +150,7 @@
                                 id: `CHUNK_${chunks.length}`,
                                 target: token + evalSymbol,
                                 tokenIndex: index,
-                                context: currentPath.slice(-12).join(" "),
+                                context: currentPath.slice(-15).join(" "),
                                 future: subsequent.join(" ")
                             });
                         }
@@ -174,8 +178,10 @@ GUIDELINES:
 - Note the 'Subsequent' moves to identify blunders or brilliance.
 - If the TARGET contains '!' or '?', focus heavily on the tactical reason for that symbol.
 - Tone: Insightful and human.
+- ANNOTATION STYLE: Do not include chess symbols like '$' or '!' inside the commentary text. 
+- Example: Say "The move Ne4 is powerful because..." instead of "The move Ne4$1 is powerful...".
 
-FORMAT: ONLY JSON with only one copy icon
+FORMAT: ONLY JSON
 {"CHUNK_ID": "Your Analysis"}
 
 ${batch}`;
@@ -187,7 +193,7 @@ ${batch}`;
             currentBatchStart = end;
             updateUI();
             saveState();
-            alert("Batch (Stride + Symbols) copied!");
+            alert("Batch (Stride + Symbols + Branches) copied!");
         }
 
         function copyAllRemaining() {
@@ -195,7 +201,7 @@ ${batch}`;
             currentBatchStart = globalChunks.length;
             updateUI();
             saveState();
-            alert("Full Game (Stride + Symbols) copied!");
+            alert("Full Game (All Variations) copied!");
         }
 
         function rebuildPgn() {
@@ -260,7 +266,7 @@ ${batch}`;
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = "GM_Filtered_Analysis.pgn";
+            a.download = "GM_Variation_Analysis.pgn";
             a.click();
         }
     </script>
