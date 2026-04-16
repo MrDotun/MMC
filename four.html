@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GM Variation Master Pro | Decipher Chess Academy</title>
-    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
-    <link href="[https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap)" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
         .gold-text { color: #d4af37; }
@@ -24,7 +24,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Clean JSON Injection Mode</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 3-Move Stride + Symbol Detection</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -57,8 +57,8 @@
             <div class="glass p-6 rounded-2xl">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="space-y-4">
-                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste Gemini's Response</label>
-                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the response from Gemini here. No need to clean it; I will find the JSON for you."></textarea>
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste Gemini's Chat/JSON</label>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the entire Gemini response here..."></textarea>
                     </div>
                     <div class="space-y-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Final Re-Assembled PGN</label>
@@ -100,34 +100,48 @@
         function processPgn(isLoad = false) {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
+
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$?!]+|\{.*?\}|\[.*?\])/g) || [];
+            
             let chunks = [];
             let moveNumber = 0;
             let plyCount = 0;
             let variationLevel = 0;
             let currentPath = [];
+
             pgnTokens.forEach((token, index) => {
                 if (token === "(") variationLevel++;
                 if (token === ")") variationLevel--;
+                
                 const isMoveNum = /^\d+\./.test(token);
                 if (isMoveNum) moveNumber = parseInt(token);
+
                 const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                
                 if (isMove) {
                     plyCount++;
                     currentPath.push(token);
+
+                    // Skip the first 5 moves (10 plies)
                     if (moveNumber > 5 || variationLevel > 0) {
+                        
+                        // SYMBOL DETECTION
                         let evalSymbol = "";
                         let nextToken = pgnTokens[index + 1];
                         if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
                             evalSymbol = ` ${nextToken}`;
                         }
+
                         const hasImportantSymbol = evalSymbol.includes('!') || evalSymbol.includes('?');
+                        // STRIDE LOGIC: Every 3 moves (Every 6th ply)
                         const isStrideMove = (plyCount % 6 === 0);
+
                         if (isStrideMove || hasImportantSymbol) {
                             let subsequent = [];
                             for(let i = index + 1; i < index + 10 && i < pgnTokens.length; i++) {
                                 if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
                             }
+
                             chunks.push({
                                 id: `CHUNK_${chunks.length}`,
                                 target: token + evalSymbol,
@@ -139,6 +153,7 @@
                     }
                 }
             });
+
             globalChunks = chunks;
             if (!isLoad) currentBatchStart = 0;
             document.getElementById('batch-btn').classList.remove('hidden');
@@ -152,16 +167,16 @@
                 `ID: ${c.id}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
             ).join("\n---\n");
 
-            return `You are a 2700 ELO GM. I need your analysis in a format that is 100% easy to copy.
+            return `Role: 2700 ELO GM.
+Task: Provide deep positional analysis for the TARGET.
 
-INSTRUCTIONS:
-1. Provide a GM-level analysis for each TARGET move below.
-2. Tone: Human, professional, pedagogical.
-3. OUTPUT FORMAT: Respond ONLY with a single JSON object. 
-4. DO NOT use markdown code blocks (backticks). 
-5. DO NOT add any intro or outro text (e.g., "Here is your JSON"). Just start with { and end with }.
+GUIDELINES:
+- Note the 'Subsequent' moves to identify blunders or brilliance.
+- If the TARGET contains '!' or '?', focus heavily on the tactical reason for that symbol.
+- Tone: Insightful and human.
 
-{"ID": "Comment"}
+FORMAT: ONLY JSON with only one copy icon
+{"CHUNK_ID": "Your Analysis"}
 
 ${batch}`;
         }
@@ -172,7 +187,7 @@ ${batch}`;
             currentBatchStart = end;
             updateUI();
             saveState();
-            alert("Batch copied! Paste into Gemini.");
+            alert("Batch (Stride + Symbols) copied!");
         }
 
         function copyAllRemaining() {
@@ -180,7 +195,7 @@ ${batch}`;
             currentBatchStart = globalChunks.length;
             updateUI();
             saveState();
-            alert("Full Game copied! Paste into Gemini.");
+            alert("Full Game (Stride + Symbols) copied!");
         }
 
         function rebuildPgn() {
@@ -245,7 +260,7 @@ ${batch}`;
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = "GM_Final_Analysis.pgn";
+            a.download = "GM_Filtered_Analysis.pgn";
             a.click();
         }
     </script>
