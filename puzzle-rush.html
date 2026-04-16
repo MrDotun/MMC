@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puzzle Rush | Mind Masters</title>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <style>
+        :root {
+            --bg-dark: #0b0e14;
+            --panel-dark: #161b22;
+            --accent-gold: #c5a059;
+            --accent-blue: #2979ff;
+            --accent-crimson: #d32f2f;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            background-color: var(--bg-dark);
+            color: #e6edf3;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        .nav-bar {
+            background: var(--bg-dark)/90;
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 1.25rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+
+        .nav-title {
+            font-weight: 900;
+            font-size: 1.25rem;
+            text-transform: uppercase;
+            letter-spacing: -0.05em;
+            color: white;
+        }
+
+        .nav-title .accent { color: var(--accent-gold); }
+
+        .back-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #e6edf3;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .back-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+
+        .setup-card {
+            background: var(--panel-dark);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1.5rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .setup-card h1 {
+            font-size: 2.5rem;
+            font-weight: 900;
+            margin: 0 0 0.5rem 0;
+            text-transform: uppercase;
+            letter-spacing: -0.02em;
+        }
+
+        .setup-card .subtitle {
+            color: var(--accent-gold);
+            font-size: 0.875rem;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 2rem;
+        }
+
+        .input-group {
+            margin-bottom: 1rem;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 1rem;
+            border-radius: 0.75rem;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            font-size: 1rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .input-group input::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--accent-gold);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 0 20px rgba(197, 160, 89, 0.2);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 1rem;
+            border-radius: 0.75rem;
+            border: none;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.875rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .btn-primary {
+            background: var(--accent-gold);
+            color: black;
+        }
+
+        .btn-primary:hover {
+            background: #d4b86a;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(197, 160, 89, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .game-area {
+            display: none;
+        }
+
+        .game-area.active {
+            display: block;
+        }
+
+        .timer-box {
+            background: linear-gradient(135deg, #d32f2f, #ef5350);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 10px 30px rgba(211, 47, 47, 0.3);
+        }
+
+        .timer-text {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            opacity: 0.9;
+            margin-bottom: 0.5rem;
+        }
+
+        .timer-display {
+            font-size: 2.5rem;
+            font-weight: 900;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 0.05em;
+        }
+
+        .progress-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-box {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 900;
+            color: var(--accent-gold);
+        }
+
+        .puzzle-card {
+            background: var(--panel-dark);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1.25rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .puzzle-title {
+            font-size: 1.25rem;
+            font-weight: 900;
+            margin: 0 0 0.75rem 0;
+            text-transform: uppercase;
+        }
+
+        #board-container {
+            width: 100%;
+            max-width: 400px;
+            margin: 1.5rem auto;
+            border: 4px solid var(--accent-gold);
+            border-radius: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+        }
+
+        .comment-box {
+            background: linear-gradient(135deg, rgba(197, 160, 89, 0.1), rgba(41, 121, 255, 0.1));
+            border: 2px solid var(--accent-gold);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.1rem;
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: pulse 0.5s ease-in-out;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .comment-box.excellent {
+            background: linear-gradient(135deg, rgba(76, 222, 128, 0.1), rgba(76, 222, 128, 0.05));
+            border-color: #4cde80;
+            color: #4cde80;
+        }
+
+        .comment-box.wrong {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+
+        .results-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 1rem;
+            backdrop-filter: blur(5px);
+        }
+
+        .results-modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--panel-dark);
+            border: 2px solid var(--accent-gold);
+            border-radius: 1.5rem;
+            padding: 2rem;
+            max-width: 500px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+            text-align: center;
+        }
+
+        .modal-content h2 {
+            font-size: 2rem;
+            font-weight: 900;
+            color: var(--accent-gold);
+            margin: 0 0 1rem 0;
+            text-transform: uppercase;
+        }
+
+        .score-display {
+            font-size: 3rem;
+            font-weight: 900;
+            color: var(--accent-gold);
+            margin-bottom: 1rem;
+            font-family: 'Courier New', monospace;
+        }
+
+        .time-display {
+            font-size: 1.25rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 2rem;
+        }
+
+        .leaderboard-table {
+            width: 100%;
+            margin-bottom: 2rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 0.75rem;
+            overflow: hidden;
+        }
+
+        .leaderboard-entry {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 1rem;
+            padding: 0.75rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            align-items: center;
+        }
+
+        .leaderboard-entry:last-child {
+            border-bottom: none;
+        }
+
+        .rank {
+            font-weight: 900;
+            color: var(--accent-gold);
+            min-width: 30px;
+        }
+
+        .player-info {
+            text-align: left;
+        }
+
+        .player-name {
+            font-weight: 700;
+            color: white;
+        }
+
+        .player-class {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .player-score {
+            font-weight: 900;
+            color: var(--accent-gold);
+            font-size: 1.1rem;
+        }
+
+        .hidden { display: none !important; }
+
+        @media (max-width: 640px) {
+            .container { padding: 1rem 1rem; }
+            .setup-card { padding: 1.5rem; }
+            .setup-card h1 { font-size: 2rem; }
+            .timer-display { font-size: 2rem; }
+            .modal-content { padding: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navigation -->
+    <div class="nav-bar">
+        <div class="nav-title">PUZZLE <span class="accent">RUSH</span></div>
+        <a href="index.html" class="back-btn"><i class="fas fa-arrow-left"></i> Back</a>
+    </div>
+
+    <!-- Setup Screen -->
+    <div id="setup-screen" class="container">
+        <div class="setup-card">
+            <h1>⚡ Puzzle Rush</h1>
+            <p class="subtitle">High-Speed Tactical Training</p>
+            
+            <div class="input-group">
+                <input type="text" id="playerName" placeholder="Enter Your Full Name" maxlength="50">
+            </div>
+            
+            <div class="input-group">
+                <input type="text" id="playerClass" placeholder="Enter Your Class (e.g., Grade 4)" maxlength="30">
+            </div>
+
+            <button class="btn btn-primary" id="startBtn" onclick="startGame()" disabled>
+                🎯 START RUSH
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="container game-area">
+        <div class="timer-box">
+            <div class="timer-text">⏱️ Time Remaining</div>
+            <div class="timer-display"><span id="timeRemaining">180</span>s</div>
+        </div>
+
+        <div class="progress-stats">
+            <div class="stat-box">
+                <div class="stat-label">Puzzles Solved</div>
+                <div class="stat-value"><span id="puzzleSolved">0</span>/10</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Score</div>
+                <div class="stat-value"><span id="currentScore">0</span></div>
+            </div>
+        </div>
+
+        <div class="puzzle-card">
+            <h3 class="puzzle-title">Puzzle #<span id="puzzleNumber">1</span></h3>
+            <div class="comment-box" id="commentBox">Find the winning move! 🎯</div>
+            <div id="board-container">
+                <div id="myBoard"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Modal -->
+    <div id="resultsModal" class="results-modal">
+        <div class="modal-content">
+            <h2>🏆 Rush Complete!</h2>
+            <div class="score-display"><span id="finalScore">0</span></div>
+            <div class="time-display">Completed in <span id="finalTime">0</span>s</div>
+            
+            <h3 style="color: var(--accent-gold); margin: 2rem 0 1rem 0; font-weight: 700;">🌟 Global Leaderboard</h3>
+            <div id="leaderboardContainer" class="leaderboard-table">
+                <p style="padding: 1rem; color: rgba(255, 255, 255, 0.5);">Loading leaderboard...</p>
+            </div>
+
+            <button class="btn btn-primary" onclick="location.reload()">Play Again</button>
+            <a href="index.html" class="btn" style="background: rgba(197, 160, 89, 0.1); color: var(--accent-gold); text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">Back to Home</a>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Config
+        const firebaseConfig = {
+            apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+            authDomain: "assignments-de95a.firebaseapp.com",
+            projectId: "assignments-de95a",
+            storageBucket: "assignments-de95a.firebasestorage.app",
+            messagingSenderId: "1088073398299",
+            appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Exciting Comments Array
+        const excellentComments = [
+            "🔥 ABSOLUTELY BRILLIANT! 🔥", "⚡ LIGHTNING SPEED! ⚡", "🚀 ROCKET FUEL! 🚀",
+            "💎 PURE DIAMOND MOVE! 💎", "👑 GRANDMASTER LEVEL! 👑", "🌟 STELLAR PERFORMANCE! 🌟",
+            "⭐ YOU'RE ON FIRE! ⭐", "🎯 BULLSEYE! 🎯", "🏆 UNSTOPPABLE! 🏆",
+            "💥 EXPLOSIVE PLAY! 💥", "🦁 TACTICAL BEAST! 🦁", "🧠 PURE GENIUS! 🧠",
+            "🌪️ WHIRLWIND OF MOVES! 🌪️", "☄️ METEOR STRIKE! ☄️", "🎸 CHESS ROCKSTAR! 🎸",
+            "🥇 CHAMPION QUALITY! 🥇", "⚔️ WARRIOR SPIRIT! ⚔️", "🔮 TACTICAL SORCERY! 🔮",
+            "✨ MAGNIFICENT! ✨", "🌈 RAINBOWS & VICTORIES! 🌈", "🚂 UNSTOPPABLE TRAIN! 🚂",
+            "🧿 SHARP AS A TACK! 🧿", "💡 BRILLIANT INSIGHT! 💡", "🎭 MASTERCLASS! 🎭",
+            "🌊 TIDAL WAVE OF TACTICS! 🌊", "🦅 EAGLE VISION! 🦅", "⚽ GOAL! GOAL! GOAL! ⚽"
+        ];
+
+        const wrongComments = [
+            "⏸️ Not quite! Try again! ⏸️", "🤔 Think harder! 🤔", "⚠️ Reconsider that move! ⚠️",
+            "🔍 Look deeper! 🔍", "🎓 This is the winning move! 🎓", "💭 Wrong direction! 💭",
+            "❌ Not the solution! ❌", "🧩 Wrong puzzle piece! 🧩", "📚 Learn from this! 📚"
+        ];
+
+        // Puzzle Data - Updated format from your lessons file
+        const puzzles = [
+            { fen: "r3k2r/pp2ppbp/2np1np1/q1p1P3/2BPP3/2N2N2/PPP2PPP/R2QKB1R w KQkq - 0 1", move: "Nxe5", hint: "Remove the defender!" },
+            { fen: "r1bqkb1r/pppppppp/2n2n2/4P3/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", move: "Nxe4", hint: "Attack the center!" },
+            { fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1", move: "d5", hint: "Challenge the pawn!" },
+            { fen: "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 0 1", move: "Na5", hint: "Attack the bishop!" },
+            { fen: "rnbqkb1r/pp1ppppp/5n2/2p1P3/2B1P3/8/PPPP1PPP/RNBQK1NR w KQkq c6 0 1", move: "exf6", hint: "Capture and dominate!" },
+            { fen: "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq e6 0 1", move: "Nxe5", hint: "Fork the knight!" },
+            { fen: "rnbqkb1r/pp1ppppp/5n2/3pP3/3P4/8/PPP2PPP/RNBQKBNR w KQkq d6 0 1", move: "exf6", hint: "Win material!" },
+            { fen: "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/2N5/PPPP1PPP/R1BQKBNR w KQkq e6 0 1", move: "Nxe4", hint: "Central attack!" },
+            { fen: "rnbqkbnr/pppppppp/8/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq d3 0 1", move: "d5", hint: "Break the center!" },
+            { fen: "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/8/PPPP1PPP/RNBQK1NR w KQkq e6 0 1", move: "exf6", hint: "Execute the plan!" }
+        ];
+
+        // Game State
+        let playerName = "", playerClass = "", gameStarted = false;
+        let currentPuzzle = 0, score = 0, timeLeft = 180;
+        let gameStartTime = 0, gameEndTime = 0;
+        let board, game;
+        let canMove = true;
+
+        // Input Validation
+        document.getElementById('playerName').addEventListener('input', validateInputs);
+        document.getElementById('playerClass').addEventListener('input', validateInputs);
+
+        function validateInputs() {
+            const name = document.getElementById('playerName').value.trim();
+            const cls = document.getElementById('playerClass').value.trim();
+            document.getElementById('startBtn').disabled = !(name.length > 0 && cls.length > 0);
+        }
+
+        function startGame() {
+            playerName = document.getElementById('playerName').value.trim();
+            playerClass = document.getElementById('playerClass').value.trim();
+            
+            if (!playerName || !playerClass) {
+                alert('Please enter your name and class!');
+                return;
+            }
+
+            // Save user to localStorage for Arena Chat
+            localStorage.setItem('mmUser', JSON.stringify({
+                name: playerName,
+                class: playerClass,
+                joinedAt: new Date().toISOString()
+            }));
+
+            gameStarted = true;
+            gameStartTime = Date.now();
+            document.getElementById('setup-screen').style.display = 'none';
+            document.getElementById('game-screen').classList.add('active');
+
+            startTimer();
+            loadPuzzle();
+        }
+
+        function startTimer() {
+            const timerInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('timeRemaining').textContent = timeLeft;
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function loadPuzzle() {
+            if (currentPuzzle >= 10 || timeLeft <= 0) {
+                endGame();
+                return;
+            }
+
+            canMove = true;
+            const puzzle = puzzles[currentPuzzle];
+            game = new Chess(puzzle.fen);
+
+            board = Chessboard('myBoard', {
+                position: puzzle.fen,
+                onDrop: handleMove,
+                draggable: true,
+                dropOffBoard: 'snapback',
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+            });
+
+            document.getElementById('puzzleNumber').textContent = currentPuzzle + 1;
+            document.getElementById('commentBox').textContent = '🎯 Find the winning move!';
+            document.getElementById('commentBox').className = 'comment-box';
+        }
+
+        function handleMove(source, target) {
+            if (!canMove) return 'snapback';
+
+            const puzzle = puzzles[currentPuzzle];
+            const moveObj = game.move({ from: source, to: target, promotion: 'q' });
+
+            if (!moveObj) return 'snapback';
+
+            board.position(game.fen());
+
+            const playerMove = moveObj.san;
+            const correctMove = puzzle.move;
+
+            if (playerMove === correctMove) {
+                canMove = false;
+                score += 10;
+                showSuccess();
+                setTimeout(() => {
+                    currentPuzzle++;
+                    document.getElementById('puzzleSolved').textContent = currentPuzzle;
+                    document.getElementById('currentScore').textContent = score;
+                    loadPuzzle();
+                }, 1500);
+            } else {
+                canMove = false;
+                showWrong();
+                setTimeout(() => {
+                    game.undo();
+                    board.position(game.fen());
+                    canMove = true;
+                }, 1500);
+            }
+            return;
+        }
+
+        function showSuccess() {
+            const comment = excellentComments[Math.floor(Math.random() * excellentComments.length)];
+            const box = document.getElementById('commentBox');
+            box.textContent = comment;
+            box.className = 'comment-box excellent';
+            box.style.animation = 'none';
+            setTimeout(() => box.style.animation = 'pulse 0.5s ease-in-out', 10);
+        }
+
+        function showWrong() {
+            const comment = wrongComments[Math.floor(Math.random() * wrongComments.length)];
+            const box = document.getElementById('commentBox');
+            box.textContent = comment;
+            box.className = 'comment-box wrong';
+            box.style.animation = 'none';
+            setTimeout(() => box.style.animation = 'pulse 0.5s ease-in-out', 10);
+        }
+
+        async function endGame() {
+            gameEndTime = Date.now();
+            const timeTaken = Math.floor((gameEndTime - gameStartTime) / 1000);
+
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('finalTime').textContent = timeTaken;
+
+            // Save to Firebase with duplicate prevention
+            const leaderboardRef = db.collection("puzzle_rush_leaderboard").doc(`${playerName.toLowerCase()}_${Date.now()}`);
+            try {
+                await leaderboardRef.set({
+                    name: playerName,
+                    class: playerClass,
+                    score: score,
+                    time: timeTaken,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } catch (e) {
+                console.error("Error saving score:", e);
+            }
+
+            // Fetch and display leaderboard
+            await displayLeaderboard();
+
+            document.getElementById('game-screen').classList.remove('active');
+            document.getElementById('resultsModal').classList.add('show');
+        }
+
+        async function displayLeaderboard() {
+            const container = document.getElementById('leaderboardContainer');
+            try {
+                const snap = await db.collection("puzzle_rush_leaderboard")
+                    .orderBy("score", "desc")
+                    .limit(10)
+                    .get();
+
+                if (snap.empty) {
+                    container.innerHTML = '<p style="padding: 1rem;">You\'re the first on the leaderboard! 🏆</p>';
+                    return;
+                }
+
+                let html = '';
+                let rank = 1;
+                const seen = new Set();
+
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const key = `${data.name.toLowerCase()}_${data.class.toLowerCase()}`;
+
+                    // Skip duplicates
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        html += `
+                            <div class="leaderboard-entry ${rank === 1 ? 'style="background: rgba(197, 160, 89, 0.1);"' : ''}>
+                                <div class="rank">#${rank}</div>
+                                <div class="player-info">
+                                    <div class="player-name">${rank === 1 ? '👑 ' : ''}${data.name}</div>
+                                    <div class="player-class">${data.class}</div>
+                                </div>
+                                <div class="player-score">${data.score} pts</div>
+                            </div>
+                        `;
+                        rank++;
+                    }
+                });
+
+                container.innerHTML = html;
+            } catch (e) {
+                console.error("Error fetching leaderboard:", e);
+                container.innerHTML = '<p style="padding: 1rem; color: #ef4444;">Error loading leaderboard</p>';
+            }
+        }
+    </script>
+</body>
+</html>
