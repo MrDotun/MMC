@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master | Decipher Chess Academy</title>
+    <title>GM Variation Master Pro | Decipher Chess Academy</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -11,11 +11,11 @@
         .gold-text { color: #d4af37; }
         .gold-bg { background-color: #d4af37; color: #1e293b; }
         .glass { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .chunk-card { border-left: 4px solid #d4af37; transition: all 0.2s; }
-        .chunk-card.completed { border-left-color: #10b981; opacity: 0.6; }
-        textarea { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; }
+        .chunk-card { border-left: 4px solid #d4af37; transition: all 0.2s; cursor: pointer; }
+        .chunk-card.completed { border-left-color: #10b981; opacity: 0.5; }
+        textarea { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; scrollbar-width: thin; }
         textarea:focus { border-color: #d4af37 !important; outline: none; }
-        #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.3s; }
+        #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
     </style>
 </head>
 <body class="p-4 md:p-10">
@@ -23,8 +23,8 @@
     <div class="max-w-6xl mx-auto">
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
-                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER</span></h1>
-                <p class="text-slate-400 text-sm font-light">Advanced Pedagogy & Structural PGN Re-assembler</p>
+                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">High-Precision Structural PGN Annotator</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -37,47 +37,58 @@
                 <div class="flex justify-between items-center mb-4">
                     <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
                     <div class="text-right">
-                        <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Engine Idle</div>
-                        <div class="w-32 h-1 bg-slate-800 mt-1"><div id="progress-fill"></div></div>
+                        <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Ready</div>
+                        <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
                     </div>
                 </div>
-                <textarea id="pgn-input" rows="8" class="w-full p-4 rounded-xl text-sm" placeholder="Paste your master PGN here..."></textarea>
+                <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
                 
-                <div class="mt-6 flex flex-wrap gap-3">
-                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200">INITIALIZE ENGINE</button>
-                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden">COPY NEXT BATCH (10)</button>
+                <div class="flex flex-wrap gap-3">
+                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
+                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden uppercase text-xs">Copy Next 10</button>
+                    <button onclick="copyAllRemaining()" id="all-btn" class="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold hidden uppercase text-xs">Copy All Remaining</button>
+                    <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
                 </div>
             </div>
-            <div id="chunks-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+            <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
         </div>
 
         <div id="view-reassembler" class="hidden space-y-6">
             <div class="glass p-6 rounded-2xl">
-                <h2 class="text-xl font-bold gold-text mb-4 uppercase tracking-widest">The Re-Assembler</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="space-y-4">
-                        <label class="block text-xs font-bold text-slate-500 uppercase">AI JSON Batch Response</label>
-                        <textarea id="ai-json" rows="12" class="w-full p-4 rounded-xl text-xs" placeholder='{"CHUNK_0": "..."}'></textarea>
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste Gemini's Chat/JSON</label>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the entire Gemini response here..."></textarea>
                     </div>
                     <div class="space-y-4">
-                        <label class="block text-xs font-bold text-slate-500 uppercase">Final Output PGN</label>
-                        <textarea id="final-pgn" rows="12" class="w-full p-4 rounded-xl text-xs text-blue-300" readonly></textarea>
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Final Re-Assembled PGN</label>
+                        <textarea id="final-pgn" rows="14" class="w-full p-4 rounded-xl text-xs text-emerald-400" readonly></textarea>
                         <div class="flex gap-2">
-                            <button onclick="copyFinalPgn()" class="flex-1 py-2 bg-slate-800 text-xs font-bold rounded-lg hover:bg-slate-700 uppercase">Copy to Clipboard</button>
-                            <button onclick="downloadPgn()" class="flex-1 py-2 bg-slate-800 text-xs font-bold rounded-lg hover:bg-slate-700 uppercase">Download .pgn</button>
+                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Copy Final</button>
+                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Download</button>
                         </div>
                     </div>
                 </div>
-                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold">MERGE ANNOTATIONS & REBUILD</button>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20">Inject Annotations & Rebuild File</button>
             </div>
         </div>
     </div>
 
     <script>
         let globalChunks = [];
-        let originalPgn = "";
+        let pgnTokens = [];
         let currentBatchStart = 0;
-        const BATCH_SIZE = 10;
+
+        window.onload = () => {
+            const saved = localStorage.getItem('gm_master_state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                document.getElementById('pgn-input').value = state.original;
+                processPgn(true);
+                currentBatchStart = state.batchStart;
+                updateUI();
+            }
+        };
 
         function switchTab(tab) {
             document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
@@ -86,59 +97,120 @@
             document.getElementById('tab-r').className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
-        function processPgn() {
-            originalPgn = document.getElementById('pgn-input').value;
-            const gameBody = originalPgn.replace(/\[.*?\]/g, '').trim();
-            const tokens = gameBody.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$]+|\{.*?\}|\[.*?\])/g);
-            if (!tokens) return;
+        function processPgn(isLoad = false) {
+            const input = document.getElementById('pgn-input').value;
+            if (!input) return;
 
+            // Updated regex to catch moves, symbols ($NAG), and notations (?, !, !!)
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$?!]+|\{.*?\}|\[.*?\])/g) || [];
+            
             let chunks = [];
-            let variationStack = []; 
-            let moveCounter = 0;
-            let currentTokens = [];
+            let moveCount = 0;
+            let variationLevel = 0;
+            let currentPath = [];
 
-            tokens.forEach((token, idx) => {
-                if (token === "(") { 
-                    variationStack.push(moveCounter);
-                    moveCounter = 0;
-                }
-                else if (token === ")") { 
-                    moveCounter = variationStack.pop() || 0;
-                }
-                else {
-                    const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
-                    if (isMove) moveCounter++;
-                    
-                    if ((isMove && moveCounter === 3) || idx === tokens.length - 1) {
+            pgnTokens.forEach((token, index) => {
+                if (token === "(") variationLevel++;
+                if (token === ")") variationLevel--;
+                
+                const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                
+                if (isMove) {
+                    if (variationLevel === 0) moveCount++; 
+                    currentPath.push(token);
+
+                    if (moveCount > 5 || variationLevel > 0) {
+                        // SYMBOL LOGIC: Check if the token immediately after is a $NAG or evaluation mark
+                        let evalSymbol = "";
+                        let nextToken = pgnTokens[index + 1];
+                        if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
+                            evalSymbol = ` ${nextToken}`;
+                        }
+
+                        let subsequent = [];
+                        for(let i = index + 1; i < index + 10 && i < pgnTokens.length; i++) {
+                            if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
+                        }
+
                         chunks.push({
                             id: `CHUNK_${chunks.length}`,
-                            context: tokens.slice(Math.max(0, idx-10), idx).join(" "),
-                            target: token 
+                            target: token + evalSymbol, // TARGET now includes the engine's evaluation
+                            tokenIndex: index,
+                            context: currentPath.slice(-12).join(" "),
+                            future: subsequent.join(" ")
                         });
-                        moveCounter = 0; 
                     }
                 }
             });
 
             globalChunks = chunks;
+            if (!isLoad) currentBatchStart = 0;
             document.getElementById('batch-btn').classList.remove('hidden');
+            document.getElementById('all-btn').classList.remove('hidden');
             updateUI();
+            saveState();
+        }
+
+        function formatBatch(start, end) {
+            const batch = globalChunks.slice(start, end).map(c => 
+                `ID: ${c.id}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
+            ).join("\n---\n");
+
+            return `Role: 2700 ELO GM Coach.
+Task: Provide deep positional analysis for the TARGET.
+
+CRITICAL EVALUATION DATA:
+- If the TARGET includes symbols (e.g., ?, ??, ?!, $17), respect these as absolute truths.
+- $1 (White is slightly better), $2 (Black is slightly better), $14 (Black has a decisive advantage), $17 (White has a decisive advantage).
+- Symbols like ? or ?? indicate a blunder. You must explain WHY it is a blunder based on the 'Subsequent' sequence provided.
+
+Tone: Authentic, human, and pedagogical. Use terms like: light/dark squares, pawn structure, bishop pair, prophylaxis.
+
+FORMAT: ONLY JSON.
+{"CHUNK_ID": "Your Analysis"}
+
+${batch}`;
         }
 
         function copyNextBatch() {
-            const end = Math.min(currentBatchStart + BATCH_SIZE, globalChunks.length);
-            const batch = globalChunks.slice(currentBatchStart, end).map(c => `ID: ${c.id}\nContext: ...${c.context}\nTarget: ${c.target}`).join("\n---\n");
-
-            const prompt = `Task: Provide GM-level positional analysis for the target move. 
-STRICT GUIDELINES:
-- No superficial descriptions.
-- Use Terminology: "light/dark squares", "pawn structure", "bishop pair".
-- Return ONLY JSON: {"CHUNK_ID": "Comment"}`;
-
-            navigator.clipboard.writeText(prompt + "\n\n" + batch);
-            alert(`Batch ${currentBatchStart} to ${end - 1} copied!`);
+            const end = Math.min(currentBatchStart + 10, globalChunks.length);
+            navigator.clipboard.writeText(formatBatch(currentBatchStart, end));
             currentBatchStart = end;
             updateUI();
+            saveState();
+            alert("Batch with Evaluation Symbols copied!");
+        }
+
+        function copyAllRemaining() {
+            navigator.clipboard.writeText(formatBatch(currentBatchStart, globalChunks.length));
+            currentBatchStart = globalChunks.length;
+            updateUI();
+            saveState();
+            alert("Full Game with Evaluation Symbols copied!");
+        }
+
+        function rebuildPgn() {
+            const raw = document.getElementById('ai-json').value;
+            let aiData = {};
+            const matches = raw.match(/\{[\s\S]*?\}/g);
+            if (matches) {
+                matches.forEach(m => {
+                    try { Object.assign(aiData, JSON.parse(m)); } catch(e){}
+                });
+            }
+            let workingTokens = [...pgnTokens];
+            const sortedIds = Object.keys(aiData).sort((a,b) => {
+                const idxA = globalChunks.find(c => c.id === a)?.tokenIndex || 0;
+                const idxB = globalChunks.find(c => c.id === b)?.tokenIndex || 0;
+                return idxB - idxA;
+            });
+            sortedIds.forEach(id => {
+                const chunk = globalChunks.find(c => c.id === id);
+                if (chunk) {
+                    workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
+                }
+            });
+            document.getElementById('final-pgn').value = workingTokens.join(" ");
         }
 
         function updateUI() {
@@ -146,57 +218,41 @@ STRICT GUIDELINES:
             container.innerHTML = "";
             globalChunks.forEach((c, i) => {
                 const div = document.createElement('div');
-                div.className = `chunk-card glass p-3 rounded-lg ${i < currentBatchStart ? 'completed' : ''}`;
-                div.innerHTML = `<span class="text-[9px] gold-text font-black">${c.id}</span><p class="text-xs font-bold truncate">After: ${c.target}</p>`;
+                div.className = `chunk-card glass p-2 rounded-lg ${i < currentBatchStart ? 'completed' : ''}`;
+                div.innerHTML = `<p class="text-[8px] gold-text font-bold">${c.id}</p><p class="text-[10px] truncate">${c.target}</p>`;
                 container.appendChild(div);
             });
-            document.getElementById('progress-fill').style.width = `${(currentBatchStart / globalChunks.length) * 100}%`;
-            document.getElementById('stats').innerText = `${currentBatchStart} / ${globalChunks.length} ANALYSES`;
+            const perc = (currentBatchStart / globalChunks.length) * 100 || 0;
+            document.getElementById('progress-fill').style.width = perc + "%";
+            document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} ANALYSES PREPARED`;
         }
 
-        function rebuildPgn() {
-            const rawValue = document.getElementById('ai-json').value;
-            let aiData = {};
-            const jsonBlocks = rawValue.match(/\{[\s\S]*?\}/g);
-            if (jsonBlocks) {
-                jsonBlocks.forEach(block => {
-                    try {
-                        Object.assign(aiData, JSON.parse(block));
-                    } catch (e) {}
-                });
-            }
-
-            let pgn = originalPgn;
-            const sortedIds = Object.keys(aiData).sort((a, b) => parseInt(b.split('_')[1]) - parseInt(a.split('_')[1]));
-
-            sortedIds.forEach(id => {
-                const chunk = globalChunks.find(c => c.id === id);
-                if (chunk) {
-                    const comment = ` { ${aiData[id]} }`;
-                    pgn = pgn.replace(chunk.target, `${chunk.target}${comment}`);
-                }
-            });
-            document.getElementById('final-pgn').value = pgn;
+        function saveState() {
+            localStorage.setItem('gm_master_state', JSON.stringify({
+                original: document.getElementById('pgn-input').value,
+                batchStart: currentBatchStart
+            }));
         }
 
-        // New Helper Functions
-        function copyFinalPgn() {
-            const output = document.getElementById('final-pgn');
-            if (!output.value) return alert("Nothing to copy yet!");
-            navigator.clipboard.writeText(output.value);
-            alert("PGN copied to clipboard!");
+        function clearAll() {
+            localStorage.removeItem('gm_master_state');
+            location.reload();
+        }
+
+        function copyToClipboard(id) {
+            const val = document.getElementById(id).value;
+            navigator.clipboard.writeText(val);
+            alert("Copied!");
         }
 
         function downloadPgn() {
-            const content = document.getElementById('final-pgn').value;
-            if (!content) return alert("Generate the PGN first!");
-            const blob = new Blob([content], { type: 'text/plain' });
-            const url = window.URL.createObjectURL(blob);
+            const val = document.getElementById('final-pgn').value;
+            const blob = new Blob([val], {type: 'text/plain'});
+            const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `Annotated_Game_${new Date().getTime()}.pgn`;
+            a.download = "GM_Annotated_Game.pgn";
             a.click();
-            window.URL.revokeObjectURL(url);
         }
     </script>
 </body>
