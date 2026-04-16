@@ -101,27 +101,32 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$?!]+|\{.*?\}|\[.*?\])/g) || [];
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
             
             let chunks = [];
             let moveNumber = 0;
             let variationLevel = 0;
             let currentPath = [];
             let depthPlyCounts = { 0: 0 }; 
-            let justClosedVariation = false; // NEW: Flag to detect the move immediately after a bracket
+            let justClosedVariation = false;
 
             pgnTokens.forEach((token, index) => {
                 if (token === "(") {
                     variationLevel++;
                     depthPlyCounts[variationLevel] = 0; 
+                    return; 
                 }
                 if (token === ")") {
                     variationLevel--;
-                    justClosedVariation = true; // Mark that a variation just ended
+                    justClosedVariation = true; 
+                    return; 
                 }
                 
                 const isMoveNum = /^\d+\./.test(token);
-                if (isMoveNum) moveNumber = parseInt(token);
+                if (isMoveNum) {
+                    moveNumber = parseInt(token);
+                    return; 
+                }
 
                 const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
                 
@@ -136,9 +141,8 @@
                             evalSymbol = ` ${nextToken}`;
                         }
 
-                        const hasImportantSymbol = evalSymbol.includes('!') || evalSymbol.includes('?');
+                        const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
                         
-                        // FIXED LOGIC: Trigger if it's a stride, OR first move of variation, OR move immediately after bracket
                         const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
                         const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
@@ -156,7 +160,7 @@
                                 future: subsequent.join(" ")
                             });
                             
-                            justClosedVariation = false; // Reset flag once a move is targeted
+                            justClosedVariation = false; 
                         }
                     }
                 }
@@ -175,17 +179,25 @@
                 `ID: ${c.id}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
             ).join("\n---\n");
 
+            // AI PROMPT UPDATED HERE
             return `Role: 2700 ELO GM.
 Task: Provide deep positional analysis for the TARGET.
 
 GUIDELINES:
 - Note the 'Subsequent' moves to identify blunders or brilliance.
 - If the TARGET contains '!' or '?', focus heavily on the tactical reason for that symbol.
-- Tone: Insightful and human.
-- ANNOTATION STYLE: Do not include chess symbols like '$' or '!' inside the commentary text. 
-- Example: Say "The move Ne4 is powerful because..." instead of "The move Ne4$1 is powerful...".
+- Tone: Be as human and direct as possible. Avoid big "grammar" and storytelling.
+- Comments must be meaningful and purposeful.
+- Comments must reflect how strong players think.
+- Superficial descriptions are discouraged.
+- Conceptual clarity is valued more than verbosity.
+- ANNOTATION STYLE: Do not include chess symbols like '$' or '!' inside the commentary text.
 
-FORMAT: ONLY JSON
+EXAMPLES:
+- Bad example: "White keeps developing the pieces."
+- Good example: "In this pawn structure, it is essential to exchange the light-squared bishops."
+
+FORMAT: ONLY JSON and add a copy icon per batch
 {"CHUNK_ID": "Your Analysis"}
 
 ${batch}`;
