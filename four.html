@@ -107,16 +107,17 @@
             let moveNumber = 0;
             let variationLevel = 0;
             let currentPath = [];
-            // Keep track of plies at each depth to ensure variations get analyzed
             let depthPlyCounts = { 0: 0 }; 
+            let justClosedVariation = false; // NEW: Flag to detect the move immediately after a bracket
 
             pgnTokens.forEach((token, index) => {
                 if (token === "(") {
                     variationLevel++;
-                    depthPlyCounts[variationLevel] = 0; // Start fresh count for branch
+                    depthPlyCounts[variationLevel] = 0; 
                 }
                 if (token === ")") {
                     variationLevel--;
+                    justClosedVariation = true; // Mark that a variation just ended
                 }
                 
                 const isMoveNum = /^\d+\./.test(token);
@@ -129,7 +130,6 @@
                     currentPath.push(token);
 
                     if (moveNumber > 5 || variationLevel > 0) {
-                        
                         let evalSymbol = "";
                         let nextToken = pgnTokens[index + 1];
                         if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
@@ -137,8 +137,10 @@
                         }
 
                         const hasImportantSymbol = evalSymbol.includes('!') || evalSymbol.includes('?');
-                        // Stride logic applied to current variation depth
-                        const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0);
+                        
+                        // FIXED LOGIC: Trigger if it's a stride, OR first move of variation, OR move immediately after bracket
+                        const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
+                        const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
                         if (isStrideMove || hasImportantSymbol) {
                             let subsequent = [];
@@ -153,6 +155,8 @@
                                 context: currentPath.slice(-15).join(" "),
                                 future: subsequent.join(" ")
                             });
+                            
+                            justClosedVariation = false; // Reset flag once a move is targeted
                         }
                     }
                 }
@@ -181,7 +185,7 @@ GUIDELINES:
 - ANNOTATION STYLE: Do not include chess symbols like '$' or '!' inside the commentary text. 
 - Example: Say "The move Ne4 is powerful because..." instead of "The move Ne4$1 is powerful...".
 
-FORMAT: ONLY JSON add a copy icon per batch
+FORMAT: ONLY JSON
 {"CHUNK_ID": "Your Analysis"}
 
 ${batch}`;
