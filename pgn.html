@@ -234,8 +234,8 @@
         const ctx = canvas.getContext('2d');
 
         function showPassScreen() { 
-            const name = $("#user-display-name").val();
-            if(!name) return;
+            const name = $("#user-display-name").val().trim();
+            if(!name) { alert("Please enter your name first."); return; }
             myData.name = name;
             $("#password-overlay").removeClass("hidden"); 
         }
@@ -252,6 +252,7 @@
                 $("#role-text").text("STUDENT");
             } else { alert("Invalid Key"); return; }
 
+            // Request Mic Permissions
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
@@ -266,7 +267,10 @@
                 
                 initAudio(stream);
 
-            } catch (err) { console.error("Mic error:", err); }
+            } catch (err) { 
+                console.warn("Mic permissions denied or error:", err); 
+                alert("Note: Microphone access is required for voice features.");
+            }
 
             $("#password-overlay").addClass("hidden");
             $("#section-lobby").addClass("hidden");
@@ -280,15 +284,14 @@
 
         async function initAudio(stream) {
             try {
-                // Ensure unique UID or let Agora handle it
                 options.uid = await agoraClient.join(options.appId, options.channel, options.token, null);
                 
                 localTracks.audioTrack = await AgoraRTC.createCustomAudioTrack({
                     mediaStreamTrack: stream.getAudioTracks()[0],
                 });
                 
-                // Initialize state: mute first, then publish
-                await localTracks.audioTrack.setMuted(true); 
+                // Mute by default upon joining
+                await localTracks.audioTrack.setEnabled(false);
                 await agoraClient.publish(localTracks.audioTrack);
 
                 agoraClient.on("user-published", async (user, mediaType) => {
@@ -297,10 +300,8 @@
                         user.audioTrack.play();
                     }
                 });
-                
-                console.log("Agora joined and published successfully");
             } catch (err) { 
-                console.error("Agora Init Error:", err); 
+                console.error("Agora Connection Failed:", err); 
             }
         }
 
@@ -318,44 +319,51 @@
 
         async function toggleLiveMic() {
             if (!localTracks.audioTrack) {
-                alert("Audio system is still connecting...");
+                alert("Microphone not initialized.");
                 return;
             }
             
             try {
                 micOn = !micOn;
-                // Use setEnabled for the actual stream and update UI
                 await localTracks.audioTrack.setEnabled(micOn);
-                await localTracks.audioTrack.setMuted(!micOn);
                 renderMicUI();
             } catch (e) {
-                console.error("Toggle Mic Error:", e);
-                micOn = !micOn; // Revert state on error
+                console.error("Mic Switch Error:", e);
+                micOn = !micOn; // Revert
             }
         }
 
         function muteAllStudents() {
             if(isCoach) {
-                alert("Students are muted by default. They can unmute by clicking the LIVE button.");
+                alert("Students are manually controlled. Tell them to turn off their 'LIVE' buttons.");
             }
         }
 
         // --- BOARD LOGIC ---
         function initBoard() {
             const config = {
-                draggable: true, dropOffBoard: 'snapback', position: 'start',
+                draggable: true, 
+                dropOffBoard: 'snapback', 
+                position: 'start',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 onDrop: (source, target) => {
-                    setTimeout(() => { db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); }, 100);
+                    if (source === target) return;
+                    setTimeout(() => { 
+                        db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); 
+                    }, 100);
                 }
             };
             masterBoard = ChessBoard('masterBoard', config);
+            
+            // Fix for mobile drag
             document.getElementById('masterBoard').addEventListener('touchmove', function(e) { e.preventDefault(); }, { passive: false });
 
+            // Tap-to-move logic
             $('#masterBoard').on('click', '.square-55d63', function() {
                 if (setupModeActive) return;
                 const square = $(this).attr('data-square');
                 const boardPos = masterBoard.position();
+                
                 if (!clickSource) {
                     if (boardPos[square]) {
                         clickSource = square;
@@ -366,14 +374,18 @@
                     const move = clickSource + '-' + square;
                     masterBoard.move(move);
                     $('.square-55d63').removeClass('highlight-square');
-                    setTimeout(() => { db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); }, 100);
+                    setTimeout(() => { 
+                        db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); 
+                    }, 100);
                     clickSource = null;
                 }
             });
 
             db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
                 const data = doc.data();
-                if(data?.fen && masterBoard.fen() !== data.fen) { masterBoard.position(data.fen); }
+                if(data?.fen && masterBoard.fen() !== data.fen) { 
+                    masterBoard.position(data.fen, true); 
+                }
             });
             setTimeout(resizeCanvas, 500);
         }
@@ -381,16 +393,21 @@
         function toggleSetupMode() {
             setupModeActive = !setupModeActive;
             const currentFen = masterBoard.fen();
+            
             masterBoard = ChessBoard('masterBoard', {
-                draggable: true, dropOffBoard: 'trash', sparePieces: setupModeActive, position: currentFen,
+                draggable: true, 
+                dropOffBoard: 'trash', 
+                sparePieces: setupModeActive, 
+                position: currentFen,
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 onDrop: (source, target) => {
                     setTimeout(() => { db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); }, 100);
                 }
             });
-            document.getElementById('masterBoard').addEventListener('touchmove', function(e) { e.preventDefault(); }, { passive: false });
+
             const btnText = setupModeActive ? "✅ FINISH SETUP" : "🧩 SETUP MODE";
             $("#setup-mode-btn").text(btnText).css("background", setupModeActive ? "var(--secondary)" : "");
+            
             if(!isCoach) {
                 if(setupModeActive) $("#student-clear-btn").removeClass("hidden");
                 else $("#student-clear-btn").addClass("hidden");
@@ -399,7 +416,7 @@
         }
 
         function toggleVN() {
-            if (!mediaRecorder) { alert("Mic not ready"); return; }
+            if (!mediaRecorder) { alert("Microphone access needed."); return; }
             if (!isRecording) {
                 audioChunks = []; wasCancelled = false;
                 mediaRecorder.start(); isRecording = true;
@@ -436,6 +453,7 @@
             db.collection("special_rooms").doc("masterclass_arena").collection("messages").orderBy("timestamp", "asc").onSnapshot(snap => {
                   const box = $("#master-chat-box"); box.empty();
                   let latestAudio = `<span style="font-size: 11px; color: #94a3b8; font-style: italic;">No voice notes...</span>`;
+                  
                   snap.forEach(doc => {
                       const msg = doc.data();
                       const delBtn = isCoach ? `<button class="del-btn" onclick="deleteMessage('${doc.id}')">🗑️</button>` : '';
