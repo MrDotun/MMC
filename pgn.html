@@ -229,6 +229,7 @@
         let isRecording = false;
         let wasCancelled = false;
         let clickSource = null;
+        let audioSystemReady = false; // Flag to prevent race condition
 
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
@@ -252,9 +253,13 @@
                 $("#role-text").text("STUDENT");
             } else { alert("Invalid Key"); return; }
 
-            // Request Mic Permissions
+            // Request Mic Permissions and wait for Audio setup
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                await initAudio(stream); // Await critical for initialization
+                audioSystemReady = true;
+
                 mediaRecorder = new MediaRecorder(stream);
                 mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
                 mediaRecorder.onstop = () => {
@@ -264,9 +269,6 @@
                     reader.readAsDataURL(audioBlob);
                     reader.onloadend = () => { sendVN(reader.result); audioChunks = []; };
                 };
-                
-                initAudio(stream);
-
             } catch (err) { 
                 console.warn("Mic permissions denied or error:", err); 
                 alert("Note: Microphone access is required for voice features.");
@@ -318,8 +320,9 @@
         }
 
         async function toggleLiveMic() {
-            if (!localTracks.audioTrack) {
-                alert("Microphone not initialized.");
+            // Guard against uninitialized tracks
+            if (!audioSystemReady || !localTracks.audioTrack) {
+                alert("Audio system is still connecting. Please wait a moment...");
                 return;
             }
             
