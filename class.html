@@ -201,6 +201,7 @@
 
         <div id="student-tools" class="analysis-tools">
             <button class="tool-btn" onclick="syncMasterPosition('start')">🔄 RESET POS</button>
+            <button class="tool-btn" onclick="flipBoard()">🔃 FLIP BOARD</button>
             <button id="setup-mode-btn" class="tool-btn" onclick="toggleSetupMode()">🧩 SETUP MODE</button>
             <button id="student-clear-btn" class="tool-btn hidden" onclick="emptyBoard()" style="color:var(--danger); grid-column: span 2;">🕳️ CLEAR BOARD</button>
         </div>
@@ -248,6 +249,7 @@
         let isRecording = false;
         let wasCancelled = false;
         let clickSource = null;
+        let isFlipped = false;
 
         let peer;
         let myStream;
@@ -387,6 +389,7 @@
 
         function initBoard() {
             const config = {
+                orientation: isFlipped ? 'black' : 'white',
                 draggable: true, dropOffBoard: 'snapback', position: 'start',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 onDrop: (source, target) => {
@@ -420,10 +423,16 @@
             setTimeout(resizeCanvas, 500);
         }
 
+        function flipBoard() {
+            masterBoard.orientation('flip');
+            isFlipped = (masterBoard.orientation() === 'black');
+        }
+
         function toggleSetupMode() {
             setupModeActive = !setupModeActive;
             const currentFen = masterBoard.fen();
             masterBoard = ChessBoard('masterBoard', {
+                orientation: isFlipped ? 'black' : 'white',
                 draggable: true, dropOffBoard: 'trash', sparePieces: setupModeActive, position: currentFen,
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 onDrop: (source, target) => {
@@ -468,8 +477,8 @@
             });
         }
 
-        function deleteVN(docId) {
-            if(confirm("Delete this voice note?")) {
+        function deleteMessage(docId) {
+            if(confirm("Delete this message?")) {
                 db.collection("special_rooms").doc("masterclass_arena").collection("messages").doc(docId).delete();
             }
         }
@@ -480,8 +489,8 @@
                   let latestAudio = `<span style="font-size: 11px; color: #94a3b8; font-style: italic;">No voice notes yet...</span>`;
                   snap.forEach(doc => {
                       const msg = doc.data();
-                      const delBtn = isCoach ? `<button class="del-btn" onclick="deleteVN('${doc.id}')">🗑️</button>` : '';
-                      let content = msg.audio ? `<div style="display:flex; align-items:center;"><audio controls src="${msg.audio}"></audio>${delBtn}</div>` : `<span>${msg.text}</span>`;
+                      const delBtn = isCoach ? `<button class="del-btn" onclick="deleteMessage('${doc.id}')">🗑️</button>` : '';
+                      let content = msg.audio ? `<div style="display:flex; align-items:center;"><audio controls src="${msg.audio}"></audio>${delBtn}</div>` : `<div style="display:flex; justify-content:space-between; align-items:center;"><span>${msg.text}</span>${delBtn}</div>`;
                       box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}</span>${content}</div>`);
                       if(msg.audio) latestAudio = `<div style="display:flex; align-items:center;"><audio controls src="${msg.audio}"></audio>${delBtn}</div>`;
                   });
