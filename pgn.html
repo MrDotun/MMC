@@ -280,13 +280,14 @@
 
         async function initAudio(stream) {
             try {
+                // Ensure unique UID or let Agora handle it
                 options.uid = await agoraClient.join(options.appId, options.channel, options.token, null);
                 
                 localTracks.audioTrack = await AgoraRTC.createCustomAudioTrack({
                     mediaStreamTrack: stream.getAudioTracks()[0],
                 });
                 
-                // Start with setMuted(true) instead of setEnabled(false)
+                // Initialize state: mute first, then publish
                 await localTracks.audioTrack.setMuted(true); 
                 await agoraClient.publish(localTracks.audioTrack);
 
@@ -296,7 +297,11 @@
                         user.audioTrack.play();
                     }
                 });
-            } catch (err) { console.error("Agora Init Error:", err); }
+                
+                console.log("Agora joined and published successfully");
+            } catch (err) { 
+                console.error("Agora Init Error:", err); 
+            }
         }
 
         function renderMicUI() {
@@ -312,11 +317,21 @@
         }
 
         async function toggleLiveMic() {
-            if (!localTracks.audioTrack) return;
-            micOn = !micOn;
-            // Use setMuted for reliability with custom audio tracks
-            await localTracks.audioTrack.setMuted(!micOn);
-            renderMicUI();
+            if (!localTracks.audioTrack) {
+                alert("Audio system is still connecting...");
+                return;
+            }
+            
+            try {
+                micOn = !micOn;
+                // Use setEnabled for the actual stream and update UI
+                await localTracks.audioTrack.setEnabled(micOn);
+                await localTracks.audioTrack.setMuted(!micOn);
+                renderMicUI();
+            } catch (e) {
+                console.error("Toggle Mic Error:", e);
+                micOn = !micOn; // Revert state on error
+            }
         }
 
         function muteAllStudents() {
