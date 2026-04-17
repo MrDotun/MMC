@@ -207,13 +207,13 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        // --- AGORA INTEGRATION ---
+        // --- AGORA INTEGRATION UPDATED ---
         let agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
         let localTracks = { audioTrack: null };
         let options = {
-            appId: "2de275e3d5c8483a954d9fd5a958c5f9", 
+            appId: "b54d24597d2e46c79a543661be473950", // Mind_Masters App ID
             channel: "MindMasters_Main_Class_2026",
-            token: null, 
+            token: null, // "Unsecure" mode does not need a token
             uid: null
         };
 
@@ -242,12 +242,6 @@
         }
 
         async function verifyAccess() {
-            // Check for HTTPS (browsers block mics on http)
-            if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
-                alert("Security Error: This page MUST be served over HTTPS for the microphone to work.");
-                return;
-            }
-
             const pass = $("#access-key").val();
             if (pass === "dotun1234") {
                 isCoach = true;
@@ -259,15 +253,12 @@
                 $("#role-text").text("STUDENT");
             } else { alert("Invalid Key"); return; }
 
-            // Updated UI state to wait for user permission
-            $("#enter-btn").text("WAITING FOR MIC...").prop("disabled", true);
-            $("#auth-status").text("PLEASE CLICK 'ALLOW' ON THE POPUP").css("color", "var(--gold)");
+            $("#enter-btn").text("CONNECTING AUDIO...").prop("disabled", true);
+            $("#auth-status").text("PLEASE WAIT, INITIALIZING VOICE ENGINE").css("color", "var(--gold)");
 
             try {
-                // FIXED: Wait for the browser popup response before initializing Agora
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 
-                $("#enter-btn").text("CONNECTING...");
                 await initAudio(stream);
                 audioReady = true;
 
@@ -291,9 +282,9 @@
                 renderMicUI();
 
             } catch (err) { 
-                console.error("Mic Error:", err); 
-                alert("Permission Denied: You must click 'Allow' to use the microphone. Please refresh and try again.");
-                $("#enter-btn").text("RETRY").prop("disabled", false);
+                console.warn("Mic permissions denied or error:", err); 
+                alert("Critical: Microphone access is required. Please check your browser settings and try again.");
+                location.reload();
             }
         }
 
@@ -301,12 +292,11 @@
             try {
                 options.uid = await agoraClient.join(options.appId, options.channel, options.token, null);
                 
-                // Using the specific stream track already granted by the user
                 localTracks.audioTrack = await AgoraRTC.createCustomAudioTrack({
                     mediaStreamTrack: stream.getAudioTracks()[0],
                 });
                 
-                await localTracks.audioTrack.setMuted(true);
+                await localTracks.audioTrack.setEnabled(false);
                 await agoraClient.publish(localTracks.audioTrack);
 
                 agoraClient.on("user-published", async (user, mediaType) => {
@@ -335,13 +325,13 @@
 
         async function toggleLiveMic() {
             if (!audioReady || !localTracks.audioTrack) {
-                alert("Voice system is still initializing...");
+                alert("Voice system is still initializing. Please wait 3 seconds.");
                 return;
             }
             
             try {
                 micOn = !micOn;
-                await localTracks.audioTrack.setMuted(!micOn);
+                await localTracks.audioTrack.setEnabled(micOn);
                 renderMicUI();
             } catch (e) {
                 console.error("Mic Switch Error:", e);
@@ -355,6 +345,7 @@
             }
         }
 
+        // --- BOARD LOGIC ---
         function initBoard() {
             const config = {
                 draggable: true, 
