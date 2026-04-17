@@ -11,8 +11,8 @@
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-    
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 
     <style>
         :root { 
@@ -124,7 +124,7 @@
         #master-chat-box { height: 150px; overflow-y: auto; font-size: 12px; margin-bottom: 12px; padding-right: 5px; }
         .chat-name { color: var(--gold); font-weight: bold; margin-bottom: 4px; }
         
-        input { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px; border-radius: 12px; margin-bottom: 10px; width: 100%; box-sizing: border-box; font-family: inherit;}
+        input, textarea { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px; border-radius: 12px; margin-bottom: 10px; width: 100%; box-sizing: border-box; font-family: inherit;}
         .chat-input-wrap { display: flex; gap: 8px; align-items: center; }
 
         .vn-btn { background: #334155; color: white; border: none; width: 45px; height: 45px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; position: relative;}
@@ -138,6 +138,10 @@
         .call-btn-small { background: var(--secondary); color: black; border: none; padding: 5px 10px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 10px; }
         .mute-btn-small { background: #555; color: white; border: none; padding: 5px 10px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 10px; }
         .danger-btn-small { background: var(--danger); color: white; border: none; padding: 5px 10px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 10px; }
+        
+        /* New Styles for PGN/PDF Viewer */
+        .pgn-move-active { background: var(--secondary); color: #000; padding: 2px 4px; border-radius: 4px; font-weight: bold; }
+        .pgn-move { cursor: pointer; padding: 2px; }
     </style>
 </head>
 <body>
@@ -199,6 +203,11 @@
             <canvas id="drawingCanvas"></canvas>
         </div>
 
+        <div id="shared-pgn-display" class="hidden" style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); padding: 15px; border-radius: 12px; margin-bottom: 15px; font-size: 14px; max-height: 120px; overflow-y: auto; line-height: 1.6;"></div>
+        <div id="shared-pdf-display" class="hidden" style="margin-bottom: 15px; text-align: center; background: #fff; border-radius: 8px; padding: 5px; overflow: hidden;">
+            <canvas id="pdf-render-canvas" style="max-width: 100%; height: auto;"></canvas>
+        </div>
+
         <div id="student-tools" class="analysis-tools">
             <button class="tool-btn" onclick="syncMasterPosition('start')">🔄 RESET POS</button>
             <button class="tool-btn" onclick="flipBoard()">🔃 FLIP BOARD</button>
@@ -211,6 +220,27 @@
                 <button id="toggle-draw-btn" class="tool-btn" onclick="toggleDrawMode()">✏️ DRAW MODE</button>
                 <button class="tool-btn" onclick="clearDrawing()">🧼 ERASE LINES</button>
                 <button class="tool-btn" onclick="emptyBoard()" style="color:var(--danger);">🕳️ EMPTY BOARD</button>
+                <button class="tool-btn" onclick="clearMedia()" style="color:var(--danger);">🧹 CLEAR PGN/PDF</button>
+                
+                <div style="grid-column: span 2; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size: 10px; color: var(--gold); margin-bottom: 5px; font-weight: bold;">PGN LOADER</div>
+                    <textarea id="pgn-input" placeholder="Paste PGN here to teach..." style="height: 50px; font-size: 12px; padding: 8px; margin-bottom: 5px;"></textarea>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="tool-btn" style="flex: 1; padding: 8px;" onclick="loadCoachPGN()">📥 LOAD PGN</button>
+                        <button class="tool-btn" style="flex: 1; padding: 8px;" onclick="prevPgnMove()">◀ PREV</button>
+                        <button class="tool-btn" style="flex: 1; padding: 8px;" onclick="nextPgnMove()">NEXT ▶</button>
+                    </div>
+                </div>
+
+                <div style="grid-column: span 2; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size: 10px; color: var(--gold); margin-bottom: 5px; font-weight: bold;">PDF BOOK VIEWER</div>
+                    <input type="file" id="pdf-upload" accept="application/pdf" style="font-size: 11px; padding: 8px; border: none; background: rgba(255,255,255,0.1);">
+                    <div style="display: flex; gap: 5px; margin-top: 5px;">
+                        <button class="tool-btn" style="flex: 1; padding: 8px;" onclick="prevPdfPage()">◀ PREV PAGE</button>
+                        <span id="pdf-page-indicator" style="display: flex; align-items: center; font-size: 12px; font-weight: bold; padding: 0 10px;">- / -</span>
+                        <button class="tool-btn" style="flex: 1; padding: 8px;" onclick="nextPdfPage()">NEXT PAGE ▶</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -255,6 +285,16 @@
         let myStream;
         let currentCall;
         let isMuted = false;
+
+        // PGN Control Variables
+        let pgnGame = new Chess();
+        let pgnMovesList = [];
+        let currentPgnIndex = -1;
+
+        // PDF Control Variables
+        let pdfDoc = null;
+        let pdfPageNum = 1;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
@@ -416,12 +456,169 @@
                     clickSource = null;
                 }
             });
+            
             db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
                 const data = doc.data();
                 if(data?.fen && masterBoard.fen() !== data.fen) { masterBoard.position(data.fen); }
+                
+                // Sync PGN Viewer
+                if (data?.pgnText !== undefined) {
+                    if (data.pgnText === "") {
+                        $("#shared-pgn-display").addClass("hidden");
+                    } else {
+                        $("#shared-pgn-display").removeClass("hidden");
+                        const tempChess = new Chess();
+                        tempChess.load_pgn(data.pgnText);
+                        const moves = tempChess.history();
+                        
+                        // Maintain coach state if page was refreshed
+                        pgnMovesList = moves;
+                        currentPgnIndex = data.pgnCurrentIndex !== undefined ? data.pgnCurrentIndex : -1;
+                        
+                        let html = "";
+                        for(let i=0; i<moves.length; i++) {
+                            if(i % 2 === 0) html += ` <span style="color:var(--gold); font-weight:bold;">${(i/2)+1}.</span> `;
+                            if(i === currentPgnIndex) {
+                                html += `<span class="pgn-move pgn-move-active">${moves[i]}</span> `;
+                            } else {
+                                html += `<span class="pgn-move">${moves[i]}</span> `;
+                            }
+                        }
+                        $("#shared-pgn-display").html(html);
+                        
+                        // Auto scroll to active move
+                        const displayDiv = document.getElementById("shared-pgn-display");
+                        const activeEl = displayDiv.querySelector(".pgn-move-active");
+                        if(activeEl) {
+                            displayDiv.scrollTop = activeEl.offsetTop - displayDiv.offsetTop - 20;
+                        }
+                    }
+                }
+
+                // Sync PDF Viewer
+                if (data?.sharedPdfUrl) {
+                    $("#shared-pdf-display").removeClass("hidden");
+                    const pCanvas = document.getElementById('pdf-render-canvas');
+                    const pCtx = pCanvas.getContext('2d');
+                    const img = new Image();
+                    img.onload = () => {
+                        pCanvas.width = img.width;
+                        pCanvas.height = img.height;
+                        pCtx.drawImage(img, 0, 0);
+                    };
+                    img.src = data.sharedPdfUrl;
+                } else if (data?.sharedPdfUrl === null || data?.sharedPdfUrl === "") {
+                    $("#shared-pdf-display").addClass("hidden");
+                }
             });
             setTimeout(resizeCanvas, 500);
         }
+
+        // --- PGN LOGIC ---
+        function loadCoachPGN() {
+            const pgnText = $("#pgn-input").val();
+            if(!pgnText) return;
+            const valid = pgnGame.load_pgn(pgnText);
+            if(!valid) { alert("Invalid PGN Format"); return; }
+            pgnMovesList = pgnGame.history();
+            currentPgnIndex = -1;
+            
+            db.collection("special_rooms").doc("masterclass_arena").update({
+                pgnText: pgnText,
+                pgnCurrentIndex: currentPgnIndex
+            });
+            
+            const tempStart = new Chess();
+            syncMasterPosition(tempStart.fen());
+        }
+
+        function applyPgnState() {
+            const temp = new Chess();
+            for(let i = 0; i <= currentPgnIndex; i++) {
+                temp.move(pgnMovesList[i]);
+            }
+            syncMasterPosition(temp.fen());
+            db.collection("special_rooms").doc("masterclass_arena").update({
+                pgnCurrentIndex: currentPgnIndex
+            });
+        }
+
+        function prevPgnMove() {
+            if(currentPgnIndex < 0) return;
+            currentPgnIndex--;
+            applyPgnState();
+        }
+
+        function nextPgnMove() {
+            if(currentPgnIndex >= pgnMovesList.length - 1) return;
+            currentPgnIndex++;
+            applyPgnState();
+        }
+
+        // --- PDF LOGIC ---
+        document.getElementById('pdf-upload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if(file.type !== 'application/pdf') return;
+            const fileReader = new FileReader();
+            fileReader.onload = function() {
+                const typedarray = new Uint8Array(this.result);
+                pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+                    pdfDoc = pdf;
+                    pdfPageNum = 1;
+                    renderPdfPage(pdfPageNum);
+                });
+            };
+            fileReader.readAsArrayBuffer(file);
+        });
+
+        function renderPdfPage(num) {
+            pdfDoc.getPage(num).then(page => {
+                const pCanvas = document.getElementById('pdf-render-canvas');
+                const pCtx = pCanvas.getContext('2d');
+                // Scale 1.0 to ensure output data URL is well under Firestore 1MB limit
+                const viewport = page.getViewport({scale: 1.0}); 
+                pCanvas.height = viewport.height;
+                pCanvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: pCtx,
+                    viewport: viewport
+                };
+                page.render(renderContext).promise.then(() => {
+                    $("#shared-pdf-display").removeClass("hidden");
+                    $("#pdf-page-indicator").text(`${pdfPageNum} / ${pdfDoc.numPages}`);
+                    // Convert to JPEG Data URL for Firebase Sync (quality 0.6)
+                    const dataUrl = pCanvas.toDataURL("image/jpeg", 0.6);
+                    db.collection("special_rooms").doc("masterclass_arena").update({
+                        sharedPdfUrl: dataUrl
+                    });
+                });
+            });
+        }
+
+        function prevPdfPage() {
+            if(pdfPageNum <= 1 || !pdfDoc) return;
+            pdfPageNum--;
+            renderPdfPage(pdfPageNum);
+        }
+
+        function nextPdfPage() {
+            if(!pdfDoc || pdfPageNum >= pdfDoc.numPages) return;
+            pdfPageNum++;
+            renderPdfPage(pdfPageNum);
+        }
+
+        function clearMedia() {
+            $("#pgn-input").val("");
+            $("#pdf-upload").val("");
+            pdfDoc = null;
+            $("#pdf-page-indicator").text("- / -");
+            db.collection("special_rooms").doc("masterclass_arena").update({
+                pgnText: "",
+                sharedPdfUrl: null
+            });
+        }
+        // --- END MEDIA ADDITIONS ---
 
         function flipBoard() {
             masterBoard.orientation('flip');
