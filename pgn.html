@@ -242,6 +242,12 @@
         }
 
         async function verifyAccess() {
+            // Check for HTTPS (browsers block mics on http)
+            if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+                alert("Security Error: This page MUST be served over HTTPS for the microphone to work.");
+                return;
+            }
+
             const pass = $("#access-key").val();
             if (pass === "dotun1234") {
                 isCoach = true;
@@ -253,12 +259,14 @@
                 $("#role-text").text("STUDENT");
             } else { alert("Invalid Key"); return; }
 
-            $("#enter-btn").text("CONNECTING AUDIO...").prop("disabled", true);
-            $("#auth-status").text("PLEASE WAIT, INITIALIZING VOICE ENGINE").css("color", "var(--gold)");
+            $("#enter-btn").text("WAITING FOR MIC...").prop("disabled", true);
+            $("#auth-status").text("PLEASE CLICK 'ALLOW' ON THE POPUP").css("color", "var(--gold)");
 
             try {
+                // FIXED: We await the browser's response before initializing Agora
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 
+                $("#enter-btn").text("CONNECTING...");
                 await initAudio(stream);
                 audioReady = true;
 
@@ -282,9 +290,9 @@
                 renderMicUI();
 
             } catch (err) { 
-                console.warn("Mic permissions denied or error:", err); 
-                alert("Critical: Microphone access is required. Please check your browser settings and try again.");
-                location.reload();
+                console.error("Mic Error:", err); 
+                alert("Permission Denied: You must click 'Allow' to use the microphone. Please refresh and try again.");
+                $("#enter-btn").text("RETRY").prop("disabled", false);
             }
         }
 
@@ -296,7 +304,6 @@
                     mediaStreamTrack: stream.getAudioTracks()[0],
                 });
                 
-                // Initialize track in muted state to match micOn = false
                 await localTracks.audioTrack.setMuted(true);
                 await agoraClient.publish(localTracks.audioTrack);
 
@@ -326,7 +333,7 @@
 
         async function toggleLiveMic() {
             if (!audioReady || !localTracks.audioTrack) {
-                alert("Voice system is still initializing. Please wait 3 seconds.");
+                alert("Voice system is still initializing...");
                 return;
             }
             
