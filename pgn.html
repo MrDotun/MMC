@@ -253,7 +253,6 @@
             } else { alert("Invalid Key"); return; }
 
             try {
-                // Shared stream for VN and Live Mic
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
                 mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
@@ -265,7 +264,6 @@
                     reader.onloadend = () => { sendVN(reader.result); audioChunks = []; };
                 };
                 
-                // Pass stream to Agora
                 initAudio(stream);
 
             } catch (err) { console.error("Mic error:", err); }
@@ -280,17 +278,16 @@
             renderMicUI();
         }
 
-        // --- AGORA SHARED STREAM CORE ---
         async function initAudio(stream) {
             try {
                 options.uid = await agoraClient.join(options.appId, options.channel, options.token, null);
                 
-                // Use the custom track from the shared stream
                 localTracks.audioTrack = await AgoraRTC.createCustomAudioTrack({
                     mediaStreamTrack: stream.getAudioTracks()[0],
                 });
                 
-                await localTracks.audioTrack.setEnabled(false); 
+                // Start with setMuted(true) instead of setEnabled(false)
+                await localTracks.audioTrack.setMuted(true); 
                 await agoraClient.publish(localTracks.audioTrack);
 
                 agoraClient.on("user-published", async (user, mediaType) => {
@@ -317,7 +314,8 @@
         async function toggleLiveMic() {
             if (!localTracks.audioTrack) return;
             micOn = !micOn;
-            await localTracks.audioTrack.setEnabled(micOn);
+            // Use setMuted for reliability with custom audio tracks
+            await localTracks.audioTrack.setMuted(!micOn);
             renderMicUI();
         }
 
@@ -327,7 +325,7 @@
             }
         }
 
-        // --- BOARD LOGIC (UNTOUCHED) ---
+        // --- BOARD LOGIC ---
         function initBoard() {
             const config = {
                 draggable: true, dropOffBoard: 'snapback', position: 'start',
