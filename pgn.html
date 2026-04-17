@@ -195,8 +195,6 @@
         <button class="btn" style="margin-top:20px; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: #94a3b8;" onclick="location.reload()">EXIT CLASS</button>
     </div>
 
-    <div id="jitsi-container" style="display:none;"></div>
-
     <script>
         const firebaseConfig = {
           apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
@@ -255,6 +253,7 @@
             } else { alert("Invalid Key"); return; }
 
             try {
+                // Shared stream for VN and Live Mic
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 mediaRecorder = new MediaRecorder(stream);
                 mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
@@ -265,6 +264,10 @@
                     reader.readAsDataURL(audioBlob);
                     reader.onloadend = () => { sendVN(reader.result); audioChunks = []; };
                 };
+                
+                // Pass stream to Agora
+                initAudio(stream);
+
             } catch (err) { console.error("Mic error:", err); }
 
             $("#password-overlay").addClass("hidden");
@@ -273,18 +276,20 @@
             
             initBoard();
             initDrawingSync();
-            initAudio(); 
             initChat(); 
             renderMicUI();
         }
 
-        // --- AGORA CORE LOGIC ---
-        async function initAudio() {
+        // --- AGORA SHARED STREAM CORE ---
+        async function initAudio(stream) {
             try {
                 options.uid = await agoraClient.join(options.appId, options.channel, options.token, null);
-                localTracks.audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
                 
-                // Track is published but default disabled (muted)
+                // Use the custom track from the shared stream
+                localTracks.audioTrack = await AgoraRTC.createCustomAudioTrack({
+                    mediaStreamTrack: stream.getAudioTracks()[0],
+                });
+                
                 await localTracks.audioTrack.setEnabled(false); 
                 await agoraClient.publish(localTracks.audioTrack);
 
@@ -322,7 +327,7 @@
             }
         }
 
-        // --- CHESSBOARD & UTILS (STRUCTURE MAINTAINED) ---
+        // --- BOARD LOGIC (UNTOUCHED) ---
         function initBoard() {
             const config = {
                 draggable: true, dropOffBoard: 'snapback', position: 'start',
@@ -504,7 +509,6 @@
         canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); });
         canvas.addEventListener('touchend', stopDrawing);
         window.addEventListener('resize', resizeCanvas);
-
     </script>
 </body>
 </html>
