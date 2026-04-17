@@ -11,6 +11,7 @@
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
     <style>
@@ -53,6 +54,19 @@
         }
         .hidden { display: none !important; }
         
+        /* New Call Control Bar */
+        .call-controls-bar {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.4);
+            padding: 10px 15px;
+            border-radius: 16px;
+            margin-bottom: 10px;
+            border: 1px solid var(--secondary);
+        }
+
         #password-overlay { 
             position: fixed; top:0; left:0; width:100%; height:100%; 
             background: radial-gradient(circle at center, #1e293b 0%, #020617 100%); 
@@ -121,10 +135,9 @@
         .del-btn { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 14px; margin-left: 5px; vertical-align: middle;}
         .highlight-square { box-shadow: inset 0 0 3px 3px yellow; }
 
-        /* Voice Call UI Styles */
-        .call-ui { background: rgba(74, 222, 128, 0.1); border: 1px solid var(--secondary); border-radius: 12px; padding: 10px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
-        .call-btn { background: var(--secondary); color: #000; font-weight: bold; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
-        .hangup-btn { background: var(--danger); color: white; font-weight: bold; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+        .call-btn-small { background: var(--secondary); color: black; border: none; padding: 5px 10px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 10px; }
+        .mute-btn-small { background: #555; color: white; border: none; padding: 5px 10px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 10px; }
+        .danger-btn-small { background: var(--danger); color: white; border: none; padding: 5px 10px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 10px; }
     </style>
 </head>
 <body>
@@ -150,12 +163,16 @@
 
     <div id="section-masterclass" class="container master-arena-card hidden">
         
-        <div id="voice-call-ui" class="call-ui">
-            <span id="call-status" style="font-size: 12px; font-weight: bold;">Voice: Ready</span>
-            <div id="call-controls">
-                <button id="start-call-btn" class="call-btn" onclick="startVoiceCall()">📞 CALL STUDENT</button>
-                <button id="end-call-btn" class="hangup-btn hidden" onclick="endVoiceCall()">🛑 END</button>
+        <div id="coach-call-bar" class="call-controls-bar hidden">
+            <span style="font-size: 12px; color: var(--secondary); font-weight: 900;">VOICE CONTROL</span>
+            <div style="display:flex; gap:5px;">
+                <button id="call-toggle-btn" class="call-btn-small" onclick="handleCallStart()">📞 START CALL</button>
+                <button id="mute-toggle-btn" class="mute-btn-small hidden" onclick="toggleMute()">🎤 MUTE</button>
+                <button id="cut-call-btn" class="danger-btn-small hidden" onclick="cutCall()">🛑 CUT</button>
             </div>
+        </div>
+        <div id="student-call-status" class="call-controls-bar hidden">
+             <span id="call-status-text" style="font-size: 12px;">Waiting for Coach...</span>
         </div>
 
         <div class="status-bar">
@@ -163,6 +180,7 @@
                 <div class="live-badge">LIVE</div>
                 <span id="role-text">STUDENT</span>
             </div>
+            <div id="mic-control-area"></div>
         </div>
 
         <div class="top-vn-bar" id="notif-bar">
@@ -205,7 +223,7 @@
         <button class="btn" style="margin-top:20px; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: #94a3b8;" onclick="location.reload()">EXIT CLASS</button>
     </div>
 
-    <audio id="remote-audio" autoplay></audio>
+    <audio id="peer-audio-output" autoplay></audio>
 
     <script>
         const firebaseConfig = {
@@ -231,11 +249,11 @@
         let wasCancelled = false;
         let clickSource = null;
 
-        // PeerJS Variables
+        // PeerJS Communication Variables
         let peer;
-        let myPeerId;
-        let localVoiceStream;
+        let myStream;
         let currentCall;
+        let isMuted = false;
 
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
@@ -252,22 +270,21 @@
             if (pass === "dotun1234") {
                 isCoach = true;
                 myData.name = "Coach Dotun";
-                $("#master-admin-panel").removeClass("hidden");
+                $("#master-admin-panel, #coach-call-bar").removeClass("hidden");
                 $("#role-text").html('<span class="master-badge">COACH</span>');
             } else if (pass === "1122") {
                 isCoach = false;
                 $("#role-text").text("STUDENT");
-                $("#start-call-btn").addClass("hidden"); // Student waits for Coach to call
+                $("#student-call-status").removeClass("hidden");
             } else { alert("Invalid Key"); return; }
 
-            // Initialize Voice & Peer
-            initPeerJS();
-
-            // Initialize Recorder for Voice Notes
+            // Initialize PeerJS and Audio
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
-                localVoiceStream = stream; // Save stream for PeerJS
+                myStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                initPeerCommunication();
+                
+                // Keep recorder functionality for Voice Notes
+                mediaRecorder = new MediaRecorder(myStream);
                 mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
                 mediaRecorder.onstop = () => {
                     if(wasCancelled) { audioChunks = []; wasCancelled = false; return; }
@@ -287,61 +304,69 @@
             initChat(); 
         }
 
-        // --- PEERJS VOICE CALL LOGIC ---
-        function initPeerJS() {
+        // --- PEERJS VOICE LOGIC ---
+        function initPeerCommunication() {
             peer = new Peer();
 
             peer.on('open', (id) => {
-                myPeerId = id;
-                console.log("My Peer ID:", id);
-                // Update Firebase with current Peer ID so others can call
                 if(!isCoach) {
-                    db.collection("special_rooms").doc("masterclass_arena").update({ studentPeerId: id });
+                    // Update Firebase so Coach knows the student's ID
+                    db.collection("special_rooms").doc("masterclass_arena").update({ currentStudentPeer: id });
                 }
             });
 
-            // Listen for Incoming Calls (Students will auto-answer the coach)
             peer.on('call', (call) => {
-                $("#call-status").text("📞 IN CALL").css("color", "var(--secondary)");
-                $("#end-call-btn").removeClass("hidden");
-                
-                call.answer(localVoiceStream);
                 currentCall = call;
+                call.answer(myStream);
+                
+                if(!isCoach) $("#call-status-text").text("Connected to Coach").css("color", "var(--secondary)");
 
                 call.on('stream', (remoteStream) => {
-                    document.getElementById('remote-audio').srcObject = remoteStream;
+                    document.getElementById('peer-audio-output').srcObject = remoteStream;
                 });
+
+                call.on('close', () => { resetCallUI(); });
             });
         }
 
-        function startVoiceCall() {
+        function handleCallStart() {
             db.collection("special_rooms").doc("masterclass_arena").get().then((doc) => {
                 const data = doc.data();
-                if (data.studentPeerId) {
-                    $("#call-status").text("📡 CONNECTING...");
-                    const call = peer.call(data.studentPeerId, localVoiceStream);
+                if(data.currentStudentPeer) {
+                    const call = peer.call(data.currentStudentPeer, myStream);
                     currentCall = call;
+                    
+                    $("#call-toggle-btn").addClass("hidden");
+                    $("#mute-toggle-btn, #cut-call-btn").removeClass("hidden");
 
                     call.on('stream', (remoteStream) => {
-                        $("#call-status").text("📞 IN CALL").css("color", "var(--secondary)");
-                        $("#start-call-btn").addClass("hidden");
-                        $("#end-call-btn").removeClass("hidden");
-                        document.getElementById('remote-audio').srcObject = remoteStream;
+                        document.getElementById('peer-audio-output').srcObject = remoteStream;
                     });
                 } else {
-                    alert("No student found in room yet!");
+                    alert("No student has joined the room yet!");
                 }
             });
         }
 
-        function endVoiceCall() {
-            if (currentCall) currentCall.close();
-            $("#call-status").text("Voice: Disconnected").css("color", "white");
-            $("#end-call-btn").addClass("hidden");
-            if(isCoach) $("#start-call-btn").removeClass("hidden");
+        function toggleMute() {
+            isMuted = !isMuted;
+            myStream.getAudioTracks()[0].enabled = !isMuted;
+            $("#mute-toggle-btn").text(isMuted ? "🎤 UNMUTE" : "🎤 MUTE")
+                                .css("background", isMuted ? "var(--danger)" : "#555");
         }
 
-        // --- EXISTING CHESS & DRAWING LOGIC (STAYED INTACT) ---
+        function cutCall() {
+            if(currentCall) currentCall.close();
+            resetCallUI();
+        }
+
+        function resetCallUI() {
+            $("#call-toggle-btn").removeClass("hidden");
+            $("#mute-toggle-btn, #cut-call-btn").addClass("hidden");
+            if(!isCoach) $("#call-status-text").text("Call Disconnected").css("color", "var(--danger)");
+        }
+
+        // --- CHESS AND DRAWING LOGIC (STAYED INTACT) ---
 
         function initBoard() {
             const config = {
