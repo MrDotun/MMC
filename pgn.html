@@ -134,8 +134,8 @@
             <div class="classroom-name">Mr Dotun Chess Classroom</div>
             <div style="font-size: 40px; margin-bottom: 20px;">🏰</div>
             <input type="password" id="access-key" class="pass-input" placeholder="••••" maxlength="10">
-            <button class="btn btn-gold" onclick="verifyAccess()">ENTER ARENA</button>
-            <p style="font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 20px;">SECURITY AUTHORIZATION REQUIRED</p>
+            <button id="enter-btn" class="btn btn-gold" onclick="verifyAccess()">ENTER ARENA</button>
+            <p id="auth-status" style="font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 20px;">SECURITY AUTHORIZATION REQUIRED</p>
         </div>
     </div>
 
@@ -229,7 +229,7 @@
         let isRecording = false;
         let wasCancelled = false;
         let clickSource = null;
-        let audioSystemReady = false; // Flag to prevent race condition
+        let audioReady = false;
 
         const canvas = document.getElementById('drawingCanvas');
         const ctx = canvas.getContext('2d');
@@ -253,12 +253,15 @@
                 $("#role-text").text("STUDENT");
             } else { alert("Invalid Key"); return; }
 
-            // Request Mic Permissions and wait for Audio setup
+            $("#enter-btn").text("CONNECTING AUDIO...").prop("disabled", true);
+            $("#auth-status").text("PLEASE WAIT, INITIALIZING VOICE ENGINE").css("color", "var(--gold)");
+
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 
-                await initAudio(stream); // Await critical for initialization
-                audioSystemReady = true;
+                // Initialize Agora and WAIT for it to finish before entering
+                await initAudio(stream);
+                audioReady = true;
 
                 mediaRecorder = new MediaRecorder(stream);
                 mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
@@ -269,19 +272,22 @@
                     reader.readAsDataURL(audioBlob);
                     reader.onloadend = () => { sendVN(reader.result); audioChunks = []; };
                 };
+
+                // Entry animations
+                $("#password-overlay").addClass("hidden");
+                $("#section-lobby").addClass("hidden");
+                $("#section-masterclass").removeClass("hidden");
+                
+                initBoard();
+                initDrawingSync();
+                initChat(); 
+                renderMicUI();
+
             } catch (err) { 
                 console.warn("Mic permissions denied or error:", err); 
-                alert("Note: Microphone access is required for voice features.");
+                alert("Critical: Microphone access is required. Please check your browser settings and try again.");
+                location.reload();
             }
-
-            $("#password-overlay").addClass("hidden");
-            $("#section-lobby").addClass("hidden");
-            $("#section-masterclass").removeClass("hidden");
-            
-            initBoard();
-            initDrawingSync();
-            initChat(); 
-            renderMicUI();
         }
 
         async function initAudio(stream) {
@@ -292,7 +298,6 @@
                     mediaStreamTrack: stream.getAudioTracks()[0],
                 });
                 
-                // Mute by default upon joining
                 await localTracks.audioTrack.setEnabled(false);
                 await agoraClient.publish(localTracks.audioTrack);
 
@@ -304,6 +309,7 @@
                 });
             } catch (err) { 
                 console.error("Agora Connection Failed:", err); 
+                throw err;
             }
         }
 
@@ -320,9 +326,8 @@
         }
 
         async function toggleLiveMic() {
-            // Guard against uninitialized tracks
-            if (!audioSystemReady || !localTracks.audioTrack) {
-                alert("Audio system is still connecting. Please wait a moment...");
+            if (!audioReady || !localTracks.audioTrack) {
+                alert("Voice system is still initializing. Please wait 3 seconds.");
                 return;
             }
             
@@ -332,13 +337,13 @@
                 renderMicUI();
             } catch (e) {
                 console.error("Mic Switch Error:", e);
-                micOn = !micOn; // Revert
+                micOn = !micOn;
             }
         }
 
         function muteAllStudents() {
             if(isCoach) {
-                alert("Students are manually controlled. Tell them to turn off their 'LIVE' buttons.");
+                alert("Instruction: Ask students to switch their LIVE button to OFF.");
             }
         }
 
@@ -358,10 +363,8 @@
             };
             masterBoard = ChessBoard('masterBoard', config);
             
-            // Fix for mobile drag
             document.getElementById('masterBoard').addEventListener('touchmove', function(e) { e.preventDefault(); }, { passive: false });
 
-            // Tap-to-move logic
             $('#masterBoard').on('click', '.square-55d63', function() {
                 if (setupModeActive) return;
                 const square = $(this).attr('data-square');
