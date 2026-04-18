@@ -25,7 +25,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">2800 ELO STRIDE + FEN VISION</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">2800 ELO STRIDE + TERMINAL VISION ENGINE</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -80,22 +80,49 @@
         let pgnTokens = [];
         let currentBatchStart = 0;
 
-        window.onload = () => {
-            const saved = localStorage.getItem('gm_master_state');
-            if (saved) {
-                const state = JSON.parse(saved);
-                document.getElementById('pgn-input').value = state.original;
-                processPgn(true);
-                currentBatchStart = state.batchStart;
-                updateUI();
-            }
-        };
+        function fenToAscii(fen) {
+            const parts = fen.split(' ')[0];
+            const rows = parts.split('/');
+            let board = "  +-----------------+\n";
+            const rankLabels = ['8', '7', '6', '5', '4', '3', '2', '1'];
+            rows.forEach((row, i) => {
+                board += rankLabels[i] + " | ";
+                for (let char of row) {
+                    if (isNaN(char)) board += char + " ";
+                    else board += ". ".repeat(parseInt(char));
+                }
+                board += "|\n";
+            });
+            board += "  +-----------------+\n    a b c d e f g h";
+            return board;
+        }
 
-        function switchTab(tab) {
-            document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
-            document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
-            document.getElementById('tab-f').className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
-            document.getElementById('tab-r').className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+        function getTerminalVision(startIndex, tokens, initialFen) {
+            let tempChess = new Chess(initialFen);
+            let depth = 0;
+            let movesApplied = 0;
+            let subTokens = [];
+            
+            for (let i = startIndex + 1; i < tokens.length; i++) {
+                const t = tokens[i];
+                if (t === "(") depth++;
+                if (t === ")") {
+                    if (depth === 0) break;
+                    depth--;
+                }
+                if (depth === 0) {
+                    const isMove = /^[a-zA-Z]/.test(t) && !t.startsWith('{') && !t.startsWith('[');
+                    if (isMove) {
+                        let clean = t.replace(/[!?]+$/, '');
+                        if (tempChess.move(clean, { sloppy: true })) {
+                            movesApplied++;
+                            subTokens.push(t);
+                        }
+                    }
+                }
+                if (movesApplied >= 12) break; // Analyze up to 12 plies ahead
+            }
+            return { fen: tempChess.fen(), line: subTokens.join(" ") };
         }
 
         function processPgn(isLoad = false) {
@@ -103,14 +130,11 @@
             if (!input) return;
 
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
-            
             let chunks = [];
             let moveNumber = 0;
             let variationLevel = 0;
             let currentPath = [];
             let depthPlyCounts = { 0: 0 }; 
-            let justClosedVariation = false;
-            
             let chess = new Chess();
             let fenStack = [];
 
@@ -123,53 +147,36 @@
                 }
                 if (token === ")") {
                     variationLevel--;
-                    justClosedVariation = true; 
                     if (fenStack.length > 0) chess.load(fenStack.pop());
                     return; 
                 }
-                
-                const isMoveNum = /^\d+\./.test(token);
-                if (isMoveNum) {
+                if (/^\d+\./.test(token)) {
                     moveNumber = parseInt(token);
                     return; 
                 }
 
-                const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
-                
-                if (isMove) {
+                if (/^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[')) {
                     let cleanMove = token.replace(/[!?]+$/, '');
+                    let startFen = chess.fen();
                     try { chess.move(cleanMove, { sloppy: true }); } catch(e) {}
-
                     depthPlyCounts[variationLevel]++;
                     currentPath.push(token);
 
-                    if (moveNumber > 5 || variationLevel > 0) {
-                        let evalSymbol = "";
-                        let nextToken = pgnTokens[index + 1];
-                        if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
-                            evalSymbol = ` ${nextToken}`;
-                        }
+                    const isStride = (depthPlyCounts[variationLevel] % 4 === 0) || (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
+                    const hasSymbol = token.includes('!') || token.includes('?');
 
-                        const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
-                        const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-                        const isStrideMove = (depthPlyCounts[variationLevel] % 4 === 0) || isFirstMoveOfVariation || justClosedVariation;
-
-                        if (isStrideMove || hasImportantSymbol) {
-                            let subsequent = [];
-                            for(let i = index + 1; i < index + 15 && i < pgnTokens.length; i++) {
-                                if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
-                            }
-
-                            chunks.push({
-                                id: `CHUNK_${chunks.length}`,
-                                target: token + evalSymbol,
-                                fen: chess.fen(),
-                                tokenIndex: index,
-                                context: currentPath.slice(-15).join(" "),
-                                future: subsequent.join(" ")
-                            });
-                            justClosedVariation = false; 
-                        }
+                    if (isStride || hasSymbol) {
+                        const terminal = getTerminalVision(index, pgnTokens, chess.fen());
+                        chunks.push({
+                            id: `CHUNK_${chunks.length}`,
+                            target: token,
+                            startFen: startFen,
+                            currentFen: chess.fen(),
+                            terminalFen: terminal.fen,
+                            terminalLine: terminal.line,
+                            context: currentPath.slice(-10).join(" "),
+                            tokenIndex: index
+                        });
                     }
                 }
             });
@@ -184,20 +191,25 @@
 
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nFEN: ${c.fen}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
-            ).join("\n---\n");
+                `ID: ${c.id}\n` +
+                `CONTEXT: ${c.context}\n` +
+                `TARGET MOVE: ${c.target}\n` +
+                `POSITION AFTER MOVE:\n${fenToAscii(c.currentFen)}\n` +
+                `TERMINAL VISION (Result of this branch):\n` +
+                `LINE: ${c.terminalLine || "End of sequence"}\n` +
+                `${fenToAscii(c.terminalFen)}\n` +
+                `---`
+            ).join("\n");
 
             return `Role: 2800 ELO Super-GM.
-Task: Direct, high-level analysis.
+Task: Explain the Strategic "Why" behind moves.
 
-RULES:
-- NO AI GRAMMAR. Do not use words like "pivotal," "underscores," "showcases," or "testament." 
-- NO BIG STORIES. Speak like a professional player in a post-mortem.
-- USE FEN VISION: Check the FEN. If the target move is a mistake, look at 'Subsequent' and explain the concrete refutation.
-- FOCUS: Piece activity, prophylactic thinking, and color complexes.
-- STYLE: Human, blunt, conceptual. Short sentences.
-
-Example human style: "White is just shuffling here. Black has full compensation on the dark squares after d5."
+INSTRUCTIONS:
+- Compare the "POSITION AFTER MOVE" to the "TERMINAL VISION."
+- Use 2800-level human logic: focus on piece activity, prophylaxis, pawn structure imbalances, and king safety.
+- AVOID AI FLUFF (no "testament", "pivotal", "nuanced"). 
+- Speak like a GM in a training camp: blunt, conceptual, and concrete.
+- Explain why the terminal position is better/worse than the starting one.
 
 FORMAT: JSON ONLY.
 {"CHUNK_ID": "Your Analysis"}
@@ -211,7 +223,7 @@ ${batch}`;
             currentBatchStart = end;
             updateUI();
             saveState();
-            alert("Batch Ready.");
+            alert("Batch Ready with Terminal Vision.");
         }
 
         function copyAllRemaining() {
@@ -283,6 +295,13 @@ ${batch}`;
             a.href = url;
             a.download = "GM_Master_Analysis.pgn";
             a.click();
+        }
+
+        function switchTab(tab) {
+            document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
+            document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
+            document.getElementById('tab-f').className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+            document.getElementById('tab-r').className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
     </script>
 </body>
