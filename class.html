@@ -306,6 +306,7 @@
             $("#password-overlay").removeClass("hidden"); 
         }
 
+        // --- UPDATED: verifyAccess ---
         async function verifyAccess() {
             const pass = $("#access-key").val();
             if (pass === "dotun1234") {
@@ -322,7 +323,10 @@
             } else { alert("Invalid Key"); return; }
 
             try {
-                myStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // Audio loop fix: Echo Cancellation added
+                myStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { echoCancellation: true, noiseSuppression: true } 
+                });
                 initPeerCommunication();
                 
                 mediaRecorder = new MediaRecorder(myStream);
@@ -334,7 +338,12 @@
                     reader.readAsDataURL(audioBlob);
                     reader.onloadend = () => { sendVN(reader.result); audioChunks = []; };
                 };
-            } catch (err) { console.error("Mic error:", err); }
+            } catch (err) { 
+                console.error("Mic error:", err); 
+                // Hang fix: Initialize peer even if mic errors out
+                alert("Please allow microphone access to use the audio call feature.");
+                initPeerCommunication();
+            }
 
             $("#password-overlay").addClass("hidden");
             $("#section-lobby").addClass("hidden");
@@ -375,8 +384,18 @@
             });
         }
 
+        // --- UPDATED: initPeerCommunication ---
         function initPeerCommunication() {
-            peer = new Peer();
+            // Silence fix: Adding STUN servers
+            peer = new Peer({
+                config: {
+                    'iceServers': [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                }
+            });
+            
             peer.on('open', (id) => {
                 if(!isCoach) {
                     db.collection("special_rooms").doc("masterclass_arena").update({ currentStudentPeer: id });
@@ -385,15 +404,21 @@
 
             peer.on('call', (call) => {
                 currentCall = call;
-                call.answer(myStream);
+                call.answer(myStream); 
                 if(!isCoach) $("#call-status-text").text("Connected to Coach").css("color", "var(--secondary)");
+                
                 call.on('stream', (remoteStream) => {
-                    document.getElementById('peer-audio-output').srcObject = remoteStream;
+                    const audioEl = document.getElementById('peer-audio-output');
+                    audioEl.srcObject = remoteStream;
+                    // Silence fix: Autoplay enforcement
+                    audioEl.play().catch(e => console.log("Audio play blocked by browser:", e));
                 });
+                
                 call.on('close', () => { resetCallUI(); });
             });
         }
 
+        // --- UPDATED: handleCallStart ---
         function handleCallStart() {
             db.collection("special_rooms").doc("masterclass_arena").get().then((doc) => {
                 const data = doc.data();
@@ -402,8 +427,12 @@
                     currentCall = call;
                     $("#call-toggle-btn").addClass("hidden");
                     $("#mute-toggle-btn, #cut-call-btn").removeClass("hidden");
+                    
                     call.on('stream', (remoteStream) => {
-                        document.getElementById('peer-audio-output').srcObject = remoteStream;
+                        const audioEl = document.getElementById('peer-audio-output');
+                        audioEl.srcObject = remoteStream;
+                        // Silence fix: Autoplay enforcement
+                        audioEl.play().catch(e => console.log("Audio play blocked by browser:", e));
                     });
                 }
             });
@@ -608,6 +637,7 @@
             renderPdfPage(pdfPageNum);
         }
 
+        // --- FIXED CUTOFF: clearMedia() ---
         function clearMedia() {
             $("#pgn-input").val("");
             $("#pdf-upload").val("");
@@ -618,158 +648,6 @@
                 sharedPdfUrl: null
             });
         }
-        // --- END MEDIA ADDITIONS ---
-
-        function flipBoard() {
-            masterBoard.orientation('flip');
-            isFlipped = (masterBoard.orientation() === 'black');
-        }
-
-        function toggleSetupMode() {
-            setupModeActive = !setupModeActive;
-            const currentFen = masterBoard.fen();
-            masterBoard = ChessBoard('masterBoard', {
-                orientation: isFlipped ? 'black' : 'white',
-                draggable: true, dropOffBoard: 'trash', sparePieces: setupModeActive, position: currentFen,
-                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
-                onDrop: (source, target) => {
-                    setTimeout(() => { db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() }); }, 100);
-                }
-            });
-            document.getElementById('masterBoard').addEventListener('touchmove', function(e) { e.preventDefault(); }, { passive: false });
-            const btnText = setupModeActive ? "✅ FINISH SETUP" : "🧩 SETUP MODE";
-            $("#setup-mode-btn").text(btnText).css("background", setupModeActive ? "var(--secondary)" : "");
-            if(!isCoach) {
-                if(setupModeActive) $("#student-clear-btn").removeClass("hidden");
-                else $("#student-clear-btn").addClass("hidden");
-            }
-            if(!setupModeActive) db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
-        }
-
-        function toggleVN() {
-            if (!mediaRecorder) { alert("Mic not ready"); return; }
-            if (!isRecording) {
-                audioChunks = []; wasCancelled = false;
-                mediaRecorder.start(); isRecording = true;
-                $("#top-vn-btn").addClass("recording").text("🛑");
-                $("#rec-indicator, #cancel-vn-btn").removeClass("hidden");
-            } else {
-                mediaRecorder.stop(); isRecording = false;
-                $("#top-vn-btn").removeClass("recording").text("🎤");
-                $("#rec-indicator, #cancel-vn-btn").addClass("hidden");
-            }
-        }
-
-        function cancelRecording() {
-            if(isRecording) {
-                wasCancelled = true; mediaRecorder.stop(); isRecording = false;
-                $("#top-vn-btn").removeClass("recording").text("🎤");
-                $("#rec-indicator, #cancel-vn-btn").addClass("hidden");
-            }
-        }
-
-        function sendVN(base64) {
-            db.collection("special_rooms").doc("masterclass_arena").collection("messages").add({
-                sender: myData.name, audio: base64, timestamp: firebase.firestore.FieldValue.serverTimestamp()
-            });
-        }
-
-        function deleteMessage(docId) {
-            if(confirm("Delete this message?")) {
-                db.collection("special_rooms").doc("masterclass_arena").collection("messages").doc(docId).delete();
-            }
-        }
-
-        function initChat() {
-            db.collection("special_rooms").doc("masterclass_arena").collection("messages").orderBy("timestamp", "asc").onSnapshot(snap => {
-                  const box = $("#master-chat-box"); box.empty();
-                  let latestAudio = `<span style="font-size: 11px; color: #94a3b8; font-style: italic;">No voice notes yet...</span>`;
-                  snap.forEach(doc => {
-                      const msg = doc.data();
-                      const delBtn = isCoach ? `<button class="del-btn" onclick="deleteMessage('${doc.id}')">🗑️</button>` : '';
-                      let content = msg.audio ? `<div style="display:flex; align-items:center;"><audio controls src="${msg.audio}"></audio>${delBtn}</div>` : `<div style="display:flex; justify-content:space-between; align-items:center;"><span>${msg.text}</span>${delBtn}</div>`;
-                      box.append(`<div class="chat-msg"><span class="chat-name">${msg.sender}</span>${content}</div>`);
-                      if(msg.audio) latestAudio = `<div style="display:flex; align-items:center;"><audio controls src="${msg.audio}"></audio>${delBtn}</div>`;
-                  });
-                  $("#latest-audio-container").html(latestAudio); box.scrollTop(box[0].scrollHeight);
-            });
-        }
-
-        function sendMasterChat() {
-            const text = $("#master-chat-input").val().trim(); if(!text) return;
-            db.collection("special_rooms").doc("masterclass_arena").collection("messages").add({
-                sender: myData.name, text: text, timestamp: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            $("#master-chat-input").val("");
-        }
-
-        function toggleDrawMode() {
-            drawModeActive = !drawModeActive;
-            canvas.style.pointerEvents = drawModeActive ? 'auto' : 'none';
-            $("#toggle-draw-btn").css('background', drawModeActive ? 'var(--gold)' : '').css('color', drawModeActive ? '#000' : '');
-            if(drawModeActive) resizeCanvas();
-        }
-
-        function clearDrawing() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            db.collection("special_rooms").doc("masterclass_arena").update({ drawing: null });
-        }
-
-        function resizeCanvas() {
-            const board = document.getElementById('masterBoard');
-            if (board) { canvas.width = board.clientWidth; canvas.height = board.clientHeight; }
-        }
-
-        function initDrawingSync() { 
-            db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
-                const data = doc.data();
-                if (data?.drawing) {
-                    const img = new Image();
-                    img.onload = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); };
-                    img.src = data.drawing;
-                } else { ctx.clearRect(0, 0, canvas.width, canvas.height); }
-            });
-        }
-
-        function syncMasterPosition(pos) { 
-            masterBoard.position(pos); 
-            db.collection("special_rooms").doc("masterclass_arena").update({ fen: masterBoard.fen() });
-        }
-
-        function emptyBoard() { 
-            masterBoard.clear(); 
-            db.collection("special_rooms").doc("masterclass_arena").update({ fen: '8/8/8/8/8/8/8/8 w - - 0 1' });
-        }
-
-        function startDrawing(e) {
-            if(!drawModeActive || !isCoach) return;
-            isDrawing = true; ctx.beginPath();
-            const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
-            const y = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
-            ctx.moveTo(x, y);
-        }
-
-        function draw(e) {
-            if(!isDrawing) return;
-            const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
-            const y = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
-            ctx.lineTo(x, y); ctx.strokeStyle='#fbbf24'; ctx.lineWidth=4; ctx.lineCap = 'round'; ctx.stroke();
-        }
-
-        function stopDrawing() {
-            if(isDrawing) { isDrawing = false; db.collection("special_rooms").doc("masterclass_arena").update({ drawing: canvas.toDataURL() }); }
-        }
-
-        canvas.addEventListener('mousedown', startDrawing);
-        canvas.addEventListener('mousemove', draw);
-        window.addEventListener('mouseup', stopDrawing);
-        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e); });
-        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); });
-        canvas.addEventListener('touchend', stopDrawing);
-        window.addEventListener('resize', resizeCanvas);
-
     </script>
 </body>
 </html>
