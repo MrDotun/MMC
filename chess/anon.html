@@ -1,1 +1,257 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GM Variation Master Pro | Decipher Chess Academy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="garbochess.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
+        .gold-text { color: #d4af37; }
+        .gold-bg { background-color: #d4af37; color: #1e293b; }
+        .glass { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .chunk-card { border-left: 4px solid #d4af37; background: #0f172a; transition: all 0.2s; min-height: 50px; }
+        .chunk-card.completed { border-left-color: #10b981; opacity: 0.5; }
+        textarea { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; }
+        #console-log { height: 100px; font-family: 'Fira Code', monospace; font-size: 10px; overflow-y: auto; background: #000; color: #d4af37; border: 1px solid #334155; padding: 10px; }
+        #engine-live-view { font-family: 'Fira Code', monospace; font-size: 11px; background: #1e293b; color: #fff; padding: 10px; border-radius: 12px; border: 1px solid #d4af37; margin-bottom: 15px; }
+        #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.2s; }
+    </style>
+</head>
+<body class="p-4 md:p-10">
+
+    <div class="max-w-6xl mx-auto">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
+            <div>
+                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Enhanced Engine Evaluation + Nested Branches</p>
+            </div>
+            <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
+                <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
+                <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
+            </nav>
+        </header>
+
+        <div id="view-fragmenter" class="space-y-6">
+            <div id="console-log" class="rounded-xl mb-4 border border-slate-700">Waiting for user input...</div>
+
+            <div class="glass p-6 rounded-2xl">
+                <div id="engine-live-view" class="hidden">
+                    <div class="flex justify-between border-b border-slate-700 pb-2 mb-2">
+                        <span class="gold-text font-bold uppercase text-[10px] tracking-widest">Live Engine Feed</span>
+                        <span id="live-target" class="text-white font-bold text-[10px]">Ready</span>
+                    </div>
+                    <div id="live-line" class="text-emerald-400 text-xs italic italic">Awaiting move sequence...</div>
+                </div>
+
+                <div class="flex justify-between items-center mb-4">
+                    <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
+                    <div class="text-right">
+                        <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest italic italic">Ready</div>
+                        <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
+                    </div>
+                </div>
+                <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
+                <div class="flex flex-wrap gap-3">
+                    <button id="init-btn" onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Analysis</button>
+                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden uppercase text-xs">Copy Next 10</button>
+                    <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
+                </div>
+            </div>
+            <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
+        </div>
+
+        <div id="view-reassembler" class="hidden space-y-6">
+            <div class="glass p-6 rounded-2xl">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-2">
+                        <label class="text-[10px] uppercase font-bold text-slate-500">Step 1: Gemini's JSON</label>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste JSON response here..."></textarea>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-[10px] uppercase font-bold text-slate-500">Step 2: Reassembled PGN</label>
+                        <textarea id="final-pgn" rows="14" class="w-full p-4 rounded-xl text-xs text-emerald-400" readonly></textarea>
+                    </div>
+                </div>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg">Inject Annotations & Rebuild File</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let globalChunks = [];
+        let pgnTokens = [];
+        let currentBatchStart = 0;
+
+        function log(msg) {
+            const el = document.getElementById('console-log');
+            el.innerHTML += `<br>> ${msg}`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        async function processPgn() {
+            let input = document.getElementById('pgn-input').value;
+            if (!input) return;
+
+            // Strip metadata and illegal characters that cause "couldn't play" errors
+            input = input.replace(/\[.*?\]/g, '').replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+
+            log("Starting Analysis...");
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBKRQ])?[+#]?|O-O-O|O-O|\{[^}]*\}|\$[0-9]+|[!?]{1,2})/g) || [];
+            
+            if (typeof ResetGame !== 'function') { log("Error: Engine not detected."); return; }
+            
+            // Hard Sync Board State
+            ResetGame();
+            InitializeFromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+            
+            document.getElementById('engine-live-view').classList.remove('hidden');
+            globalChunks = [];
+            let plyCount = 0;
+            let variationLevel = 0;
+            let stateBeforeLastMove = GetFen();
+            let returnStack = [];
+
+            log(`Parsing ${pgnTokens.length} tokens...`);
+
+            for (let i = 0; i < pgnTokens.length; i++) {
+                let token = pgnTokens[i].trim();
+
+                if (token === "(") {
+                    variationLevel++;
+                    returnStack.push(GetFen()); 
+                    continue;
+                }
+                if (token === ")") {
+                    variationLevel--;
+                    if (returnStack.length > 0) InitializeFromFen(returnStack.pop());
+                    continue;
+                }
+                
+                if (token.startsWith('{') || token.startsWith('$')) continue;
+                if (/^\d+\./.test(token)) continue;
+
+                const isMove = /^([NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8]|O-O)/.test(token);
+                
+                if (isMove) {
+                    try {
+                        const cleanToken = token.replace(/[^a-zA-Z0-9+#=]/g, '');
+                        const move = ParseMove(cleanToken);
+                        if (move) {
+                            plyCount++;
+                            stateBeforeLastMove = GetFen();
+                            MakeMove(move);
+                            
+                            // Live Engine Logic
+                            document.getElementById('live-target').innerText = `Ply ${plyCount}: ${token}`;
+                            
+                            let nextToken = (pgnTokens[i + 1] || "").trim();
+                            let isAnnotated = nextToken.startsWith('$') || nextToken.includes('!') || nextToken.includes('?');
+                            
+                            if (variationLevel > 0 || isAnnotated || plyCount % 6 === 0) {
+                                g_timeout = 300; 
+                                let score = (Search(null, 10, null) / 100).toFixed(2);
+                                
+                                let plan = "";
+                                if (typeof g_pv !== 'undefined') {
+                                    for (let p = 0; p < Math.min(g_pv.length, 3); p++) plan += FormatMove(g_pv[p]) + " ";
+                                }
+                                
+                                document.getElementById('live-line').innerText = `PV: ${plan} (${score})`;
+
+                                globalChunks.push({
+                                    id: `CHUNK_${globalChunks.length}`,
+                                    target: token,
+                                    annotation: isAnnotated ? nextToken : "",
+                                    tokenIndex: i,
+                                    fen: GetFen(),
+                                    score: score,
+                                    plan: plan
+                                });
+                                updateUI();
+                                await new Promise(r => setTimeout(r, 10)); 
+                            }
+                        } else {
+                            log(`Warning: Skip invalid ${token}`);
+                        }
+                    } catch (e) {
+                        log(`Warning: Skip invalid ${token}`);
+                    }
+                }
+            }
+
+            log(`Done! Found ${globalChunks.length} positions.`);
+            if (globalChunks.length > 0) document.getElementById('batch-btn').classList.remove('hidden');
+        }
+
+        function formatBatch(start, end) {
+            const batch = globalChunks.slice(start, end).map(c => 
+                `ID: ${c.id}\nTARGET: ${c.target} ${c.annotation}\nEngine Context: ${c.fen} | Score: ${c.score} | Plan: ${c.plan}`
+            ).join("\n---\n");
+
+            return `Role: 2700 ELO GM.
+Task: Write very simple chess notes for the TARGET. If the TARGET has a sign like $1, $14, !, or ?, explain why that evaluation was given.
+
+STRICT RULES:
+- Use simple 8-year old English.
+- Use "center" NEVER "central".
+- Use "structure" NEVER "structural".
+- Explain why the move works or fails.
+
+FORMAT: ONLY JSON
+{"CHUNK_ID": "Your simple note here"}
+
+${batch}`;
+        }
+
+        function updateUI() {
+            const container = document.getElementById('chunks-container');
+            container.innerHTML = "";
+            globalChunks.forEach((c, i) => {
+                const div = document.createElement('div');
+                div.className = `chunk-card glass p-2 rounded-lg border border-slate-800 ${i < currentBatchStart ? 'completed' : ''}`;
+                div.innerHTML = `<p class="text-[8px] gold-text font-bold">${c.id}</p><p class="text-[10px] font-bold">${c.target} ${c.annotation} (${c.score})</p>`;
+                container.appendChild(div);
+            });
+            const perc = (globalChunks.length > 0) ? (currentBatchStart / globalChunks.length) * 100 : 0;
+            document.getElementById('progress-fill').style.width = perc + "%";
+            document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} POSITIONS`;
+        }
+
+        function copyNextBatch() {
+            const end = Math.min(currentBatchStart + 10, globalChunks.length);
+            navigator.clipboard.writeText(formatBatch(currentBatchStart, end));
+            currentBatchStart = end;
+            updateUI();
+        }
+
+        function switchTab(tab) {
+            document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
+            document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
+        }
+
+        function clearAll() { location.reload(); }
+
+        function rebuildPgn() {
+            const raw = document.getElementById('ai-json').value;
+            let aiData = {};
+            const matches = raw.match(/\{[^}]*\}/g);
+            if (matches) matches.forEach(m => { try { Object.assign(aiData, JSON.parse(m)); } catch(e){} });
+            
+            let workingTokens = [...pgnTokens];
+            Object.keys(aiData).forEach(id => {
+                const chunk = globalChunks.find(c => c.id === id);
+                if (chunk) {
+                    let targetIndex = chunk.tokenIndex;
+                    let offset = chunk.annotation ? 1 : 0;
+                    workingTokens[targetIndex + offset] += ` { ${aiData[id]} }`;
+                }
+            });
+            document.getElementById('final-pgn').value = workingTokens.join(" ").replace(/\s+/g, ' ');
+        }
+    </script>
+</body>
+</html>
