@@ -87,6 +87,7 @@
             if (!input) return;
 
             log("Starting Analysis...");
+            // Enhanced Regex to capture everything including NAGs ($) and comments {}
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBKRQ])?[+#]?|O-O-O|O-O|\{[\s\S]*?\}|\[[\s\S]*?\]|\$[0-9]+|[!?]{1,2})/g) || [];
             
             if (typeof ResetGame !== 'function') { log("Error: Engine script not detected."); return; }
@@ -102,12 +103,11 @@
             log(`Parsing ${pgnTokens.length} tokens...`);
 
             for (let i = 0; i < pgnTokens.length; i++) {
-                let token = pgnTokens[i];
+                let token = pgnTokens[i].trim();
 
                 if (token === "(") {
                     variationLevel++;
-                    returnStack.push(GetFen());
-                    InitializeFromFen(stateBeforeLastMove);
+                    returnStack.push(stateBeforeLastMove); 
                     continue;
                 }
                 if (token === ")") {
@@ -116,7 +116,14 @@
                     continue;
                 }
                 
-                if (/^\d+\./.test(token)) moveNumber = parseInt(token);
+                // Skip non-move tokens for engine processing but keep them in token array
+                if (token.startsWith('{') || token.startsWith('[') || token.startsWith('$') || token === '*') continue;
+
+                if (/^\d+\./.test(token)) {
+                    moveNumber = parseInt(token);
+                    continue;
+                }
+
                 const isMove = /^([NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8]|O-O)/.test(token) && !token.includes('.');
                 
                 if (isMove) {
@@ -126,10 +133,13 @@
                     
                     if (move) {
                         MakeMove(move);
-                        let nextToken = pgnTokens[i + 1] || "";
                         
-                        if (variationLevel > 0 || nextToken.includes('!') || nextToken.includes('?') || plyCount % 6 === 0) {
-                            log(`Engine processing: ${token} (Move ${moveNumber})`);
+                        // Check if the move is followed by an evaluation sign ($14, !, ?, etc)
+                        let nextToken = pgnTokens[i + 1] || "";
+                        let isAnnotated = nextToken.startsWith('$') || nextToken.includes('!') || nextToken.includes('?');
+                        
+                        if (variationLevel > 0 || isAnnotated || plyCount % 6 === 0) {
+                            log(`Engine processing: ${token} ${isAnnotated ? nextToken : ''}`);
                             
                             g_timeout = 300; 
                             let score = (Search(null, 10, null) / 100).toFixed(2);
@@ -142,6 +152,7 @@
                             globalChunks.push({
                                 id: `CHUNK_${globalChunks.length}`,
                                 target: token,
+                                annotation: isAnnotated ? nextToken : "",
                                 tokenIndex: i,
                                 fen: GetFen(),
                                 score: score,
@@ -159,14 +170,13 @@
             document.getElementById('batch-btn').classList.remove('hidden');
         }
 
-        // --- YOUR ORIGINAL INSTRUCTIONS RESTORED BELOW ---
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nTARGET: ${c.target}\nEngine Context: ${c.fen} | Score: ${c.score} | Plan: ${c.plan}`
+                `ID: ${c.id}\nTARGET: ${c.target} ${c.annotation}\nEngine Context: ${c.fen} | Score: ${c.score} | Plan: ${c.plan}`
             ).join("\n---\n");
 
             return `Role: 2700 ELO GM.
-Task: Write very simple chess notes for the TARGET.
+Task: Write very simple chess notes for the TARGET. If the TARGET has a sign like $1, $14, !, or ?, explain why that evaluation was given.
 
 STRICT RULES:
 - Use simple 8-year old English.
@@ -188,7 +198,7 @@ ${batch}`;
             globalChunks.forEach((c, i) => {
                 const div = document.createElement('div');
                 div.className = `chunk-card glass p-2 rounded-lg border border-slate-800 ${i < currentBatchStart ? 'completed' : ''}`;
-                div.innerHTML = `<p class="text-[8px] gold-text font-bold">${c.id}</p><p class="text-[10px] font-bold">${c.target} (${c.score})</p>`;
+                div.innerHTML = `<p class="text-[8px] gold-text font-bold">${c.id}</p><p class="text-[10px] font-bold">${c.target} ${c.annotation} (${c.score})</p>`;
                 container.appendChild(div);
             });
             const perc = (globalChunks.length > 0) ? (currentBatchStart / globalChunks.length) * 100 : 0;
@@ -220,9 +230,18 @@ ${batch}`;
             let workingTokens = [...pgnTokens];
             Object.keys(aiData).forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
-                if (chunk) workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
+                if (chunk) {
+                    // Check if there is an annotation immediately after the move token
+                    let targetIndex = chunk.tokenIndex;
+                    if (chunk.annotation) {
+                        // If it has an annotation ($14 etc), we place the comment AFTER the annotation
+                        workingTokens[targetIndex + 1] += ` { ${aiData[id]} }`;
+                    } else {
+                        workingTokens[targetIndex] += ` { ${aiData[id]} }`;
+                    }
+                }
             });
-            document.getElementById('final-pgn').value = workingTokens.join(" ");
+            document.getElementById('final-pgn').value = workingTokens.join(" ").replace(/\s+/g, ' ');
         }
     </script>
 </body>
