@@ -93,81 +93,79 @@
         function switchTab(tab) {
             document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
             document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
-            document.getElementById('tab-f').className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
-            document.getElementById('tab-r').className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+            const f = document.getElementById('tab-f');
+            const r = document.getElementById('tab-r');
+            f.className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+            r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
         function processPgn(isLoad = false) {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$?!]+|\{.*?\}|\[.*?\])/g) || [];
+            // Updated regex to ensure variation brackets and symbols are caught precisely
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
             
             let chunks = [];
             let moveNumber = 0;
-            let plyCount = 0;
             let variationLevel = 0;
             let currentPath = [];
-            let pathStack = []; // Captures context for nested branches
+            let depthPlyCounts = { 0: 0 }; 
+            let justClosedVariation = false;
 
             pgnTokens.forEach((token, index) => {
                 if (token === "(") {
                     variationLevel++;
-                    pathStack.push([...currentPath]); // Save main line before entering branch
+                    depthPlyCounts[variationLevel] = 0; 
+                    return; 
                 }
                 if (token === ")") {
                     variationLevel--;
-                    if (pathStack.length > 0) {
-                        currentPath = pathStack.pop(); // Restore main line after leaving branch
-                    }
+                    justClosedVariation = true; 
+                    return; 
                 }
                 
                 const isMoveNum = /^\d+\./.test(token);
-                if (isMoveNum) moveNumber = parseInt(token);
+                if (isMoveNum) {
+                    moveNumber = parseInt(token);
+                    return; 
+                }
 
                 const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
                 
                 if (isMove) {
-                    plyCount++;
+                    depthPlyCounts[variationLevel]++;
                     currentPath.push(token);
 
+                    // Logic: Process if inside ANY branch (variationLevel > 0) OR deep in main line
                     if (moveNumber > 5 || variationLevel > 0) {
-                        
                         let evalSymbol = "";
                         let nextToken = pgnTokens[index + 1];
                         if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
                             evalSymbol = ` ${nextToken}`;
                         }
 
-                        const hasImportantSymbol = evalSymbol.includes('!') || evalSymbol.includes('?');
-                        const isStrideMove = (plyCount % 6 === 0);
+                        const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
+                        
+                        // Captures every start of a nested branch, moves after a branch ends, and the standard stride
+                        const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
+                        const isStrideMove = (depthPlyCounts[variationLevel] % 4 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
                         if (isStrideMove || hasImportantSymbol) {
                             let subsequent = [];
-                            let subLevel = variationLevel;
-                            
-                            // Look ahead, but respect branch boundaries
-                            for(let i = index + 1; i < index + 20 && i < pgnTokens.length; i++) {
-                                if (pgnTokens[i] === "(") subLevel++;
-                                if (pgnTokens[i] === ")") subLevel--;
-                                
-                                // Stop looking if we exit the current nested branch
-                                if (subLevel < variationLevel) break;
-
-                                // Only add moves that belong strictly to this variation depth
-                                if (subLevel === variationLevel && !pgnTokens[i].startsWith('{') && pgnTokens[i] !== ")" && pgnTokens[i] !== "(") {
-                                    subsequent.push(pgnTokens[i]);
-                                }
-                                if (subsequent.length >= 10) break; // Keep future context concise
+                            for(let i = index + 1; i < index + 15 && i < pgnTokens.length; i++) {
+                                if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
                             }
 
                             chunks.push({
                                 id: `CHUNK_${chunks.length}`,
                                 target: token + evalSymbol,
                                 tokenIndex: index,
-                                context: currentPath.slice(-12).join(" "),
+                                context: currentPath.slice(-15).join(" "),
                                 future: subsequent.join(" ")
                             });
+                            
+                            justClosedVariation = false; 
                         }
                     }
                 }
@@ -186,19 +184,26 @@
                 `ID: ${c.id}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
             ).join("\n---\n");
 
+            // STRICTOR PROMPT: Simple words, no complex English, standard chess terms only.
             return `Role: 2700 ELO GM.
-Task: Write very simple chess notes for the TARGET.
+Task: Provide deep positional analysis for the TARGET.
 
-STRICT RULES:
-- Use simple 8-year old English.
-- Use "center" NEVER "central".
-- Use "structure" NEVER "structural".
-- Use chess terms like: "e4-square", "sac", "white is better", "slight advantage", "development", or "king safety".
-- NO big words like "perogative", "blunt", or "positional nuances". 
-- Just explain why the move works or fails.
+STRICT LANGUAGE RULES:
+1. Use ONLY simple English. No big or uncommon words.
+2. Use "structure" NOT "structural".
+3. Use "center" NOT "central".
+4. Use "exchange" NOT "liquidate".
+5. NEVER use the words "tactical", "blunt", or academic sounding terms.
+6. Use simple chess terms: center, squares, outpost, diagonal, structure, sac, exchange.
+7. Keep descriptions purposeful and easy to learn. No storytelling.
+
+GUIDELINES:
+- Use 'Subsequent' moves to see why the TARGET is good or bad.
+- If TARGET has '!' or '?', explain the clear chess reason why.
+- Do not include symbols like '$' or '!' inside your commentary text.
 
 FORMAT: ONLY JSON
-{"CHUNK_ID": "Your simple note here"}
+{"CHUNK_ID": "Your Analysis"}
 
 ${batch}`;
         }
@@ -209,7 +214,7 @@ ${batch}`;
             currentBatchStart = end;
             updateUI();
             saveState();
-            alert("Batch (Stride + Symbols) copied!");
+            alert("Batch (Branches + Symbols) copied!");
         }
 
         function copyAllRemaining() {
@@ -217,7 +222,7 @@ ${batch}`;
             currentBatchStart = globalChunks.length;
             updateUI();
             saveState();
-            alert("Full Game (Stride + Symbols) copied!");
+            alert("Full Game (All Variations) copied!");
         }
 
         function rebuildPgn() {
@@ -282,7 +287,7 @@ ${batch}`;
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = "GM_Filtered_Analysis.pgn";
+            a.download = "GM_Variation_Analysis.pgn";
             a.click();
         }
     </script>
