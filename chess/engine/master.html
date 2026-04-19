@@ -26,7 +26,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Enhanced Engine Evaluation + Nested Branches</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Enhanced Engine Evaluation + Variation Branches</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -97,7 +97,7 @@
 
             input = input.replace(/\[.*?\]/g, '').replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
 
-            log("Starting Analysis...");
+            log("Starting Hard-Sync Analysis...");
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBKRQ])?[+#]?|O-O-O|O-O|\{[^}]*\}|\$[0-9]+|[!?]{1,2})/g) || [];
             
             if (typeof ResetGame !== 'function') { log("Error: Engine not detected."); return; }
@@ -110,8 +110,6 @@
             let plyCount = 0;
             let variationLevel = 0;
             let returnStack = [];
-
-            log(`Parsing ${pgnTokens.length} tokens...`);
 
             for (let i = 0; i < pgnTokens.length; i++) {
                 let token = pgnTokens[i].trim();
@@ -134,8 +132,10 @@
                 
                 if (isMove) {
                     try {
+                        InitializeFromFen(GetFen()); 
                         const cleanToken = token.replace(/[^a-zA-Z0-9+#=]/g, '');
                         const move = ParseMove(cleanToken);
+                        
                         if (move) {
                             plyCount++;
                             MakeMove(move);
@@ -146,20 +146,17 @@
                             let isAnnotated = nextToken.startsWith('$') || nextToken.includes('!') || nextToken.includes('?');
                             
                             if (variationLevel > 0 || isAnnotated || plyCount % 6 === 0) {
-                                g_timeout = 300; 
-                                let rawScore = Search(null, 10, null);
-                                // Normalize score: + is White winning, - is Black winning
-                                let score = (g_toMove ? -rawScore : rawScore) / 100;
+                                g_timeout = 400; // Increased time for deeper PV search
+                                Search(null, 12, null); 
+                                let score = (g_toMove ? -g_baseEval : g_baseEval) / 100;
                                 
                                 let plan = "";
                                 if (typeof g_pv !== 'undefined') {
-                                    for (let p = 0; p < Math.min(g_pv.length, 3); p++) {
+                                    for (let p = 0; p < Math.min(g_pv.length, 4); p++) {
                                         if(g_pv[p]) plan += FormatMove(g_pv[p]) + " ";
                                     }
                                 }
                                 
-                                document.getElementById('live-line').innerText = `PV: ${plan} (${score.toFixed(2)})`;
-
                                 globalChunks.push({
                                     id: `CHUNK_${globalChunks.length}`,
                                     target: token,
@@ -180,29 +177,28 @@
                     }
                 }
             }
-
             log(`Done! Found ${globalChunks.length} positions.`);
             if (globalChunks.length > 0) document.getElementById('batch-btn').classList.remove('hidden');
         }
 
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nTARGET: ${c.target} ${c.annotation}\nEngine Context: ${c.fen} | Score: ${c.score} | Plan: ${c.plan}`
+                `ID: ${c.id}\nTARGET: ${c.target} ${c.annotation}\nPOSITION: ${c.fen}\nNEXT VARIATION: ${c.plan}`
             ).join("\n---\n");
 
-            return `Role: 2700 ELO Grandmaster. 
-Task: Explain the TARGET move and describe the plans for BOTH sides to an 8-year-old.
+            return `Role: 2700 ELO GM Coach.
+Task: Explain the TARGET move and the IDEAS for both players to an 8-year-old.
 
 STRICT RULES:
-1. Talk like a confident master. Use phrases like "The idea here is...", "White is looking to...", or "Black wants to counter by..."
-2. Use the "Score" ONLY to determine who is winning, but NEVER mention the number itself.
-3. Use the "Plan" moves to explain the future threat or trap.
-4. Explain WHY the move works or fails.
-5. Use simple 8-year-old English.
-6. Use "center" NEVER "central". Use "structure" NEVER "structural". Use "exchange " don't use "Liquidate"
+1. Use the POSITION and the NEXT VARIATION (the next 4 moves) to explain why the current move works or fails.
+2. If there is a symbol like !, ?, or $1, explain why it was given using the variation as proof.
+3. Explain the plan for White and the plan for Black in this position.
+4. Authority: "The plan is...", "White looks to...", "Black defends by...".
+5. VOCABULARY: Use "center", "exchange", "structure", "position". NEVER use "Central", "liquidate", "tension", or "Structural".
+6. Simple English only. No engine numbers.
 
 FORMAT: ONLY JSON
-{"CHUNK_ID": "Confidence explanation and plans for both sides."}
+{"CHUNK_ID": "The GM note explaining the position, the symbol, and the 4-move variation ideas."}
 
 ${batch}`;
         }
