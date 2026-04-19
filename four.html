@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GM Variation Master Pro | Decipher Chess Academy</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
@@ -25,7 +24,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">2800 ELO STRIDE + DEEP VARIATION CALCULATION</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 3-Move Stride + Symbol Detection</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -80,106 +79,74 @@
         let pgnTokens = [];
         let currentBatchStart = 0;
 
-        function fenToAscii(fen) {
-            const parts = fen.split(' ')[0];
-            const rows = parts.split('/');
-            let board = "  +-----------------+\n";
-            const rankLabels = ['8', '7', '6', '5', '4', '3', '2', '1'];
-            rows.forEach((row, i) => {
-                board += rankLabels[i] + " | ";
-                for (let char of row) {
-                    if (isNaN(char)) board += char + " ";
-                    else board += ". ".repeat(parseInt(char));
-                }
-                board += "|\n";
-            });
-            board += "  +-----------------+\n    a b c d e f g h";
-            return board;
-        }
-
-        function getTerminalVision(startIndex, tokens, initialFen) {
-            let tempChess = new Chess(initialFen);
-            let depth = 0;
-            let movesApplied = 0;
-            let subTokens = [];
-            
-            for (let i = startIndex + 1; i < tokens.length; i++) {
-                const t = tokens[i];
-                if (t === "(") depth++;
-                if (t === ")") {
-                    if (depth === 0) break;
-                    depth--;
-                }
-                if (depth === 0) {
-                    const isMove = /^[a-zA-Z]/.test(t) && !t.startsWith('{') && !t.startsWith('[');
-                    if (isMove) {
-                        let clean = t.replace(/[!?]+$/, '');
-                        if (tempChess.move(clean, { sloppy: true })) {
-                            movesApplied++;
-                            subTokens.push(t);
-                        }
-                    }
-                }
-                if (movesApplied >= 12) break; 
+        window.onload = () => {
+            const saved = localStorage.getItem('gm_master_state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                document.getElementById('pgn-input').value = state.original;
+                processPgn(true);
+                currentBatchStart = state.batchStart;
+                updateUI();
             }
-            return { fen: tempChess.fen(), line: subTokens.join(" ") };
+        };
+
+        function switchTab(tab) {
+            document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
+            document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
+            document.getElementById('tab-f').className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+            document.getElementById('tab-r').className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
         function processPgn(isLoad = false) {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$?!]+|\{.*?\}|\[.*?\])/g) || [];
+            
             let chunks = [];
             let moveNumber = 0;
+            let plyCount = 0;
             let variationLevel = 0;
             let currentPath = [];
-            let pathStack = []; 
-            let depthPlyCounts = { 0: 0 }; 
-            let chess = new Chess();
-            let fenStack = [];
 
             pgnTokens.forEach((token, index) => {
-                if (token === "(") {
-                    variationLevel++;
-                    depthPlyCounts[variationLevel] = 0; 
-                    fenStack.push(chess.fen());
-                    pathStack.push([...currentPath]); 
-                    return; 
-                }
-                if (token === ")") {
-                    variationLevel--;
-                    if (fenStack.length > 0) chess.load(fenStack.pop());
-                    if (pathStack.length > 0) currentPath = pathStack.pop(); 
-                    return; 
-                }
-                if (/^\d+\./.test(token)) {
-                    moveNumber = parseInt(token);
-                    return; 
-                }
+                if (token === "(") variationLevel++;
+                if (token === ")") variationLevel--;
+                
+                const isMoveNum = /^\d+\./.test(token);
+                if (isMoveNum) moveNumber = parseInt(token);
 
-                if (/^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[')) {
-                    let cleanMove = token.replace(/[!?]+$/, '');
-                    let startFen = chess.fen();
-                    try { chess.move(cleanMove, { sloppy: true }); } catch(e) {}
-                    depthPlyCounts[variationLevel]++;
+                const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                
+                if (isMove) {
+                    plyCount++;
                     currentPath.push(token);
 
-                    const isStride = (depthPlyCounts[variationLevel] % 4 === 0) || (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-                    const hasSymbol = token.includes('!') || token.includes('?') || token.includes('$');
+                    if (moveNumber > 5 || variationLevel > 0) {
+                        
+                        let evalSymbol = "";
+                        let nextToken = pgnTokens[index + 1];
+                        if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
+                            evalSymbol = ` ${nextToken}`;
+                        }
 
-                    if (isStride || hasSymbol) {
-                        const terminal = getTerminalVision(index, pgnTokens, chess.fen());
-                        chunks.push({
-                            id: `CHUNK_${chunks.length}`,
-                            target: token,
-                            startFen: startFen,
-                            currentFen: chess.fen(),
-                            terminalFen: terminal.fen,
-                            terminalLine: terminal.line,
-                            context: currentPath.slice(-10).join(" "),
-                            tokenIndex: index
-                        });
+                        const hasImportantSymbol = evalSymbol.includes('!') || evalSymbol.includes('?');
+                        const isStrideMove = (plyCount % 6 === 0);
+
+                        if (isStrideMove || hasImportantSymbol) {
+                            let subsequent = [];
+                            for(let i = index + 1; i < index + 10 && i < pgnTokens.length; i++) {
+                                if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
+                            }
+
+                            chunks.push({
+                                id: `CHUNK_${chunks.length}`,
+                                target: token + evalSymbol,
+                                tokenIndex: index,
+                                context: currentPath.slice(-12).join(" "),
+                                future: subsequent.join(" ")
+                            });
+                        }
                     }
                 }
             });
@@ -194,39 +161,22 @@
 
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\n` +
-                `RECENT SEQUENCE: ${c.context}\n` +
-                `KEY MOVE: ${c.target}\n` +
-                `IMMEDIATE POSITION:\n${fenToAscii(c.currentFen)}\n` +
-                `PROJECTED CONSEQUENCE (The intended line):\n` +
-                `FORCED/MAIN LINE: ${c.terminalLine || "Direct transition"}\n` +
-                `${fenToAscii(c.terminalFen)}\n` +
-                `---`
-            ).join("\n");
+                `ID: ${c.id}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
+            ).join("\n---\n");
 
-            return `Role: Elite 2800 ELO Grandmaster Analyst.
-Task: Explain the positional logic of specific moves for an advanced peer.
+            return `Role: 2700 ELO GM.
+Task: Write very simple chess notes for the TARGET.
 
-STRICT EVALUATION DECODER:
-The KEY MOVE contains technical symbols/NAGs. You MUST use them as your ground truth:
-- $1 (or !): A strong/best move. Justify why it is superior.
-- $2 (or ?): A mistake/error. You MUST explain the failure (pawn structure ruin, tactical blindspot).
-- $3 (or !!): Brilliant. Find the deep point.
-- $4 (or ??): Blunder. Be ruthless in pointing out the disaster.
-- $14 (⩲): White has a stable positional edge.
-- $15 (⩱): Black has a stable positional edge.
-- $16 (±): White is winning/clearly better.
-- $17 (∓): Black is winning/clearly better.
-- $44 (∞): Full compensation. Activity outweighs material loss.
+STRICT RULES:
+- Use simple 8-year old English.
+- Use "center" NEVER "central".
+- Use "structure" NEVER "structural".
+- Use chess terms like: "e4-square", "sac", "white is better", "slight advantage", "development", or "king safety".
+- NO big words like "perogative", "blunt", or "positional nuances". 
+- Just explain why the move works or fails.
 
-ANALYSIS RULES:
-1. SYMBOL INTEGRITY: If a move has "?" or "$2", NEVER call it "harmonious" or "comfortable." Identify what Black/White missed.
-2. POSITIONAL ANCHORS: Discuss pawn structure (isolani, chains, breaks), piece coordination, and key squares (d5, f7, etc.).
-3. THE "WHY": Use the PROJECTED CONSEQUENCE line to inform your logic, but don't just list moves. Explain the "why" behind the symbols.
-4. BANNED WORDS: "Central", "Projected", "Immediate", "tactical", "Liquidate", "Transition", "blunt", "key", "pivotal", "testament", "nuanced", "delicate balance".
-
-FORMAT: JSON ONLY.
-{"CHUNK_ID": "Your Analysis"}
+FORMAT: ONLY JSON
+{"CHUNK_ID": "Your simple note here"}
 
 ${batch}`;
         }
@@ -237,7 +187,7 @@ ${batch}`;
             currentBatchStart = end;
             updateUI();
             saveState();
-            alert("Analysis parameters copied to clipboard.");
+            alert("Batch (Stride + Symbols) copied!");
         }
 
         function copyAllRemaining() {
@@ -245,7 +195,7 @@ ${batch}`;
             currentBatchStart = globalChunks.length;
             updateUI();
             saveState();
-            alert("Full dataset copied.");
+            alert("Full Game (Stride + Symbols) copied!");
         }
 
         function rebuildPgn() {
@@ -265,7 +215,9 @@ ${batch}`;
             });
             sortedIds.forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
-                if (chunk) workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
+                if (chunk) {
+                    workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
+                }
             });
             document.getElementById('final-pgn').value = workingTokens.join(" ");
         }
@@ -297,7 +249,8 @@ ${batch}`;
         }
 
         function copyToClipboard(id) {
-            navigator.clipboard.writeText(document.getElementById(id).value);
+            const val = document.getElementById(id).value;
+            navigator.clipboard.writeText(val);
             alert("Copied!");
         }
 
@@ -307,15 +260,8 @@ ${batch}`;
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = "GM_Master_Analysis.pgn";
+            a.download = "GM_Filtered_Analysis.pgn";
             a.click();
-        }
-
-        function switchTab(tab) {
-            document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
-            document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
-            document.getElementById('tab-f').className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
-            document.getElementById('tab-r').className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
     </script>
 </body>
