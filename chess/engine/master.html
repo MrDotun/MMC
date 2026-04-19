@@ -40,7 +40,7 @@
                 <div class="flex justify-between items-center mb-4">
                     <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
                     <div class="text-right">
-                        <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Ready</div>
+                        <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Wait for Engine...</div>
                         <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
                     </div>
                 </div>
@@ -78,18 +78,33 @@
         let pgnTokens = [];
         let currentBatchStart = 0;
 
+        window.onload = () => {
+            setTimeout(() => {
+                if (typeof ResetGame === "function") {
+                    document.getElementById('stats').innerText = "ENGINE READY";
+                } else {
+                    document.getElementById('stats').innerText = "ENGINE ERROR: Check garbochess.js";
+                }
+            }, 1000);
+            
+            const saved = localStorage.getItem('gm_master_state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                document.getElementById('pgn-input').value = state.original;
+                processPgn(true);
+                currentBatchStart = state.batchStart;
+                updateUI();
+            }
+        };
+
         function processPgn(isLoad = false) {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            // UPDATED TOKENIZER: Safely handles Russian text, headers, and brackets
+            // Updated Tokenizer to safely read Cyrillic/complex PGNs without failing
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBKRQ])?[+#]?|O-O-O|O-O|\{[\s\S]*?\}|\[[\s\S]*?\]|\$[0-9]+|[!?]{1,2})/g) || [];
             
-            if (typeof ResetGame !== 'function') {
-                alert("Error: garbochess.js is not loaded properly.");
-                return;
-            }
-
+            if (typeof ResetGame !== 'function') return;
             ResetGame();
             
             let chunks = [];
@@ -120,7 +135,6 @@
                 const isMoveNum = /^\d+\./.test(token);
                 if (isMoveNum) moveNumber = parseInt(token);
 
-                // STRICT MOVE MATCHER: Ensures it only triggers on actual chess moves
                 const isMove = /^([NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8]|O-O)/.test(token) && !token.includes('.');
                 
                 if (isMove) {
@@ -142,8 +156,15 @@
                         const isStrideMove = (plyCount % 6 === 0);
 
                         if (isStrideMove || hasImportantSymbol) {
+                            // Extract Subsequent moves exactly as you originally wrote it
+                            let subsequent = [];
+                            for(let i = index + 1; i < index + 10 && i < pgnTokens.length; i++) {
+                                if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
+                            }
+
                             const currentFen = GetFen();
                             
+                            // Garbo Engine Background processing
                             g_timeout = 800; 
                             let score = 0;
                             try { score = Search(null, 14, null); } catch(e){} 
@@ -160,6 +181,8 @@
                                 id: `CHUNK_${chunks.length}`,
                                 target: token + evalSymbol,
                                 tokenIndex: index,
+                                context: currentPath.slice(-12).join(" "),
+                                future: subsequent.join(" "),
                                 fen: currentFen,
                                 score: formattedScore,
                                 plan: enginePlan
@@ -174,26 +197,27 @@
             document.getElementById('batch-btn').classList.remove('hidden');
             document.getElementById('all-btn').classList.remove('hidden');
             updateUI();
+            saveState();
         }
 
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nFEN: ${c.fen}\nSCORE: ${c.score}\nTARGET: ${c.target}\nENGINE_PLAN: ${c.plan}`
+                `ID: ${c.id}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}\nEngine Data (FEN/Eval/Plan): ${c.fen} | ${c.score} | ${c.plan}`
             ).join("\n---\n");
 
-            // EXACT PROMPT INSTRUCTIONS FOR CONCRETE EXPLANATIONS
             return `Role: 2700 ELO GM.
-Task: Write very simple but CONCRETE chess notes for the TARGET.
+Task: Write very simple chess notes for the TARGET.
 
 STRICT RULES:
-- Use 8-year old English, but explain like a 2700 GM. 
-- Use "center" NEVER "central". Use "structure" NEVER "structural".
-- Provide a CONCRETE explanation of why a move or a side is better based on the ENGINE_PLAN.
-- EXAMPLE OF WHAT TO DO: "White will soon bring the c4-bishop to h5, and advance the d-pawn, whereas the black bishop on d6 is tied down."
-- DO NOT GIVE VAGUE EXPLANATIONS like "the black pieces are weak" or "White's pieces are more active." Name the exact piece and square.
+- Use simple 8-year old English.
+- Use "center" NEVER "central".
+- Use "structure" NEVER "structural".
+- Use chess terms like: "e4-square", "sac", "white is better", "slight advantage", "development", or "king safety".
+- NO big words like "perogative", "blunt", or "positional nuances". 
+- Just explain why the move works or fails.
 
 FORMAT: ONLY JSON
-{"CHUNK_ID": "Your concrete note here"}
+{"CHUNK_ID": "Your simple note here"}
 
 ${batch}`;
         }
@@ -203,6 +227,7 @@ ${batch}`;
             navigator.clipboard.writeText(formatBatch(currentBatchStart, end));
             currentBatchStart = end;
             updateUI();
+            saveState();
             alert("Batch Copied!");
         }
 
@@ -210,6 +235,7 @@ ${batch}`;
             navigator.clipboard.writeText(formatBatch(currentBatchStart, globalChunks.length));
             currentBatchStart = globalChunks.length;
             updateUI();
+            saveState();
             alert("Full Game Copied!");
         }
 
@@ -251,12 +277,22 @@ ${batch}`;
             document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} KEY POSITIONS`;
         }
 
+        function saveState() {
+            localStorage.setItem('gm_master_state', JSON.stringify({
+                original: document.getElementById('pgn-input').value,
+                batchStart: currentBatchStart
+            }));
+        }
+
         function switchTab(tab) {
             document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
             document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
         }
 
-        function clearAll() { location.reload(); }
+        function clearAll() { 
+            localStorage.removeItem('gm_master_state');
+            location.reload(); 
+        }
     </script>
 </body>
 </html>
