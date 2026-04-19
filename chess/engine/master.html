@@ -82,8 +82,14 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[a-zA-Z0-9\-+=#$?!]+|\{.*?\}|\[.*?\])/g) || [];
+            // UPDATED TOKENIZER: Safely handles Russian text, headers, and brackets
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBKRQ])?[+#]?|O-O-O|O-O|\{[\s\S]*?\}|\[[\s\S]*?\]|\$[0-9]+|[!?]{1,2})/g) || [];
             
+            if (typeof ResetGame !== 'function') {
+                alert("Error: garbochess.js is not loaded properly.");
+                return;
+            }
+
             ResetGame();
             
             let chunks = [];
@@ -114,7 +120,8 @@
                 const isMoveNum = /^\d+\./.test(token);
                 if (isMoveNum) moveNumber = parseInt(token);
 
-                const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                // STRICT MOVE MATCHER: Ensures it only triggers on actual chess moves
+                const isMove = /^([NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8]|O-O)/.test(token) && !token.includes('.');
                 
                 if (isMove) {
                     plyCount++;
@@ -138,12 +145,15 @@
                             const currentFen = GetFen();
                             
                             g_timeout = 800; 
-                            const score = Search(null, 14, null); 
+                            let score = 0;
+                            try { score = Search(null, 14, null); } catch(e){} 
                             const formattedScore = (score / 100).toFixed(2);
                             
                             let enginePlan = "";
-                            for (let i = 0; i < g_pv.length; i++) {
-                                enginePlan += FormatMove(g_pv[i]) + " ";
+                            if (typeof g_pv !== 'undefined') {
+                                for (let i = 0; i < Math.min(g_pv.length, 5); i++) {
+                                    enginePlan += FormatMove(g_pv[i]) + " ";
+                                }
                             }
 
                             chunks.push({
@@ -171,17 +181,16 @@
                 `ID: ${c.id}\nFEN: ${c.fen}\nSCORE: ${c.score}\nTARGET: ${c.target}\nENGINE_PLAN: ${c.plan}`
             ).join("\n---\n");
 
+            // EXACT PROMPT INSTRUCTIONS FOR CONCRETE EXPLANATIONS
             return `Role: 2700 ELO GM.
 Task: Write very simple but CONCRETE chess notes for the TARGET.
 
 STRICT RULES:
-- Use 8-year old English but explain like a 2700 GM.
+- Use 8-year old English, but explain like a 2700 GM. 
 - Use "center" NEVER "central". Use "structure" NEVER "structural".
-- Use the SCORE to judge the position: (+1.5 is strong, +3.0 is winning, 0.00 is draw).
-- Use the ENGINE_PLAN to describe piece maneuvers.
-- BE CONCRETE: Name the squares and pieces. 
-- Example: "White will soon bring the Bishop to h5 and push the d-pawn to d5 because the Black King is trapped."
-- NO VAGUE TALK like "better development". Name the piece that is better.
+- Provide a CONCRETE explanation of why a move or a side is better based on the ENGINE_PLAN.
+- EXAMPLE OF WHAT TO DO: "White will soon bring the c4-bishop to h5, and advance the d-pawn, whereas the black bishop on d6 is tied down."
+- DO NOT GIVE VAGUE EXPLANATIONS like "the black pieces are weak" or "White's pieces are more active." Name the exact piece and square.
 
 FORMAT: ONLY JSON
 {"CHUNK_ID": "Your concrete note here"}
@@ -195,6 +204,13 @@ ${batch}`;
             currentBatchStart = end;
             updateUI();
             alert("Batch Copied!");
+        }
+
+        function copyAllRemaining() {
+            navigator.clipboard.writeText(formatBatch(currentBatchStart, globalChunks.length));
+            currentBatchStart = globalChunks.length;
+            updateUI();
+            alert("Full Game Copied!");
         }
 
         function rebuildPgn() {
