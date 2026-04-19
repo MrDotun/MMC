@@ -108,10 +108,19 @@
             let plyCount = 0;
             let variationLevel = 0;
             let currentPath = [];
+            let pathStack = []; // Captures context for nested branches
 
             pgnTokens.forEach((token, index) => {
-                if (token === "(") variationLevel++;
-                if (token === ")") variationLevel--;
+                if (token === "(") {
+                    variationLevel++;
+                    pathStack.push([...currentPath]); // Save main line before entering branch
+                }
+                if (token === ")") {
+                    variationLevel--;
+                    if (pathStack.length > 0) {
+                        currentPath = pathStack.pop(); // Restore main line after leaving branch
+                    }
+                }
                 
                 const isMoveNum = /^\d+\./.test(token);
                 if (isMoveNum) moveNumber = parseInt(token);
@@ -135,8 +144,21 @@
 
                         if (isStrideMove || hasImportantSymbol) {
                             let subsequent = [];
-                            for(let i = index + 1; i < index + 10 && i < pgnTokens.length; i++) {
-                                if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
+                            let subLevel = variationLevel;
+                            
+                            // Look ahead, but respect branch boundaries
+                            for(let i = index + 1; i < index + 20 && i < pgnTokens.length; i++) {
+                                if (pgnTokens[i] === "(") subLevel++;
+                                if (pgnTokens[i] === ")") subLevel--;
+                                
+                                // Stop looking if we exit the current nested branch
+                                if (subLevel < variationLevel) break;
+
+                                // Only add moves that belong strictly to this variation depth
+                                if (subLevel === variationLevel && !pgnTokens[i].startsWith('{') && pgnTokens[i] !== ")" && pgnTokens[i] !== "(") {
+                                    subsequent.push(pgnTokens[i]);
+                                }
+                                if (subsequent.length >= 10) break; // Keep future context concise
                             }
 
                             chunks.push({
