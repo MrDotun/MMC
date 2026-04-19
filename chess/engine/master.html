@@ -16,7 +16,7 @@
         .chunk-card.completed { border-left-color: #10b981; opacity: 0.5; }
         textarea { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; }
         #console-log { height: 100px; font-family: 'Fira Code', monospace; font-size: 10px; overflow-y: auto; background: #000; color: #d4af37; border: 1px solid #334155; padding: 10px; }
-        #engine-live-view { font-family: 'Fira Code', monospace; font-size: 11px; background: #1e293b; color: #fff; padding: 8px; border-radius: 8px; border: 1px solid #d4af37; margin-top: 8px; }
+        #engine-live-view { font-family: 'Fira Code', monospace; font-size: 11px; background: #1e293b; color: #fff; padding: 10px; border-radius: 12px; border: 1px solid #d4af37; margin-bottom: 15px; }
         #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.2s; }
     </style>
 </head>
@@ -38,6 +38,14 @@
             <div id="console-log" class="rounded-xl mb-4 border border-slate-700">Waiting for user input...</div>
 
             <div class="glass p-6 rounded-2xl">
+                <div id="engine-live-view" class="hidden">
+                    <div class="flex justify-between border-b border-slate-700 pb-2 mb-2">
+                        <span class="gold-text font-bold uppercase text-[10px] tracking-widest">Live Engine Feed</span>
+                        <span id="live-target" class="text-white font-bold text-[10px]">Ready</span>
+                    </div>
+                    <div id="live-line" class="text-emerald-400 text-xs italic italic">Awaiting move sequence...</div>
+                </div>
+
                 <div class="flex justify-between items-center mb-4">
                     <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
                     <div class="text-right">
@@ -46,16 +54,7 @@
                     </div>
                 </div>
                 <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
-                
-                <div id="engine-live-view" class="hidden">
-                    <div class="flex justify-between border-b border-slate-700 pb-1 mb-2">
-                        <span class="gold-text font-bold uppercase text-[9px]">Engine Live Feed</span>
-                        <span id="live-move-name" class="text-white font-bold text-[10px]">Analyzing...</span>
-                    </div>
-                    <div id="live-pv" class="text-emerald-400 italic">Thinking...</div>
-                </div>
-
-                <div class="flex flex-wrap gap-3 mt-4">
+                <div class="flex flex-wrap gap-3">
                     <button id="init-btn" onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Analysis</button>
                     <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden uppercase text-xs">Copy Next 10</button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
@@ -93,18 +92,22 @@
         }
 
         async function processPgn() {
-            const input = document.getElementById('pgn-input').value;
+            let input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            document.getElementById('engine-live-view').classList.remove('hidden');
+            // Strip metadata and illegal characters that cause "couldn't play" errors
+            input = input.replace(/\[.*?\]/g, '').replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+
             log("Starting Analysis...");
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBKRQ])?[+#]?|O-O-O|O-O|\{[^}]*\}|\$[0-9]+|[!?]{1,2})/g) || [];
             
-            // Comprehensive PGN regex
-            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|[NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8](?:=[NBKRQ])?[+#]?|O-O-O|O-O|\{[^}]*\}|\[[^\]]*\]|\$[0-9]+|[!?]{1,2})/g) || [];
+            if (typeof ResetGame !== 'function') { log("Error: Engine not detected."); return; }
             
-            if (typeof ResetGame !== 'function') { log("Error: Engine script not detected."); return; }
+            // Hard Sync Board State
             ResetGame();
+            InitializeFromFen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
             
+            document.getElementById('engine-live-view').classList.remove('hidden');
             globalChunks = [];
             let plyCount = 0;
             let variationLevel = 0;
@@ -118,7 +121,7 @@
 
                 if (token === "(") {
                     variationLevel++;
-                    returnStack.push(stateBeforeLastMove); 
+                    returnStack.push(GetFen()); 
                     continue;
                 }
                 if (token === ")") {
@@ -127,26 +130,27 @@
                     continue;
                 }
                 
-                if (token.startsWith('{') || token.startsWith('[') || token.startsWith('$') || token === '*') continue;
-                if (/^\d+\.{1,3}$/.test(token)) continue;
+                if (token.startsWith('{') || token.startsWith('$')) continue;
+                if (/^\d+\./.test(token)) continue;
 
                 const isMove = /^([NBKRQ]?[a-h]?[1-8]?x?[a-h][1-8]|O-O)/.test(token);
                 
                 if (isMove) {
                     try {
-                        const move = ParseMove(token);
+                        const cleanToken = token.replace(/[^a-zA-Z0-9+#=]/g, '');
+                        const move = ParseMove(cleanToken);
                         if (move) {
                             plyCount++;
                             stateBeforeLastMove = GetFen();
                             MakeMove(move);
                             
+                            // Live Engine Logic
+                            document.getElementById('live-target').innerText = `Ply ${plyCount}: ${token}`;
+                            
                             let nextToken = (pgnTokens[i + 1] || "").trim();
                             let isAnnotated = nextToken.startsWith('$') || nextToken.includes('!') || nextToken.includes('?');
                             
-                            // Trigger analysis
                             if (variationLevel > 0 || isAnnotated || plyCount % 6 === 0) {
-                                document.getElementById('live-move-name').innerText = `Analyzing: ${token} ${isAnnotated ? nextToken : ''}`;
-                                
                                 g_timeout = 300; 
                                 let score = (Search(null, 10, null) / 100).toFixed(2);
                                 
@@ -155,8 +159,7 @@
                                     for (let p = 0; p < Math.min(g_pv.length, 3); p++) plan += FormatMove(g_pv[p]) + " ";
                                 }
                                 
-                                // Update Live PV line
-                                document.getElementById('live-pv').innerText = `Line: ${plan} (Eval: ${score})`;
+                                document.getElementById('live-line').innerText = `PV: ${plan} (${score})`;
 
                                 globalChunks.push({
                                     id: `CHUNK_${globalChunks.length}`,
@@ -167,19 +170,19 @@
                                     score: score,
                                     plan: plan
                                 });
-                                
                                 updateUI();
                                 await new Promise(r => setTimeout(r, 10)); 
                             }
+                        } else {
+                            log(`Warning: Skip invalid ${token}`);
                         }
-                    } catch(e) {
-                        log(`Warning: Engine couldn't play ${token}`);
+                    } catch (e) {
+                        log(`Warning: Skip invalid ${token}`);
                     }
                 }
             }
 
             log(`Done! Found ${globalChunks.length} positions.`);
-            document.getElementById('engine-live-view').classList.add('hidden');
             if (globalChunks.length > 0) document.getElementById('batch-btn').classList.remove('hidden');
         }
 
@@ -192,8 +195,10 @@
 Task: Write very simple chess notes for the TARGET. If the TARGET has a sign like $1, $14, !, or ?, explain why that evaluation was given.
 
 STRICT RULES:
-- Use simple English.
-- Explain why the move works or fails based on center, development, or king safety.
+- Use simple 8-year old English.
+- Use "center" NEVER "central".
+- Use "structure" NEVER "structural".
+- Explain why the move works or fails.
 
 FORMAT: ONLY JSON
 {"CHUNK_ID": "Your simple note here"}
@@ -220,7 +225,6 @@ ${batch}`;
             navigator.clipboard.writeText(formatBatch(currentBatchStart, end));
             currentBatchStart = end;
             updateUI();
-            log(`Copied batch starting from ${currentBatchStart-10}`);
         }
 
         function switchTab(tab) {
