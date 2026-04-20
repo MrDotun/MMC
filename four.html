@@ -24,7 +24,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 3-Move Stride + Symbol Detection</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 4-Move Stride + Simple GM Logic</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -103,7 +103,6 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            // Updated regex to ensure variation brackets and symbols are caught precisely
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
             
             let chunks = [];
@@ -137,7 +136,6 @@
                     depthPlyCounts[variationLevel]++;
                     currentPath.push(token);
 
-                    // Logic: Process if inside ANY branch (variationLevel > 0) OR deep in main line
                     if (moveNumber > 5 || variationLevel > 0) {
                         let evalSymbol = "";
                         let nextToken = pgnTokens[index + 1];
@@ -146,8 +144,6 @@
                         }
 
                         const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
-                        
-                        // Captures every start of a nested branch, moves after a branch ends, and the standard stride
                         const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
                         const isStrideMove = (depthPlyCounts[variationLevel] % 4 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
@@ -184,26 +180,25 @@
                 `ID: ${c.id}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
             ).join("\n---\n");
 
-            // STRICTOR PROMPT: Simple words, no complex English, standard chess terms only.
-            return `Role: 2700 ELO GM.
-Task: Provide deep positional analysis for the TARGET.
+            return `Role: 2700 ELO GM & Engine Analyst.
+Task: Provide high-level positional analysis for the TARGET move.
+
+JUDGMENT RULES:
+1. USE 4 MOVES: Look at the first 4 moves in "Subsequent" to prove if the TARGET is good or bad.
+2. SYMBOL LOGIC: If TARGET has a sign like !, ?, or !!, explain why that sign was given using the next 4 moves.
+3. PIECE QUALITY: Explain which pieces are "happy" (active) and which are "sad" (stuck).
+4. KEY SQUARES: Name the specific squares being controlled or attacked.
 
 STRICT LANGUAGE RULES:
-1. Use ONLY simple English. No big or uncommon words.
-2. Use "structure" NOT "structural".
-3. Use "center" NOT "central".
-4. Use "exchange" NOT "liquidate".
-5. NEVER use the words "tactical", "blunt", or academic sounding terms.
-6. Use simple chess terms: center, squares, outpost, diagonal, structure, sac, exchange.
-7. Keep descriptions purposeful and easy to learn. No storytelling.
+- Use very simple words. Talk like a smart 15-year-old. 
+- Avoid "big" or rare words.
+- Use "center" NOT "central".
+- Use "structure" NOT "structural".
+- Use "exchange" NOT "liquidate".
+- No "storytelling". Only clear chess reasons.
 
-GUIDELINES:
-- Use 'Subsequent' moves to see why the TARGET is good or bad.
-- If TARGET has '!' or '?', explain the clear chess reason why.
-- Do not include symbols like '$' or '!' inside your commentary text.
-
-FORMAT: ONLY JSON and add a copy icon on the top right
-{"CHUNK_ID": "Your Analysis"}
+FORMAT: ONLY JSON
+{"CHUNK_ID": "Simple analysis of the move and evaluation sign based on the 4-move variation."}
 
 ${batch}`;
         }
@@ -214,7 +209,7 @@ ${batch}`;
             currentBatchStart = end;
             updateUI();
             saveState();
-            alert("Batch (Branches + Symbols) copied!");
+            alert("Batch Copied!");
         }
 
         function copyAllRemaining() {
@@ -222,7 +217,7 @@ ${batch}`;
             currentBatchStart = globalChunks.length;
             updateUI();
             saveState();
-            alert("Full Game (All Variations) copied!");
+            alert("Full Game Copied!");
         }
 
         function rebuildPgn() {
