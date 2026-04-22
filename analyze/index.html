@@ -53,7 +53,13 @@
             <h2 class="text-xl font-bold gold-text uppercase tracking-widest">Re-Assembler</h2>
             <div class="glass p-6 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
                 <textarea id="ai-json" rows="10" class="w-full p-4 rounded-xl text-xs" placeholder="Paste Gemini's JSON response here..."></textarea>
-                <textarea id="final-pgn" rows="10" class="w-full p-4 rounded-xl text-xs text-emerald-400" placeholder="Final PGN will appear here..." readonly></textarea>
+                <div class="flex flex-col gap-4">
+                    <textarea id="final-pgn" rows="8" class="w-full p-4 rounded-xl text-xs text-emerald-400" placeholder="Final PGN will appear here..." readonly></textarea>
+                    <div class="flex gap-2">
+                        <button onclick="copyFinalPgn()" class="flex-1 py-3 bg-slate-700 text-white rounded-xl font-bold uppercase text-xs hover:bg-slate-600">Copy Final PGN</button>
+                        <button onclick="downloadFinalPgn()" class="flex-1 py-3 bg-emerald-700 text-white rounded-xl font-bold uppercase text-xs hover:bg-emerald-600">Download .pgn</button>
+                    </div>
+                </div>
             </div>
             <button onclick="rebuildPgn()" class="w-full py-4 gold-bg rounded-xl font-bold uppercase shadow-lg">Merge AI Analysis into PGN</button>
         </div>
@@ -65,28 +71,13 @@
         let currentBatchStart = 0;
         let garboWorker;
 
-        // Try to load worker immediately
         try {
             garboWorker = new Worker('garbochess.js');
-            
-            // CORRECTED: Handshake check to ensure engine is ACTUALLY connected
-            garboWorker.onmessage = (e) => {
-                if (e.data === "readyok" || e.data.includes("id name")) {
-                    const status = document.getElementById('engine-status');
-                    status.innerText = "Engine: Connected";
-                    status.classList.replace('text-red-400', 'text-green-400');
-                    status.classList.replace('bg-red-900/30', 'bg-green-900/30');
-                }
-            };
-
             garboWorker.onerror = () => {
                 document.getElementById('engine-status').innerText = "Engine Error: Check Filename";
             };
-
-            // Wake up engine
-            garboWorker.postMessage("uci");
-            garboWorker.postMessage("isready");
-
+            document.getElementById('engine-status').innerText = "Engine: Connected";
+            document.getElementById('engine-status').classList.replace('text-red-400', 'text-green-400');
         } catch (e) {
             document.getElementById('engine-status').innerText = "Worker Blocked: Use VS Code Live Server";
         }
@@ -94,61 +85,69 @@
         async function getAnalysis(fen) {
             return new Promise((resolve) => {
                 garboWorker.postMessage("position " + fen);
-                garboWorker.postMessage("search 800"); 
-                
-                // One-time listener for the analysis result
-                const handleMessage = (e) => {
+                garboWorker.postMessage("go movetime 3000"); 
+                garboWorker.onmessage = (e) => {
                     if (e.data.startsWith("pv")) {
                         const parts = e.data.split(" ");
-                        const scorePart = parts.find(p => p.startsWith("Score:"));
-                        const score = scorePart ? (parseInt(scorePart.split(":")[1]) / 100).toFixed(2) : "0.00";
-                        garboWorker.removeEventListener('message', handleMessage);
-                        resolve({ score: score, pv: e.data });
+                        const score = (parseInt(parts.find(p => p.startsWith("Score:"))?.split(":")[1] || 0) / 100).toFixed(2);
+                        const pvMoves = parts.slice(1, 6).join(" ");
+                        resolve({ score: score, pv: pvMoves });
                     }
                 };
-                garboWorker.addEventListener('message', handleMessage);
             });
         }
 
         async function processPgn() {
             const input = document.getElementById('pgn-input').value;
-            // Check status text to ensure engine is really ready
-            const isConnected = document.getElementById('engine-status').innerText.includes("Connected");
-            
-            if (!input || !garboWorker || !isConnected) {
-                alert("Paste a PGN and wait for Engine to Connect!");
+            if (!input || !garboWorker) {
+                alert("Paste a PGN or fix Engine connection!");
                 return;
             }
 
             const btn = document.getElementById('init-btn');
-            btn.innerText = "Analyzing Positions...";
+            btn.innerText = "Analyzing Variations...";
             btn.disabled = true;
 
             const chess = new Chess();
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
             
-            let moveCount = 0;
-            let variationLevel = 0;
+            let moveCountStack = [0];
             let fenStack = [];
 
             for (let i = 0; i < pgnTokens.length; i++) {
                 const t = pgnTokens[i];
-                if (t === "(") { variationLevel++; fenStack.push(chess.fen()); continue; }
-                if (t === ")") { variationLevel--; chess.load(fenStack.pop()); continue; }
+                if (t === "(") { fenStack.push(chess.fen()); moveCountStack.push(0); continue; }
+                if (t === ")") { chess.load(fenStack.pop()); moveCountStack.pop(); continue; }
                 if (/^\d+\./.test(t)) continue;
 
                 if (/^[a-zA-Z]/.test(t) && !t.startsWith('{')) {
                     const m = chess.move(t);
                     if (m) {
-                        moveCount++;
+                        moveCountStack[moveCountStack.length - 1]++;
+                        const currentMoveCount = moveCountStack[moveCountStack.length - 1];
+                        const isStride = (currentMoveCount % 2 === 0 || currentMoveCount % 3 === 0);
                         const hasSymbol = pgnTokens[i+1]?.includes('!') || pgnTokens[i+1]?.includes('?');
-                        if (moveCount % 4 === 0 || hasSymbol) {
+
+                        if (isStride || hasSymbol) {
                             const data = await getAnalysis(chess.fen());
+                            
+                            let nextPgnMoves = [];
+                            let depth = 0;
+                            for (let j = i + 1; j < pgnTokens.length && nextPgnMoves.length < 4; j++) {
+                                if (pgnTokens[j] === "(") depth++;
+                                if (pgnTokens[j] === ")") depth--;
+                                if (depth < 0) break;
+                                if (depth === 0 && /^[a-zA-Z]/.test(pgnTokens[j]) && !pgnTokens[j].startsWith('{')) {
+                                    nextPgnMoves.push(pgnTokens[j]);
+                                }
+                            }
+
                             globalChunks.push({
                                 id: `CHUNK_${globalChunks.length}`,
                                 target: t,
                                 score: data.score,
                                 pv: data.pv,
+                                nextPgn: nextPgnMoves.join(" "),
                                 tokenIndex: i,
                                 context: chess.history().slice(-6).join(" ")
                             });
@@ -163,20 +162,32 @@
 
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id} | Move: ${c.target} | Score: ${c.score}\nEngine Line: ${c.pv}\nLast Moves: ${c.context}`
+                `ID: ${c.id} | Move: ${c.target} | Eval: ${c.score}\nEngine Top 5: ${c.pv}\nSubsequent (Next 4): ${c.nextPgn}\nContext: ${c.context}`
             ).join("\n---\n");
 
-            return `Role: 2700 GM. Task: Write a short annotation for the Move based on the Engine Score. 
-            Rules: Use simple English for kids. Keep it to 1-2 sentences. 
-            Format: JSON only. {"CHUNK_ID": "Your analysis"}\n\n${batch}`;
+            return `Role: 2700 GM. Task: Write a short annotation for the Move using these JUDGMENT RULES:
+1. USE 4 MOVES: Look at the first 4 moves in "Subsequent" to prove if the Move is good or bad.
+2. SYMBOL LOGIC: If Move has !, ?, or !!, explain why using the next 4 moves. Do not add symbols to comments.
+3. PIECE QUALITY: Explain pieces likely to move and give plans for both sides once in a while.
+4. VARIETY: Start sentences with "This move...", "A...", "White...", "Black...", etc. 5 out of 10 comments must begin differently.
+5. HUMANITY: Do not be consistent at the start or end of statements.
+
+STRICT LANGUAGE RULES:
+- Use simple words and common chess terms. No "storytelling".
+- Use simple terms like: attack, strong, decisive, transpose.
+- Use "center" NOT "central".
+- Use "structure" NOT "structural".
+- Use "exchange" NOT "liquidate".
+
+FORMAT: ONLY JSON
+{"CHUNK_ID": "Simple analysis..."}\n\n${batch}`;
         }
 
         function copyNextBatch() {
             const end = Math.min(currentBatchStart + 10, globalChunks.length);
-            navigator.clipboard.writeText(formatBatch(currentBatchStart, end)).then(() => {
-                currentBatchStart = end;
-                updateUI();
-            });
+            navigator.clipboard.writeText(formatBatch(currentBatchStart, end));
+            currentBatchStart = end;
+            updateUI();
         }
 
         function updateUI() {
@@ -187,8 +198,7 @@
                     <p class="text-xs font-bold">${c.target} (${c.score})</p>
                 </div>
             `).join('');
-            const progress = globalChunks.length > 0 ? (currentBatchStart/globalChunks.length)*100 : 0;
-            document.getElementById('progress-fill').style.width = progress + "%";
+            document.getElementById('progress-fill').style.width = (currentBatchStart/globalChunks.length)*100 + "%";
             document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} READY`;
         }
 
@@ -206,6 +216,25 @@
                 if (chunk) tokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
             });
             document.getElementById('final-pgn').value = tokens.join(" ");
+        }
+
+        function copyFinalPgn() {
+            const final = document.getElementById('final-pgn');
+            if(!final.value) return;
+            navigator.clipboard.writeText(final.value);
+            alert("Final PGN copied to clipboard!");
+        }
+
+        function downloadFinalPgn() {
+            const content = document.getElementById('final-pgn').value;
+            if(!content) return;
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "analyzed_game.pgn";
+            a.click();
+            window.URL.revokeObjectURL(url);
         }
     </script>
 </body>
