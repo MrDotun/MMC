@@ -41,7 +41,7 @@
                 <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
                 
                 <div class="flex flex-wrap gap-3">
-                    <button id="init-btn" onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Start Engine Analysis</button>
+                    <button id="init-btn" onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Start Engine Analysis (3s/move)</button>
                     <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden uppercase text-xs">Copy Next 10 (AI Prompt)</button>
                     <button onclick="location.reload()" class="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold uppercase text-xs">Reset</button>
                 </div>
@@ -51,11 +51,17 @@
 
         <div id="view-reassembler" class="mt-10 space-y-6 border-t border-slate-800 pt-10">
             <h2 class="text-xl font-bold gold-text uppercase tracking-widest">Re-Assembler</h2>
-            <div class="glass p-6 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-6">
-                <textarea id="ai-json" rows="10" class="w-full p-4 rounded-xl text-xs" placeholder="Paste Gemini's JSON response here..."></textarea>
-                <textarea id="final-pgn" rows="10" class="w-full p-4 rounded-xl text-xs text-emerald-400" placeholder="Final PGN will appear here..." readonly></textarea>
+            <div class="glass p-6 rounded-2xl">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <textarea id="ai-json" rows="10" class="w-full p-4 rounded-xl text-xs" placeholder="Paste Gemini's JSON response here..."></textarea>
+                    <textarea id="final-pgn" rows="10" class="w-full p-4 rounded-xl text-xs text-emerald-400" placeholder="Final PGN will appear here..." readonly></textarea>
+                </div>
+                <div class="flex flex-wrap gap-3">
+                    <button onclick="rebuildPgn()" class="flex-1 py-4 gold-bg rounded-xl font-bold uppercase shadow-lg">Merge AI Analysis</button>
+                    <button onclick="copyFinalPgn()" class="px-6 py-4 bg-slate-700 text-white rounded-xl font-bold uppercase text-xs">Copy PGN</button>
+                    <button onclick="downloadPgn()" class="px-6 py-4 bg-emerald-600 text-white rounded-xl font-bold uppercase text-xs">Download .pgn</button>
+                </div>
             </div>
-            <button onclick="rebuildPgn()" class="w-full py-4 gold-bg rounded-xl font-bold uppercase shadow-lg">Merge AI Analysis into PGN</button>
         </div>
     </div>
 
@@ -67,23 +73,26 @@
 
         try {
             garboWorker = new Worker('garbochess.js');
-            garboWorker.onerror = () => {
-                document.getElementById('engine-status').innerText = "Engine Error: Check Filename";
+            garboWorker.onmessage = (e) => {
+                if (e.data === "readyok") {
+                    document.getElementById('engine-status').innerText = "Engine: Connected";
+                    document.getElementById('engine-status').classList.replace('text-red-400', 'text-green-400');
+                }
             };
-            document.getElementById('engine-status').innerText = "Engine: Connected";
-            document.getElementById('engine-status').classList.replace('text-red-400', 'text-green-400');
+            garboWorker.postMessage("uci");
         } catch (e) {
-            document.getElementById('engine-status').innerText = "Worker Blocked: Use VS Code Live Server";
+            document.getElementById('engine-status').innerText = "Worker Blocked: Use Live Server";
         }
 
         async function getAnalysis(fen) {
             return new Promise((resolve) => {
                 garboWorker.postMessage("position " + fen);
-                garboWorker.postMessage("search 800"); 
+                garboWorker.postMessage("search 3000"); // 3 Seconds for proper analysis
                 garboWorker.onmessage = (e) => {
                     if (e.data.startsWith("pv")) {
                         const parts = e.data.split(" ");
-                        const score = (parseInt(parts.find(p => p.startsWith("Score:"))?.split(":")[1] || 0) / 100).toFixed(2);
+                        const scorePart = parts.find(p => p.startsWith("Score:"));
+                        const score = scorePart ? (parseInt(scorePart.split(":")[1]) / 100).toFixed(2) : "0.00";
                         resolve({ score: score, pv: e.data });
                     }
                 };
@@ -92,13 +101,10 @@
 
         async function processPgn() {
             const input = document.getElementById('pgn-input').value;
-            if (!input || !garboWorker) {
-                alert("Paste a PGN or fix Engine connection!");
-                return;
-            }
+            if (!input || !garboWorker) { alert("Input PGN required!"); return; }
 
             const btn = document.getElementById('init-btn');
-            btn.innerText = "Analyzing Positions...";
+            btn.innerText = "Analyzing (Main Line Only)...";
             btn.disabled = true;
 
             const chess = new Chess();
@@ -117,19 +123,22 @@
                 if (/^[a-zA-Z]/.test(t) && !t.startsWith('{')) {
                     const m = chess.move(t);
                     if (m) {
-                        moveCount++;
-                        const hasSymbol = pgnTokens[i+1]?.includes('!') || pgnTokens[i+1]?.includes('?');
-                        if (moveCount % 3 === 0 || hasSymbol) {
-                            const data = await getAnalysis(chess.fen());
-                            globalChunks.push({
-                                id: `CHUNK_${globalChunks.length}`,
-                                target: t,
-                                score: data.score,
-                                pv: data.pv,
-                                tokenIndex: i,
-                                context: chess.history().slice(-6).join(" ")
-                            });
-                            updateUI();
+                        // Only analyze if variationLevel is 0 (Main Line)
+                        if (variationLevel === 0) {
+                            moveCount++;
+                            const hasSymbol = pgnTokens[i+1]?.includes('!') || pgnTokens[i+1]?.includes('?');
+                            if (moveCount % 3 === 0 || hasSymbol) {
+                                const data = await getAnalysis(chess.fen());
+                                globalChunks.push({
+                                    id: `CHUNK_${globalChunks.length}`,
+                                    target: t,
+                                    score: data.score,
+                                    pv: data.pv,
+                                    tokenIndex: i,
+                                    context: chess.history().slice(-6).join(" ")
+                                });
+                                updateUI();
+                            }
                         }
                     }
                 }
@@ -160,6 +169,8 @@ STRICT LANGUAGE RULES:
 FORMAT: ONLY JSON
 {"CHUNK_ID": "Simple analysis of the move and evaluation sign based on the 4-move variation."}
 
+${batch}`;
+        }
 
         function copyNextBatch() {
             const end = Math.min(currentBatchStart + 10, globalChunks.length);
@@ -176,7 +187,7 @@ FORMAT: ONLY JSON
                     <p class="text-xs font-bold">${c.target} (${c.score})</p>
                 </div>
             `).join('');
-            document.getElementById('progress-fill').style.width = (currentBatchStart/globalChunks.length)*100 + "%";
+            document.getElementById('progress-fill').style.width = globalChunks.length > 0 ? (currentBatchStart/globalChunks.length)*100 + "%" : "0%";
             document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} READY`;
         }
 
@@ -186,7 +197,7 @@ FORMAT: ONLY JSON
             try {
                 const matches = raw.match(/\{[\s\S]*?\}/g);
                 matches.forEach(m => Object.assign(aiData, JSON.parse(m)));
-            } catch(e) { alert("Invalid JSON from Gemini!"); return; }
+            } catch(e) { alert("Invalid JSON from AI!"); return; }
 
             let tokens = [...pgnTokens];
             Object.keys(aiData).forEach(id => {
@@ -194,6 +205,24 @@ FORMAT: ONLY JSON
                 if (chunk) tokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
             });
             document.getElementById('final-pgn').value = tokens.join(" ");
+        }
+
+        function copyFinalPgn() {
+            const pgn = document.getElementById('final-pgn').value;
+            if(!pgn) return;
+            navigator.clipboard.writeText(pgn);
+            alert("PGN Copied!");
+        }
+
+        function downloadPgn() {
+            const pgn = document.getElementById('final-pgn').value;
+            if(!pgn) return;
+            const blob = new Blob([pgn], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `analysis_${new Date().getTime()}.pgn`;
+            a.click();
         }
     </script>
 </body>
