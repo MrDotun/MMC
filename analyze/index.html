@@ -75,9 +75,8 @@
 
         try {
             garboWorker = new Worker(workerPath);
-            garboWorker.onerror = () => {
-                document.getElementById('engine-status').innerText = "Engine Error: Check Filename";
-            };
+            
+            // Handshake logic to confirm connection
             garboWorker.onmessage = (e) => {
                 if (e.data === "readyok" || e.data.includes("id name")) {
                     const status = document.getElementById('engine-status');
@@ -86,8 +85,15 @@
                     status.classList.replace('bg-red-900/30', 'bg-green-900/30');
                 }
             };
+
+            garboWorker.onerror = () => {
+                document.getElementById('engine-status').innerText = "Engine Error: Check Filename";
+            };
+
+            // Wake the engine up
             garboWorker.postMessage("uci");
             garboWorker.postMessage("isready");
+
         } catch (e) {
             document.getElementById('engine-status').innerText = "Worker Blocked: Use VS Code Live Server";
         }
@@ -95,15 +101,19 @@
         async function getAnalysis(fen) {
             return new Promise((resolve) => {
                 garboWorker.postMessage("position " + fen);
-                garboWorker.postMessage("search 3000"); // 3 second requirement
-                garboWorker.onmessage = (e) => {
+                garboWorker.postMessage("search 3000"); 
+
+                // Listen specifically for the engine's evaluation
+                const handleMove = (e) => {
                     if (e.data.startsWith("pv")) {
                         const parts = e.data.split(" ");
                         const scorePart = parts.find(p => p.startsWith("Score:"));
                         const score = scorePart ? (parseInt(scorePart.split(":")[1]) / 100).toFixed(2) : "0.00";
+                        garboWorker.removeEventListener('message', handleMove); // Clean up
                         resolve({ score: score, pv: e.data });
                     }
                 };
+                garboWorker.addEventListener('message', handleMove);
             });
         }
 
@@ -124,7 +134,6 @@
             for (let i = 0; i < pgnTokens.length; i++) {
                 const t = pgnTokens[i];
                 
-                // Scrubbing for nested branches
                 if (t === "(") { fenStack.push(chess.fen()); continue; }
                 if (t === ")") { chess.load(fenStack.pop()); continue; }
                 if (/^\d+\./.test(t)) continue;
@@ -134,7 +143,7 @@
                     if (m) {
                         moveCount++;
                         const hasSymbol = pgnTokens[i+1]?.includes('!') || pgnTokens[i+1]?.includes('?');
-                        // Rule: Comments every 2-3 moves (Stride = 2 for density) or if symbol exists
+                        // Stride = 2 logic
                         if (moveCount % 2 === 0 || hasSymbol) {
                             const data = await getAnalysis(chess.fen());
                             globalChunks.push({
