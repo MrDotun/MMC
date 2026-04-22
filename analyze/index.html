@@ -24,7 +24,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Engine-Powered Stride + 2700 GM Analysis</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Engine Stride (3-Move) + Advanced GM Judgment</p>
             </div>
             <div id="engine-status" class="px-4 py-2 rounded-full bg-red-900/30 text-red-400 text-xs font-bold uppercase">Engine: Disconnected</div>
         </header>
@@ -85,7 +85,7 @@
         async function getAnalysis(fen) {
             return new Promise((resolve) => {
                 garboWorker.postMessage("position " + fen);
-                garboWorker.postMessage("go movetime 3000"); 
+                garboWorker.postMessage("search 800"); 
                 garboWorker.onmessage = (e) => {
                     if (e.data.startsWith("pv")) {
                         const parts = e.data.split(" ");
@@ -111,6 +111,7 @@
             const chess = new Chess();
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
             
+            // Stack ensures every variation starts its own "3-move stride"
             let moveCountStack = [0];
             let fenStack = [];
 
@@ -124,11 +125,11 @@
                     const m = chess.move(t);
                     if (m) {
                         moveCountStack[moveCountStack.length - 1]++;
-                        const currentMoveCount = moveCountStack[moveCountStack.length - 1];
-                        const isStride = (currentMoveCount % 2 === 0 || currentMoveCount % 3 === 0);
+                        const currentCount = moveCountStack[moveCountStack.length - 1];
                         const hasSymbol = pgnTokens[i+1]?.includes('!') || pgnTokens[i+1]?.includes('?');
 
-                        if (isStride || hasSymbol) {
+                        // Stride Logic: Every 3rd move including branches
+                        if (currentCount % 3 === 0 || hasSymbol) {
                             const data = await getAnalysis(chess.fen());
                             
                             let nextPgnMoves = [];
@@ -222,7 +223,7 @@ FORMAT: ONLY JSON
             const final = document.getElementById('final-pgn');
             if(!final.value) return;
             navigator.clipboard.writeText(final.value);
-            alert("Final PGN copied to clipboard!");
+            alert("Final PGN copied!");
         }
 
         function downloadFinalPgn() {
