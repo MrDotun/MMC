@@ -48,6 +48,9 @@
         .waiting-text { animation: pulse 1.5s infinite; color: #94a3b8; font-weight: bold; letter-spacing: 1px; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         .highlight-white { background: rgba(0, 90, 171, 0.5) !important; }
+        
+        /* Coach Portal specific styles */
+        #coach-portal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 4000; overflow-y: auto; padding: 20px; box-sizing: border-box; }
     </style>
 </head>
 <body>
@@ -60,7 +63,7 @@
     <h1 style="color: #4ade80;">ROUND <span id="res-round-num">1</span> COMPLETE</h1>
     <div class="login-card" style="margin-top: 20px;">
         <h3 style="color: #94a3b8; margin-bottom: 5px;">Tournament Standings</h3>
-        <h2 id="maryland-pos" style="color: white; margin: 10px 0;">Maryland Convent: 4th Place</h2>
+        <h2 id="maryland-pos" style="color: white; margin: 10px 0;">Maryland Convent: 12th Place</h2>
         <p style="color: #4ade80; font-weight: bold;">Current Team Points: <span id="total-team-pts">0</span></p>
         <button id="next-round-btn" class="submit-btn" onclick="startWaitingCountdown()">PROCEED TO NEXT ROUND</button>
     </div>
@@ -74,6 +77,15 @@
         <p>Round <span id="next-round-label"></span> pairing starts in: <span id="wait-timer" style="color:#4ade80; font-weight:bold;">60</span>s</p>
     </div>
     <div class="loading-bar"><div class="loading-progress" id="load-bar"></div></div>
+</div>
+
+<div id="coach-portal">
+    <button class="submit-btn" style="width: auto; background: #334155;" onclick="$('#coach-portal').hide()">CLOSE PORTAL</button>
+    <h1 style="color: #005aab;">COACH PORTAL</h1>
+    <h3>Maryland Convent Private School - All Games (Rounds 1-6)</h3>
+    <div id="portal-game-viewer" style="background: #1e293b; padding: 20px; border-radius: 10px;">
+        <div id="pgn-list"></div>
+    </div>
 </div>
 
 <div id="welcome-overlay">
@@ -92,6 +104,7 @@
 
         <input type="password" id="studentPass" placeholder="Enter Team Password">
         <button class="submit-btn" onclick="validateAndStart()">PROCEED TO ROUND 1</button>
+        <button class="submit-btn" style="background: #334155; font-size: 0.8em; margin-top: 5px;" onclick="checkCoachPortal()">COACH PORTAL LOGIN</button>
     </div>
 
     <div style="width: 90%; max-width: 400px; background: #1e293b; padding: 15px; border-radius: 12px; margin-bottom: 50px;">
@@ -144,11 +157,22 @@ var game = new Chess(), board = null;
 var selectedRepName = "", userColor = 'w';
 var userTime = 1200, oppTime = 1200, timerInterval = null;
 
+// Simulated Maryland rankings
+const marylandRanks = { 1: "12th", 2: "15th", 3: "14th", 4: "7th", 5: "5th", 6: "3rd" };
+
 function initLeagues() {
     let pHTML = "";
     nigerianSchools.forEach((school, i) => {
+        let rankText = "";
+        // Maryland Specific Logic for Simulation
+        if(school === "Maryland Convent Private School") {
+            rankText = marylandRanks[currentRound] || (i+1) + ".";
+        } else {
+            rankText = (i+1) + ".";
+        }
+        
         let simulatedPts = (currentRound === 1) ? 0 : (totalTeamPoints + (Math.random() * 2));
-        pHTML += `<tr><td><b>${i+1}. ${school}</b></td><td style="text-align:right">${simulatedPts.toFixed(1)} pts</td></tr>`;
+        pHTML += `<tr><td><b>${rankText} ${school}</b></td><td style="text-align:right">${simulatedPts.toFixed(1)} pts</td></tr>`;
     });
     $('#player-body').html(pHTML);
 }
@@ -160,27 +184,14 @@ function selectRep(btn, name) {
     selectedRepName = name;
 }
 
+// 2. Notifications stopped as requested
 function triggerNotification() {
-    if(!gameInProgress) return;
-    
-    // Choose a name that is NOT the current opponent and NOT the user
-    let availableNames = nigerianNames.filter(n => n !== currentOpponentName && n !== selectedRepName);
-    let randomName = availableNames[Math.floor(Math.random() * availableNames.length)];
-    let actions = ["just won!", "just resigned", "is in a tight match", "offered a draw", "is low on time"];
-    let text = `📢 ${randomName} ${actions[Math.floor(Math.random() * actions.length)]}`;
-    
-    $('#notif-text').text(text);
-    $('#notification-box').addClass('show');
-    
-    setTimeout(() => {
-        $('#notification-box').removeClass('show');
-    }, 4000);
+    // Logic removed to stop distractions
+    return;
 }
 
-// Start notification loop
-setInterval(() => {
-    if(Math.random() > 0.6) triggerNotification();
-}, 10000);
+// Notification loop interval disabled
+// setInterval(() => { if(Math.random() > 0.6) triggerNotification(); }, 10000);
 
 function validateAndStart() {
     if (!selectedRepName) return alert("Select a representative!");
@@ -193,6 +204,17 @@ function validateAndStart() {
         $('#load-bar').css('width', progress + '%');
         if (progress >= 100) { clearInterval(interval); setupMatch(); }
     }, 300);
+}
+
+// 3. Coach Portal Authentication
+function checkCoachPortal() {
+    const pass = prompt("Enter Coach Passcode:");
+    if (pass === "decipher1234") {
+        $('#pgn-list').html("<p>Round 1: 1. e4 e5 2. Nf3 Nc6...</p><p>Round 2: 1. d4 d5 2. c4 e6...</p><p>Round 3: 1. e4 c5 2. Nf3 d6...</p>");
+        $('#coach-portal').show();
+    } else {
+        alert("Invalid Coach Passcode");
+    }
 }
 
 function handleResign() {
@@ -210,7 +232,8 @@ function endRound(points) {
     $('#total-team-pts').text(totalTeamPoints.toFixed(1));
     $('#live-points').text(totalTeamPoints.toFixed(1));
     
-    let pos = totalTeamPoints >= (currentRound * 1) ? "1st" : (totalTeamPoints >= (currentRound * 0.5) ? "4th" : "12th");
+    // Applying the specific ranks requested
+    let pos = marylandRanks[currentRound] || "12th";
     $('#maryland-pos').text(`Maryland Convent: ${pos} Place`);
     
     if(currentRound >= 6) {
@@ -219,6 +242,7 @@ function endRound(points) {
 
     $('#game-container').hide();
     $('#round-results-overlay').css('display', 'flex');
+    initLeagues(); // Refresh rankings table
 }
 
 function startWaitingCountdown() {
@@ -321,8 +345,17 @@ function onSquareClick(sq) {
         userTime += 3;
         $('#status').text("Opponent is thinking...");
         
-        // Dynamic thinking time (3-5 seconds)
-        let thinkingDelay = Math.floor(Math.random() * 2000) + 3000;
+        // 1. Logic for thinking time (1-3 minutes after move 6, normal otherwise)
+        let moveCount = game.history().length;
+        let thinkingDelay;
+        
+        if (moveCount >= 6 && moveCount <= 15) {
+            // Random delay between 60,000ms (1 min) and 180,000ms (3 mins)
+            thinkingDelay = Math.floor(Math.random() * (180000 - 60000 + 1)) + 60000;
+        } else {
+            // Normal play (3-5 seconds)
+            thinkingDelay = Math.floor(Math.random() * 2000) + 3000;
+        }
         
         setTimeout(() => {
             if (game.history().length === 1 && userColor === 'white') {
@@ -330,7 +363,6 @@ function onSquareClick(sq) {
                 board.position(game.fen());
                 $('#status').text("Your turn!");
             } else if (!game.game_over()) {
-                // Increase AI depth from round 4
                 let depth = (currentRound >= 4) ? 4 : 2;
                 chessWorker.postMessage("search " + depth);
                 chessWorker.postMessage("position " + game.fen());
