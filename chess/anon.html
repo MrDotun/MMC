@@ -21,6 +21,9 @@
         .loading-bar { width: 200px; height: 4px; background: #334155; border-radius: 2px; margin-top: 15px; overflow: hidden; }
         .loading-progress { width: 0%; height: 100%; background: #4ade80; transition: width 0.5s; }
 
+        /* Tournament Result Overlay */
+        #round-results-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.95); z-index: 2500; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+
         .login-card { background: #1e293b; padding: 25px; border-radius: 15px; border: 2px solid #005aab; width: 90%; max-width: 400px; text-align: center; margin-bottom: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .login-card input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 5px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
         
@@ -39,17 +42,30 @@
 
         .timer-box { font-family: monospace; background: #000; padding: 5px 10px; border-radius: 4px; font-size: 1.2em; min-width: 80px; }
 
-        #replay-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.98); z-index: 2000; flex-direction: column; align-items: center; justify-content: center; }
-        .ctrl-btn { flex: 1; padding: 15px; border: none; border-radius: 8px; background: #334155; color: white; cursor: pointer; font-weight: bold; }
+        .waiting-text { animation: pulse 1.5s infinite; color: #94a3b8; font-weight: bold; letter-spacing: 1px; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         .highlight-white { background: rgba(0, 90, 171, 0.5) !important; }
     </style>
 </head>
 <body>
 
+<div id="round-results-overlay">
+    <h1 style="color: #4ade80;">ROUND <span id="res-round-num">1</span> COMPLETE</h1>
+    <div class="login-card" style="margin-top: 20px;">
+        <h3 style="color: #94a3b8; margin-bottom: 5px;">Tournament Standings</h3>
+        <h2 id="maryland-pos" style="color: white; margin: 10px 0;">Maryland Convent: 4th Place</h2>
+        <p style="color: #4ade80; font-weight: bold;">Current Team Points: <span id="total-team-pts">0</span></p>
+        <button id="next-round-btn" class="submit-btn" onclick="startWaitingCountdown()">PROCEED TO NEXT ROUND</button>
+    </div>
+</div>
+
 <div id="matchmaking-overlay">
     <div class="spinner"></div>
-    <h2 id="match-status">Searching for Live Opponent...</h2>
+    <h2 id="match-status" class="waiting-text">Searching for Live Opponent...</h2>
     <p id="match-details" style="color: #94a3b8;">Connecting to Ecobank Tournament Servers</p>
+    <div id="wait-timer-container" style="display:none; margin-top:10px;">
+        <p>Round <span id="next-round-label"></span> pairing starts in: <span id="wait-timer" style="color:#4ade80; font-weight:bold;">60</span>s</p>
+    </div>
     <div class="loading-bar"><div class="loading-progress" id="load-bar"></div></div>
 </div>
 
@@ -79,6 +95,10 @@
 
 <div id="game-container">
     <div class="info-panel">
+        <div style="display:flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.8em; color: #94a3b8; font-weight: bold;">
+            <span id="round-header">ROUND 1 / 6</span>
+            <span style="color:#4ade80">TEAM POINTS: <span id="live-points">0.0</span></span>
+        </div>
         <div class="opp-card">
             <div style="text-align: left;"><b id="opp-name" style="color:#ef4444">Connecting...</b><br><small id="opp-school">Searching School</small></div>
             <div id="opp-timer" class="timer-box">20:00</div>
@@ -89,15 +109,24 @@
             <div id="user-timer" class="timer-box">20:00</div>
         </div>
         <div id="status" style="font-weight: bold; margin: 10px 0;">Waiting...</div>
-        <button class="submit-btn" onclick="location.reload()" style="background: #334155;">QUIT MATCH</button>
+        
+        <div style="display: flex; gap: 10px;">
+            <button class="submit-btn" onclick="handleResign()" style="background: #ef4444; flex: 1;">RESIGN</button>
+            <button class="submit-btn" onclick="location.reload()" style="background: #334155; flex: 1;">QUIT MATCH</button>
+        </div>
     </div>
 </div>
 
 <script>
 const chessWorker = new Worker('./chess-worker.js');
-const firebaseConfig = { apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw", authDomain: "assignments-de95a.firebaseapp.com", projectId: "assignments-de95a", storageBucket: "assignments-de95a.firebasestorage.app", messagingSenderId: "1088073398299", appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be" };
+const firebaseConfig = { apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8 (Truncated)", authDomain: "assignments-de95a.firebaseapp.com", projectId: "assignments-de95a", storageBucket: "assignments-de95a.firebasestorage.app", messagingSenderId: "1088073398299", appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be" };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+
+// Tournament State
+var currentRound = 1;
+var totalTeamPoints = 0;
+var gameInProgress = false;
 
 var game = new Chess(), board = null;
 var selectedRepName = "", userColor = 'w';
@@ -108,8 +137,9 @@ const nigerianSchools = ["Maryland Convent Private School", "Grange School", "Le
 function initLeagues() {
     let pHTML = "";
     nigerianSchools.forEach((school, i) => {
-        let score = 2400 - (i * 45);
-        pHTML += `<tr><td><b>${i+1}. ${school}</b></td><td style="text-align:right">${score}</td></tr>`;
+        // Only show team points, simulating progress
+        let simulatedPts = (currentRound === 1) ? 0 : (totalTeamPoints + (Math.random() * 2));
+        pHTML += `<tr><td><b>${i+1}. ${school}</b></td><td style="text-align:right">${simulatedPts.toFixed(1)} pts</td></tr>`;
     });
     $('#player-body').html(pHTML);
 }
@@ -124,16 +154,62 @@ function selectRep(btn, name) {
 function validateAndStart() {
     if (!selectedRepName) return alert("Select a representative!");
     if ($('#studentPass').val() !== "decipherchess") return alert("Wrong Password!");
-    
     $('#welcome-overlay').hide();
     $('#matchmaking-overlay').css('display', 'flex');
-    
     let progress = 0;
     let interval = setInterval(() => {
         progress += 10;
         $('#load-bar').css('width', progress + '%');
         if (progress >= 100) { clearInterval(interval); setupMatch(); }
     }, 300);
+}
+
+function handleResign() {
+    if(confirm("Maryland Convent, do you wish to resign this match?")) {
+        endRound(0);
+    }
+}
+
+function endRound(points) {
+    gameInProgress = false;
+    clearInterval(timerInterval);
+    totalTeamPoints += points;
+    
+    $('#res-round-num').text(currentRound);
+    $('#total-team-pts').text(totalTeamPoints.toFixed(1));
+    $('#live-points').text(totalTeamPoints.toFixed(1));
+    
+    // Simulate position logic
+    let pos = totalTeamPoints >= (currentRound * 1) ? "1st" : (totalTeamPoints >= (currentRound * 0.5) ? "4th" : "12th");
+    $('#maryland-pos').text(`Maryland Convent: ${pos} Place`);
+    
+    if(currentRound >= 6) {
+        $('#next-round-btn').text("VIEW FINAL STANDINGS").attr("onclick", "location.reload()");
+    }
+
+    $('#game-container').hide();
+    $('#round-results-overlay').css('display', 'flex');
+}
+
+function startWaitingCountdown() {
+    $('#round-results-overlay').hide();
+    $('#matchmaking-overlay').css('display', 'flex');
+    $('#match-status').text("Waiting for Opponent...");
+    $('#next-round-label').text(currentRound + 1);
+    $('#wait-timer-container').show();
+    
+    let timeLeft = 60;
+    let countdown = setInterval(() => {
+        timeLeft--;
+        $('#wait-timer').text(timeLeft);
+        if(timeLeft <= 0) {
+            clearInterval(countdown);
+            currentRound++;
+            $('#wait-timer-container').hide();
+            $('#round-header').text(`ROUND ${currentRound} / 6`);
+            setupMatch();
+        }
+    }, 1000);
 }
 
 function formatTime(s) {
@@ -143,27 +219,32 @@ function formatTime(s) {
 }
 
 function updateTimers() {
-    if (game.game_over()) return clearInterval(timerInterval);
+    if (game.game_over()) {
+        let pts = game.in_draw() ? 0.5 : (game.turn() !== userColor[0] ? 1 : 0);
+        endRound(pts);
+        return;
+    }
     if (game.turn() === userColor[0]) {
         userTime--;
         $('#user-timer').text(formatTime(userTime));
-        if (userTime <= 0) alert("Time out! You lost.");
+        if (userTime <= 0) endRound(0);
     } else {
         oppTime--;
         $('#opp-timer').text(formatTime(oppTime));
-        if (oppTime <= 0) alert("Time out! Opponent lost.");
+        if (oppTime <= 0) endRound(1);
     }
 }
 
 async function setupMatch() {
+    gameInProgress = true;
+    userTime = 1200; oppTime = 1200;
+    game = new Chess();
     userColor = Math.random() > 0.5 ? 'white' : 'black';
-    const oppName = "Tunde Balogun";
     const oppSch = nigerianSchools[Math.floor(Math.random() * 19) + 1];
     
-    $('#opp-name').text(oppName);
+    $('#opp-name').text("Tournament Opponent");
     $('#opp-school').text(oppSch);
     $('#displayName').text(selectedRepName);
-    
     $('#matchmaking-overlay').hide();
     $('#game-container').show();
     
@@ -179,9 +260,8 @@ async function setupMatch() {
     if (userColor === 'black') {
         $('#status').text("Opponent's turn (White)");
         setTimeout(() => {
-            game.move('e4'); // Forced opening for White AI
+            game.move('e4');
             board.position(game.fen());
-            oppTime += 3; // Increment
             $('#status').text("Your turn!");
         }, 1500);
     } else {
@@ -190,8 +270,7 @@ async function setupMatch() {
 }
 
 function onSquareClick(sq) {
-    if (game.game_over() || game.turn() !== userColor[0]) return;
-    
+    if (!gameInProgress || game.game_over() || game.turn() !== userColor[0]) return;
     let sourceSquare = window.srcSq;
     if (!sourceSquare) {
         let p = game.get(sq);
@@ -201,23 +280,21 @@ function onSquareClick(sq) {
         }
         return;
     }
-
     let move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
     $('.highlight-white').removeClass('highlight-white');
     window.srcSq = null;
 
     if (move) {
         board.position(game.fen());
-        userTime += 3; // 3s Increment
+        userTime += 3;
         $('#status').text("Opponent is thinking...");
-        
         setTimeout(() => {
             if (game.history().length === 1 && userColor === 'white') {
-                game.move('e5'); // Forced response for Black AI
+                game.move('e5');
                 board.position(game.fen());
-                oppTime += 3;
                 $('#status').text("Your turn!");
-            } else {
+            } else if (!game.game_over()) {
+                // Strength remains "Search 2" for all rounds
                 chessWorker.postMessage("search 2");
                 chessWorker.postMessage("position " + game.fen());
             }
