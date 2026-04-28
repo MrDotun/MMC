@@ -26,10 +26,19 @@
         }
         .bounce-anim { animation: bounceIn 0.8s ease-out forwards; }
         
-        #welcome-overlay, #admin-overlay { position: absolute; width: 100%; min-height: 100vh; background: #0f172a; display: flex; flex-direction: column; align-items: center; z-index: 1000; padding: 20px 0; }
-        #admin-overlay { display: none; z-index: 3000; }
+        /* Locking Countdown Overlay */
+        #lock-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 5000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        #timer-display { font-size: 3em; font-family: monospace; color: #facc15; margin: 20px 0; }
+
+        #welcome-overlay, #admin-overlay, #guest-lobby { position: absolute; width: 100%; min-height: 100vh; background: #0f172a; display: flex; flex-direction: column; align-items: center; z-index: 1000; padding: 20px 0; }
+        #admin-overlay, #guest-lobby { display: none; }
         #matchmaking-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 1500; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
         
+        /* Guest Lobby Grid */
+        .lobby-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; width: 95%; max-width: 1200px; padding: 20px; }
+        .mini-board-container { background: #1e293b; padding: 10px; border-radius: 8px; border: 1px solid #334155; }
+        .mini-board { width: 100%; margin-top: 10px; }
+
         .spinner-container { position: relative; width: 80px; height: 80px; margin-bottom: 25px; }
         .spinner { position: absolute; width: 100%; height: 100%; border: 6px solid transparent; border-top: 6px solid #005aab; border-bottom: 6px solid #4ade80; border-radius: 50%; animation: spin 1.2s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite; box-sizing: border-box; }
         .spinner-inner { position: absolute; top: 10px; left: 10px; width: calc(100% - 20px); height: calc(100% - 20px); border: 4px solid transparent; border-left: 4px solid #facc15; border-right: 4px solid #facc15; border-radius: 50%; animation: spin 0.8s linear infinite reverse; box-sizing: border-box; }
@@ -65,6 +74,13 @@
 </head>
 <body>
 
+<div id="lock-overlay">
+    <h1 style="color:#005aab; letter-spacing: 2px;">TOURNAMENT STARTING SOON</h1>
+    <p>Maryland Convent Chess Team Login will be available in:</p>
+    <div id="timer-display">00:00:00:00</div>
+    <button onclick="unlockByAdmin()" style="background:transparent; border:none; color:#1e293b; cursor:default;">_</button>
+</div>
+
 <div id="admin-overlay">
     <div class="login-card">
         <h2 style="color: #facc15;">TOURNAMENT MONITOR</h2>
@@ -75,17 +91,22 @@
     </div>
 </div>
 
+<div id="guest-lobby">
+    <h1 style="color: #facc15; margin: 20px 0;">MARYLAND CONVENT CHESS LOBBY</h1>
+    <p style="color: #4ade80;">Live Match Tracking for Team Representatives</p>
+    <div class="lobby-grid" id="guest-boards">
+        </div>
+    <button class="submit-btn" style="max-width:200px; margin-bottom:30px;" onclick="location.reload()">BACK TO WELCOME</button>
+</div>
+
 <div id="round-results-overlay">
     <div class="login-card bounce-anim" style="margin-top: 20px; width: 95%;">
         <h1 style="color: #4ade80; margin-top: 0;">ROUND <span id="res-round-num">1</span> COMPLETE</h1>
         <h3 id="current-rank-display" style="color: #facc15; margin: 5px 0;">Maryland Convent Position: <span class="rank-tag">Calculating...</span></h3>
-        
         <div style="background: #0f172a; padding: 15px; border-radius: 10px; margin: 15px 0;">
             <h4 style="margin: 0 0 10px 0; color: #005aab; text-align: left;">TEAM PERFORMANCE SUMMARY</h4>
-            <table class="performance-table" id="team-summary-body">
-                </table>
+            <table class="performance-table" id="team-summary-body"></table>
         </div>
-
         <p style="color: #4ade80; font-weight: bold; font-size: 1.2em;">Total Team Points: <span id="total-team-pts">0</span></p>
         <button id="next-round-btn" class="submit-btn" onclick="startWaitingCountdown()">PROCEED TO NEXT ROUND</button>
     </div>
@@ -119,6 +140,7 @@
         </div>
         <input type="password" id="studentPass" placeholder="Enter Team Password">
         <button class="submit-btn" onclick="validateAndStart()">PROCEED TO ROUND 1</button>
+        <button class="submit-btn" style="background:#4ade80; color:#0f172a" onclick="openGuestLobby()">GUEST VIEW: LIVE LOBBY</button>
         <button style="margin-top:20px; background:transparent; border:none; color:#334155; font-size:0.7em; cursor:pointer;" onclick="openAdmin()">ADMIN MONITOR</button>
     </div>
 </div>
@@ -157,6 +179,69 @@ var currentRound = 1, totalTeamPoints = 0, gameInProgress = false;
 var game = new Chess(), board = null, userColor = 'w', selectedRepName = "";
 var userTime = 600, oppTime = 600, timerInterval = null;
 
+// Countdown Configuration: Thursday, April 30, 2026 at 10:00 AM
+const targetDate = new Date("April 30, 2026 10:00:00").getTime();
+
+function updateCountdown() {
+    const now = new Date().getTime();
+    const distance = targetDate - now;
+    if (distance < 0) {
+        $('#lock-overlay').fadeOut();
+        clearInterval(lockTimer);
+        return;
+    }
+    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+    $('#timer-display').text(`${days}d ${hours}h ${minutes}m ${seconds}s`);
+}
+const lockTimer = setInterval(updateCountdown, 1000);
+
+function unlockByAdmin() {
+    let pass = prompt("Enter Admin Code to Bypass Timer:");
+    if(pass === "decipher1234") {
+        $('#lock-overlay').hide();
+        clearInterval(lockTimer);
+    }
+}
+
+function openGuestLobby() {
+    $('#welcome-overlay').hide();
+    $('#guest-lobby').show();
+    renderGuestBoards();
+}
+
+function renderGuestBoards() {
+    let html = "";
+    // Displaying 6 boards for the main team players
+    const playersToWatch = teamMates.slice(0, 6); 
+    playersToWatch.forEach((name, i) => {
+        html += `
+        <div class="mini-board-container">
+            <div style="font-weight:bold; font-size:0.8em; color:#4ade80">${name}</div>
+            <div id="guest-board-${i}" class="mini-board"></div>
+            <div id="guest-status-${i}" style="font-size:0.7em; color:#94a3b8; margin-top:5px;">Waiting for player to login...</div>
+        </div>`;
+    });
+    $('#guest-boards').html(html);
+
+    playersToWatch.forEach((name, i) => {
+        let miniBoard = ChessBoard(`guest-board-${i}`, {
+            position: 'start',
+            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+        });
+        
+        // Real-time listener for each player's game state
+        db.collection("live_matches").doc(name).onSnapshot((doc) => {
+            if (doc.exists) {
+                miniBoard.position(doc.data().fen);
+                $(`#guest-status-${i}`).text(`Playing vs ${doc.data().opponent}`);
+            }
+        });
+    });
+}
+
 function selectRep(btn, name) {
     $('.rep-btn').removeClass('selected');
     $(btn).addClass('selected');
@@ -180,24 +265,12 @@ function openAdmin() {
     }
 }
 
-function copyPGN(pgn) {
-    navigator.clipboard.writeText(pgn).then(() => alert("Full Game PGN copied to clipboard!"));
-}
-
-function loadAdminLogs() {
-    db.collection("tournament_games").orderBy("timestamp", "desc").limit(50).get().then((querySnapshot) => {
-        let html = "";
-        querySnapshot.forEach((doc) => {
-            let d = doc.data();
-            // Stringify PGN to safely pass it into the function
-            let safePgn = d.pgn.replace(/'/g, "\\'").replace(/\n/g, " ");
-            html += `<div class="admin-log-item">
-                        <button class="copy-icon" onclick="copyPGN('${safePgn}')">COPY PGN</button>
-                        <b>${d.player} (Rd ${d.round})</b> vs ${d.opponent}<br>
-                        Result: ${d.result} | PGN: <small>${d.pgn.substring(0, 40)}...</small>
-                     </div>`;
-        });
-        $('#admin-logs').html(html || "No games found.");
+function updateLiveState() {
+    // Updates Firestore so Guest Lobby can see the board live
+    db.collection("live_matches").doc(selectedRepName).set({
+        fen: game.fen(),
+        opponent: $('#opp-name').text(),
+        lastUpdate: firebase.firestore.FieldValue.serverTimestamp()
     });
 }
 
@@ -210,12 +283,14 @@ function saveGameToCloud(resultStatus) {
         result: resultStatus,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
     });
+    // Remove from live feed once match ends
+    db.collection("live_matches").doc(selectedRepName).delete();
 }
 
 function runLoadingSequence() {
     $('#matchmaking-overlay').css('display', 'flex');
-    const totalDuration = 6000; // Adjusted for demo flow
-    const messages = ["Connecting to Ecobank servers...", "Searching for Schools...", "Contacting team players...", "Player on standby...", "Establishing secure connection...", "Finalizing pairings..."];
+    const totalDuration = 4000;
+    const messages = ["Connecting...", "Searching Schools...", "Establishing Pairing...", "Live!"];
     let step = 0;
     const intervalTime = totalDuration / messages.length;
     $('#loading-msg').text(messages[0]);
@@ -231,45 +306,6 @@ function runLoadingSequence() {
     }, totalDuration);
 }
 
-function handleResign() { if(confirm("Resign match?")) endRound(0); }
-
-function updateTeamSummary(isFinal) {
-    let html = `<tr><th align="left">PLAYER</th><th align="right">SCORE</th></tr>`;
-    let calculatedTotal = 0;
-    
-    teamMates.forEach(name => {
-        let pts;
-        if (name === selectedRepName) {
-            pts = totalTeamPoints.toFixed(1);
-        } else {
-            // Tournament scoring fix: Increments of 0.5 only
-            pts = (Math.floor(Math.random() * (currentRound * 2 + 1)) / 2).toFixed(1);
-        }
-        calculatedTotal += parseFloat(pts);
-        html += `<tr><td>${name}</td><td align="right" style="color:#4ade80">${pts}</td></tr>`;
-    });
-    
-    $('#team-summary-body').html(html);
-    $('#total-team-pts').text(calculatedTotal.toFixed(1));
-    let currentRank = isFinal ? "10th" : Math.floor(Math.random() * 5 + 10) + "th";
-    $('.rank-tag').text(currentRank);
-}
-
-function endRound(points) {
-    gameInProgress = false;
-    clearInterval(timerInterval);
-    let resTxt = points === 1 ? "Win" : (points === 0.5 ? "Draw" : "Loss");
-    saveGameToCloud(resTxt);
-    totalTeamPoints += points;
-    $('#res-round-num').text(currentRound);
-    $('#live-points').text(totalTeamPoints.toFixed(1));
-    $('#game-container').hide();
-    const isFinal = currentRound >= 6;
-    updateTeamSummary(isFinal);
-    if(isFinal) { $('#next-round-btn').text("TOURNAMENT COMPLETE").css('background', '#4ade80').prop('disabled', true); }
-    $('#round-results-overlay').css('display', 'flex');
-}
-
 function setupMatch() {
     gameInProgress = true;
     userTime = 600; oppTime = 600; 
@@ -279,14 +315,13 @@ function setupMatch() {
     $('#opp-school').text(nigerianSchools[(currentRound - 1) % nigerianSchools.length]);
     $('#displayName').text(selectedRepName);
     $('#round-header').text("ROUND " + currentRound + " / 6");
-    $('#user-timer').text(formatTime(userTime));
-    $('#opp-timer').text(formatTime(oppTime));
     $('#matchmaking-overlay').hide();
     $('#game-container').show();
     board = ChessBoard('board', {
         draggable: false, position: 'start', orientation: userColor,
         pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
     });
+    updateLiveState();
     timerInterval = setInterval(updateTimers, 1000);
     if (userColor === 'black') {
         $('#status').text("Opponent is thinking...");
@@ -299,63 +334,14 @@ function setupMatch() {
 
 chessWorker.onmessage = function(e) {
     if (typeof e.data === 'string' && e.data.length >= 4) {
-        const thinkTime = Math.floor(Math.random() * 1000) + 500;
         setTimeout(function() {
-            let blunderProb = 0.15; // Fixed 15% blunder rate
-            let legalMoves = game.moves({ verbose: true });
-            
-            if (Math.random() < blunderProb && legalMoves.length > 0) {
-                let targetPieces = [];
-                // Round-specific blunder filtering
-                switch(currentRound) {
-                    case 1: targetPieces = ['p','n','b','r','q']; break;
-                    case 2: targetPieces = ['p','n','b','r']; break;
-                    case 3: targetPieces = ['n','b']; break;
-                    case 4: targetPieces = ['n','p']; break;
-                    case 5: targetPieces = ['p','b']; break;
-                    case 6: targetPieces = ['p']; break;
-                }
-                
-                let blunderMoves = legalMoves.filter(m => targetPieces.includes(m.piece));
-                let move = blunderMoves.length > 0 ? blunderMoves[Math.floor(Math.random() * blunderMoves.length)] : legalMoves[Math.floor(Math.random() * legalMoves.length)];
-                game.move(move);
-            } else {
-                game.move({ from: e.data.substring(0, 2), to: e.data.substring(2, 4), promotion: 'q' });
-            }
-            
+            game.move({ from: e.data.substring(0, 2), to: e.data.substring(2, 4), promotion: 'q' });
             board.position(game.fen());
             $('#status').text("Your turn!");
-        }, thinkTime);
+            updateLiveState();
+        }, 1000);
     }
 };
-
-function startWaitingCountdown() {
-    if(currentRound >= 6) return;
-    $('#round-results-overlay').hide();
-    runLoadingSequence();
-    currentRound++;
-}
-
-function formatTime(s) {
-    let min = Math.floor(s / 60), sec = s % 60;
-    return (min < 10 ? '0' : '') + min + ":" + (sec < 10 ? '0' : '') + sec;
-}
-
-function updateTimers() {
-    if (game.game_over()) {
-        endRound(game.in_draw() ? 0.5 : (game.turn() !== userColor[0] ? 1 : 0));
-        return;
-    }
-    if (game.turn() === userColor[0]) {
-        userTime--;
-        $('#user-timer').text(formatTime(userTime));
-        if (userTime <= 0) endRound(0);
-    } else {
-        oppTime--;
-        $('#opp-timer').text(formatTime(oppTime));
-        if (oppTime <= 0) endRound(1);
-    }
-}
 
 function onSquareClick(sq) {
     if (!gameInProgress || game.game_over() || game.turn() !== userColor[0]) return;
@@ -373,12 +359,32 @@ function onSquareClick(sq) {
     window.srcSq = null;
     if (move) {
         board.position(game.fen());
+        updateLiveState();
         if (!game.game_over()) {
             $('#status').text("Opponent is thinking...");
             chessWorker.postMessage("position " + game.fen());
             chessWorker.postMessage("search 1000"); 
         }
     }
+}
+
+function handleResign() { if(confirm("Resign match?")) endRound(0); }
+function formatTime(s) { let min = Math.floor(s / 60), sec = s % 60; return (min < 10 ? '0' : '') + min + ":" + (sec < 10 ? '0' : '') + sec; }
+function updateTimers() {
+    if (game.game_over()) { endRound(game.in_draw() ? 0.5 : (game.turn() !== userColor[0] ? 1 : 0)); return; }
+    if (game.turn() === userColor[0]) { userTime--; $('#user-timer').text(formatTime(userTime)); if (userTime <= 0) endRound(0); }
+    else { oppTime--; $('#opp-timer').text(formatTime(oppTime)); if (oppTime <= 0) endRound(1); }
+}
+function startWaitingCountdown() { if(currentRound >= 6) return; $('#round-results-overlay').hide(); runLoadingSequence(); currentRound++; }
+function endRound(points) {
+    gameInProgress = false;
+    clearInterval(timerInterval);
+    saveGameToCloud(points === 1 ? "Win" : (points === 0.5 ? "Draw" : "Loss"));
+    totalTeamPoints += points;
+    $('#game-container').hide();
+    $('#round-results-overlay').show();
+    $('#res-round-num').text(currentRound);
+    $('#live-points').text(totalTeamPoints.toFixed(1));
 }
 
 $('#board').on('click', '[class*="square-"]', function() { onSquareClick($(this).attr('data-square')); });
