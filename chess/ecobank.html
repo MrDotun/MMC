@@ -39,7 +39,7 @@
         .loading-bar { width: 250px; height: 6px; background: #334155; border-radius: 3px; margin-top: 15px; overflow: hidden; position: relative; }
         .loading-progress { width: 0%; height: 100%; background: linear-gradient(90deg, #005aab, #4ade80); }
         
-        #round-results-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.95); z-index: 2500; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        #round-results-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.98); z-index: 2500; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow-y: auto; padding: 20px 0; }
         .login-card { background: #1e293b; padding: 25px; border-radius: 15px; border: 2px solid #005aab; width: 90%; max-width: 400px; text-align: center; margin-bottom: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .login-card input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 5px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; font-size: 16px;}
         .rep-btn { background: #334155; color: white; padding: 12px; border: 1px solid #005aab; border-radius: 8px; cursor: pointer; width: 100%; margin: 5px 0; text-align: left; transition: 0.3s; font-size: 15px; font-weight: 500;}
@@ -55,6 +55,12 @@
         .instruction-text { color: #facc15; font-weight: bold; font-size: 0.95em; margin: 5px 0 15px 0; animation: pulseYellow 2s infinite; }
         
         .admin-log-item { background: #0f172a; padding: 10px; margin: 5px 0; border-radius: 5px; font-size: 0.85em; text-align: left; border: 1px solid #334155; }
+        
+        /* New Table Styles */
+        .performance-table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 0.85em; }
+        .performance-table th { color: #94a3b8; padding-bottom: 8px; border-bottom: 1px solid #334155; }
+        .performance-table td { padding: 8px 0; border-bottom: 1px solid #1e293b; }
+        .rank-tag { background: #facc15; color: #000; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -70,9 +76,16 @@
 </div>
 
 <div id="round-results-overlay">
-    <div class="login-card bounce-anim" style="margin-top: 20px;">
+    <div class="login-card bounce-anim" style="margin-top: 20px; width: 95%;">
         <h1 style="color: #4ade80; margin-top: 0;">ROUND <span id="res-round-num">1</span> COMPLETE</h1>
-        <h2 style="color: white; margin: 10px 0;">Maryland Convent: Rank Updated</h2>
+        <h3 id="current-rank-display" style="color: #facc15; margin: 5px 0;">Maryland Convent Position: <span class="rank-tag">Calculating...</span></h3>
+        
+        <div style="background: #0f172a; padding: 15px; border-radius: 10px; margin: 15px 0;">
+            <h4 style="margin: 0 0 10px 0; color: #005aab; text-align: left;">TEAM PERFORMANCE SUMMARY</h4>
+            <table class="performance-table" id="team-summary-body">
+                </table>
+        </div>
+
         <p style="color: #4ade80; font-weight: bold; font-size: 1.2em;">Total Team Points: <span id="total-team-pts">0</span></p>
         <button id="next-round-btn" class="submit-btn" onclick="startWaitingCountdown()">PROCEED TO NEXT ROUND</button>
     </div>
@@ -138,6 +151,7 @@ const db = firebase.firestore();
 
 const nigerianNames = ["Chijioke Eze", "Adesua Balogun", "Tunde Owolabi", "Nkechi Okoro", "Femi Adeyemi", "Ibrahim Musa"];
 const nigerianSchools = ["Grange School", "Lekki British School", "Corona Private School", "Green Springs School", "Atlantic Hall", "British International School"];
+const teamMates = ['Onele Chierika', 'Semilore Beckley', 'Andrew Nwagbale', 'Ajayi Oluwaseun', 'Obi Chukwuemeka', 'Eliana Lawrence', 'Sage Osafile'];
 
 var currentRound = 1, totalTeamPoints = 0, gameInProgress = false;
 var game = new Chess(), board = null, userColor = 'w', selectedRepName = "";
@@ -181,18 +195,6 @@ function loadAdminLogs() {
 }
 
 function saveGameToCloud(resultStatus) {
-    // Requirements fix: Set PGN headers for full record keeping
-    game.header('Event', 'Ecobank Pre Tournament 2026');
-    game.header('Site', 'Maryland Convent Private School');
-    game.header('Round', currentRound.toString());
-    if(userColor === 'white') {
-        game.header('White', selectedRepName);
-        game.header('Black', $('#opp-name').text());
-    } else {
-        game.header('White', $('#opp-name').text());
-        game.header('Black', selectedRepName);
-    }
-
     db.collection("tournament_games").add({
         player: selectedRepName,
         round: currentRound,
@@ -205,7 +207,7 @@ function saveGameToCloud(resultStatus) {
 
 function runLoadingSequence() {
     $('#matchmaking-overlay').css('display', 'flex');
-    const totalDuration = 12000; // Speeding up slightly for UX but keeping long enough to feel like matchmaking
+    const totalDuration = 90000; // 1.5 Minutes
     const messages = ["Connecting to Ecobank servers...", "Searching for Schools...", "Contacting team players...", "Player on standby...", "Establishing secure connection...", "Finalizing pairings..."];
     let step = 0;
     const intervalTime = totalDuration / messages.length;
@@ -224,6 +226,30 @@ function runLoadingSequence() {
 
 function handleResign() { if(confirm("Resign match?")) endRound(0); }
 
+function updateTeamSummary(isFinal) {
+    let html = `<tr><th align="left">PLAYER</th><th align="right">SCORE</th></tr>`;
+    let calculatedTotal = 0;
+    
+    teamMates.forEach(name => {
+        let pts;
+        if (name === selectedRepName) {
+            pts = totalTeamPoints;
+        } else {
+            // End of round 6 scores range 2-5, otherwise partial range
+            pts = isFinal ? (Math.random() * 3 + 2).toFixed(1) : (Math.random() * (currentRound * 0.8)).toFixed(1);
+        }
+        calculatedTotal += parseFloat(pts);
+        html += `<tr><td>${name}</td><td align="right" style="color:#4ade80">${pts}</td></tr>`;
+    });
+    
+    $('#team-summary-body').html(html);
+    $('#total-team-pts').text(calculatedTotal.toFixed(1));
+    
+    // Rank logic: 10th if final, otherwise dynamic
+    let currentRank = isFinal ? "10th" : Math.floor(Math.random() * 5 + 10) + "th";
+    $('.rank-tag').text(currentRank);
+}
+
 function endRound(points) {
     gameInProgress = false;
     clearInterval(timerInterval);
@@ -233,10 +259,15 @@ function endRound(points) {
 
     totalTeamPoints += points;
     $('#res-round-num').text(currentRound);
-    $('#total-team-pts').text(totalTeamPoints.toFixed(1));
     $('#live-points').text(totalTeamPoints.toFixed(1));
     $('#game-container').hide();
-    if(currentRound >= 6) { $('#next-round-btn').text("TOURNAMENT COMPLETE").prop('disabled', true); }
+    
+    const isFinal = currentRound >= 6;
+    updateTeamSummary(isFinal);
+
+    if(isFinal) { 
+        $('#next-round-btn').text("TOURNAMENT COMPLETE").css('background', '#4ade80').prop('disabled', true); 
+    }
     $('#round-results-overlay').css('display', 'flex');
 }
 
@@ -272,7 +303,6 @@ function setupMatch() {
     gameInProgress = true;
     userTime = 600; oppTime = 600; 
     game = new Chess();
-    // Requirement fix: Ensure random color selection every match
     userColor = Math.random() > 0.5 ? 'white' : 'black';
     $('#opp-name').text(nigerianNames[Math.floor(Math.random() * nigerianNames.length)]);
     $('#opp-school').text(nigerianSchools[(currentRound - 1) % nigerianSchools.length]);
@@ -287,15 +317,12 @@ function setupMatch() {
         pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
     });
     timerInterval = setInterval(updateTimers, 1000);
-    
-    if (game.turn() !== userColor[0]) {
+    if (userColor === 'black') {
         $('#status').text("Opponent is thinking...");
-        // Requirement fix: Opponent gets stronger as round increases (Search depth/time increases)
-        let searchTime = 500 + (currentRound * 500); 
         chessWorker.postMessage("position " + game.fen());
-        chessWorker.postMessage("search " + searchTime);
+        chessWorker.postMessage("search 1000");
     } else {
-        $('#status').text("Your turn (" + userColor + ")");
+        $('#status').text("Your turn (White)");
     }
 }
 
@@ -310,7 +337,6 @@ function onSquareClick(sq) {
         }
         return;
     }
-    // Auto-promote to queen for player to keep flow simple
     let move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
     $('.highlight-white').removeClass('highlight-white');
     window.srcSq = null;
@@ -318,36 +344,32 @@ function onSquareClick(sq) {
         board.position(game.fen());
         if (!game.game_over()) {
             $('#status').text("Opponent is thinking...");
-            let searchTime = 500 + (currentRound * 500);
             chessWorker.postMessage("position " + game.fen());
-            chessWorker.postMessage("search " + searchTime); 
+            chessWorker.postMessage("search 1000"); 
         }
     }
 }
 
 chessWorker.onmessage = function(e) {
-    // Requirement fix: Allow 5 character strings for promotion (e.g., e7e8q)
-    if (typeof e.data === 'string' && (e.data.length === 4 || e.data.length === 5)) {
-        const baseThinkTime = Math.floor(Math.random() * 2000) + 1000;
+    if (typeof e.data === 'string' && e.data.length === 4) {
+        const thinkTime = Math.floor(Math.random() * 2000) + 1000;
         
         setTimeout(function() {
-            // Requirement fix: Blunder probability reduces each round
-            let blunderProb = Math.max(0.05, 0.6 - (currentRound - 1) * 0.12);
+            // Difficulty logic: Opponents get 10% stronger per round.
+            // Starts at 50% blunder chance, reduces by 10% each round.
+            let blunderProb = Math.max(0, 0.5 - (currentRound - 1) * 0.10);
             let legalMoves = game.moves();
             
             if (Math.random() < blunderProb && legalMoves.length > 0) {
-                game.move(legalMoves[Math.floor(Math.random() * legalMoves.length)]);
+                let randomMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
+                game.move(randomMove);
             } else {
-                // Play the engine move, handling potential promotions
-                let moveObj = { from: e.data.substring(0, 2), to: e.data.substring(2, 4) };
-                if (e.data.length === 5) moveObj.promotion = e.data.substring(4, 5);
-                else moveObj.promotion = 'q';
-                game.move(moveObj);
+                game.move({ from: e.data.substring(0, 2), to: e.data.substring(2, 4), promotion: 'q' });
             }
             
             board.position(game.fen());
             $('#status').text("Your turn!");
-        }, baseThinkTime);
+        }, thinkTime);
     }
 };
 
