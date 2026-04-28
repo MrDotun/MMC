@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ecobank Pre Tournament 2026 - Decipher Chess</title>
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
@@ -29,8 +30,8 @@
         #lock-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 5000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
         #timer-display { font-size: 3em; font-family: monospace; color: #facc15; margin: 20px 0; }
 
-        #welcome-overlay, #admin-overlay, #guest-lobby { position: absolute; width: 100%; min-height: 100vh; background: #0f172a; display: flex; flex-direction: column; align-items: center; z-index: 1000; padding: 20px 0; }
-        #admin-overlay, #guest-lobby { display: none; }
+        #welcome-overlay, #admin-overlay, #guest-lobby, #team-portal-overlay { position: absolute; width: 100%; min-height: 100vh; background: #0f172a; display: flex; flex-direction: column; align-items: center; z-index: 1000; padding: 20px 0; }
+        #admin-overlay, #guest-lobby, #team-portal-overlay { display: none; }
         #matchmaking-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 1500; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
         
         .lobby-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; width: 95%; max-width: 1200px; padding: 20px; }
@@ -42,7 +43,6 @@
         .spinner-inner { position: absolute; top: 10px; left: 10px; width: calc(100% - 20px); height: calc(100% - 20px); border: 4px solid transparent; border-left: 4px solid #facc15; border-right: 4px solid #facc15; border-radius: 50%; animation: spin 0.8s linear infinite reverse; box-sizing: border-box; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        #round-results-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.98); z-index: 2500; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow-y: auto; padding: 20px 0; }
         .login-card { background: #1e293b; padding: 25px; border-radius: 15px; border: 2px solid #005aab; width: 90%; max-width: 400px; text-align: center; margin-bottom: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); position: relative; }
         .login-card input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 5px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; font-size: 16px;}
         .rep-btn { background: #334155; color: white; padding: 12px; border: 1px solid #005aab; border-radius: 8px; cursor: pointer; width: 100%; margin: 5px 0; text-align: left; transition: 0.3s; font-size: 15px; font-weight: 500;}
@@ -56,6 +56,11 @@
         .opp-card { display: flex; justify-content: space-between; align-items: center; background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #ef4444; }
         .timer-box { font-family: monospace; background: #000; padding: 8px 12px; border-radius: 6px; font-size: 1.3em; min-width: 80px; letter-spacing: 1px;}
         .instruction-text { color: #facc15; font-weight: bold; font-size: 0.95em; margin: 5px 0 15px 0; animation: pulseYellow 2s infinite; }
+
+        .pgn-card { background: #0f172a; border: 1px solid #334155; padding: 12px; border-radius: 8px; margin-bottom: 10px; text-align: left; position: relative;}
+        .pgn-text { font-family: monospace; font-size: 10px; color: #94a3b8; display: block; margin-top: 5px; word-break: break-all; max-height: 60px; overflow-y: auto;}
+        .del-btn { position: absolute; right: 10px; top: 10px; color: #ef4444; cursor: pointer; opacity: 0.6; transition: 0.2s;}
+        .del-btn:hover { opacity: 1; }
     </style>
 </head>
 <body>
@@ -74,6 +79,16 @@
             <p>No games recorded yet...</p>
         </div>
         <button class="submit-btn" onclick="$('#admin-overlay').hide()">CLOSE MONITOR</button>
+    </div>
+</div>
+
+<div id="team-portal-overlay">
+    <div class="login-card" style="max-width: 600px;">
+        <h2 style="color: #facc15; margin-bottom: 5px;">MARYLAND TEAM PORTAL</h2>
+        <div id="team-pgn-list" style="max-height: 450px; overflow-y: auto; margin-bottom: 15px; padding-right: 5px;">
+            <p style="color: #475569;">Fetching archives...</p>
+        </div>
+        <button class="submit-btn" onclick="$('#team-portal-overlay').hide()">CLOSE ARCHIVES</button>
     </div>
 </div>
 
@@ -103,6 +118,9 @@
         <button class="submit-btn" style="background:#4ade80; color:#0f172a;" onclick="openGuestLobby()">GUEST VIEW: LIVE LOBBY</button>
         <hr style="border:0; border-top:1px solid #334155; margin: 20px 0 10px 0;">
         <button style="background:transparent; border:none; color:#475569; font-size:0.75em; cursor:pointer;" onclick="openAdmin()">ADMIN MONITOR ACCESS</button>
+        <button style="background: #1e293b; border: 1px solid #facc15; color: #facc15; padding: 10px; border-radius: 8px; width: 100%; margin-top: 10px; font-size: 12px; font-weight: bold; cursor: pointer;" onclick="openTeamPortal()">
+            <i class="fas fa-database" style="margin-right: 5px;"></i> TEAM MARYLAND ARCHIVES
+        </button>
     </div>
 </div>
 
@@ -139,21 +157,21 @@ const chessWorker = new Worker('./chess-worker.js');
 firebase.initializeApp({ apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8", authDomain: "assignments-de95a.firebaseapp.com", projectId: "assignments-de95a", storageBucket: "assignments-de95a.firebasestorage.app", messagingSenderId: "1088073398299", appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be" });
 const db = firebase.firestore();
 
-// Random 20 Opponents
+// 20 NEW NIGERIAN OPPONENTS
 const nigerianNames = [
-    "Chijioke Eze", "Adesua Balogun", "Tunde Owolabi", "Nkechi Okoro", "Femi Adeyemi", 
-    "Ibrahim Musa", "Chinelo Okonkwo", "Babatunde Raji", "Funmilayo Bello", "Emeka Anyanwu",
-    "Ifeanyi Okeke", "Yetunde Johnson", "Segun Arinze", "Olamide Shonekan", "Amina Mohammed",
-    "Yusuf Abubakar", "Ngozi Onwuka", "Bolaji Aluko", "Temitope Adekunle", "Damilola Agbaje"
+    "Oluwaseun Adewale", "Chidi Okafor", "Babajide Soyinka", "Nnamdi Azikiwe", "Kelechi Iheanacho", 
+    "Folake Adeyemi", "Uchechi Nwosu", "Amina Danjuma", "Tobi Bakre", "Ifeanyi Ubah",
+    "Zainab Yusuf", "Bose Afolayan", "Segun Ogunsanya", "Ebele Okeke", "Mustafa Bello",
+    "Damilola Ayoola", "Chinonso Onwuka", "Hassanat Ahmed", "Fadekemi Oladele", "Jubril Enahoro"
 ];
 
-// Random 20 Schools
+// 20 NEW NIGERIAN SCHOOLS
 const nigerianSchools = [
-    "Grange School", "Lekki British School", "Corona Private School", "Green Springs School", 
-    "Atlantic Hall", "British International School", "American International School", "Loyola Jesuit College",
-    "Vivian Fowler Memorial", "Whitesands School", "Day Waterman College", "Chrisland Schools",
-    "Dowen College", "Meadow Hall School", "Children's International", "Oxbridge Tutorial",
-    "St. Saviour's School", "Holy Child College", "Queen's College", "King's College"
+    "Grace High School", "Meadow Hall College", "White Dove School", "Hallmark Secondary School", 
+    "Holy Child College", "St. Gregory's College", "Aishel International School", "Grange School",
+    "Bells Secondary School", "Bethany Hall School", "Loyola Jesuit", "Christ The King College",
+    "Whitesands School", "Regency Schools", "Avicenna International", "Starfield College",
+    "Lead-Forte Gate College", "Tandem Schools", "Emerald High School", "Green Springs School"
 ];
 
 const teamMates = ['Onele Chierika', 'Semilore Beckley', 'Andrew Nwagbale', 'Ajayi Oluwaseun', 'Obi Chukwuemeka', 'Eliana Lawrence', 'Sage Osafile'];
@@ -175,7 +193,7 @@ function unlockByAdmin() { if(prompt("Bypass Code:") === "decipher1234") { $('#l
 function openGuestLobby() {
     $('#welcome-overlay').hide(); $('#guest-lobby').show();
     let html = "";
-    teamMates.slice(0, 6).forEach((name, i) => {
+    teamMates.forEach((name, i) => {
         html += `<div class="mini-board-container">
             <div style="font-weight:bold; color:#4ade80">${name}</div>
             <div id="guest-board-${i}" class="mini-board"></div>
@@ -183,12 +201,40 @@ function openGuestLobby() {
         </div>`;
     });
     $('#guest-boards').html(html);
-    teamMates.slice(0, 6).forEach((name, i) => {
+    teamMates.forEach((name, i) => {
         let mb = ChessBoard(`guest-board-${i}`, { position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
         db.collection("live_matches").doc(name).onSnapshot(doc => {
             if(doc.exists) { mb.position(doc.data().fen); $(`#guest-status-${i}`).text(`vs ${doc.data().opponent}`).css('color','#4ade80'); }
         });
     });
+}
+
+function openTeamPortal() {
+    $('#team-portal-overlay').show();
+    db.collection("academy_matches")
+      .where("school", "==", "Maryland Convent Private School")
+      .orderBy("updated", "desc")
+      .onSnapshot(snap => {
+        let html = "";
+        if(snap.empty) html = "<p>No games archived yet.</p>";
+        snap.forEach(doc => {
+            const data = doc.data();
+            html += `<div class="pgn-card">
+                <i class="fas fa-trash del-btn" onclick="deletePGN('${doc.id}')"></i>
+                <b style="color:#facc15; font-size:11px;">ROUND ${data.round || '1'}</b><br>
+                <span style="font-size:13px; font-weight:bold;">${data.white} vs ${data.black}</span>
+                <code class="pgn-text">${data.pgn || 'N/A'}</code>
+            </div>`;
+        });
+        $('#team-pgn-list').html(html);
+      });
+}
+
+async function deletePGN(id) {
+    if(prompt("Enter Admin Passcode to Delete:") === "decipher1234") {
+        await db.collection("academy_matches").doc(id).delete();
+        alert("Game Deleted.");
+    }
 }
 
 function selectRep(btn, name) { $('.rep-btn').removeClass('selected'); $(btn).addClass('selected'); selectedRepName = name; }
@@ -201,7 +247,6 @@ function validateAndStart() {
 function setupMatch() {
     gameInProgress = true; game = new Chess(); userTime = 600; oppTime = 600;
     userColor = Math.random() > 0.5 ? 'white' : 'black';
-    // Random Selection from 20 items
     $('#opp-name').text(nigerianNames[Math.floor(Math.random() * nigerianNames.length)]);
     $('#opp-school').text(nigerianSchools[Math.floor(Math.random() * nigerianSchools.length)]);
     $('#displayName').text(selectedRepName);
@@ -212,10 +257,26 @@ function setupMatch() {
 
 function updateLiveState() { db.collection("live_matches").doc(selectedRepName).set({ fen: game.fen(), opponent: $('#opp-name').text() }); }
 function updateTimers() {
-    if (game.game_over()) { endRound(game.in_draw()?0.5:(game.turn()!==userColor[0]?1:0)); return; }
+    if (game.game_over()) { 
+        saveGameArchive();
+        endRound(game.in_draw()?0.5:(game.turn()!==userColor[0]?1:0)); 
+        return; 
+    }
     if (game.turn() === userColor[0]) { userTime--; $('#user-timer').text(formatTime(userTime)); }
     else { oppTime--; $('#opp-timer').text(formatTime(oppTime)); }
 }
+
+function saveGameArchive() {
+    db.collection("academy_matches").add({
+        white: userColor === 'white' ? selectedRepName : $('#opp-name').text(),
+        black: userColor === 'black' ? selectedRepName : $('#opp-name').text(),
+        pgn: game.pgn(),
+        round: currentRound,
+        school: "Maryland Convent Private School",
+        updated: firebase.firestore.FieldValue.serverTimestamp()
+    });
+}
+
 function formatTime(s) { return Math.floor(s/60).toString().padStart(2,'0') + ":" + (s%60).toString().padStart(2,'0'); }
 function endRound(pts) { gameInProgress = false; clearInterval(timerInterval); db.collection("live_matches").doc(selectedRepName).delete(); totalTeamPoints += pts; $('#game-container').hide(); alert("Round Complete!"); location.reload(); }
 function openAdmin() { if(prompt("Admin Pass:") === "decipher1234") $('#admin-overlay').show(); }
