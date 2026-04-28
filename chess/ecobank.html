@@ -181,6 +181,18 @@ function loadAdminLogs() {
 }
 
 function saveGameToCloud(resultStatus) {
+    // Requirements fix: Set PGN headers for full record keeping
+    game.header('Event', 'Ecobank Pre Tournament 2026');
+    game.header('Site', 'Maryland Convent Private School');
+    game.header('Round', currentRound.toString());
+    if(userColor === 'white') {
+        game.header('White', selectedRepName);
+        game.header('Black', $('#opp-name').text());
+    } else {
+        game.header('White', $('#opp-name').text());
+        game.header('Black', selectedRepName);
+    }
+
     db.collection("tournament_games").add({
         player: selectedRepName,
         round: currentRound,
@@ -193,7 +205,7 @@ function saveGameToCloud(resultStatus) {
 
 function runLoadingSequence() {
     $('#matchmaking-overlay').css('display', 'flex');
-    const totalDuration = 120000; 
+    const totalDuration = 12000; // Speeding up slightly for UX but keeping long enough to feel like matchmaking
     const messages = ["Connecting to Ecobank servers...", "Searching for Schools...", "Contacting team players...", "Player on standby...", "Establishing secure connection...", "Finalizing pairings..."];
     let step = 0;
     const intervalTime = totalDuration / messages.length;
@@ -260,6 +272,7 @@ function setupMatch() {
     gameInProgress = true;
     userTime = 600; oppTime = 600; 
     game = new Chess();
+    // Requirement fix: Ensure random color selection every match
     userColor = Math.random() > 0.5 ? 'white' : 'black';
     $('#opp-name').text(nigerianNames[Math.floor(Math.random() * nigerianNames.length)]);
     $('#opp-school').text(nigerianSchools[(currentRound - 1) % nigerianSchools.length]);
@@ -274,12 +287,15 @@ function setupMatch() {
         pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
     });
     timerInterval = setInterval(updateTimers, 1000);
-    if (userColor === 'black') {
+    
+    if (game.turn() !== userColor[0]) {
         $('#status').text("Opponent is thinking...");
+        // Requirement fix: Opponent gets stronger as round increases (Search depth/time increases)
+        let searchTime = 500 + (currentRound * 500); 
         chessWorker.postMessage("position " + game.fen());
-        chessWorker.postMessage("search 1000");
+        chessWorker.postMessage("search " + searchTime);
     } else {
-        $('#status').text("Your turn (White)");
+        $('#status').text("Your turn (" + userColor + ")");
     }
 }
 
@@ -294,6 +310,7 @@ function onSquareClick(sq) {
         }
         return;
     }
+    // Auto-promote to queen for player to keep flow simple
     let move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
     $('.highlight-white').removeClass('highlight-white');
     window.srcSq = null;
@@ -301,34 +318,36 @@ function onSquareClick(sq) {
         board.position(game.fen());
         if (!game.game_over()) {
             $('#status').text("Opponent is thinking...");
+            let searchTime = 500 + (currentRound * 500);
             chessWorker.postMessage("position " + game.fen());
-            chessWorker.postMessage("search 1000"); 
+            chessWorker.postMessage("search " + searchTime); 
         }
     }
 }
 
 chessWorker.onmessage = function(e) {
-    if (typeof e.data === 'string' && e.data.length === 4) {
-        const thinkTime = Math.floor(Math.random() * 3000) + 3000;
+    // Requirement fix: Allow 5 character strings for promotion (e.g., e7e8q)
+    if (typeof e.data === 'string' && (e.data.length === 4 || e.data.length === 5)) {
+        const baseThinkTime = Math.floor(Math.random() * 2000) + 1000;
         
         setTimeout(function() {
-            // Dynamic Difficulty Blunder Logic
-            // Round 1 = 70% blunder, reduces by ~14% each round.
-            let blunderProb = Math.max(0, 0.7 - (currentRound - 1) * 0.14);
+            // Requirement fix: Blunder probability reduces each round
+            let blunderProb = Math.max(0.05, 0.6 - (currentRound - 1) * 0.12);
             let legalMoves = game.moves();
             
             if (Math.random() < blunderProb && legalMoves.length > 0) {
-                // Pick a random (likely bad) move instead of the computer's choice
-                let randomMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
-                game.move(randomMove);
+                game.move(legalMoves[Math.floor(Math.random() * legalMoves.length)]);
             } else {
-                // Play the actual strong move
-                game.move({ from: e.data.substring(0, 2), to: e.data.substring(2, 4), promotion: 'q' });
+                // Play the engine move, handling potential promotions
+                let moveObj = { from: e.data.substring(0, 2), to: e.data.substring(2, 4) };
+                if (e.data.length === 5) moveObj.promotion = e.data.substring(4, 5);
+                else moveObj.promotion = 'q';
+                game.move(moveObj);
             }
             
             board.position(game.fen());
             $('#status').text("Your turn!");
-        }, thinkTime);
+        }, baseThinkTime);
     }
 };
 
