@@ -48,7 +48,7 @@
         .rep-btn { background: #334155; color: white; padding: 12px; border: 1px solid #005aab; border-radius: 8px; cursor: pointer; width: 100%; margin: 5px 0; text-align: left; transition: 0.3s; font-size: 15px; font-weight: 500;}
         .rep-btn.selected { background: #005aab; border-color: #4ade80; box-shadow: 0 0 10px rgba(74, 222, 128, 0.3);}
         #game-container { display: none; width: 95vmin; max-width: 500px; padding: 20px 10px; }
-        #board { width: 100%; border: 3px solid #005aab; border-radius: 8px; box-shadow: 0 5px 20px rgba(0,0,0,0.4); }
+        #board, #adminBoard { width: 100%; border: 3px solid #005aab; border-radius: 8px; box-shadow: 0 5px 20px rgba(0,0,0,0.4); }
         .info-panel { background: #1e293b; padding: 15px; border-radius: 12px; border: 1px solid #005aab; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3);}
         .submit-btn { background: #005aab; color: white; padding: 14px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 15px; font-size: 16px; transition: 0.2s;}
         .submit-btn:hover { background: #004280; transform: translateY(-2px); }
@@ -59,29 +59,46 @@
         
         .admin-log-item { background: #0f172a; padding: 10px; margin: 5px 0; border-radius: 5px; font-size: 0.85em; text-align: left; border: 1px solid #334155; position: relative; }
         .copy-icon { cursor: pointer; position: absolute; right: 10px; top: 10px; background: #005aab; color: white; border: none; border-radius: 4px; padding: 2px 6px; font-size: 10px; }
+        .live-btn { background: #1e293b; border: 1px solid #4ade80; color: #4ade80; cursor: pointer; border-radius: 4px; padding: 4px 8px; margin-top: 5px; font-weight: bold; font-size: 0.8em; }
         
         .performance-table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 0.85em; }
         .performance-table th { color: #94a3b8; padding-bottom: 8px; border-bottom: 1px solid #334155; }
         .performance-table td { padding: 8px 0; border-bottom: 1px solid #1e293b; }
+
+        #admin-monitor-panel { display: none; background: #0f172a; border: 2px solid #facc15; padding: 15px; border-radius: 10px; margin-top: 15px; width: 100%; box-sizing: border-box; }
+        .admin-controls { display: flex; gap: 10px; margin-top: 10px; }
+        .control-btn { flex: 1; padding: 10px; border-radius: 5px; cursor: pointer; border: none; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div id="admin-overlay">
-    <div class="login-card" style="max-width: 600px;">
+    <div class="login-card" style="max-width: 600px; width: 95%;">
         <h2 style="color: #facc15;">COACH'S LOBBY (LIVE VIEW)</h2>
-        <h4 style="color:#4ade80; text-align:left; margin-bottom:5px;">🔴 Live Active Games</h4>
-        <div id="live-admin-logs" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px; border:1px solid #334155; padding:10px; background:#0f172a; border-radius:8px;">
+        
+        <div id="admin-monitor-panel">
+            <h4 id="monitoring-player-name" style="margin: 0 0 10px 0; color: #facc15;">Watching: None</h4>
+            <div id="adminBoard" style="width: 100%; max-width: 300px; margin: 0 auto;"></div>
+            <div class="admin-controls">
+                <button class="control-btn" style="background: #334155; color: white;" onclick="adminMoveBack()">◀ BACK</button>
+                <button class="control-btn" style="background: #4ade80; color: #0f172a;" onclick="resumeLive()">RESUME LIVE</button>
+            </div>
+        </div>
+
+        <h4 style="color:#4ade80; text-align:left; margin: 15px 0 5px 0;">🔴 Live Active Games</h4>
+        <div id="live-admin-logs" style="max-height: 180px; overflow-y: auto; margin-bottom: 15px; border:1px solid #334155; padding:10px; background:#0f172a; border-radius:8px;">
             <p>No students playing right now...</p>
         </div>
+        
         <h4 style="color:#005aab; text-align:left; margin-bottom:5px;">Completed Matches</h4>
-        <div id="admin-logs" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px;">
+        <div id="admin-logs" style="max-height: 150px; overflow-y: auto; margin-bottom: 15px;">
             <p>No games recorded yet...</p>
         </div>
         <button class="submit-btn" onclick="closeAdmin()">CLOSE MONITOR</button>
     </div>
 </div>
 
+<!-- Rest of UI remains unchanged -->
 <div id="round-results-overlay">
     <div class="login-card bounce-anim" style="margin-top: 20px; width: 95%;">
         <h1 id="res-status-text" style="color: #4ade80; margin-top: 0;">LEVEL <span id="res-round-num">1</span> COMPLETE</h1>
@@ -166,11 +183,31 @@ var currentLevel = 1, moveCount = 0, gameInProgress = false;
 var game = new Chess(), board = null, selectedRepName = "";
 var userTime = INITIAL_TIME, oppTime = INITIAL_TIME, timerInterval = null, liveDocId = null, liveUnsubscribe = null;
 
+// Admin Board Globals
+var adminChess = new Chess(), adminBoard = null, activeWatchId = null, adminUnsub = null, isReviewing = false;
+
 function selectRep(btn, name) { $('.rep-btn').removeClass('selected'); $(btn).addClass('selected'); selectedRepName = name; }
 function validateAndStart() { if (!selectedRepName) return alert("Select name!"); if ($('#studentPass').val() !== "decipherchess") return alert("Wrong Password!"); $('#welcome-overlay').hide(); runLoadingSequence(); }
-function openAdmin() { let pass = prompt("Coach Pass:"); if(pass === "decipher1234") { $('#admin-overlay').show(); loadAdminLogs(); startLiveTracking(); } }
-function closeAdmin() { $('#admin-overlay').hide(); if(liveUnsubscribe) liveUnsubscribe(); }
-function copyPGN(pgn) { navigator.clipboard.writeText(pgn).then(() => alert("PGN Copied!")); }
+
+function openAdmin() { 
+    let pass = prompt("Coach Pass:"); 
+    if(pass === "decipher1234") { 
+        $('#admin-overlay').show(); 
+        loadAdminLogs(); 
+        startLiveTracking(); 
+        if(!adminBoard) {
+            adminBoard = ChessBoard('adminBoard', { position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
+        }
+    } 
+}
+
+function closeAdmin() { 
+    $('#admin-overlay').hide(); 
+    if(liveUnsubscribe) liveUnsubscribe(); 
+    if(adminUnsub) adminUnsub();
+    $('#admin-monitor-panel').hide();
+    activeWatchId = null;
+}
 
 function loadAdminLogs() {
     db.collection("tournament_games").orderBy("timestamp", "desc").limit(20).get().then((qs) => {
@@ -186,9 +223,48 @@ function loadAdminLogs() {
 function startLiveTracking() {
     liveUnsubscribe = db.collection("live_games").where("status", "==", "Playing").onSnapshot((snapshot) => {
         let html = "";
-        snapshot.forEach((doc) => { let d = doc.data(); html += `<div class="admin-log-item"><b>${d.player}</b> (Level ${d.level})<br><small>${d.fen}</small></div>`; });
-        $('#live-admin-logs').html(html || "<p>Idle...</p>");
+        snapshot.forEach((doc) => { 
+            let d = doc.data(); 
+            html += `<div class="admin-log-item">
+                <b>${d.player}</b> (Level ${d.level})<br>
+                <button class="live-btn" onclick="watchLiveGame('${doc.id}', '${d.player}')">WATCH BOARD</button>
+            </div>`; 
+        });
+        $('#live-admin-logs').html(html || "<p>No active games.</p>");
     });
+}
+
+function watchLiveGame(id, name) {
+    if(adminUnsub) adminUnsub();
+    activeWatchId = id;
+    isReviewing = false;
+    $('#monitoring-player-name').text("Watching: " + name);
+    $('#admin-monitor-panel').show();
+    
+    adminUnsub = db.collection("live_games").doc(id).onSnapshot((doc) => {
+        if(!doc.exists || doc.data().status !== "Playing") {
+            alert("Game ended.");
+            $('#admin-monitor-panel').hide();
+            return;
+        }
+        let data = doc.data();
+        adminChess.load_pgn(data.pgn || "");
+        if(!isReviewing) {
+            adminBoard.position(adminChess.fen());
+        }
+    });
+}
+
+function adminMoveBack() {
+    isReviewing = true;
+    adminChess.undo();
+    adminBoard.position(adminChess.fen());
+}
+
+function resumeLive() {
+    isReviewing = false;
+    // Re-fetch latest from Firebase state stored in adminChess
+    adminBoard.position(adminChess.fen());
 }
 
 function saveGameToCloud(res) {
@@ -196,7 +272,17 @@ function saveGameToCloud(res) {
     if (liveDocId) db.collection("live_games").doc(liveDocId).update({ status: "Finished" });
 }
 
-function updateLiveDB() { if (liveDocId) db.collection("live_games").doc(liveDocId).update({ fen: game.fen(), lastUpdate: firebase.firestore.FieldValue.serverTimestamp() }); }
+function updateLiveDB() { 
+    if (liveDocId) {
+        db.collection("live_games").doc(liveDocId).update({ 
+            fen: game.fen(), 
+            pgn: game.pgn(),
+            lastUpdate: firebase.firestore.FieldValue.serverTimestamp() 
+        }); 
+    }
+}
+
+// ... Rest of your existing functions (runLoadingSequence, handleResign, endRound, setupMatch, etc.) ...
 
 function runLoadingSequence() {
     $('#matchmaking-overlay').css('display', 'flex');
@@ -244,7 +330,14 @@ function setupMatch() {
     $('#matchmaking-overlay').hide(); $('#game-container').show();
     board = ChessBoard('board', { draggable: false, position: scenario.fen, pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
     timerInterval = setInterval(updateTimers, 1000);
-    db.collection("live_games").add({ player: selectedRepName, level: currentLevel, fen: game.fen(), status: "Playing", timestamp: firebase.firestore.FieldValue.serverTimestamp() }).then(d => liveDocId = d.id);
+    db.collection("live_games").add({ 
+        player: selectedRepName, 
+        level: currentLevel, 
+        fen: game.fen(), 
+        pgn: "",
+        status: "Playing", 
+        timestamp: firebase.firestore.FieldValue.serverTimestamp() 
+    }).then(d => liveDocId = d.id);
 }
 
 chessWorker.onmessage = function(e) {
@@ -276,48 +369,33 @@ function updateTimers() {
 
 function onSquareClick(sq) {
     if (!gameInProgress || game.turn() !== 'w') return;
-    
     let src = window.srcSq;
     if (!src) {
         let p = game.get(sq);
-        if(p && p.color === 'w') {
-            window.srcSq = sq;
-            $('.square-' + sq).addClass('highlight-white');
-        }
+        if(p && p.color === 'w') { window.srcSq = sq; $('.square-' + sq).addClass('highlight-white'); }
         return;
     }
-
     let move = game.move({ from: src, to: sq, promotion: 'q' });
     $('.highlight-white').removeClass('highlight-white');
     window.srcSq = null;
-
     if (move) {
         board.position(game.fen());
         updateLiveDB();
         moveCount++;
-        
         if (currentLevel <= 2) {
             $('#move-counter').text(`MOVES: ${moveCount} / 30`);
             if (moveCount >= MAX_MOVES && !game.in_checkmate()) return endRound(0, "Move Limit Reached");
-        } else {
-            $('#move-counter').text(`MOVES: ${moveCount}`);
-        }
-
+        } else { $('#move-counter').text(`MOVES: ${moveCount}`); }
         userTime += INCREMENT;
         if (!game.game_over()) {
             $('#status').text("Garbo thinking...");
-            // Communicate high-performance search to worker
             chessWorker.postMessage("position " + game.fen());
-            chessWorker.postMessage("search 5000"); // 5-second thinking window for deep calculation
-        } else {
-            handleGameOver();
-        }
+            chessWorker.postMessage("search 5000");
+        } else { handleGameOver(); }
     }
 }
 
-$('#board').on('click', '[class*="square-"]', function() {
-    onSquareClick($(this).attr('data-square'));
-});
+$('#board').on('click', '[class*="square-"]', function() { onSquareClick($(this).attr('data-square')); });
 </script>
 </body>
 </html>
