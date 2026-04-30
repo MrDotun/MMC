@@ -98,7 +98,6 @@
     </div>
 </div>
 
-<!-- Rest of UI remains unchanged -->
 <div id="round-results-overlay">
     <div class="login-card bounce-anim" style="margin-top: 20px; width: 95%;">
         <h1 id="res-status-text" style="color: #4ade80; margin-top: 0;">LEVEL <span id="res-round-num">1</span> COMPLETE</h1>
@@ -152,7 +151,7 @@
             <span id="move-counter" style="color:#facc15">MOVES: 0 / 30</span>
         </div>
         <div class="opp-card">
-            <div style="text-align: left;"><b id="opp-name" style="color:#ef4444">Garbo Engine (MAX DEPTH)</b><br><small>Endgame Defender</small></div>
+            <div style="text-align: left;"><b id="opp-name" style="color:#ef4444">Garbo Engine (PRO DEPTH)</b><br><small>Endgame Defender</small></div>
             <div id="opp-timer" class="timer-box">03:00</div>
         </div>
         <div id="board"></div>
@@ -175,7 +174,7 @@ const trainingLevels = [
     { title: "Queen vs King", fen: "8/8/8/8/4k3/8/8/3QK3 w - - 0 1" },
     { title: "Rook vs King", fen: "8/8/8/8/2k5/4K3/5R2/8 w - - 0 1" },
     { title: "R, K, 4P vs R, K, 2P", fen: "4k2r/5p1p/8/8/6P1/P6P/1P4K1/7R w k - 0 1" },
-    { title: "R, K, 4P vs K, 3P", fen: "6k1/p5pp/8/8/8/7P/P4PP1/R5K1 w - - 0 1" }
+    { title: "R, K, 4P vs R, K, 3P", fen: "r5k1/p5pp/8/8/8/7P/P4PP1/R5K1 w - - 0 1" } // Added black rook on a8
 ];
 
 const INITIAL_TIME = 180, INCREMENT = 2, MAX_MOVES = 30;
@@ -183,7 +182,6 @@ var currentLevel = 1, moveCount = 0, gameInProgress = false;
 var game = new Chess(), board = null, selectedRepName = "";
 var userTime = INITIAL_TIME, oppTime = INITIAL_TIME, timerInterval = null, liveDocId = null, liveUnsubscribe = null;
 
-// Admin Board Globals
 var adminChess = new Chess(), adminBoard = null, activeWatchId = null, adminUnsub = null, isReviewing = false;
 
 function selectRep(btn, name) { $('.rep-btn').removeClass('selected'); $(btn).addClass('selected'); selectedRepName = name; }
@@ -196,7 +194,10 @@ function openAdmin() {
         loadAdminLogs(); 
         startLiveTracking(); 
         if(!adminBoard) {
-            adminBoard = ChessBoard('adminBoard', { position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
+            adminBoard = ChessBoard('adminBoard', { 
+                position: 'start', 
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' 
+            });
         }
     } 
 }
@@ -248,9 +249,9 @@ function watchLiveGame(id, name) {
             return;
         }
         let data = doc.data();
-        adminChess.load_pgn(data.pgn || "");
+        adminChess.load(data.fen); // Forced FEN loading for live visual sync
         if(!isReviewing) {
-            adminBoard.position(adminChess.fen());
+            adminBoard.position(data.fen);
         }
     });
 }
@@ -263,7 +264,6 @@ function adminMoveBack() {
 
 function resumeLive() {
     isReviewing = false;
-    // Re-fetch latest from Firebase state stored in adminChess
     adminBoard.position(adminChess.fen());
 }
 
@@ -281,8 +281,6 @@ function updateLiveDB() {
         }); 
     }
 }
-
-// ... Rest of your existing functions (runLoadingSequence, handleResign, endRound, setupMatch, etc.) ...
 
 function runLoadingSequence() {
     $('#matchmaking-overlay').css('display', 'flex');
@@ -390,7 +388,8 @@ function onSquareClick(sq) {
         if (!game.game_over()) {
             $('#status').text("Garbo thinking...");
             chessWorker.postMessage("position " + game.fen());
-            chessWorker.postMessage("search 5000");
+            // Increased depth/thinking time for a stronger response
+            chessWorker.postMessage("search 10000"); 
         } else { handleGameOver(); }
     }
 }
