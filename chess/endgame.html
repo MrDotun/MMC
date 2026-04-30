@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -24,7 +25,14 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.7; }
         }
+        @keyframes goldGlow {
+            0% { text-shadow: 0 0 5px #facc15, 0 0 10px #ca8a04; }
+            50% { text-shadow: 0 0 20px #facc15, 0 0 30px #eab308, 0 0 40px #ca8a04; }
+            100% { text-shadow: 0 0 5px #facc15, 0 0 10px #ca8a04; }
+        }
+
         .bounce-anim { animation: bounceIn 0.8s ease-out forwards; }
+        .champion-text { color: #facc15; font-size: 2em; margin-top: 0; font-weight: 900; animation: goldGlow 2s infinite; letter-spacing: 2px;}
         
         #welcome-overlay, #admin-overlay { position: absolute; width: 100%; min-height: 100vh; background: #0f172a; display: flex; flex-direction: column; align-items: center; z-index: 1000; padding: 20px 0; }
         #admin-overlay { display: none; z-index: 3000; }
@@ -52,7 +60,7 @@
         .opp-card { display: flex; justify-content: space-between; align-items: center; background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #ef4444; }
         .timer-box { font-family: monospace; background: #000; padding: 8px 12px; border-radius: 6px; font-size: 1.3em; min-width: 80px; letter-spacing: 1px;}
         .highlight-white { background: rgba(0, 90, 171, 0.5) !important; }
-        .instruction-text { color: #facc15; font-size: 0.85em; margin: 10px 0 15px 0; text-align: left; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; }
+        .instruction-text { color: #facc15; font-size: 0.85em; margin: 10px 0 15px 0; text-align: left; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; line-height: 1.4;}
         
         .admin-log-item { background: #0f172a; padding: 10px; margin: 5px 0; border-radius: 5px; font-size: 0.85em; text-align: left; border: 1px solid #334155; position: relative; }
         .copy-icon { cursor: pointer; position: absolute; right: 10px; top: 10px; background: #005aab; color: white; border: none; border-radius: 4px; padding: 2px 6px; font-size: 10px; }
@@ -114,11 +122,11 @@
         <h3 style="margin: 5px 0 5px 0; color: #94a3b8; font-weight: 500;">Endgame Training Room</h3>
         
         <div class="instruction-text">
-            <b>RULES:</b><br>
-            • Time Control is <b>3+2</b> (3 mins + 2 sec increment per move).<br>
-            • You must WIN the endgame against the strongest Engine level to advance.<br>
-            • If you draw, lose, or run out of time, you will <b>RESTART</b> the level.<br>
-            • Positions are randomized. Stay sharp!
+            <b>STRICT RULES:</b><br>
+            • Time Control is <b>3+2</b>.<br>
+            • You have exactly <b>30 moves</b> to checkmate Garbo Engine on Max difficulty <b>(Levels 1 & 2 only)</b>.<br>
+            • If you draw, run out of time, or exceed the move limit where applicable, you FAIL.<br>
+            • <span style="color:#ef4444; font-weight:bold;">PENALTY:</span> Failing Level 2, 3, or 4 forces you to <b>restart from Level 1</b>.
         </div>
 
         <div id="rep-list" style="margin-bottom: 20px; max-height: 250px; overflow-y: auto; padding-right: 5px;">
@@ -131,7 +139,7 @@
             <button class="rep-btn" onclick="selectRep(this, 'Sage Osafile')">Sage Osafile</button>
         </div>
         <input type="password" id="studentPass" placeholder="Enter Team Password">
-        <button class="submit-btn" onclick="validateAndStart()">START TRAINING</button>
+        <button class="submit-btn" onclick="validateAndStart()">ACCEPT CHALLENGE</button>
         <button style="margin-top:20px; background:transparent; border:none; color:#334155; font-size:0.7em; cursor:pointer;" onclick="openAdmin()">COACH MONITOR</button>
     </div>
 </div>
@@ -140,7 +148,7 @@
     <div class="info-panel bounce-anim">
         <div style="display:flex; justify-content: space-between; margin-bottom: 15px; font-size: 0.9em; color: #94a3b8; font-weight: bold;">
             <span id="round-header">LEVEL 1 / 4</span>
-            <span style="color:#facc15">TIME: 3+2</span>
+            <span id="move-counter" style="color:#facc15">MOVES: 0 / 30</span>
         </div>
         <div class="opp-card">
             <div style="text-align: left;"><b id="opp-name" style="color:#ef4444">Garbo Engine (Max)</b><br><small>Endgame Defender</small></div>
@@ -148,11 +156,11 @@
         </div>
         <div id="board"></div>
         <div class="opp-card" style="border-left: 4px solid #4ade80; margin-top: 15px;">
-            <div style="text-align: left;"><b id="displayName" style="color:#4ade80"></b><br><small>White Pieces</small></div>
+            <div style="text-align: left;"><b id="displayName" style="color:#4ade80"></b><br><small>White Pieces (3+2 Time)</small></div>
             <div id="user-timer" class="timer-box">03:00</div>
         </div>
         <div id="status" style="font-weight: bold; margin: 15px 0; color: #facc15; font-size: 1.1em;">Waiting...</div>
-        <button class="submit-btn" onclick="handleResign()" style="background: #ef4444; border: 1px solid #7f1d1d;">RESTART LEVEL</button>
+        <button class="submit-btn" onclick="handleResign()" style="background: #ef4444; border: 1px solid #7f1d1d;">RESIGN (FAIL LEVEL)</button>
     </div>
 </div>
 
@@ -162,44 +170,18 @@ const firebaseConfig = { apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8", authDomain
 if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
 const db = firebase.firestore();
 
-// Level configurations with multiple FEN options
 const trainingLevels = [
-    { 
-        title: "Rook & King vs King", 
-        fens: [
-            "8/8/8/8/8/8/R7/4K1k1 w - - 0 1",
-            "8/8/8/8/4K3/8/R7/7k w - - 0 1",
-            "8/8/8/8/8/2K5/R7/1k6 w - - 0 1"
-        ] 
-    },
-    { 
-        title: "Queen & King vs King", 
-        fens: [
-            "8/8/8/8/8/8/Q7/4K1k1 w - - 0 1",
-            "8/8/8/8/4K3/8/Q7/7k w - - 0 1",
-            "8/8/8/8/8/2K5/Q7/1k6 w - - 0 1"
-        ] 
-    },
-    { 
-        title: "R, K & 4P vs R, K & 2P", 
-        fens: [
-            "r3k3/p6p/8/8/8/8/PP4PP/R3K3 w q - 0 1",
-            "4k3/p6p/8/8/8/8/PP4PP/4K2R w K - 0 1",
-            "4k2r/p6p/8/8/8/8/PP4PP/4K3 w k - 0 1"
-        ] 
-    },
-    {
-        title: "R, B & 5P vs R & 3P",
-        fens: [
-            "r3k3/pp5p/8/8/4B3/8/PP3PPP/4R1K1 w q - 0 1"
-        ]
-    }
+    { title: "Queen vs King", fen: "8/8/8/8/4k3/8/8/3QK3 w - - 0 1" },
+    { title: "Rook vs King", fen: "8/8/8/8/2k5/4K3/5R2/8 w - - 0 1" },
+    { title: "R, K, 4P vs R, K, 2P", fen: "4k2r/5p1p/8/8/6P1/P6P/1P4K1/7R w k - 0 1" },
+    { title: "R, K, 4P vs K, 1P", fen: "6k1/p7/8/8/8/7P/P4PP1/R5K1 w - - 0 1" }
 ];
 
 const INITIAL_TIME = 180; // 3 minutes
 const INCREMENT = 2; // 2 seconds
+const MAX_MOVES = 30;
 
-var currentLevel = 1, totalScore = 0, gameInProgress = false;
+var currentLevel = 1, moveCount = 0, gameInProgress = false;
 var game = new Chess(), board = null, selectedRepName = "";
 var userTime = INITIAL_TIME, oppTime = INITIAL_TIME, timerInterval = null; 
 var liveDocId = null;
@@ -305,17 +287,17 @@ function runLoadingSequence() {
 }
 
 function handleResign() { 
-    if(confirm("Restarting this level will score it as a failure. Continue?")) {
-        endRound(0); 
+    if(confirm("Are you sure? Failing will apply the penalty rule!")) {
+        endRound(0, "Resigned"); 
     }
 }
 
-function endRound(points) {
+function endRound(points, reasonText) {
     gameInProgress = false;
     clearInterval(timerInterval);
     
     let isWin = (points === 1);
-    let resTxt = isWin ? "Checkmate (Win)" : (points === 0.5 ? "Draw / Stalemate" : "Failed / Timeout");
+    let resTxt = isWin ? "Checkmate (Win)" : `Failed (${reasonText})`;
     saveGameToCloud(resTxt);
     
     $('#game-container').hide();
@@ -324,24 +306,38 @@ function endRound(points) {
     let isFinal = isWin && (currentLevel >= 4);
 
     if (isWin) {
-        $('#res-status-text').text("LEVEL " + currentLevel + " PASSED").css('color', '#4ade80');
-        $('#res-sub-text').text("Excellent technique.");
-        $('#next-round-btn').text(isFinal ? "TRAINING COMPLETE" : "PROCEED TO NEXT LEVEL")
-                            .attr('onclick', `startWaitingCountdown(true)`)
-                            .css('background', '#005aab');
+        if (isFinal) {
+            $('#res-status-text').html("🎉 CHAMPION 🎉").removeClass().addClass('champion-text');
+            $('#res-sub-text').html("<b style='color:white;'>Incredible! You have mastered the Endgame Training Room!</b>");
+            $('#next-round-btn').text("FINISH TRAINING").css('background', '#ca8a04').prop('disabled', true);
+        } else {
+            $('#res-status-text').text("LEVEL " + currentLevel + " PASSED").removeClass().css('color', '#4ade80');
+            $('#res-sub-text').text("Excellent technique. Proceed to the next challenge.");
+            $('#next-round-btn').text("PROCEED TO NEXT LEVEL")
+                                .attr('onclick', `startWaitingCountdown('pass')`)
+                                .css('background', '#005aab').prop('disabled', false);
+        }
     } else {
-        $('#res-status-text').text("LEVEL " + currentLevel + " FAILED").css('color', '#ef4444');
-        $('#res-sub-text').text("You must win to advance. Try again.");
-        $('#next-round-btn').text("RESTART LEVEL")
-                            .attr('onclick', `startWaitingCountdown(false)`)
-                            .css('background', '#ef4444');
+        $('#res-status-text').text("LEVEL FAILED").removeClass().css('color', '#ef4444');
+        
+        if (currentLevel === 1) {
+            $('#res-sub-text').text(`Reason: ${reasonText}. Try Level 1 again.`);
+            $('#next-round-btn').text("RESTART LEVEL 1")
+                                .attr('onclick', `startWaitingCountdown('stay')`)
+                                .css('background', '#ef4444').prop('disabled', false);
+        } else {
+            $('#res-sub-text').html(`Reason: ${reasonText}.<br><br><span style='color:#ef4444; font-weight:bold;'>PENALTY APPLIED: YOU HAVE BEEN SENT BACK TO LEVEL 1.</span>`);
+            $('#next-round-btn').text("RETURN TO LEVEL 1")
+                                .attr('onclick', `startWaitingCountdown('reset')`)
+                                .css('background', '#7f1d1d').prop('disabled', false);
+        }
     }
     
     // Build summary table
     let html = `<tr><th align="left">LEVEL</th><th align="right">STATUS</th></tr>`;
     for(let i=1; i<=4; i++) {
         let statusText = "PENDING";
-        let color = "#94a3b8";
+        let color = "#334155";
         
         if (i < currentLevel) { statusText = "PASSED"; color = "#4ade80"; }
         else if (i === currentLevel) { 
@@ -352,29 +348,32 @@ function endRound(points) {
         html += `<tr><td>Level ${i}</td><td align="right" style="color:${color}; font-weight:bold;">${statusText}</td></tr>`;
     }
     $('#team-summary-body').html(html);
-    
-    if(isFinal) { $('#next-round-btn').css('background', '#4ade80').prop('disabled', true); }
 }
 
 function setupMatch() {
     gameInProgress = true;
+    moveCount = 0;
     userTime = INITIAL_TIME; oppTime = INITIAL_TIME; 
     
     let currentScenario = trainingLevels[currentLevel - 1];
-    // Pick a random FEN from the available array for this level
-    let randomFen = currentScenario.fens[Math.floor(Math.random() * currentScenario.fens.length)];
+    let fen = currentScenario.fen;
     
-    game = new Chess(randomFen);
+    game = new Chess(fen);
     
     $('#displayName').text(selectedRepName);
     $('#round-header').text(`LEVEL ${currentLevel} / 4: ${currentScenario.title}`);
+    
+    // Adjust move counter display based on level
+    let moveText = currentLevel <= 2 ? `MOVES: 0 / 30` : `MOVES: 0`;
+    $('#move-counter').text(moveText).css('color', '#facc15');
+    
     $('#user-timer').text(formatTime(userTime));
     $('#opp-timer').text(formatTime(oppTime));
     $('#matchmaking-overlay').hide();
     $('#game-container').show();
     
     board = ChessBoard('board', {
-        draggable: false, position: randomFen, orientation: 'white',
+        draggable: false, position: fen, orientation: 'white',
         pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
     });
     
@@ -394,11 +393,9 @@ function setupMatch() {
 
 chessWorker.onmessage = function(e) {
     if (typeof e.data === 'string' && e.data.length >= 4) {
-        // Remove fake delay, execute as soon as worker responds
         game.move({ from: e.data.substring(0, 2), to: e.data.substring(2, 4), promotion: 'q' });
         board.position(game.fen());
         
-        // Add increment
         oppTime += INCREMENT;
         $('#opp-timer').text(formatTime(oppTime));
 
@@ -412,13 +409,16 @@ chessWorker.onmessage = function(e) {
     }
 };
 
-function startWaitingCountdown(didPass) {
-    if(didPass && currentLevel >= 4) return;
-    
+function startWaitingCountdown(action) {
     $('#round-results-overlay').hide();
     
-    if(didPass) { currentLevel++; }
-    
+    if (action === 'pass') {
+        currentLevel++;
+    } else if (action === 'reset') {
+        currentLevel = 1;
+    }
+    // if action === 'stay', currentLevel remains unchanged (for failing level 1)
+
     runLoadingSequence();
 }
 
@@ -429,9 +429,13 @@ function formatTime(s) {
 
 function handleGameOver() {
     if (game.in_checkmate()) {
-        endRound(game.turn() === 'b' ? 1 : 0); // If black's turn and checkmate, white won
+        if (game.turn() === 'b') {
+            endRound(1, "Checkmate"); 
+        } else {
+            endRound(0, "You were checkmated"); // Edge case
+        }
     } else {
-        endRound(0.5); // Stalemate / draw / insufficient material
+        endRound(0, "Draw / Stalemate"); 
     }
 }
 
@@ -441,11 +445,11 @@ function updateTimers() {
     if (game.turn() === 'w') {
         userTime--;
         $('#user-timer').text(formatTime(userTime));
-        if (userTime <= 0) endRound(0); // Timeout = fail
+        if (userTime <= 0) endRound(0, "Time Out"); 
     } else {
         oppTime--;
         $('#opp-timer').text(formatTime(oppTime));
-        if (oppTime <= 0) endRound(1); // Opponent timeout = win
+        if (oppTime <= 0) endRound(1, "Engine Time Out");
     }
 }
 
@@ -470,14 +474,27 @@ function onSquareClick(sq) {
         board.position(game.fen());
         updateLiveDB(); 
 
-        // Add Increment
+        moveCount++;
+        
+        // Check moves limit conditionally
+        if (currentLevel <= 2) {
+            $('#move-counter').text(`MOVES: ${moveCount} / 30`);
+            if (moveCount >= MAX_MOVES && !game.in_checkmate()) {
+                $('#move-counter').css('color', '#ef4444');
+                return endRound(0, "Exceeded 30 Moves");
+            } else if (moveCount >= 25) {
+                $('#move-counter').css('color', '#ef4444'); // turn red as warning
+            }
+        } else {
+            $('#move-counter').text(`MOVES: ${moveCount}`);
+        }
+
         userTime += INCREMENT;
         $('#user-timer').text(formatTime(userTime));
 
         if (!game.game_over()) {
             $('#status').text("Engine is thinking...");
             chessWorker.postMessage("position " + game.fen());
-            // Search 3000 to ensure Garbo plays at its strongest defensive level
             chessWorker.postMessage("search 3000"); 
         } else {
             handleGameOver();
