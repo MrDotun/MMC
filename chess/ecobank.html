@@ -68,6 +68,10 @@
         .nav-btn { flex: 1; padding: 15px; background: #334155; border: 1px solid #005aab; color: white; border-radius: 8px; cursor: pointer; font-size: 1.2em; }
         .view-link { color: #4ade80; text-decoration: underline; font-size: 0.85em; cursor: pointer; display: block; margin-top: 5px; }
         .meta-tag { font-size: 0.75em; color: #94a3b8; display: block; margin-top: 2px; }
+
+        /* HIGHLIGHT CSS */
+        .highlight-sq { box-shadow: inset 0 0 3px 3px yellow !important; }
+        .lobby-replay-btn { background: #4ade80; color: #0f172a; border: none; padding: 5px 10px; border-radius: 4px; font-size: 0.7em; cursor: pointer; font-weight: bold; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -185,6 +189,9 @@ var currentRound = 1, totalTeamPoints = 0, gameInProgress = false;
 var game = new Chess(), board = null, userColor = 'w', selectedRepName = "";
 var userTime = 600, oppTime = 600, timerInterval = null;
 
+// SOUNDS
+const moveSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_default/move-self.mp3');
+
 // Replay Variables
 var replayChess = new Chess();
 var replayBoard = null;
@@ -209,6 +216,7 @@ function openGuestLobby() {
             <div style="font-weight:bold; color:#4ade80">${name}</div>
             <div id="guest-board-${i}" class="mini-board"></div>
             <div id="guest-status-${i}" style="font-size:0.7em; color:#94a3b8;">Offline</div>
+            <button class="lobby-replay-btn" onclick="openTeamPortal()">Replay History</button>
         </div>`;
     });
     $('#guest-boards').html(html);
@@ -222,7 +230,6 @@ function openGuestLobby() {
 
 function openTeamPortal() {
     $('#team-portal-overlay').show();
-    // Removed .limit(20) effectively by just not adding it, ensuring all documents are fetched
     db.collection("academy_matches").where("school", "==", "Maryland Convent Private School").orderBy("updated", "desc").onSnapshot(snap => {
         let html = snap.empty ? "<p>No games archived yet.</p>" : "";
         snap.forEach(doc => {
@@ -294,11 +301,45 @@ function setupMatch() {
     updateLiveState(); clearInterval(timerInterval); timerInterval = setInterval(updateTimers, 1000);
     
     if (userColor === 'black') { 
-        setTimeout(() => { 
-            chessWorker.postMessage("position " + game.fen()); 
-            chessWorker.postMessage("search 1000"); 
-        }, 500); 
+        triggerEngineMove();
     }
+}
+
+function triggerEngineMove() {
+    // BLUNDER LOGIC CHECK
+    let blunderRate = 0;
+    let targetPieces = [];
+
+    if(currentRound === 1) { blunderRate = 0.40; targetPieces = ['q', 'r']; }
+    else if(currentRound === 2) { blunderRate = 0.30; targetPieces = ['q']; }
+    else if(currentRound === 3) { blunderRate = 0.15; targetPieces = ['r', 'n', 'b']; }
+    else if(currentRound === 4) { blunderRate = 0.10; targetPieces = ['r', 'b']; }
+    else if(currentRound === 5) { blunderRate = 0.08; targetPieces = ['b', 'n']; }
+    else if(currentRound === 6) { blunderRate = 0.05; targetPieces = ['p', 'n']; }
+
+    if(Math.random() < blunderRate) {
+        let moves = game.moves();
+        let blunders = moves.filter(m => {
+            let testGame = new Chess(game.fen());
+            let moveObj = testGame.move(m);
+            return targetPieces.includes(moveObj.piece);
+        });
+        if(blunders.length > 0) {
+            let chosen = blunders[Math.floor(Math.random() * blunders.length)];
+            setTimeout(() => executeMove(chosen), 1000);
+            return;
+        }
+    }
+    
+    chessWorker.postMessage("position " + game.fen()); 
+    chessWorker.postMessage("search 1000"); 
+}
+
+function executeMove(moveStr) {
+    game.move(moveStr);
+    board.position(game.fen());
+    moveSound.play();
+    updateLiveState();
 }
 
 function updateLiveState() { db.collection("live_matches").doc(selectedRepName).set({ fen: game.fen(), opponent: $('#opp-name').text() }); }
@@ -336,17 +377,36 @@ function handleResign() { if(confirm("Are you sure you want to resign?")) endRou
 $('#board').on('click', '[class*="square-"]', function() {
     if (!gameInProgress || game.turn() !== userColor[0]) return;
     let sq = $(this).attr('data-square'), sourceSquare = window.srcSq;
-    if (!sourceSquare) { if (game.get(sq)?.color === userColor[0]) { window.srcSq = sq; $(`.square-${sq}`).addClass('highlight-white'); } }
+    
+    $('.highlight-sq').removeClass('highlight-sq');
+
+    if (!sourceSquare) { 
+        if (game.get(sq)?.color === userColor[0]) { 
+            window.srcSq = sq; 
+            $(`.square-${sq}`).addClass('highlight-sq'); 
+            moveSound.play(); // Highlight sound
+        } 
+    }
     else {
         let move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
         $('.highlight-white').removeClass('highlight-white'); window.srcSq = null;
-        if (move) { board.position(game.fen()); updateLiveState(); chessWorker.postMessage("position " + game.fen()); chessWorker.postMessage("search 1000"); }
+        if (move) { 
+            board.position(game.fen()); 
+            moveSound.play();
+            updateLiveState(); 
+            triggerEngineMove();
+        }
     }
 });
 
 chessWorker.onmessage = function(e) {
     if (typeof e.data === 'string' && e.data.length >= 4) {
-        setTimeout(() => { game.move({ from: e.data.substring(0, 2), to: e.data.substring(2, 4), promotion: 'q' }); board.position(game.fen()); updateLiveState(); }, 600);
+        setTimeout(() => { 
+            game.move({ from: e.data.substring(0, 2), to: e.data.substring(2, 4), promotion: 'q' }); 
+            board.position(game.fen()); 
+            moveSound.play();
+            updateLiveState(); 
+        }, 600);
     }
 };
 </script>
