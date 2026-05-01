@@ -26,12 +26,13 @@
             50% { opacity: 0.7; }
         }
         .bounce-anim { animation: bounceIn 0.8s ease-out forwards; }
+        .pulse-yellow { animation: pulseYellow 2s infinite; }
         
         #lock-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 5000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
         #timer-display { font-size: 3em; font-family: monospace; color: #facc15; margin: 20px 0; }
 
-        #welcome-overlay, #admin-overlay, #guest-lobby, #team-portal-overlay { position: absolute; width: 100%; min-height: 100vh; background: #0f172a; display: flex; flex-direction: column; align-items: center; z-index: 1000; padding: 20px 0; }
-        #admin-overlay, #guest-lobby, #team-portal-overlay { display: none; }
+        #welcome-overlay, #admin-overlay, #guest-lobby, #team-portal-overlay, #replay-overlay { position: absolute; width: 100%; min-height: 100vh; background: #0f172a; display: flex; flex-direction: column; align-items: center; z-index: 1000; padding: 20px 0; }
+        #admin-overlay, #guest-lobby, #team-portal-overlay, #replay-overlay { display: none; }
         #matchmaking-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 1500; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
         
         .lobby-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; width: 95%; max-width: 1200px; padding: 20px; }
@@ -49,7 +50,7 @@
         .rep-btn.selected { background: #005aab; border-color: #4ade80; box-shadow: 0 0 10px rgba(74, 222, 128, 0.3);}
         
         #game-container { display: none; width: 95vmin; max-width: 500px; padding: 20px 10px; }
-        #board { width: 100%; border: 3px solid #005aab; border-radius: 8px; box-shadow: 0 5px 20px rgba(0,0,0,0.4); }
+        #board, #replay-board { width: 100%; border: 3px solid #005aab; border-radius: 8px; box-shadow: 0 5px 20px rgba(0,0,0,0.4); }
         .info-panel { background: #1e293b; padding: 15px; border-radius: 12px; border: 1px solid #005aab; text-align: center; }
         
         .submit-btn { background: #005aab; color: white; padding: 14px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; font-size: 16px; transition: 0.2s;}
@@ -61,6 +62,12 @@
         .pgn-text { font-family: monospace; font-size: 10px; color: #94a3b8; display: block; margin-top: 5px; word-break: break-all; max-height: 60px; overflow-y: auto;}
         .del-btn { position: absolute; right: 10px; top: 10px; color: #ef4444; cursor: pointer; opacity: 0.6; transition: 0.2s;}
         .del-btn:hover { opacity: 1; }
+        
+        /* ADDED FOR REPLAY */
+        .replay-controls { display: flex; gap: 10px; margin-top: 15px; }
+        .nav-btn { flex: 1; padding: 15px; background: #334155; border: 1px solid #005aab; color: white; border-radius: 8px; cursor: pointer; font-size: 1.2em; }
+        .view-link { color: #4ade80; text-decoration: underline; font-size: 0.85em; cursor: pointer; display: block; margin-top: 5px; }
+        .meta-tag { font-size: 0.75em; color: #94a3b8; display: block; margin-top: 2px; }
     </style>
 </head>
 <body>
@@ -89,6 +96,19 @@
             <p style="color: #475569;">Fetching archives...</p>
         </div>
         <button class="submit-btn" onclick="$('#team-portal-overlay').hide()">CLOSE ARCHIVES</button>
+    </div>
+</div>
+
+<!-- ADDED REPLAY OVERLAY -->
+<div id="replay-overlay">
+    <div class="info-panel" style="width: 90%; max-width: 450px;">
+        <h3 id="replay-names" style="color: #facc15; margin-bottom: 10px;">Replaying Game</h3>
+        <div id="replay-board"></div>
+        <div class="replay-controls">
+            <button class="nav-btn" onclick="moveReplay(-1)"><i class="fas fa-chevron-left"></i> BACK</button>
+            <button class="nav-btn" onclick="moveReplay(1)">FRONT <i class="fas fa-chevron-right"></i></button>
+        </div>
+        <button class="submit-btn" style="background: #ef4444; margin-top: 20px;" onclick="$('#replay-overlay').hide()">CLOSE REPLAY</button>
     </div>
 </div>
 
@@ -165,6 +185,12 @@ var currentRound = 1, totalTeamPoints = 0, gameInProgress = false;
 var game = new Chess(), board = null, userColor = 'w', selectedRepName = "";
 var userTime = 600, oppTime = 600, timerInterval = null;
 
+// Replay Variables
+var replayChess = new Chess();
+var replayBoard = null;
+var replayHistory = [];
+var replayPointer = -1;
+
 const targetDate = new Date("May 02, 2026 10:00:00").getTime();
 const lockTimer = setInterval(() => {
     const distance = targetDate - new Date().getTime();
@@ -196,14 +222,60 @@ function openGuestLobby() {
 
 function openTeamPortal() {
     $('#team-portal-overlay').show();
+    // Removed .limit(20) effectively by just not adding it, ensuring all documents are fetched
     db.collection("academy_matches").where("school", "==", "Maryland Convent Private School").orderBy("updated", "desc").onSnapshot(snap => {
         let html = snap.empty ? "<p>No games archived yet.</p>" : "";
         snap.forEach(doc => {
             const data = doc.data();
-            html += `<div class="pgn-card"><i class="fas fa-trash del-btn" onclick="deletePGN('${doc.id}')"></i><b style="color:#facc15; font-size:11px;">ROUND ${data.round || '1'}</b><br><span style="font-size:13px; font-weight:bold;">${data.white} vs ${data.black}</span><code class="pgn-text">${data.pgn || 'N/A'}</code></div>`;
+            const dateStr = data.updated ? new Date(data.updated.seconds * 1000).toLocaleString() : "Recently Added";
+            
+            html += `<div class="pgn-card">
+                <i class="fas fa-trash del-btn" onclick="deletePGN('${doc.id}')"></i>
+                <b style="color:#facc15; font-size:11px;">ROUND ${data.round || '1'}</b>
+                <span class="meta-tag">${dateStr}</span>
+                <span style="font-size:13px; font-weight:bold; display:block; margin-top:5px;">${data.white} vs ${data.black}</span>
+                <code class="pgn-text" id="pgn-${doc.id}">${data.pgn || 'N/A'}</code>
+                <span class="view-link" onclick="initiateReplay('${doc.id}', '${data.white}', '${data.black}')">
+                    <i class="fas fa-eye"></i> View & Replay Game
+                </span>
+            </div>`;
         });
         $('#team-pgn-list').html(html);
     });
+}
+
+// REPLAY LOGIC
+function initiateReplay(id, w, b) {
+    const pgn = $(`#pgn-${id}`).text();
+    if(pgn === "N/A" || !pgn) return alert("No moves recorded for this game.");
+    
+    replayChess.load_pgn(pgn);
+    replayHistory = replayChess.history();
+    replayChess.reset();
+    replayPointer = -1;
+
+    $('#replay-names').text(`${w} vs ${b}`);
+    $('#replay-overlay').show();
+    
+    if (!replayBoard) {
+        replayBoard = ChessBoard('replay-board', {
+            position: 'start',
+            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+        });
+    } else {
+        replayBoard.start();
+    }
+}
+
+function moveReplay(dir) {
+    if (dir === 1 && replayPointer < replayHistory.length - 1) {
+        replayPointer++;
+        replayChess.move(replayHistory[replayPointer]);
+    } else if (dir === -1 && replayPointer >= 0) {
+        replayChess.undo();
+        replayPointer--;
+    }
+    replayBoard.position(replayChess.fen());
 }
 
 async function deletePGN(id) { if(prompt("Enter Admin Passcode to Delete:") === "decipher1234") { await db.collection("academy_matches").doc(id).delete(); alert("Game Deleted."); } }
@@ -221,7 +293,6 @@ function setupMatch() {
     board = ChessBoard('board', { draggable: false, position: 'start', orientation: userColor, pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
     updateLiveState(); clearInterval(timerInterval); timerInterval = setInterval(updateTimers, 1000);
     
-    // FIX: Trigger computer move if it is White
     if (userColor === 'black') { 
         setTimeout(() => { 
             chessWorker.postMessage("position " + game.fen()); 
@@ -240,7 +311,6 @@ function updateTimers() {
 function saveGameArchive() { db.collection("academy_matches").add({ white: userColor === 'white' ? selectedRepName : $('#opp-name').text(), black: userColor === 'black' ? selectedRepName : $('#opp-name').text(), pgn: game.pgn(), round: currentRound, school: "Maryland Convent Private School", updated: firebase.firestore.FieldValue.serverTimestamp() }); }
 function formatTime(s) { return Math.floor(s/60).toString().padStart(2,'0') + ":" + (s%60).toString().padStart(2,'0'); }
 
-// FIX: End round without page reload to preserve 'currentRound'
 function endRound(pts) {
     gameInProgress = false; 
     clearInterval(timerInterval); 
