@@ -302,6 +302,7 @@
         let oppTimeLeft = 420;
         let clickedSquare = null; 
         let userColor = 'w';
+        let isGameOverManually = false;
 
         function showPopup() {
             $("#popup-overlay").fadeIn(300);
@@ -352,7 +353,6 @@
                 $("#my-profile-rating").text(Math.round(currentUser.rating));
                 showSubSection('online');
                 
-                // Realistic Challenge Prompt
                 setTimeout(() => {
                     if ($("#section-game").hasClass("hidden")) {
                         activeOpponent = MASTER_POOL[Math.floor(Math.random() * MASTER_POOL.length)];
@@ -406,6 +406,7 @@
         function startDuel(opponent) {
             activeOpponent = opponent;
             game = new Chess();
+            isGameOverManually = false;
             userTimeLeft = 420; oppTimeLeft = 420;
             userColor = Math.random() > 0.5 ? 'w' : 'b';
 
@@ -434,7 +435,7 @@
         }
 
         function handleSquareClick(square) {
-            if (game.turn() !== userColor) return;
+            if (game.turn() !== userColor || isGameOverManually) return;
             const piece = game.get(square);
             if (clickedSquare === null) {
                 if (piece && piece.color === userColor) { clickedSquare = square; highlightSquare(square); }
@@ -450,10 +451,10 @@
 
         function triggerEngine() {
             setTimeout(() => {
-                if (game.game_over()) return; // Prevent worker execution if user resigned/timed out
+                if (game.game_over() || isGameOverManually) return;
                 engineWorker.postMessage("position " + game.fen());
                 engineWorker.onmessage = (e) => {
-                    if (game.game_over()) return;
+                    if (game.game_over() || isGameOverManually) return;
                     game.move({ from: e.data.slice(0, 2), to: e.data.slice(2, 4), promotion: 'q' });
                     board.position(game.fen());
                     updateStatus();
@@ -464,6 +465,7 @@
         function startTimer() {
             clearInterval(gameTimer);
             gameTimer = setInterval(() => {
+                if (isGameOverManually) return;
                 if (game.turn() === userColor) userTimeLeft--; else oppTimeLeft--;
                 $("#timer-bottom").text(fmt(userTimeLeft)); $("#timer-top").text(fmt(oppTimeLeft));
                 if (userTimeLeft <= 0) handleGameOver(false); if (oppTimeLeft <= 0) handleGameOver(true);
@@ -478,35 +480,43 @@
         }
 
         async function handleGameOver(userWon) {
+            if (isGameOverManually) return;
+            isGameOverManually = true;
             clearInterval(gameTimer);
-            
-            // Explicitly force game-over state within chess.js so no residual clicks register moves
-            if (userWon === false) {
-                // Load an empty setup FEN to lock down the board and let the engine know play is suspended
-                game.load("8/8/8/8/8/8/8/8 w - - 0 1"); 
-            }
 
             let changeStr = "";
             let detailStr = "";
-            if (userWon !== null && !currentUser.id.startsWith("guest_")) {
-                const expected = 1 / (1 + Math.pow(10, (activeOpponent.rating - currentUser.rating) / 400));
+            
+            // Logic for Rating Update
+            if (userWon !== null && currentUser && !String(currentUser.id).startsWith("guest_")) {
+                const myRating = Number(currentUser.rating);
+                const oppRating = Number(activeOpponent.rating);
+                
+                const expected = 1 / (1 + Math.pow(10, (oppRating - myRating) / 400));
                 const change = Math.round(32 * ((userWon ? 1 : 0) - expected));
-                currentUser.rating += change;
-                activeOpponent.rating -= change;
+                
+                currentUser.rating = myRating + change;
+                activeOpponent.rating = oppRating - change;
                 
                 changeStr = ` (${change >= 0 ? '+' : ''}${change})`;
                 detailStr = `<br><span style="font-size:13px; color:${change >= 0 ? 'var(--secondary)' : 'var(--danger)'}; font-weight:normal;">You ${change >= 0 ? 'gained' : 'lost'} ${Math.abs(change)} rating points</span>`;
                 
-                await db.collection("academy_players").doc(currentUser.id).update({ rating: currentUser.rating });
+                // 1. Update UI Immediately
                 $("#my-profile-rating, #user-display-rating").text(Math.round(currentUser.rating));
                 $("#opp-rating").text(Math.round(activeOpponent.rating));
+
+                // 2. Update Database in Background
+                db.collection("academy_players").doc(currentUser.id).update({ 
+                    rating: currentUser.rating 
+                }).catch(err => console.error("Leaderboard Sync Error:", err));
             }
+
             const res = userWon === null ? "DRAW" : (userWon ? "VICTORY" : "DEFEAT");
             $("#game-status").html(`<span style="font-size:18px;">${res}${changeStr}</span>${detailStr}`);
-            $("#btn-draw, #btn-resign").hide(); $("#btn-rematch, #btn-lobby-home, #btn-exit-home").show();
+            $("#btn-draw, #btn-resign").hide(); 
+            $("#btn-rematch, #btn-lobby-home, #btn-exit-home").show();
         }
 
-        // Bind cleanly to the window namespace so the inline HTML button handles the reference successfully
         window.handleGameOver = handleGameOver;
 
         function acceptChallenge() {
