@@ -241,7 +241,7 @@
         <div id="game-status" style="text-align:center; margin:15px 0; color:var(--gold); font-weight:600;"></div>
         <div id="game-controls" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
             <button class="btn" id="btn-draw" onclick="offerDraw()">Offer Draw</button>
-            <button class="btn" style="color:var(--danger)" id="btn-resign" onclick="offerResign()">Resign</button>
+            <button class="btn" style="color:var(--danger)" id="btn-resign" onclick="handleResignation()">Resign</button>
             <button class="btn btn-green" id="btn-rematch" style="display:none; grid-column: span 2;" onclick="startDuel(activeOpponent)">Request Rematch</button>
             <button class="btn btn-blue" id="btn-lobby-home" style="display:none; grid-column: span 1;" onclick="quitToLobby()">Player Menu</button>
             <button class="btn" id="btn-exit-home" style="display:none; grid-column: span 1; background: #555;" onclick="goToAuthPage()">Home</button>
@@ -322,7 +322,7 @@
             'rnbqkb1r/pp3ppp/2p2n2/3pp3/4P3/2NP3N2/PPP2PPP/R1BQKB1R w KQkq - 0 5', // Scandinavian defense transpositions
             'r1bqkb1r/pp2pppp/2np1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 1 6', // Sicilian Defense, Classical
             'rn1qkb1r/pp2pppp/3p1n2/8/3QP3/2N2N2/PPP2PPP/R1B1KB1R b KQkq - 0 5', // Sicilian, modern center lines
-            'r1bqkb1r/pp1pppp1/2n2n1p/2p5/4P3/2NP3N2/PPP2PPP/R1BQKB1R w KQkq - 0 5', // Sicilian closed positions
+            'r1bqkb1r/pp1pppp1/2n2n1p/2p5/4P3/2NP3/PPP2PPP/R1BQKB1R w KQkq - 0 5', // Sicilian closed positions
             'r1bqkb1r/pp2pp1p/2np1np1/8/3NP3/2N1BP2/PPP3PP/R2QKB1R b KQkq - 1 7', // Dragon Yugoslav Setup
             'rnbqkb1r/pp3ppp/4pn2/2pp4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq - 0 5', // Queen's Gambit, Semi-Tarrasch
             'rnbqkb1r/pp3ppp/2p1pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq - 0 5', // Queen's Gambit, Semi-Slav
@@ -334,7 +334,7 @@
             'r1bqk2r/ppp1bppp/2n1pn2/3p4/2PP4/2N2NP1/PP2PPBP/R1BQK2R b KQkq - 3 6', // Closed Catalan setup
             'rnbqk2r/ppp1bppp/4pn2/3p4/2PP4/5N2/PP2PPPP/RNBQKB1R w KQkq - 2 5', // Queen's Gambit Declined
             'r1bqk2r/ppp1bppp/2n1pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq - 4 6', // Orthodox QGD
-            'rnbqk2r/ppp1bppp/4p3/3p4/3P4/3BPN2/PPP2PPP/RNBQK2R b KQkq - 3 5', // Colle System setup
+            'rnbqk2r/ppp1bppp/4e3/3p4/3P4/3BPN2/PPP2PPP/RNBQK2R b KQkq - 3 5', // Colle System setup
             'rn1qk2r/p1ppbppp/1p2pn2/8/3P4/3BPN2/PPP2PPP/RNBQK2R b KQkq - 2 5', // Colle-Koltanowski structure
             'rnbqk2r/pppp1ppp/5n2/4p3/1bPP4/2N5/PP2PPPP/R1BQKBNR w KQkq - 3 4', // Nimzo-Indian structure
             'r1bqk2r/pppp1ppp/2n2n2/4p3/1b1PP3/2N2N2/PPP2PPP/R1BQKB1R w KQkq - 3 5', // Ruy Lopez early center clash
@@ -344,7 +344,7 @@
             'rnbqk2r/ppp2ppp/4pn2/3p4/1bPP4/2N1P3/PP3PPP/R1BQKBNR w KQkq - 3 5', // Nimzo-Indian, Rubinstein variation
             'rn1qk2r/ppp1bppp/4pn2/3p1b2/2PP4/2N1PN2/PP3PPP/R1BQKB1R w KQkq - 3 6', // Queen's Gambit, Harrwitz Attack
             'rnbqkb1r/pp2pppp/3p1n2/8/3NP3/8/PPP2PPP/RNBQKB1R w KQkq - 1 5', // Sicilian Najdorf starting line
-            'rnbqk2r/pp2ppbp/3p1np1/8/3NP3/2N5/PPP1BPPP/R1BQK2R w KQkq - 2 7', // Sicilian Classical, Dragon setup
+            'rnbqkb1r/pp2ppbp/3p1np1/8/3NP3/2N5/PPP1BPPP/R1BQK2R w KQkq - 2 7', // Sicilian Classical, Dragon setup
             'rnbqkb1r/pp1p1ppp/4pn2/2p5/4P3/2NP3/PPP2PPP/R1BQKBNR w KQkq - 0 4'  // Sicilian, French-type configurations
         ];
 
@@ -648,11 +648,6 @@
             else $("#game-status").text(game.turn() === userColor ? "Your move" : "Opponent thinking...");
         }
 
-        function offerResign() {
-            // Trigger game over, awarding victory to the opponent (user won = false)
-            handleGameOver(false);
-        }
-
         async function handleGameOver(userWon) {
             clearInterval(gameTimer);
             removeLiveBroadcast(currentUser.id); // Teardown active stream on finish
@@ -684,6 +679,12 @@
 
         function offerDraw() { if (Math.random() > 0.8) handleGameOver(null); else showDeclinedPopup(); }
         
+        function handleResignation() {
+            if (confirm("Are you sure you want to resign?")) {
+                handleGameOver(false);
+            }
+        }
+
         function quitToLobby() { 
             clearInterval(gameTimer); 
             removeLiveBroadcast(currentUser.id); // Teardown stream
