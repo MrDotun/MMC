@@ -316,7 +316,7 @@
         const RANDOM_POSITIONS = [
             'r1bqk2r/ppp2ppp/2np1n2/1B2p3/1b2P3/2NP1N2/PPPB1PPP/R2QK2R b KQkq - 2 6', // Three Knights Game
             'r1bqk2r/ppp2ppp/2np1n2/4p3/1bB1P3/2NP1N2/PPPB1PPP/R2QK2R b KQkq - 2 6', // Giuoco Piano Variation
-            'r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/2NP4/PPP2PPP/R1BQKBNR w KQkq - 1 4', // Four Knights, Quiet Line
+            'r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/2NP3/PPP2PPP/R1BQKBNR w KQkq - 1 4', // Four Knights, Quiet Line
             'r1bqk2r/pppp1ppp/2n5/4p3/2B1P1n1/2NP1N2/PPP2KPP/R1BQ3R w kq - 1 6', // Fried Liver Attack setup
             'r1b1kb1r/ppp2ppp/2np1q1n/4p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 1 6', // Bishop Opening, active lines
             'rnbqkb1r/pp3ppp/2p2n2/3pp3/4P3/2NP1N2/PPP2PPP/R1BQKB1R w KQkq - 0 5', // Scandinavian defense transpositions
@@ -328,7 +328,7 @@
             'rnbqkb1r/pp3ppp/2p1pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq - 0 5', // Queen's Gambit, Semi-Slav
             'rn1qkb1r/pb3ppp/1p2pn2/2pp4/3P4/2N1PN2/PPP1BPPP/R1BQK2R w KQkq - 0 7', // Queen's Gambit, Classical Fianchetto
             'rnbqkb1r/pppppp1p/5np1/8/2PP4/2N5/PP2PPPP/R1BQKBNR b KQkq - 1 3', // King's Indian setup
-            'r1bqkb1r/pppppp1p/2n2np1/8/2PP4/2N2N2/PP2PPPP/R1BQKB1R b KQkq - 1 4', // King's Indian, East Indian lines
+            'r1bqkb1r/pppppp1p/2n2n1p/8/2PP4/2N2N2/PP2PPPP/R1BQKB1R b KQkq - 1 4', // King's Indian, East Indian lines
             'rnbqkb1r/pppp1ppp/4pn2/8/2PP4/8/PP2PPPP/RNBQKBNR w KQkq - 0 3', // Queen's Indian / Nimzo setup
             'rnbqk2r/ppp1bppp/4pn2/3p4/2PP4/5NP1/PP2PPBP/RNBQK2R b KQkq - 3 5', // Catalan Opening structure
             'r1bqk2r/ppp1bppp/2n1pn2/3p4/2PP4/2N2NP1/PP2PPBP/R1BQK2R b KQkq - 3 6', // Closed Catalan setup
@@ -345,7 +345,7 @@
             'rn1qk2r/ppp1bppp/4pn2/3p1b2/2PP4/2N1PN2/PP3PPP/R1BQKB1R w KQkq - 3 6', // Queen's Gambit, Harrwitz Attack
             'rnbqkb1r/pp2pppp/3p1n2/8/3NP3/8/PPP2PPP/RNBQKB1R w KQkq - 1 5', // Sicilian Najdorf starting line
             'rnbqk2r/pp2ppbp/3p1np1/8/3NP3/2N5/PPP1BPPP/R1BQK2R w KQkq - 2 7', // Sicilian Classical, Dragon setup
-            'rnbqkb1r/pp1p1ppp/4pn2/2p5/4P3/2NP4/PPP2PPP/R1BQKBNR w KQkq - 0 4'  // Sicilian, French-type configurations
+            'rnbqkb1r/pp1p1ppp/4pn2/2p5/4P3/2NP3/PPP2PPP/R1BQKBNR w KQkq - 0 4'  // Sicilian, French-type configurations
         ];
 
         let currentUser = null;
@@ -359,6 +359,12 @@
         let oppTimeLeft = 420;
         let clickedSquare = null; 
         let userColor = 'w';
+
+        // Variables tracking live stream state
+        let currentLiveGameId = null;
+        let liveUnsubscribe = null;
+        let liveBoard = null;
+        let botSimInterval = null;
 
         function showPopup() {
             $("#popup-overlay").fadeIn(300);
@@ -382,6 +388,7 @@
 
         function goToAuthPage() {
             clearInterval(gameTimer);
+            if (currentUser) { removeLiveBroadcast(currentUser.id); }
             $("#section-game").addClass("hidden");
             $("#section-lobby").addClass("hidden");
             $("#section-auth").fadeIn(400);
@@ -420,13 +427,18 @@
             });
         }
 
+        function cleanUpLiveStreams() {
+            if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe = null; }
+            if (botSimInterval) { clearInterval(botSimInterval); botSimInterval = null; }
+        }
+
         function showSubSection(type) {
+            cleanUpLiveStreams();
             let html = "";
             $("#lobby-list").html('<div style="text-align:center; padding:20px;">Synchronizing...</div>');
 
             if (type === 'online') {
                 $("#lobby-title").text("Masters Online");
-                // Select 6 random masters to show as "online" in the lobby lists so it looks dynamic
                 const shuffled = [...MASTER_POOL].sort(() => 0.5 - Math.random());
                 shuffled.slice(0, 6).forEach(m => {
                     html += `<div class="item-row"><span>🟢 ${m.name} <span class="rating-tag">${m.rating}</span></span><button class="btn" style="width:auto; padding:5px 12px; font-size:11px; margin-bottom:0;" onclick="challengeUser('${m.id}')">Challenge</button></div>`;
@@ -445,18 +457,69 @@
                 });
             } else if (type === 'live-games') {
                 $("#lobby-title").text("Live Arena Games");
-                const m1 = MASTER_POOL[Math.floor(Math.random() * 15)], m2 = MASTER_POOL[Math.floor(Math.random() * 15) + 15];
-                $("#lobby-list").html(`
-                    <div style="text-align:center; margin-bottom: 10px;"><span style="color:var(--secondary); font-size:12px; font-weight:bold;">🔴 WATCHING LIVE MATCH</span></div>
-                    <div class="player-bar top"><div>⚫ ${m1.name} <span class="rating-tag">${m1.rating}</span></div></div>
-                    <div id="liveBoard" style="width: 100%"></div>
-                    <div class="player-bar bottom"><div>⚪ ${m2.name} <span class="rating-tag">${m2.rating}</span></div></div>
-                `);
                 
-                // Live board also initializes at a completely random FEN position
-                const randomFen = RANDOM_POSITIONS[Math.floor(Math.random() * RANDOM_POSITIONS.length)];
-                ChessBoard('liveBoard', { position: randomFen, pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
+                // 1. Look for live, active human games in Firestore first
+                db.collection("live_broadcasts").limit(1).get().then(snapshot => {
+                    if (!snapshot.empty) {
+                        const gameDoc = snapshot.docs[0];
+                        const liveData = gameDoc.data();
+                        currentLiveGameId = gameDoc.id;
+
+                        setupLiveBoardUI(liveData.whiteName, liveData.whiteRating, liveData.blackName, liveData.blackRating);
+
+                        // Real-time listener for the active human game
+                        liveUnsubscribe = db.collection("live_broadcasts").doc(currentLiveGameId)
+                            .onSnapshot(doc => {
+                                if (doc.exists) {
+                                    liveBoard.position(doc.data().fen);
+                                } else {
+                                    // Game closed, hot-swap back to dynamic simulation
+                                    showSubSection('live-games');
+                                }
+                            });
+                    } else {
+                        // 2. Fallback: Run a realistic simulated engine game if no human is playing
+                        const m1 = MASTER_POOL[Math.floor(Math.random() * 15)];
+                        const m2 = MASTER_POOL[Math.floor(Math.random() * 15) + 15];
+                        setupLiveBoardUI(m1.name, m1.rating, m2.name, m2.rating);
+
+                        let simGame = new Chess(RANDOM_POSITIONS[Math.floor(Math.random() * RANDOM_POSITIONS.length)]);
+                        liveBoard.position(simGame.fen());
+
+                        // Simulate active live moves with visual delays
+                        botSimInterval = setInterval(() => {
+                            if (simGame.game_over()) {
+                                simGame = new Chess(RANDOM_POSITIONS[Math.floor(Math.random() * RANDOM_POSITIONS.length)]);
+                                liveBoard.position(simGame.fen());
+                                return;
+                            }
+                            const moves = simGame.moves();
+                            if (moves.length > 0) {
+                                const randomMove = moves[Math.floor(Math.random() * moves.length)];
+                                simGame.move(randomMove);
+                                liveBoard.position(simGame.fen());
+                            }
+                        }, Math.random() * 2000 + 1500);
+                    }
+                });
             }
+        }
+
+        function setupLiveBoardUI(whiteName, whiteRating, blackName, blackRating) {
+            $("#lobby-list").html(`
+                <div style="text-align:center; margin-bottom: 10px;">
+                    <span style="color:var(--secondary); font-size:12px; font-weight:bold; display: inline-flex; align-items:center; gap: 5px;">
+                        <span style="display:inline-block; width:8px; height:8px; background-color:red; border-radius:50%; animation: pulseGlowRed 1.5s infinite;"></span> LIVE BROADCAST
+                    </span>
+                </div>
+                <div class="player-bar top"><div>⚫ ${blackName} <span class="rating-tag">${blackRating}</span></div></div>
+                <div id="liveBoard" style="width: 100%"></div>
+                <div class="player-bar bottom"><div>⚪ ${whiteName} <span class="rating-tag">${whiteRating}</span></div></div>
+            `);
+            liveBoard = ChessBoard('liveBoard', { 
+                position: 'start', 
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' 
+            });
         }
 
         function challengeUser(id) {
@@ -465,10 +528,32 @@
             showPopup();
         }
 
+        // --- Human Game Broadcast Methods ---
+        function registerLiveBroadcast(id, fen, opponent) {
+            const isWhite = userColor === 'w';
+            db.collection("live_broadcasts").doc(id).set({
+                whiteName: isWhite ? currentUser.name : opponent.name,
+                whiteRating: isWhite ? Math.round(currentUser.rating) : opponent.rating,
+                blackName: isWhite ? opponent.name : currentUser.name,
+                blackRating: isWhite ? opponent.rating : Math.round(currentUser.rating),
+                fen: fen,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            }).catch(err => console.log("Broadcasting unavailable:", err));
+        }
+
+        function updateLiveBroadcast(id, fen) {
+            db.collection("live_broadcasts").doc(id).update({ fen: fen })
+                .catch(err => console.log("Broadcast sync failed:", err));
+        }
+
+        function removeLiveBroadcast(id) {
+            db.collection("live_broadcasts").doc(id).delete()
+                .catch(err => console.log("Broadcast teardown failed:", err));
+        }
+
         function startDuel(opponent) {
             activeOpponent = opponent;
             
-            // Pick one of our 32 random FEN openings
             const randomFen = RANDOM_POSITIONS[Math.floor(Math.random() * RANDOM_POSITIONS.length)];
             game = new Chess(randomFen);
             
@@ -493,6 +578,9 @@
             };
             board = ChessBoard('mainBoard', config);
 
+            // Register this game in Firestore so lobby viewers can see it in real-time
+            registerLiveBroadcast(currentUser.id, randomFen, opponent);
+
             $('#mainBoard').off('click', '.square-55d63');
             $('#mainBoard').on('click', '.square-55d63', function() { handleSquareClick($(this).data('square')); });
             
@@ -508,7 +596,17 @@
                 if (piece && piece.color === userColor) { clickedSquare = square; highlightSquare(square); }
             } else {
                 const move = game.move({ from: clickedSquare, to: square, promotion: 'q' });
-                if (move) { board.position(game.fen()); clickedSquare = null; clearHighlights(); updateStatus(); if(!game.game_over()) triggerEngine(); }
+                if (move) { 
+                    board.position(game.fen()); 
+                    
+                    // Sync the new move to Firestore
+                    updateLiveBroadcast(currentUser.id, game.fen());
+
+                    clickedSquare = null; 
+                    clearHighlights(); 
+                    updateStatus(); 
+                    if(!game.game_over()) triggerEngine(); 
+                }
                 else { clickedSquare = (piece && piece.color === userColor) ? square : null; highlightSquare(clickedSquare); }
             }
         }
@@ -522,6 +620,10 @@
                 engineWorker.onmessage = (e) => {
                     game.move({ from: e.data.slice(0, 2), to: e.data.slice(2, 4), promotion: 'q' });
                     board.position(game.fen());
+                    
+                    // Sync the engine's move to Firestore
+                    updateLiveBroadcast(currentUser.id, game.fen());
+
                     updateStatus();
                 };
             }, Math.random() * 4000 + 2000);
@@ -545,6 +647,8 @@
 
         async function handleGameOver(userWon) {
             clearInterval(gameTimer);
+            removeLiveBroadcast(currentUser.id); // Teardown active stream on finish
+
             let changeStr = "";
             if (userWon !== null && !currentUser.id.startsWith("guest_")) {
                 const expected = 1 / (1 + Math.pow(10, (activeOpponent.rating - currentUser.rating) / 400));
@@ -571,7 +675,14 @@
         }
 
         function offerDraw() { if (Math.random() > 0.8) handleGameOver(null); else showDeclinedPopup(); }
-        function quitToLobby() { clearInterval(gameTimer); $("#section-game").addClass("hidden"); $("#section-lobby").removeClass("hidden"); showSubSection('online'); }
+        
+        function quitToLobby() { 
+            clearInterval(gameTimer); 
+            removeLiveBroadcast(currentUser.id); // Teardown stream
+            $("#section-game").addClass("hidden"); 
+            $("#section-lobby").removeClass("hidden"); 
+            showSubSection('online'); 
+        }
     </script>
 </body>
 </html>
