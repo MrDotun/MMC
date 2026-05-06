@@ -160,14 +160,14 @@
 
     <div id="section-game" class="container hidden" style="padding: 10px;">
         <div class="player-bar top">
-            <div>⚪ <span id="opp-name">Opponent</span> <span class="rating-tag" id="opp-rating"></span></div>
+            <div>⚫ <span id="opp-name">Opponent</span> <span class="rating-tag" id="opp-rating"></span></div>
             <div id="timer-top" style="font-family:monospace; font-weight:bold; color:var(--danger);">07:00</div>
         </div>
         
         <div id="mainBoard" style="width: 100%"></div>
 
         <div class="player-bar bottom">
-            <div>⚫ <span id="user-display-name">You</span> <span class="rating-tag" id="user-display-rating"></span></div>
+            <div>⚪ <span id="user-display-name">You</span> <span class="rating-tag" id="user-display-rating"></span></div>
             <div id="timer-bottom" style="font-family:monospace; font-weight:bold;">07:00</div>
         </div>
 
@@ -184,8 +184,8 @@
         <div id="popup-name" style="font-size:1.3rem; color:white; font-weight:700;">Segun Oladipo</div>
         <div style="font-size:12px; color:#aaa; margin-bottom:20px;">⚡ 7 Minute Blitz • Rated</div>
         <div style="display:flex; gap:10px;">
-            <button class="btn btn-green" onclick="acceptChallenge()">ACCEPT</button>
-            <button class="btn" onclick="$('#challenge-popup').fadeOut()">DECLINE</button>
+            <button class="btn btn-green" id="btn-accept" onclick="acceptChallenge()">ACCEPT</button>
+            <button class="btn" id="btn-decline" onclick="$('#challenge-popup').fadeOut()">DECLINE</button>
         </div>
     </div>
 
@@ -341,14 +341,14 @@
 
         // Click-To-Move selection and movement handler
         function handleSquareClick(square) {
-            // Human is Black ('b') in this simulation loop setup
-            if (game.turn() === 'w') return;
+            // Human is White ('w') in this standard game setup
+            if (game.turn() !== 'w') return;
 
             const piece = game.get(square);
 
             if (clickedSquare === null) {
                 // First click: Highlight selected human piece
-                if (piece && piece.color === 'b') {
+                if (piece && piece.color === 'w') {
                     clickedSquare = square;
                     highlightSquare(square);
                 }
@@ -359,7 +359,7 @@
 
                 if (move === null) {
                     // Clicked another of your own pieces instead: Switch selection
-                    if (piece && piece.color === 'b') {
+                    if (piece && piece.color === 'w') {
                         clickedSquare = square;
                         highlightSquare(square);
                     } else {
@@ -401,7 +401,7 @@
         function startTimer() {
             clearInterval(gameTimer);
             gameTimer = setInterval(() => {
-                if (game.turn() === 'b') { // Only count down player time in this sim
+                if (game.turn() === 'w') { // Only count down player time in this sim
                     timeLeft--;
                     let mins = Math.floor(timeLeft / 60);
                     let secs = timeLeft % 60;
@@ -425,9 +425,9 @@
         }
 
         function updateStatus() {
-            let status = game.turn() === 'w' ? "Opponent thinking..." : "Your move";
+            let status = game.turn() === 'b' ? "Opponent thinking..." : "Your move";
             if (game.in_checkmate()) {
-                const userWon = game.turn() === 'w'; // Human wins if checkmate occurs on white's move turn
+                const userWon = game.turn() === 'b'; // Human wins if checkmate occurs on black's move turn
                 status = `Checkmate! ${userWon ? currentUser.name : activeBot.name} wins!`;
                 handleGameOver(userWon);
             } else if (game.in_draw()) {
@@ -458,8 +458,32 @@
         }
 
         function acceptChallenge() {
-            $("#challenge-popup").fadeOut();
-            startBotGame(activeBot);
+            const btnAccept = $("#btn-accept");
+            const btnDecline = $("#btn-decline");
+            
+            // Disable buttons to prevent multi-clicks
+            btnAccept.prop("disabled", true);
+            btnDecline.prop("disabled", true);
+            
+            let secondsRemaining = 15;
+            btnAccept.text(`CONNECTING (${secondsRemaining}s)...`);
+            
+            const connectionInterval = setInterval(() => {
+                secondsRemaining--;
+                if (secondsRemaining > 0) {
+                    btnAccept.text(`CONNECTING (${secondsRemaining}s)...`);
+                } else {
+                    clearInterval(connectionInterval);
+                    
+                    // Reset buttons
+                    btnAccept.prop("disabled", false).text("ACCEPT");
+                    btnDecline.prop("disabled", false);
+                    
+                    // Start Game Room transition
+                    $("#challenge-popup").fadeOut();
+                    startBotGame(activeBot);
+                }
+            }, 1000);
         }
 
         function quitToLobby() {
