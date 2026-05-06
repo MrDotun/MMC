@@ -375,7 +375,8 @@
                 $("#lobby-list").html(html);
             } else if (type === 'leader') {
                 $("#lobby-title").text("Arena Leaderboard");
-                db.collection("academy_players").orderBy("rating", "desc").limit(20).get().then(snap => {
+                // UPDATED: Limit changed from 20 to 50
+                db.collection("academy_players").orderBy("rating", "desc").limit(50).get().then(snap => {
                     html = ""; let rank = 1;
                     snap.forEach(doc => {
                         const p = doc.data();
@@ -475,21 +476,26 @@
             else $("#game-status").text(game.turn() === userColor ? "Your move" : "Opponent thinking...");
         }
 
+        // UPDATED: Added logic to render the explicit rating gain/loss text on the board interface
         async function handleGameOver(userWon) {
             clearInterval(gameTimer);
             let changeStr = "";
+            let detailStr = "";
             if (userWon !== null && !currentUser.id.startsWith("guest_")) {
                 const expected = 1 / (1 + Math.pow(10, (activeOpponent.rating - currentUser.rating) / 400));
                 const change = Math.round(32 * ((userWon ? 1 : 0) - expected));
                 currentUser.rating += change;
                 activeOpponent.rating -= change;
+                
                 changeStr = ` (${change >= 0 ? '+' : ''}${change})`;
+                detailStr = `<br><span style="font-size:13px; color:${change >= 0 ? 'var(--secondary)' : 'var(--danger)'}; font-weight:normal;">You ${change >= 0 ? 'gained' : 'lost'} ${Math.abs(change)} rating points</span>`;
+                
                 await db.collection("academy_players").doc(currentUser.id).update({ rating: currentUser.rating });
                 $("#my-profile-rating, #user-display-rating").text(Math.round(currentUser.rating));
                 $("#opp-rating").text(Math.round(activeOpponent.rating));
             }
             const res = userWon === null ? "DRAW" : (userWon ? "VICTORY" : "DEFEAT");
-            $("#game-status").html(`<span style="font-size:18px;">${res}${changeStr}</span>`);
+            $("#game-status").html(`<span style="font-size:18px;">${res}${changeStr}</span>${detailStr}`);
             $("#btn-draw, #btn-resign").hide(); $("#btn-rematch, #btn-lobby-home, #btn-exit-home").show();
         }
 
