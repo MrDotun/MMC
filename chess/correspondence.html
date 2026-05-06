@@ -241,7 +241,7 @@
         <div id="game-status" style="text-align:center; margin:15px 0; color:var(--gold); font-weight:600;"></div>
         <div id="game-controls" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
             <button class="btn" id="btn-draw" onclick="offerDraw()">Offer Draw</button>
-            <button class="btn" style="color:var(--danger)" id="btn-resign" onclick="handleResignation()">Resign</button>
+            <button class="btn" style="color:var(--danger)" id="btn-resign" onclick="handleGameOver(false)">Resign</button>
             <button class="btn btn-green" id="btn-rematch" style="display:none; grid-column: span 2;" onclick="startDuel(activeOpponent)">Request Rematch</button>
             <button class="btn btn-blue" id="btn-lobby-home" style="display:none; grid-column: span 1;" onclick="quitToLobby()">Player Menu</button>
             <button class="btn" id="btn-exit-home" style="display:none; grid-column: span 1; background: #555;" onclick="goToAuthPage()">Home</button>
@@ -278,7 +278,6 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        // Expanded pool to 30 natural, elite-sounding Nigerian Names across different regions/ethnicities
         const MASTER_POOL = [
             { id: 'm_segun', name: 'Segun Oladipo', rating: 1450 },
             { id: 'm_chinedu', name: 'Chinedu Okafor', rating: 1620 },
@@ -289,63 +288,7 @@
             { id: 'm_bolaji', name: 'Bolaji Idowu', rating: 1820 },
             { id: 'm_amarachi', name: 'Amarachi Onuoha', rating: 1490 },
             { id: 'm_usman', name: 'Usman Danjuma', rating: 1675 },
-            { id: 'm_nkechi', name: 'Nkechi Egwu', rating: 1555 },
-            { id: 'm_tunde', name: 'Tunde Alao', rating: 1610 },
-            { id: 'm_emeka', name: 'Emeka Nwosu', rating: 1725 },
-            { id: 'm_amina', name: 'Amina Yusuf', rating: 1485 },
-            { id: 'm_femi', name: 'Femi Adebayo', rating: 1850 },
-            { id: 'm_chioma', name: 'Chioma Nwachukwu', rating: 1520 },
-            { id: 'm_abubakar', name: 'Abubakar Bello', rating: 1640 },
-            { id: 'm_tochukwu', name: 'Tochukwu Eze', rating: 1710 },
-            { id: 'm_yetunde', name: 'Yetunde Sowemimo', rating: 1560 },
-            { id: 'm_ibrahim', name: 'Ibrahim Musa', rating: 1690 },
-            { id: 'm_biodun', name: 'Biodun Ajayi', rating: 1765 },
-            { id: 'm_ngozi', name: 'Ngozi Okeke', rating: 1430 },
-            { id: 'm_olumide', name: 'Olumide Falola', rating: 1805 },
-            { id: 'm_kabiru', name: 'Kabiru Gwarzo', rating: 1510 },
-            { id: 'm_somto', name: 'Somtochukwu Ani', rating: 1580 },
-            { id: 'm_funmi', name: 'Funmilayo Balogun', rating: 1630 },
-            { id: 'm_shehu', name: 'Shehu Garba', rating: 1545 },
-            { id: 'm_eke', name: 'Ekeledirichukwu Opara', rating: 1795 },
-            { id: 'm_folake', name: 'Folake Ademola', rating: 1475 },
-            { id: 'm_osaze', name: 'Osaze Efe', rating: 1660 },
-            { id: 'm_bamidele', name: 'Bamidele George', rating: 1740 }
-        ];
-
-        // over 30 unique, highly realistic mid-game positions (FEN strings)
-        const RANDOM_POSITIONS = [
-            'r1bqk2r/ppp2ppp/2np1n2/1B2p3/1b2P3/2NP1N2/PPPB1PPP/R2QK2R b KQkq - 2 6', // Three Knights Game
-            'r1bqk2r/ppp2ppp/2np1n2/4p3/1bC1P3/2NP1N2/PPPB1PPP/R2QK2R b KQkq - 2 6', // Giuoco Piano Variation
-            'r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/2NP3/PPP2PPP/R1BQKBNR w KQkq - 1 4', // Four Knights, Quiet Line
-            'r1bqk2r/pppp1ppp/2n5/4p3/2B1P1n1/2NP1N2/PPP2KPP/R1BQ3R w kq - 1 6', // Fried Liver Attack setup
-            'r1b1kb1r/ppp2ppp/2np1q1n/4p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 1 6', // Bishop Opening, active lines
-            'rnbqkb1r/pp3ppp/2p2n2/3pp3/4P3/2NP3N2/PPP2PPP/R1BQKB1R w KQkq - 0 5', // Scandinavian defense transpositions
-            'r1bqkb1r/pp2pppp/2np1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 1 6', // Sicilian Defense, Classical
-            'rn1qkb1r/pp2pppp/3p1n2/8/3QP3/2N2N2/PPP2PPP/R1B1KB1R b KQkq - 0 5', // Sicilian, modern center lines
-            'r1bqkb1r/pp1pppp1/2n2n1p/2p5/4P3/2NP3/PPP2PPP/R1BQKB1R w KQkq - 0 5', // Sicilian closed positions
-            'r1bqkb1r/pp2pp1p/2np1np1/8/3NP3/2N1BP2/PPP3PP/R2QKB1R b KQkq - 1 7', // Dragon Yugoslav Setup
-            'rnbqkb1r/pp3ppp/4pn2/2pp4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq - 0 5', // Queen's Gambit, Semi-Tarrasch
-            'rnbqkb1r/pp3ppp/2p1pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq - 0 5', // Queen's Gambit, Semi-Slav
-            'rn1qkb1r/pb3ppp/1p2pn2/2pp4/3P4/2N1PN2/PPP1BPPP/R1BQK2R w KQkq - 0 7', // Queen's Gambit, Classical Fianchetto
-            'rnbqkb1r/pppppp1p/5np1/8/2PP4/2N5/PP2PPPP/R1BQKBNR b KQkq - 1 3', // King's Indian setup
-            'r1bqkb1r/pppppp1p/2n2n1p/8/2PP4/2N2N2/PP2PPPP/R1BQKB1R b KQkq - 1 4', // King's Indian, East Indian lines
-            'rnbqkb1r/pppp1ppp/4pn2/8/2PP4/8/PP2PPPP/RNBQKBNR w KQkq - 0 3', // Queen's Indian / Nimzo setup
-            'rnbqk2r/ppp1bppp/4pn2/3p4/2PP4/5NP1/PP2PPBP/RNBQK2R b KQkq - 3 5', // Catalan Opening structure
-            'r1bqk2r/ppp1bppp/2n1pn2/3p4/2PP4/2N2NP1/PP2PPBP/R1BQK2R b KQkq - 3 6', // Closed Catalan setup
-            'rnbqk2r/ppp1bppp/4pn2/3p4/2PP4/5N2/PP2PPPP/RNBQKB1R w KQkq - 2 5', // Queen's Gambit Declined
-            'r1bqk2r/ppp1bppp/2n1pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq - 4 6', // Orthodox QGD
-            'rnbqk2r/ppp1bppp/4e3/3p4/3P4/3BPN2/PPP2PPP/RNBQK2R b KQkq - 3 5', // Colle System setup
-            'rn1qk2r/p1ppbppp/1p2pn2/8/3P4/3BPN2/PPP2PPP/RNBQK2R b KQkq - 2 5', // Colle-Koltanowski structure
-            'rnbqk2r/pppp1ppp/5n2/4p3/1bPP4/2N5/PP2PPPP/R1BQKBNR w KQkq - 3 4', // Nimzo-Indian structure
-            'r1bqk2r/pppp1ppp/2n2n2/4p3/1b1PP3/2N2N2/PPP2PPP/R1BQKB1R w KQkq - 3 5', // Ruy Lopez early center clash
-            'r1bqk2r/1ppp1ppp/2n2n2/p1b1p3/1B2P3/2NP1N2/PPP2PPP/R2QK2R w KQkq - 0 7', // Ruy Lopez active lines
-            'r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 2 5', // Ruy Lopez, Morphy Defense
-            'r1bqkb1r/2pp1ppp/p1n2n2/1p2p3/4P3/1B3N2/PPPP1PPP/RNBQK2R w KQkq - 0 6', // Ruy Lopez, Archangelsk Defense
-            'rnbqk2r/ppp2ppp/4pn2/3p4/1bPP4/2N1P3/PP3PPP/R1BQKBNR w KQkq - 3 5', // Nimzo-Indian, Rubinstein variation
-            'rn1qk2r/ppp1bppp/4pn2/3p1b2/2PP4/2N1PN2/PP3PPP/R1BQKB1R w KQkq - 3 6', // Queen's Gambit, Harrwitz Attack
-            'rnbqkb1r/pp2pppp/3p1n2/8/3NP3/8/PPP2PPP/RNBQKB1R w KQkq - 1 5', // Sicilian Najdorf starting line
-            'rnbqkb1r/pp2ppbp/3p1np1/8/3NP3/2N5/PPP1BPPP/R1BQK2R w KQkq - 2 7', // Sicilian Classical, Dragon setup
-            'rnbqkb1r/pp1p1ppp/4pn2/2p5/4P3/2NP3/PPP2PPP/R1BQKBNR w KQkq - 0 4'  // Sicilian, French-type configurations
+            { id: 'm_nkechi', name: 'Nkechi Egwu', rating: 1555 }
         ];
 
         let currentUser = null;
@@ -359,12 +302,7 @@
         let oppTimeLeft = 420;
         let clickedSquare = null; 
         let userColor = 'w';
-
-        // Variables tracking live stream state
-        let currentLiveGameId = null;
-        let liveUnsubscribe = null;
-        let liveBoard = null;
-        let botSimInterval = null;
+        let isGameOverManually = false;
 
         function showPopup() {
             $("#popup-overlay").fadeIn(300);
@@ -388,7 +326,6 @@
 
         function goToAuthPage() {
             clearInterval(gameTimer);
-            if (currentUser) { removeLiveBroadcast(currentUser.id); }
             $("#section-game").addClass("hidden");
             $("#section-lobby").addClass("hidden");
             $("#section-auth").fadeIn(400);
@@ -416,7 +353,6 @@
                 $("#my-profile-rating").text(Math.round(currentUser.rating));
                 showSubSection('online');
                 
-                // Realistic Challenge Prompt
                 setTimeout(() => {
                     if ($("#section-game").hasClass("hidden")) {
                         activeOpponent = MASTER_POOL[Math.floor(Math.random() * MASTER_POOL.length)];
@@ -427,20 +363,13 @@
             });
         }
 
-        function cleanUpLiveStreams() {
-            if (liveUnsubscribe) { liveUnsubscribe(); liveUnsubscribe = null; }
-            if (botSimInterval) { clearInterval(botSimInterval); botSimInterval = null; }
-        }
-
         function showSubSection(type) {
-            cleanUpLiveStreams();
             let html = "";
             $("#lobby-list").html('<div style="text-align:center; padding:20px;">Synchronizing...</div>');
 
             if (type === 'online') {
                 $("#lobby-title").text("Masters Online");
-                const shuffled = [...MASTER_POOL].sort(() => 0.5 - Math.random());
-                shuffled.slice(0, 6).forEach(m => {
+                MASTER_POOL.slice(0, 6).forEach(m => {
                     html += `<div class="item-row"><span>🟢 ${m.name} <span class="rating-tag">${m.rating}</span></span><button class="btn" style="width:auto; padding:5px 12px; font-size:11px; margin-bottom:0;" onclick="challengeUser('${m.id}')">Challenge</button></div>`;
                 });
                 $("#lobby-list").html(html);
@@ -457,70 +386,15 @@
                 });
             } else if (type === 'live-games') {
                 $("#lobby-title").text("Live Arena Games");
-                
-                // 1. Look for live, active human games in Firestore first
-                db.collection("live_broadcasts").limit(1).get().then(snapshot => {
-                    if (!snapshot.empty) {
-                        const gameDoc = snapshot.docs[0];
-                        const liveData = gameDoc.data();
-                        currentLiveGameId = gameDoc.id;
-
-                        setupLiveBoardUI(liveData.whiteName, liveData.whiteRating, liveData.blackName, liveData.blackRating);
-
-                        // Real-time listener for the active human game
-                        liveUnsubscribe = db.collection("live_broadcasts").doc(currentLiveGameId)
-                            .onSnapshot(doc => {
-                                if (doc.exists) {
-                                    liveBoard.position(doc.data().fen);
-                                } else {
-                                    // Game closed, hot-swap back to dynamic simulation
-                                    showSubSection('live-games');
-                                }
-                            });
-                    } else {
-                        // 2. Fallback: Run a realistic simulated engine game (AI vs AI) if no human is playing
-                        const m1 = MASTER_POOL[Math.floor(Math.random() * 15)];
-                        const m2 = MASTER_POOL[Math.floor(Math.random() * 15) + 15];
-                        setupLiveBoardUI(m1.name, m1.rating, m2.name, m2.rating);
-
-                        // Only live games from AI vs AI are chosen from RANDOM_POSITIONS
-                        let simGame = new Chess(RANDOM_POSITIONS[Math.floor(Math.random() * RANDOM_POSITIONS.length)]);
-                        liveBoard.position(simGame.fen());
-
-                        // Simulate active live moves with visual delays (3 to 15 seconds)
-                        botSimInterval = setInterval(() => {
-                            if (simGame.game_over()) {
-                                simGame = new Chess(RANDOM_POSITIONS[Math.floor(Math.random() * RANDOM_POSITIONS.length)]);
-                                liveBoard.position(simGame.fen());
-                                return;
-                            }
-                            const moves = simGame.moves();
-                            if (moves.length > 0) {
-                                const randomMove = moves[Math.floor(Math.random() * moves.length)];
-                                simGame.move(randomMove);
-                                liveBoard.position(simGame.fen());
-                            }
-                        }, Math.random() * 12000 + 3000);
-                    }
-                });
+                const m1 = MASTER_POOL[0], m2 = MASTER_POOL[1];
+                $("#lobby-list").html(`
+                    <div style="text-align:center; margin-bottom: 10px;"><span style="color:var(--secondary); font-size:12px; font-weight:bold;">🔴 WATCHING LIVE MATCH</span></div>
+                    <div class="player-bar top"><div>⚫ ${m1.name} <span class="rating-tag">${m1.rating}</span></div></div>
+                    <div id="liveBoard" style="width: 100%"></div>
+                    <div class="player-bar bottom"><div>⚪ ${m2.name} <span class="rating-tag">${m2.rating}</span></div></div>
+                `);
+                ChessBoard('liveBoard', { position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
             }
-        }
-
-        function setupLiveBoardUI(whiteName, whiteRating, blackName, blackRating) {
-            $("#lobby-list").html(`
-                <div style="text-align:center; margin-bottom: 10px;">
-                    <span style="color:var(--secondary); font-size:12px; font-weight:bold; display: inline-flex; align-items:center; gap: 5px;">
-                        <span style="display:inline-block; width:8px; height:8px; background-color:red; border-radius:50%; animation: pulseGlowRed 1.5s infinite;"></span> LIVE BROADCAST
-                    </span>
-                </div>
-                <div class="player-bar top"><div>⚫ ${blackName} <span class="rating-tag">${blackRating}</span></div></div>
-                <div id="liveBoard" style="width: 100%"></div>
-                <div class="player-bar bottom"><div>⚪ ${whiteName} <span class="rating-tag">${whiteRating}</span></div></div>
-            `);
-            liveBoard = ChessBoard('liveBoard', { 
-                position: 'start', 
-                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' 
-            });
         }
 
         function challengeUser(id) {
@@ -529,36 +403,10 @@
             showPopup();
         }
 
-        // --- Human Game Broadcast Methods ---
-        function registerLiveBroadcast(id, fen, opponent) {
-            const isWhite = userColor === 'w';
-            db.collection("live_broadcasts").doc(id).set({
-                whiteName: isWhite ? currentUser.name : opponent.name,
-                whiteRating: isWhite ? Math.round(currentUser.rating) : opponent.rating,
-                blackName: isWhite ? opponent.name : currentUser.name,
-                blackRating: isWhite ? opponent.rating : Math.round(currentUser.rating),
-                fen: fen,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp()
-            }).catch(err => console.log("Broadcasting unavailable:", err));
-        }
-
-        function updateLiveBroadcast(id, fen) {
-            db.collection("live_broadcasts").doc(id).update({ fen: fen })
-                .catch(err => console.log("Broadcast sync failed:", err));
-        }
-
-        function removeLiveBroadcast(id) {
-            db.collection("live_broadcasts").doc(id).delete()
-                .catch(err => console.log("Broadcast teardown failed:", err));
-        }
-
         function startDuel(opponent) {
             activeOpponent = opponent;
-            
-            // Standard Starting Position used here for human games (including human vs engine/bot)
-            const initialFen = 'start';
             game = new Chess();
-            
+            isGameOverManually = false;
             userTimeLeft = 420; oppTimeLeft = 420;
             userColor = Math.random() > 0.5 ? 'w' : 'b';
 
@@ -573,15 +421,10 @@
             $("#btn-draw, #btn-resign").show();
 
             const config = {
-                draggable: false, 
-                position: initialFen, 
-                orientation: userColor === 'w' ? 'white' : 'black',
+                draggable: false, position: 'start', orientation: userColor === 'w' ? 'white' : 'black',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             };
             board = ChessBoard('mainBoard', config);
-
-            // Register this game in Firestore so lobby viewers can see it in real-time
-            registerLiveBroadcast(currentUser.id, game.fen(), opponent);
 
             $('#mainBoard').off('click', '.square-55d63');
             $('#mainBoard').on('click', '.square-55d63', function() { handleSquareClick($(this).data('square')); });
@@ -592,23 +435,13 @@
         }
 
         function handleSquareClick(square) {
-            if (game.turn() !== userColor) return;
+            if (game.turn() !== userColor || isGameOverManually) return;
             const piece = game.get(square);
             if (clickedSquare === null) {
                 if (piece && piece.color === userColor) { clickedSquare = square; highlightSquare(square); }
             } else {
                 const move = game.move({ from: clickedSquare, to: square, promotion: 'q' });
-                if (move) { 
-                    board.position(game.fen()); 
-                    
-                    // Sync the new move to Firestore
-                    updateLiveBroadcast(currentUser.id, game.fen());
-
-                    clickedSquare = null; 
-                    clearHighlights(); 
-                    updateStatus(); 
-                    if(!game.game_over()) triggerEngine(); 
-                }
+                if (move) { board.position(game.fen()); clickedSquare = null; clearHighlights(); updateStatus(); if(!game.game_over()) triggerEngine(); }
                 else { clickedSquare = (piece && piece.color === userColor) ? square : null; highlightSquare(clickedSquare); }
             }
         }
@@ -618,23 +451,21 @@
 
         function triggerEngine() {
             setTimeout(() => {
+                if (game.game_over() || isGameOverManually) return;
                 engineWorker.postMessage("position " + game.fen());
                 engineWorker.onmessage = (e) => {
+                    if (game.game_over() || isGameOverManually) return;
                     game.move({ from: e.data.slice(0, 2), to: e.data.slice(2, 4), promotion: 'q' });
                     board.position(game.fen());
-                    
-                    // Sync the engine's move to Firestore
-                    updateLiveBroadcast(currentUser.id, game.fen());
-
                     updateStatus();
                 };
-            }, Math.random() * 12000 + 3000);
+            }, Math.random() * 4000 + 2000);
         }
 
-        // Start timer counts down active sides
         function startTimer() {
             clearInterval(gameTimer);
             gameTimer = setInterval(() => {
+                if (isGameOverManually) return;
                 if (game.turn() === userColor) userTimeLeft--; else oppTimeLeft--;
                 $("#timer-bottom").text(fmt(userTimeLeft)); $("#timer-top").text(fmt(oppTimeLeft));
                 if (userTimeLeft <= 0) handleGameOver(false); if (oppTimeLeft <= 0) handleGameOver(true);
@@ -649,24 +480,44 @@
         }
 
         async function handleGameOver(userWon) {
+            if (isGameOverManually) return;
+            isGameOverManually = true;
             clearInterval(gameTimer);
-            removeLiveBroadcast(currentUser.id); // Teardown active stream on finish
 
             let changeStr = "";
-            if (userWon !== null && !currentUser.id.startsWith("guest_")) {
-                const expected = 1 / (1 + Math.pow(10, (activeOpponent.rating - currentUser.rating) / 400));
+            let detailStr = "";
+            
+            // Logic for Rating Update
+            if (userWon !== null && currentUser && !String(currentUser.id).startsWith("guest_")) {
+                const myRating = Number(currentUser.rating);
+                const oppRating = Number(activeOpponent.rating);
+                
+                const expected = 1 / (1 + Math.pow(10, (oppRating - myRating) / 400));
                 const change = Math.round(32 * ((userWon ? 1 : 0) - expected));
-                currentUser.rating += change;
-                activeOpponent.rating -= change;
+                
+                currentUser.rating = myRating + change;
+                activeOpponent.rating = oppRating - change;
+                
                 changeStr = ` (${change >= 0 ? '+' : ''}${change})`;
-                await db.collection("academy_players").doc(currentUser.id).update({ rating: currentUser.rating });
+                detailStr = `<br><span style="font-size:13px; color:${change >= 0 ? 'var(--secondary)' : 'var(--danger)'}; font-weight:normal;">You ${change >= 0 ? 'gained' : 'lost'} ${Math.abs(change)} rating points</span>`;
+                
+                // 1. Update UI Immediately
                 $("#my-profile-rating, #user-display-rating").text(Math.round(currentUser.rating));
                 $("#opp-rating").text(Math.round(activeOpponent.rating));
+
+                // 2. Update Database in Background
+                db.collection("academy_players").doc(currentUser.id).update({ 
+                    rating: currentUser.rating 
+                }).catch(err => console.error("Leaderboard Sync Error:", err));
             }
+
             const res = userWon === null ? "DRAW" : (userWon ? "VICTORY" : "DEFEAT");
-            $("#game-status").html(`<span style="font-size:18px;">${res}${changeStr}</span>`);
-            $("#btn-draw, #btn-resign").hide(); $("#btn-rematch, #btn-lobby-home, #btn-exit-home").show();
+            $("#game-status").html(`<span style="font-size:18px;">${res}${changeStr}</span>${detailStr}`);
+            $("#btn-draw, #btn-resign").hide(); 
+            $("#btn-rematch, #btn-lobby-home, #btn-exit-home").show();
         }
+
+        window.handleGameOver = handleGameOver;
 
         function acceptChallenge() {
             const btn = $("#btn-accept");
@@ -678,20 +529,7 @@
         }
 
         function offerDraw() { if (Math.random() > 0.8) handleGameOver(null); else showDeclinedPopup(); }
-        
-        function handleResignation() {
-            if (confirm("Are you sure you want to resign?")) {
-                handleGameOver(false);
-            }
-        }
-
-        function quitToLobby() { 
-            clearInterval(gameTimer); 
-            removeLiveBroadcast(currentUser.id); // Teardown stream
-            $("#section-game").addClass("hidden"); 
-            $("#section-lobby").removeClass("hidden"); 
-            showSubSection('online'); 
-        }
+        function quitToLobby() { clearInterval(gameTimer); $("#section-game").addClass("hidden"); $("#section-lobby").removeClass("hidden"); showSubSection('online'); }
     </script>
 </body>
 </html>
