@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mind Masters | Championship Arena</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
+    <style>
+        :root { --primary: #2D1B4D; --secondary: #4ade80; --bg: #0f172a; --text: #f8fafc; --card: #1e293b; --danger: #ef4444; --accent: #3b82f6; --gold: #fbbf24; --silver: #94a3b8; --bronze: #cd7f32; }
+        body { font-family: 'Segoe UI', Roboto, sans-serif; background: radial-gradient(circle at top, #1e293b 0%, #0f172a 100%); color: var(--text); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .container { width: 100%; max-width: 420px; background: rgba(30, 41, 59, 0.7); padding: 25px; border-radius: 16px; box-sizing: border-box; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .leaderboard-container { width: 100%; max-width: 420px; background: rgba(30, 41, 59, 0.7); padding: 25px; border-radius: 16px; box-sizing: border-box; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); }
+        .hidden { display: none !important; }
+        h2, h3 { color: var(--secondary); text-align: center; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 2px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        
+        .rules-wrapper { margin-bottom: 20px; }
+        .rules-toggle { width: 100%; background: rgba(59, 130, 246, 0.1); border: 1px solid var(--accent); color: var(--accent); padding: 8px; border-radius: 8px; font-size: 10px; font-weight: 800; cursor: pointer; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; }
+        .rules-content { background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(59, 130, 246, 0.3); border-top: none; padding: 12px; border-radius: 0 0 8px 8px; font-size: 0.75rem; line-height: 1.4; color: #cbd5e1; }
+        .rules-content b { color: var(--gold); }
+
+        .auth-toggle { display: flex; gap: 8px; margin-bottom: 20px; background: #0f172a; padding: 5px; border-radius: 12px; }
+        .auth-toggle button { flex: 1; padding: 10px; font-size: 10px; background: transparent; color: #64748b; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        .auth-toggle button.active { background: var(--card); color: var(--secondary); }
+        .btn { padding: 16px; cursor: pointer; border-radius: 10px; border: none; background: linear-gradient(135deg, #2D1B4D 0%, #4c1d95 100%); color: var(--secondary); font-weight: 800; width: 100%; margin-bottom: 12px; text-transform: uppercase; transition: 0.3s; font-size: 13px; letter-spacing: 1px; }
+        
+        .item-row { background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05); font-size: 0.8em; transition: 0.3s; }
+        .player-info { display: flex; flex-direction: column; gap: 2px; }
+        .player-school { font-size: 0.65rem; color: #94a3b8; font-style: italic; }
+
+        .top-5-highlight { border: 1px solid rgba(251, 191, 36, 0.4) !important; background: linear-gradient(90deg, rgba(30, 41, 59, 0.8) 0%, rgba(251, 191, 36, 0.05) 100%) !important; box-shadow: 0 0 15px rgba(251, 191, 36, 0.1); }
+        .top-5-highlight b { color: var(--gold); text-shadow: 0 0 8px rgba(251, 191, 36, 0.3); }
+
+        .hall-section { margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px; }
+        .gm-card { background: linear-gradient(135deg, rgba(45, 27, 77, 0.5) 0%, rgba(74, 222, 128, 0.1) 100%); border: 1px solid var(--gold); padding: 15px; border-radius: 12px; text-align: center; position: relative; overflow: hidden; margin-bottom: 10px; }
+        .gm-card::after { content: 'LEGEND'; position: absolute; top: 10px; right: -25px; transform: rotate(45deg); background: var(--gold); color: black; font-size: 8px; font-weight: 900; padding: 2px 30px; }
+
+        .live-badge { background: var(--danger); color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.6em; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        #chat-container { margin-top: 15px; background: #020617; border-radius: 12px; padding: 10px; border: 1px solid #334155; }
+        #chat-box { height: 100px; overflow-y: auto; font-size: 11px; margin-bottom: 10px; padding-right: 5px; scroll-behavior: smooth; }
+        .chat-msg { margin-bottom: 6px; line-height: 1.4; color: #cbd5e1; }
+        .chat-user { color: var(--secondary); font-weight: bold; margin-right: 4px; }
+        .chat-input-wrap { display: flex; gap: 5px; }
+        .chat-input-wrap input { margin-bottom: 0 !important; padding: 8px !important; font-size: 12px; flex: 1; }
+        .chat-send { width: 60px !important; padding: 8px !important; margin-bottom: 0 !important; font-size: 10px; }
+        .replay-nav { display: flex; justify-content: center; align-items: center; gap: 15px; margin: 10px 0; }
+        .replay-btn { background: var(--card); border: 1px solid #334155; color: var(--secondary); border-radius: 8px; padding: 8px 15px; cursor: pointer; font-weight: bold; }
+        #replay-label { font-size: 11px; color: var(--secondary); letter-spacing: 1px; font-weight: bold; min-width: 80px; text-align: center; }
+        .deadline-badge { font-size: 12px; color: #fbbf24; text-align: center; margin-bottom: 10px; font-weight: 900; text-transform: uppercase; background: rgba(0,0,0,0.4); padding: 10px; border-radius: 8px; border: 1px solid #fbbf24; display: block; }
+        input, select { width: 100%; padding: 14px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
+        
+        .rank-badge { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 10px; font-weight: bold; margin-right: 10px; background: #334155; flex-shrink: 0; }
+        .rank-1 { background: var(--gold); color: #000; box-shadow: 0 0 10px var(--gold); }
+        .rank-2 { background: var(--silver); color: #000; }
+        .rank-3 { background: var(--bronze); color: #000; }
+
+        /* Profile School Edit Section */
+        .school-edit-wrap { margin-bottom: 20px; text-align: center; position: relative; }
+        .school-edit-wrap label { font-size: 10px; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 5px; font-weight: bold; }
+        .school-input-lobby { border: 1px solid #334155; background: rgba(0,0,0,0.3); color: var(--secondary); padding: 8px 35px 8px 10px; border-radius: 8px; text-align: center; font-size: 12px; width: 85%; margin: 0 auto; display: block; outline: none; }
+        .school-save-btn { position: absolute; right: 10%; bottom: 8px; background: transparent; border: none; color: var(--gold); cursor: pointer; font-size: 14px; transition: 0.2s; }
+        .school-save-btn:hover { transform: scale(1.2); }
+    </style>
+</head>
+<body>
+
+    <h1 style="color: var(--secondary); margin-bottom: 25px; font-style: italic; letter-spacing: 4px;">♟️ ARENA</h1>
+
+    <div id="section-register" class="container">
+        <div class="auth-toggle">
+            <button id="tab-login" class="active" onclick="switchAuth('login')">LOGIN</button>
+            <button id="tab-register" onclick="switchAuth('register')">REGISTER</button>
+            <button id="tab-guest" onclick="switchAuth('guest')">GUEST</button>
+        </div>
+        <div id="auth-form">
+            <h2 id="auth-title">Welcome Back</h2>
+            <input type="text" id="reg-name" placeholder="Full Name">
+            <input type="password" id="reg-password" placeholder="PIN">
+            <div id="extra-fields" class="hidden">
+                <input type="text" id="reg-school" placeholder="School Name">
+                <select id="reg-avatar">
+                    <option value="⚔️">Attacking/Tactical</option>
+                    <option value="🛡️">Solid/Defensive</option>
+                    <option value="🧠">Strategic/Positional</option>
+                    <option value="⚡">Speed/Blitz Specialist</option>
+                    <option value="🏆">Endgame Expert</option>
+                </select>
+            </div>
+            <button class="btn" onclick="handleAuth()">Enter Arena</button>
+        </div>
+    </div>
+
+    <div id="section-lobby" class="container hidden">
+        <div id="user-welcome"></div>
+        
+        <div class="school-edit-wrap">
+            <label>School Name</label>
+            <input type="text" id="lobby-school-input" class="school-input-lobby" placeholder="Update School">
+            <button class="school-save-btn" onclick="updateMySchool($('#lobby-school-input').val())">💾</button>
+        </div>
+
+        <div class="rules-wrapper">
+            <button class="rules-toggle" onclick="$('#rules-body').toggleClass('hidden')">
+                📜 Arena Rules <span>▼</span>
+            </button>
+            <div id="rules-body" class="rules-content hidden">
+                • <b>3-DAY CLOCK:</b> Move within 72hrs or lose 20pts! <br>
+                • <b>GLORY:</b> Top masters qualify for school tournaments!
+            </div>
+        </div>
+
+        <div id="vs-computer-section" style="margin-bottom: 20px;">
+            <h3>🤖 PLAY COMPUTER</h3>
+            <button class="btn" onclick="startComputerGame()" style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: #fff;">
+                CHALLENGE AI (LEVEL 4)
+            </button>
+        </div>
+
+        <div id="live-games-section">
+            <h3><span class="live-badge">LIVE</span> WATCH GAMES</h3>
+            <div id="live-games-list"></div>
+        </div>
+        <div id="my-matches-section">
+            <h3>⚔️ MY ACTIVE GAMES</h3>
+            <div id="my-match-list"></div>
+        </div>
+        <div id="player-list-section">
+            <h3>🤝 CHALLENGE</h3>
+            <div id="player-challenge-list"></div>
+        </div>
+        <button class="btn" style="background: transparent; border: 1px solid #334155; color: #64748b; margin-top: 15px;" onclick="logout()">LOGOUT</button>
+    </div>
+
+    <div id="section-game" class="container hidden">
+        <div style="display:flex; justify-content:space-between; margin: 10px 0; font-size: 0.85em;">
+            <span id="label-white">White</span>
+            <span id="label-black">Black</span>
+        </div>
+        <div id="myBoard" style="width: 100%; border-radius: 12px; overflow: hidden; border: 4px solid #1e293b;"></div>
+        <div class="replay-nav">
+            <button class="replay-btn" onclick="updateReplayView(-1)">←</button>
+            <span id="replay-label">LIVE VIEW</span>
+            <button class="replay-btn" onclick="updateReplayView(1)">→</button>
+        </div>
+        <div id="deadline-timer" class="deadline-badge">CLOCK INITIALIZING...</div>
+        <div id="game-status" style="text-align:center; font-weight:bold; color: var(--secondary); margin-bottom: 10px;"></div>
+        
+        <div id="game-actions" class="hidden" style="display:flex; gap:10px; margin-top:15px;">
+            <button class="btn" style="margin-bottom:0; font-size:11px;" onclick="offerDraw()">Offer/Accept Draw</button>
+            <button class="btn" style="margin-bottom:0; font-size:11px; background:var(--danger);" onclick="resignGame()">Resign</button>
+        </div>
+
+        <div id="chat-container">
+            <div id="chat-box"></div>
+            <div class="chat-input-wrap">
+                <input type="text" id="chat-input" placeholder="Say something..." onkeypress="if(event.key === 'Enter') sendChat()">
+                <button class="btn chat-send" onclick="sendChat()">SEND</button>
+            </div>
+        </div>
+        <button class="btn" style="margin-top:15px;" onclick="showLobby()">Back to Lobby</button>
+    </div>
+
+    <div id="leaderboard-persistent" class="leaderboard-container">
+        <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 0 0 20px 0;">
+        <h3>🏆 TOP MASTERS</h3>
+        <div id="front-leaderboard">
+            <p style="text-align:center; font-size:10px; color:#64748b;">Loading rankings...</p>
+        </div>
+
+        <div class="hall-section">
+            <h3 style="color: var(--gold);">🏛️ HALL OF GRANDMASTERS</h3>
+            <div id="hall-of-fame">
+                <p style="text-align:center; font-size:10px; color:#64748b;">Waiting for Legends...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+          authDomain: "assignments-de95a.firebaseapp.com",
+          projectId: "assignments-de95a",
+          storageBucket: "assignments-de95a.firebasestorage.app",
+          messagingSenderId: "1088073398299",
+          appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let myId = localStorage.getItem('savedUserId'), myData = null, board = null, game = new Chess(), 
+            activeMatchId = null, authMode = 'login', sourceSquare = null, historyMoves = [], viewIndex = -1,
+            liveTimer = null, chatUnsubscribe = null, matchData = null;
+
+        // Web Worker integration for garbochess
+        let chessWorker = null;
+
+        window.onload = async function() {
+            loadFrontLeaderboard();
+            initWorker(); // Set up the communication bridge
+            if (myId) {
+                const doc = await db.collection("academy_players").doc(myId).get();
+                if (doc.exists) { 
+                    myData = doc.data(); 
+                    await cleanExpiredGames(); 
+                    showLobby(); 
+                }
+            }
+        };
+
+        // Initialize and listen to the garbochess engine worker
+        function initWorker() {
+            if (window.Worker) {
+                chessWorker = new Worker('chess-worker.js');
+                chessWorker.onmessage = function(e) {
+                    const engineMoveStr = e.data; // Expected format: 'e2e4', 'g1f3', etc.
+                    if (engineMoveStr && activeMatchId === "vs_computer") {
+                        // Decode engine move and apply it to the game instance
+                        const fromSq = engineMoveStr.substring(0, 2);
+                        const toSq = engineMoveStr.substring(2, 4);
+                        const promo = engineMoveStr.length === 5 ? engineMoveStr.charAt(4) : undefined;
+
+                        const move = game.move({ from: fromSq, to: toSq, promotion: promo || 'q' });
+                        if (move) {
+                            board.position(game.fen());
+                            historyMoves = game.history();
+                            viewIndex = historyMoves.length - 1;
+                            updateGameStatusUI();
+                            saveComputerGameSession();
+                        }
+                    }
+                };
+            }
+        }
+
+        async function updateMySchool(newSchool) {
+            if(!myId || myId.startsWith('guest')) return;
+            const schoolName = newSchool.trim() || "Independent";
+            const btn = $(".school-save-btn");
+            btn.text("⏳"); // Show loading
+            
+            try {
+                await db.collection("academy_players").doc(myId).update({ school: schoolName });
+                myData.school = schoolName;
+                loadFrontLeaderboard();
+                btn.text("✅"); // Success feedback
+                setTimeout(() => btn.text("💾"), 2000); // Revert after 2s
+            } catch (err) {
+                btn.text("❌");
+                setTimeout(() => btn.text("💾"), 2000);
+            }
+        }
+
+        async function cleanExpiredGames() {
+            const now = Date.now();
+            const threeDays = 259200000;
+            const snap = await db.collection("academy_matches").where("status", "==", "active").get();
+            for (const doc of snap.docs) {
+                const d = doc.data();
+                const lastTime = d.lastMoveTime || (now - (threeDays + 1000)); 
+                if (now - lastTime > threeDays) {
+                    const tempGame = new Chess();
+                    tempGame.load_pgn(d.pgn || "");
+                    const turn = tempGame.turn();
+                    const loserId = (turn === 'w') ? d.white : d.black;
+                    const winnerId = (turn === 'w') ? d.black : d.white;
+                    await db.collection("academy_matches").doc(doc.id).update({ status: "terminated" });
+                    await adjustRating(winnerId, 20);
+                    await adjustRating(loserId, -20);
+                }
+            }
+            loadFrontLeaderboard();
+        }
+
+        async function adjustRating(playerId, amount) {
+            const ref = db.collection("academy_players").doc(playerId);
+            const doc = await ref.get();
+            if(doc.exists) {
+                const newRating = (doc.data().rating || 1500) + amount;
+                await ref.update({ rating: newRating });
+            }
+        }
+
+        function loadFrontLeaderboard() {
+            db.collection("academy_players").orderBy("rating", "desc").get().then(snap => {
+                let html = ""; let hallHtml = ""; let rank = 1;
+                snap.forEach(doc => {
+                    const p = doc.data(); 
+                    const rankClass = rank <= 3 ? `rank-${rank}` : "";
+                    const highlightClass = rank <= 5 ? "top-5-highlight" : "";
+                    const schoolText = p.school ? p.school : "Independent";
+                    html += `
+                        <div class="item-row ${highlightClass}">
+                            <div style="display: flex; align-items: center;">
+                                <span class="rank-badge ${rankClass}">${rank}</span>
+                                <div class="player-info">
+                                    <b style="font-size: 0.85rem;">${p.name}</b>
+                                    <span class="player-school">${schoolText}</span>
+                                </div>
+                            </div>
+                            <span style="color: var(--gold); font-weight:bold;">${p.rating}</span>
+                        </div>`;
+                    if(rank === 1 && p.rating >= 1600) {
+                        hallHtml = `
+                        <div class="gm-card">
+                            <h4 style="margin:0; color: var(--gold); letter-spacing:2px;">${p.name.toUpperCase()}</h4>
+                            <p style="margin:5px 0 0 0; font-size:10px; color:rgba(255,255,255,0.7);">${schoolText}</p>
+                            <div style="margin-top:10px; font-size:14px; font-weight:bold; color:var(--secondary);">ELO: ${p.rating}</div>
+                        </div>`;
+                    }
+                    rank++;
+                });
+                document.getElementById('front-leaderboard').innerHTML = html || "<p style='font-size:10px; text-align:center;'>No players yet.</p>";
+                if(hallHtml) document.getElementById('hall-of-fame').innerHTML = hallHtml;
+            });
+        }
+
+        function switchAuth(mode) {
+            authMode = mode; $(".auth-toggle button").removeClass("active"); $(`#tab-${mode}`).addClass("active");
+            $("#extra-fields").addClass("hidden"); $("#reg-password").removeClass("hidden");
+            if(mode === 'login') $("#auth-title").text("Welcome Back");
+            else if(mode === 'register') { $("#auth-title").text("Create Profile"); $("#extra-fields").removeClass("hidden"); }
+            else { $("#auth-title").text("Enter as Guest"); $("#reg-password").addClass("hidden"); }
+        }
+
+        async function handleAuth() {
+            if(authMode === 'guest') {
+                myId = "guest_" + Math.floor(Math.random() * 10000);
+                myData = { name: "Guest_" + myId.split('_')[1], rating: 1200, pin: "guest", school: "Guest" };
+                return showLobby();
+            }
+            const name = $("#reg-name").val().trim(), pin = $("#reg-password").val(), id = name.toLowerCase().replace(/\s/g, '_');
+            const school = $("#reg-school").val().trim();
+            if(!name || !pin) return alert("Please fill in all required fields.");
+            const docRef = db.collection("academy_players").doc(id), doc = await docRef.get();
+            if (authMode === 'login') {
+                if (!doc.exists || (doc.data().pin !== pin && pin !== "decipher1234")) return alert("Invalid PIN or Username");
+                myData = doc.data();
+            } else {
+                if (doc.exists) return alert("Name taken!");
+                myData = { name, pin, rating: 1500, school: school || "Independent" };
+                await docRef.set(myData);
+            }
+            myId = id; localStorage.setItem('savedUserId', id); 
+            await cleanExpiredGames();
+            showLobby();
+        }
+
+        function showLobby() {
+            $(".container").addClass("hidden"); $("#section-lobby").removeClass("hidden");
+            if(liveTimer) clearInterval(liveTimer);
+            if(chatUnsubscribe) chatUnsubscribe();
+            document.getElementById('user-welcome').innerHTML = `<h3>${myData.name}</h3>`;
+            document.getElementById('lobby-school-input').value = myData.school || "Independent";
+            loadLobbyData();
+        }
+
+        function loadLobbyData() {
+            db.collection("academy_matches").where("status", "==", "active").onSnapshot(snap => {
+                let liveHtml = "", myHtml = "";
+                const now = Date.now();
+                const threeDays = 259200000;
+                snap.forEach(doc => {
+                    const d = doc.data(); 
+                    if (now - (d.lastMoveTime || now) > threeDays) return;
+                    const opp = d.white === myId ? d.black : d.white;
+                    if(d.players.includes(myId)) myHtml += `<button class="btn" onclick="loadGame('${doc.id}')">PLAY VS ${opp.toUpperCase()}</button>`;
+                    else liveHtml += `<div class="item-row" onclick="loadGame('${doc.id}')" style="cursor:pointer;"><span>${d.white} vs ${d.black}</span><span class="live-badge">WATCH</span></div>`;
+                });
+                
+                // Add Local storage checker for active AI Game session
+                if (localStorage.getItem('ai_game_pgn')) {
+                    myHtml = `<button class="btn" style="background: linear-gradient(135deg, #047857 0%, #10b981 100%);" onclick="loadComputerGame()">RESUME GAME VS COMPUTER</button>` + myHtml;
+                }
+
+                document.getElementById('my-match-list').innerHTML = myHtml || "<p style='font-size:10px; text-align:center;'>No active matches.</p>";
+                document.getElementById('live-games-list').innerHTML = liveHtml || "<p style='font-size:10px; text-align:center;'>No live games to watch.</p>";
+            });
+            if(myId && !myId.startsWith('guest')) {
+                db.collection("academy_players").limit(15).get().then(snap => {
+                    let pList = "";
+                    snap.forEach(doc => { if(doc.id !== myId) pList += `<div class="item-row"><span>${doc.data().name}</span><button onclick="challenge('${doc.id}')" style="background:var(--secondary); border:none; border-radius:4px; padding:6px; font-weight:bold; cursor:pointer;">⚔️ CHALLENGE</button></div>`; });
+                    document.getElementById('player-challenge-list').innerHTML = pList || "<p style='font-size:10px; text-align:center;'>No other players found.</p>";
+                });
+            }
+        }
+
+        async function challenge(oppId) {
+            const matchId = `${myId}_vs_${oppId}_${Date.now()}`;
+            await db.collection("academy_matches").doc(matchId).set({
+                white: myId, black: oppId, players: [myId, oppId], status: "active", fen: "start", pgn: "", lastMoveTime: Date.now(), drawOffer: null
+            });
+            loadGame(matchId);
+        }
+
+        // START VS COMPUTER
+        function startComputerGame() {
+            localStorage.removeItem('ai_game_pgn');
+            loadComputerGame();
+        }
+
+        // LOAD VS COMPUTER
+        function loadComputerGame() {
+            activeMatchId = "vs_computer"; viewIndex = -1;
+            $(".container").addClass("hidden"); $("#section-game").removeClass("hidden");
+            
+            game = new Chess();
+            const savedPgn = localStorage.getItem('ai_game_pgn');
+            if (savedPgn) game.load_pgn(savedPgn);
+
+            historyMoves = game.history();
+            viewIndex = historyMoves.length - 1;
+
+            if (!board) {
+                board = ChessBoard('myBoard', { draggable: false, position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
+                $('#myBoard').on('click', '.square-55d63', onSquareClick);
+            }
+            board.orientation('white');
+            board.position(game.fen());
+
+            matchData = {
+                white: myId,
+                black: "Computer (Garbochess)",
+                players: [myId],
+                status: "active"
+            };
+
+            document.getElementById('label-white').innerText = "W: " + myData.name;
+            document.getElementById('label-black').innerText = "B: Computer (AI)";
+            document.getElementById('deadline-timer').innerText = "🤖 Local Training Mode";
+            $("#game-actions").addClass("hidden"); // Handled offline
+            
+            // Render local chat for practice mode
+            document.getElementById('chat-box').innerHTML = `<div class="chat-msg"><span class="chat-user">System:</span> Playing in Local Training Mode vs. AI. Good luck!</div>`;
+            updateGameStatusUI();
+        }
+
+        function saveComputerGameSession() {
+            if (activeMatchId === "vs_computer") {
+                localStorage.setItem('ai_game_pgn', game.pgn());
+            }
+        }
+
+        function triggerEngineSearch() {
+            if (chessWorker && activeMatchId === "vs_computer" && game.turn() === 'b' && !game.game_over()) {
+                document.getElementById('game-status').innerText = "COMPUTER IS THINKING...";
+                chessWorker.postMessage("position " + game.fen());
+            }
+        }
+
+        function updateGameStatusUI() {
+            if (game.game_over()) {
+                document.getElementById('game-status').innerText = "GAME OVER";
+                if (activeMatchId === "vs_computer") {
+                    localStorage.removeItem('ai_game_pgn');
+                }
+            } else {
+                document.getElementById('game-status').innerText = game.turn() === 'w' ? "YOUR TURN (WHITE)" : "COMPUTER'S TURN (BLACK)";
+            }
+        }
+
+        function loadGame(id) {
+            activeMatchId = id; viewIndex = -1;
+            $(".container").addClass("hidden"); $("#section-game").removeClass("hidden");
+            if (!board) {
+                board = ChessBoard('myBoard', { draggable: false, position: 'start', pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
+                $('#myBoard').on('click', '.square-55d63', onSquareClick);
+            }
+            if(chatUnsubscribe) chatUnsubscribe();
+            chatUnsubscribe = db.collection("academy_matches").doc(id).collection("chat").orderBy("time", "asc").onSnapshot(snap => {
+                let html = ""; snap.forEach(doc => { const m = doc.data(); html += `<div class="chat-msg"><span class="chat-user">${m.user}:</span> ${m.text}</div>`; });
+                const box = document.getElementById('chat-box'); box.innerHTML = html; box.scrollTop = box.scrollHeight;
+            });
+            db.collection("academy_matches").doc(id).onSnapshot(doc => {
+                const d = doc.data(); if (!doc.exists) return;
+                matchData = d; 
+                if (d.status !== "active") {
+                    game.load_pgn(d.pgn || ""); board.position(game.fen());
+                    document.getElementById('game-status').innerText = "GAME OVER";
+                    document.getElementById('deadline-timer').innerText = "🏁 FINISHED";
+                    $("#game-actions").addClass("hidden"); return;
+                }
+                const oldLen = historyMoves.length;
+                game.load_pgn(d.pgn || "");
+                historyMoves = game.history();
+                if (viewIndex === -1 || viewIndex >= oldLen - 1) {
+                    viewIndex = historyMoves.length - 1;
+                    if(!sourceSquare) board.position(game.fen());
+                }
+                if(liveTimer) clearInterval(liveTimer);
+                const timerDisplay = document.getElementById('deadline-timer');
+                const startTimer = () => {
+                    const lastMove = d.lastMoveTime || Date.now();
+                    const diff = lastMove + (259200000) - Date.now();
+                    if(diff <= 0) {
+                        timerDisplay.innerText = "⚠️ EXPIRED";
+                        if(d.players.includes(myId)) cleanExpiredGames();
+                    }
+                    else {
+                        const h = Math.floor((diff / 3600000) % 24), m = Math.floor((diff / 60000) % 60), s = Math.floor((diff / 1000) % 60);
+                        const days = Math.floor(diff / 86400000);
+                        timerDisplay.innerText = `⏳ ${days}d ${h}h ${m}m ${s}s`;
+                    }
+                };
+                startTimer(); liveTimer = setInterval(startTimer, 1000);
+                $("#game-actions").toggleClass("hidden", !d.players.includes(myId)).css("display", d.players.includes(myId) ? "flex" : "none");
+                document.getElementById('label-white').innerText = "W: " + d.white;
+                document.getElementById('label-black').innerText = "B: " + d.black;
+                document.getElementById('game-status').innerText = (game.turn() === 'w' ? "WHITE'S TURN" : "BLACK'S TURN") + (d.drawOffer ? ` | DRAW OFFER` : "");
+                if(d.players.includes(myId)) board.orientation(myId === d.white ? 'white' : 'black');
+            });
+        }
+
+        function onSquareClick() {
+            const sq = $(this).attr('data-square');
+            if (!matchData || matchData.status !== "active") return;
+
+            const isVsComputer = (activeMatchId === "vs_computer");
+            const isMyTurn = isVsComputer ? (game.turn() === 'w') : ((game.turn() === 'w' && myId === matchData.white) || (game.turn() === 'b' && myId === matchData.black));
+            
+            if (!isMyTurn) return;
+
+            if (sourceSquare === null) {
+                const piece = game.get(sq);
+                if (piece && piece.color === game.turn()) { 
+                    sourceSquare = sq; $('.square-55d63').css('background', ''); 
+                    $(this).css('background', 'rgba(74, 222, 128, 0.5)'); 
+                }
+            } else {
+                const move = game.move({ from: sourceSquare, to: sq, promotion: 'q' });
+                if (move) {
+                    board.position(game.fen()); 
+                    sourceSquare = null; $('.square-55d63').css('background', '');
+                    historyMoves = game.history();
+                    viewIndex = historyMoves.length - 1;
+
+                    if (isVsComputer) {
+                        updateGameStatusUI();
+                        saveComputerGameSession();
+                        // Trigger computerized response
+                        setTimeout(triggerEngineSearch, 500);
+                    } else {
+                        db.collection("academy_matches").doc(activeMatchId).update({ 
+                            fen: game.fen(), pgn: game.pgn(), lastMoveTime: Date.now(), drawOffer: null 
+                        });
+                    }
+                } else {
+                    const piece = game.get(sq);
+                    if (piece && piece.color === game.turn()) {
+                        sourceSquare = sq; $('.square-55d63').css('background', ''); 
+                        $(this).css('background', 'rgba(74, 222, 128, 0.5)');
+                    } else { sourceSquare = null; $('.square-55d63').css('background', ''); }
+                }
+            }
+        }
+
+        function updateReplayView(dir) {
+            let targetIndex = viewIndex + dir;
+            if (targetIndex < -1 || targetIndex >= historyMoves.length) return;
+            viewIndex = targetIndex;
+            let tempGame = new Chess();
+            for (let i = 0; i <= viewIndex; i++) tempGame.move(historyMoves[i]);
+            board.position(tempGame.fen());
+            document.getElementById('replay-label').innerText = viewIndex === historyMoves.length - 1 ? "LIVE VIEW" : `MOVE ${viewIndex + 1}`;
+        }
+
+        async function offerDraw() {
+            const d = matchData, myColor = (myId === d.white) ? 'white' : 'black';
+            if(d.drawOffer && d.drawOffer !== myColor) await db.collection("academy_matches").doc(activeMatchId).update({ status: "draw", drawOffer: null });
+            else if(!d.drawOffer) await db.collection("academy_matches").doc(activeMatchId).update({ drawOffer: myColor });
+        }
+
+        async function resignGame() { if(confirm("Resign?")) await db.collection("academy_matches").doc(activeMatchId).update({ status: (myId === matchData.white ? "white" : "black") + "_resigned" }); }
+        async function sendChat() {
+            const txt = $("#chat-input").val().trim(); if(!txt) return;
+            if (activeMatchId === "vs_computer") {
+                const box = document.getElementById('chat-box');
+                box.innerHTML += `<div class="chat-msg"><span class="chat-user">${myData.name}:</span> ${txt}</div>`;
+                box.scrollTop = box.scrollHeight;
+                $("#chat-input").val("");
+                return;
+            }
+            await db.collection("academy_matches").doc(activeMatchId).collection("chat").add({ user: myData.name, text: txt, time: Date.now() });
+            $("#chat-input").val("");
+        }
+        function logout() { localStorage.removeItem('savedUserId'); location.reload(); }
+    </script>
+</body>
+</html>
