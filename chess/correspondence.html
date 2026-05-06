@@ -141,6 +141,24 @@
             text-align: center;
         }
 
+        /* Declined Dialog Specific Styling */
+        #declined-popup {
+            position: fixed; 
+            top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); 
+            background: linear-gradient(135deg, rgba(37, 26, 26, 0.95) 0%, rgba(20, 14, 14, 0.98) 100%);
+            border: 1px solid rgba(239, 68, 68, 0.4); 
+            padding: 30px; 
+            border-radius: 24px; 
+            z-index: 1000; 
+            width: 320px; 
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 
+                        0 0 40px rgba(239, 68, 68, 0.15);
+            display: none;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
         .popup-pulse-ring {
             width: 56px; height: 56px;
             background: rgba(74, 222, 128, 0.1);
@@ -151,10 +169,22 @@
             animation: pulseGlow 2s infinite;
         }
 
+        .popup-pulse-ring.red-ring {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: var(--danger);
+            animation: pulseGlowRed 2s infinite;
+        }
+
         @keyframes pulseGlow {
             0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4); }
             70% { box-shadow: 0 0 0 12px rgba(74, 222, 128, 0); }
             100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+        }
+
+        @keyframes pulseGlowRed {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            70% { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
 
         .item-row { 
@@ -215,9 +245,11 @@
 
         <div id="game-status" style="text-align:center; margin:15px 0; color:var(--gold); font-weight:600;"></div>
         <div id="game-controls" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-            <button class="btn" onclick="offerDraw()">Offer Draw</button>
-            <button class="btn" style="color:var(--danger)" onclick="quitToLobby()">Resign</button>
+            <button class="btn" id="btn-draw" onclick="offerDraw()">Offer Draw</button>
+            <button class="btn" style="color:var(--danger)" id="btn-resign" onclick="quitToLobby()">Resign</button>
             <button class="btn btn-green" id="btn-rematch" style="display:none; grid-column: span 2;" onclick="startBotGame(activeBot)">Request Rematch</button>
+            <button class="btn btn-blue" id="btn-lobby-home" style="display:none; grid-column: span 1;" onclick="quitToLobby()">Player Menu</button>
+            <button class="btn" id="btn-exit-home" style="display:none; grid-column: span 1; background: #555;" onclick="goToAuthPage()">Home</button>
         </div>
     </div>
 
@@ -234,6 +266,16 @@
             <button class="btn btn-green" id="btn-accept" style="margin-bottom:0; flex:1;" onclick="acceptChallenge()">ACCEPT</button>
             <button class="btn" id="btn-decline" style="background: rgba(255,255,255,0.08); color: #fff; margin-bottom:0; flex:1;" onclick="hidePopup()">DECLINE</button>
         </div>
+    </div>
+
+    <div id="declined-popup">
+        <div class="popup-pulse-ring red-ring">
+            <span style="font-size:24px;">⚔️</span>
+        </div>
+        <div style="font-size:11px; color:var(--danger); font-weight:700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom:6px;">Offer Declined</div>
+        <div id="declined-popup-text" style="font-size:1.1rem; color:white; font-weight:700; margin-bottom: 12px; letter-spacing: -0.5px;">Draw Offer Refused!</div>
+        <div style="font-size:12px; color:#c7a3a3; margin-bottom:24px; font-weight: 300;">Your opponent wants to fight to the finish. Keep playing!</div>
+        <button class="btn btn-blue" style="margin-bottom:0; width: 100%;" onclick="hideDeclinedPopup()">RESUME MATCH</button>
     </div>
 
     <script>
@@ -282,6 +324,23 @@
         function hidePopup() {
             $("#popup-overlay").fadeOut(250);
             $("#challenge-popup").fadeOut(250);
+        }
+
+        function showDeclinedPopup() {
+            $("#popup-overlay").fadeIn(300);
+            $("#declined-popup").fadeIn(300);
+        }
+
+        function hideDeclinedPopup() {
+            $("#popup-overlay").fadeOut(250);
+            $("#declined-popup").fadeOut(250);
+        }
+
+        function goToAuthPage() {
+            clearInterval(gameTimer);
+            $("#section-game").addClass("hidden");
+            $("#section-lobby").addClass("hidden");
+            $("#section-auth").fadeIn(400);
         }
 
         function handleLogin(mode) {
@@ -358,17 +417,35 @@
             if (type === 'online') {
                 $("#lobby-title").text("Players Online");
                 html = "";
-                onlineBots.forEach(b => {
-                    html += `
-                        <div class="item-row">
-                            <span>🟢 ${b.name} <span class="rating-tag">${Math.round(b.rating)}</span></span>
-                            <button class="btn" style="width:auto; padding:5px 12px; font-size:11px; margin-bottom:0;" onclick="challengeUser('${b.id}')">Challenge</button>
-                        </div>`;
+                
+                // Fetch dynamic human players alongside standard bots
+                db.collection("academy_players").get().then(snap => {
+                    let totalUsers = [];
+                    snap.forEach(doc => {
+                        const profile = doc.data();
+                        if (profile.id !== currentUser.id) {
+                            totalUsers.push(profile);
+                        }
+                    });
+
+                    // Merge and render both real human players & bots
+                    let activeList = totalUsers.sort(() => 0.5 - Math.random()).slice(0, 6);
+                    if (activeList.length === 0) {
+                        activeList = onlineBots;
+                    }
+
+                    activeList.forEach(b => {
+                        html += `
+                            <div class="item-row">
+                                <span>🟢 ${b.name} <span class="rating-tag">${Math.round(b.rating)}</span></span>
+                                <button class="btn" style="width:auto; padding:5px 12px; font-size:11px; margin-bottom:0;" onclick="challengeUser('${b.id}')">Challenge</button>
+                            </div>`;
+                    });
+                    $("#lobby-list").html(html);
                 });
-                $("#lobby-list").html(html);
             } else if (type === 'leader') {
-                $("#lobby-title").text("Arena Top 20");
-                db.collection("academy_players").orderBy("rating", "desc").limit(20).get().then(snap => {
+                $("#lobby-title").text("Arena Top 50");
+                db.collection("academy_players").orderBy("rating", "desc").limit(50).get().then(snap => {
                     html = "";
                     let rank = 1;
                     snap.forEach(doc => {
@@ -383,26 +460,32 @@
                     $("#lobby-list").html(html);
                 });
             } else if (type === 'live-games') {
-                // Pick two distinct, real-named players from the BOT_POOL
-                const shuffledBots = BOT_POOL.sort(() => 0.5 - Math.random());
-                const player1 = shuffledBots[0];
-                const player2 = shuffledBots[1];
+                // Feature Live Real-Human Game or Simulated Battle
+                db.collection("academy_players").limit(2).get().then(snap => {
+                    let players = [];
+                    snap.forEach(d => players.push(d.data()));
+                    if (players.length < 2) {
+                        players = BOT_POOL.sort(() => 0.5 - Math.random());
+                    }
+                    const player1 = players[0];
+                    const player2 = players[1];
 
-                $("#lobby-title").text("Live Arena Games");
-                html = `
-                    <div style="text-align:center; margin-bottom: 10px;">
-                        <span style="color:var(--secondary); font-size:12px; font-weight:bold;">🔴 WATCHING LIVE MATCH</span>
-                    </div>
-                    <div class="player-bar top" style="background:#151311; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                        <div>⚫ ${player1.name} <span class="rating-tag">${player1.rating}</span></div>
-                    </div>
-                    <div id="liveBoard" style="width: 100%; margin-bottom:0;"></div>
-                    <div class="player-bar bottom" style="background:#151311; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                        <div>⚪ ${player2.name} <span class="rating-tag">${player2.rating}</span></div>
-                    </div>
-                `;
-                $("#lobby-list").html(html);
-                setupLiveBoardStream();
+                    $("#lobby-title").text("Live Arena Games");
+                    html = `
+                        <div style="text-align:center; margin-bottom: 10px;">
+                            <span style="color:var(--secondary); font-size:12px; font-weight:bold;">🔴 WATCHING LIVE MATCH</span>
+                        </div>
+                        <div class="player-bar top" style="background:#151311; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                            <div>⚫ ${player1.name} <span class="rating-tag">${Math.round(player1.rating)}</span></div>
+                        </div>
+                        <div id="liveBoard" style="width: 100%; margin-bottom:0;"></div>
+                        <div class="player-bar bottom" style="background:#151311; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                            <div>⚪ ${player2.name} <span class="rating-tag">${Math.round(player2.rating)}</span></div>
+                        </div>
+                    `;
+                    $("#lobby-list").html(html);
+                    setupLiveBoardStream();
+                });
             }
         }
 
@@ -463,12 +546,18 @@
             oppTimeLeft = 420;
             clickedSquare = null; 
 
+            // Hide end game home buttons
+            $("#btn-rematch").hide();
+            $("#btn-lobby-home").hide();
+            $("#btn-exit-home").hide();
+            $("#btn-draw").show();
+            $("#btn-resign").show();
+
             // 1. Randomize Colors
             userColor = Math.random() > 0.5 ? 'w' : 'b';
             
             $("#section-lobby").addClass("hidden");
             $("#section-game").removeClass("hidden");
-            $("#btn-rematch").hide();
             
             $("#opp-name").text(bot.name);
             $("#opp-rating").text(Math.round(bot.rating));
@@ -631,12 +720,22 @@
         }
 
         function offerDraw() {
-            if (Math.random() > 0.8) {
-                alert(`${activeBot.name} accepted the draw.`);
-                quitToLobby();
-            } else {
-                alert(`${activeBot.name} declined the draw offer.`);
-            }
+            // 1. Instantly trigger visual "draw offer sent" prompt on game status log
+            const existingStatus = $("#game-status").text();
+            $("#game-status").text("✉️ Draw offer sent... Waiting for decision");
+
+            setTimeout(() => {
+                if (Math.random() > 0.8) {
+                    alert(`${activeBot.name} accepted the draw.`);
+                    handleGameOver(null);
+                    quitToLobby();
+                } else {
+                    // Restore active status
+                    $("#game-status").text(existingStatus);
+                    // 2. Display highly styled red popup on refuse
+                    showDeclinedPopup();
+                }
+            }, 1500);
         }
 
         function updateStatus() {
@@ -654,7 +753,11 @@
 
         async function handleGameOver(userWon) {
             clearInterval(gameTimer);
+            $("#btn-draw").hide();
+            $("#btn-resign").hide();
             $("#btn-rematch").show();
+            $("#btn-lobby-home").show();
+            $("#btn-exit-home").show();
             
             if (userWon === null || currentUser.id.startsWith("guest_")) return; // Skip rating database commits for guest users
 
@@ -666,10 +769,12 @@
             currentUser.rating += change;
             activeBot.rating -= change;
 
+            // Save both updated ratings safely back into Firebase
             await db.collection("academy_players").doc(currentUser.id).update({ rating: currentUser.rating });
             await db.collection("academy_players").doc(activeBot.id).update({ rating: activeBot.rating });
             
             $("#my-profile-rating, #user-display-rating").text(Math.round(currentUser.rating));
+            $("#opp-rating").text(Math.round(activeBot.rating));
         }
 
         function acceptChallenge() {
