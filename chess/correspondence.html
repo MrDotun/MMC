@@ -264,7 +264,8 @@
         let engineWorker = new Worker('chess-worker.js'); 
         
         let gameTimer = null;
-        let timeLeft = 420;
+        let userTimeLeft = 420;
+        let oppTimeLeft = 420;
         let clickedSquare = null; 
         let userColor = 'w'; // Dynamically chosen colors ('w' or 'b')
 
@@ -382,17 +383,22 @@
                     $("#lobby-list").html(html);
                 });
             } else if (type === 'live-games') {
+                // Pick two distinct, real-named players from the BOT_POOL
+                const shuffledBots = BOT_POOL.sort(() => 0.5 - Math.random());
+                const player1 = shuffledBots[0];
+                const player2 = shuffledBots[1];
+
                 $("#lobby-title").text("Live Arena Games");
                 html = `
                     <div style="text-align:center; margin-bottom: 10px;">
                         <span style="color:var(--secondary); font-size:12px; font-weight:bold;">🔴 WATCHING LIVE MATCH</span>
                     </div>
                     <div class="player-bar top" style="background:#151311; border-top-left-radius: 8px; border-top-right-radius: 8px;">
-                        <div>⚫ Grandmaster Bot <span class="rating-tag">2510</span></div>
+                        <div>⚫ ${player1.name} <span class="rating-tag">${player1.rating}</span></div>
                     </div>
                     <div id="liveBoard" style="width: 100%; margin-bottom:0;"></div>
                     <div class="player-bar bottom" style="background:#151311; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                        <div>⚪ Candidate Master Bot <span class="rating-tag">2280</span></div>
+                        <div>⚪ ${player2.name} <span class="rating-tag">${player2.rating}</span></div>
                     </div>
                 `;
                 $("#lobby-list").html(html);
@@ -400,7 +406,7 @@
             }
         }
 
-        // Simulates continuous moves on the Watch Live board
+        // Simulates realistic, human-paced moves on the Watch Live board (3 to 10 seconds delay)
         function setupLiveBoardStream() {
             liveGame = new Chess();
             liveBoard = ChessBoard('liveBoard', {
@@ -409,7 +415,7 @@
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             });
 
-            liveGameInterval = setInterval(() => {
+            function triggerNextLiveMove() {
                 if (liveGame.game_over()) {
                     liveGame.reset();
                     liveBoard.start();
@@ -418,18 +424,43 @@
                 const randomMove = moves[Math.floor(Math.random() * moves.length)];
                 liveGame.move(randomMove);
                 liveBoard.position(liveGame.fen());
-            }, 1800);
+
+                // Random delay of 3000ms to 10000ms (3 to 10 seconds)
+                const nextThinkingDelay = Math.floor(Math.random() * 7001) + 3000;
+                liveGameInterval = setTimeout(triggerNextLiveMove, nextThinkingDelay);
+            }
+
+            // Start the first move timer
+            liveGameInterval = setTimeout(triggerNextLiveMove, 2000);
         }
 
-        function challengeUser(botId) {
-            const bot = BOT_POOL.find(b => b.id === botId);
-            startBotGame(bot);
+        // Challenge handler that works universally for both bots and DB-stored human players
+        function challengeUser(userId) {
+            // First check if the user is a registered bot
+            let targetUser = BOT_POOL.find(b => b.id === userId);
+            
+            if (targetUser) {
+                startBotGame(targetUser);
+            } else {
+                // If it is an online human, look them up dynamically in our database
+                db.collection("academy_players").doc(userId).get().then(doc => {
+                    if (doc.exists) {
+                        const humanUser = doc.data();
+                        startBotGame(humanUser);
+                    } else {
+                        alert("Player profile could not be found.");
+                    }
+                }).catch(err => {
+                    console.error("Error launching duel: ", err);
+                });
+            }
         }
 
         function startBotGame(bot) {
             activeBot = bot;
             game = new Chess(); // Standard board setup
-            timeLeft = 420; 
+            userTimeLeft = 420; 
+            oppTimeLeft = 420;
             clickedSquare = null; 
 
             // 1. Randomize Colors
@@ -452,6 +483,10 @@
                 $("#user-color-icon").text("⚫");
                 $("#opp-color-icon").text("⚪");
             }
+
+            // Standardize starting clock graphics
+            $("#timer-bottom").text("07:00");
+            $("#timer-top").text("07:00");
 
             const config = {
                 draggable: false,
@@ -477,8 +512,9 @@
             startTimer();
             updateStatus();
 
-            // AI-Human starts with a natural randomized classical/semi-open move instead of forcing d5
+            // AI-Human starts with a natural classical thinking delay
             if (game.turn() !== userColor) {
+                const thinkingDelay = Math.floor(Math.random() * 7001) + 3000; // 3 to 10 seconds thinking delay
                 setTimeout(() => {
                     // Unique white starter options: e4, d4, c4, Nf3
                     const whiteStarterMoves = ['e4', 'd4', 'c4', 'Nf3'];
@@ -486,10 +522,7 @@
                     game.move(chosenMove);
                     board.position(game.fen());
                     updateStatus();
-                }, 1000);
-            } else {
-                // If user plays White, we wait for user's move. 
-                // Once user plays, the Bot will respond with a randomized defense choice on turn 1
+                }, thinkingDelay);
             }
         }
 
@@ -539,8 +572,11 @@
         }
 
         function triggerBotEngine() {
+            // Apply randomized human simulated thinking delay of 3 to 10 seconds (3000ms - 10000ms)
+            const thinkingDelay = Math.floor(Math.random() * 7001) + 3000;
+
             setTimeout(() => {
-                // If it is move 1 for Black, let the bot pick a dynamic defense choice naturally instead of always choosing d5
+                // If it is move 1 for Black, let the bot pick a dynamic defense choice naturally
                 if (game.history().length === 1 && game.turn() === 'b') {
                     const blackStarterMoves = ['e5', 'c5', 'e6', 'Nf6'];
                     const chosenBlackMove = blackStarterMoves[Math.floor(Math.random() * blackStarterMoves.length)];
@@ -550,7 +586,7 @@
                     return;
                 }
 
-                // Bridge FEN state to your active chess worker script for all subsequent moves
+                // Bridge FEN state to active chess worker script for smart, GM-level engine moves
                 engineWorker.postMessage("position " + game.fen());
                 
                 engineWorker.onmessage = (e) => {
@@ -562,21 +598,33 @@
                     board.position(game.fen());
                     updateStatus();
                 };
-            }, 600);
+            }, thinkingDelay);
         }
 
+        // Dedicated ticking logic that controls clocks dynamically based on whose move it is
         function startTimer() {
             clearInterval(gameTimer);
             gameTimer = setInterval(() => {
                 if (game.turn() === userColor) { 
-                    timeLeft--;
-                    let mins = Math.floor(timeLeft / 60);
-                    let secs = timeLeft % 60;
+                    userTimeLeft--;
+                    let mins = Math.floor(userTimeLeft / 60);
+                    let secs = userTimeLeft % 60;
                     $("#timer-bottom").text(`${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`);
-                    if (timeLeft <= 0) {
+                    if (userTimeLeft <= 0) {
                         clearInterval(gameTimer);
                         handleGameOver(false);
                         alert("Time Out! You lost.");
+                    }
+                } else {
+                    // Turn belongs to the Bot / Online Opponent. Decrement their clock
+                    oppTimeLeft--;
+                    let mins = Math.floor(oppTimeLeft / 60);
+                    let secs = oppTimeLeft % 60;
+                    $("#timer-top").text(`${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`);
+                    if (oppTimeLeft <= 0) {
+                        clearInterval(gameTimer);
+                        handleGameOver(true);
+                        alert("Your opponent ran out of time! You win.");
                     }
                 }
             }, 1000);
