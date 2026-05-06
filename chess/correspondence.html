@@ -193,6 +193,22 @@
             border-left: 3px solid transparent; transition: 0.3s;
         }
         .item-row:hover { background: rgba(255,255,255,0.07); border-left-color: var(--accent); }
+        
+        /* New Animated Spinner Custom Styles */
+        .spinner-container {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: acceptSpin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes acceptSpin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -450,10 +466,18 @@
                     let rank = 1;
                     snap.forEach(doc => {
                         const p = doc.data();
+                        
+                        // Style the top three ranks uniquely for visual polish
+                        let rankStyle = "color:var(--gold)";
+                        if(rank === 1) rankStyle = "color:#fbbf24; text-shadow:0 0 10px rgba(251,191,36,0.4); font-size:16px;";
+                        else if(rank === 2) rankStyle = "color:#cbd5e1; font-size:15px;";
+                        else if(rank === 3) rankStyle = "color:#cd7f32; font-size:14px;";
+                        else rankStyle = "color:#666;";
+
                         html += `
-                            <div class="item-row">
-                                <span><b style="color:var(--gold)">#${rank}</b> ${p.name}</span>
-                                <span class="rating-tag">${Math.round(p.rating)}</span>
+                            <div class="item-row" data-rank-id="${p.id}">
+                                <span><b style="${rankStyle}">#${rank}</b> ${p.name}</span>
+                                <span class="rating-tag" id="leader-rating-${p.id}">${Math.round(p.rating)}</span>
                             </div>`;
                         rank++;
                     });
@@ -523,13 +547,18 @@
             let targetUser = BOT_POOL.find(b => b.id === userId);
             
             if (targetUser) {
-                startBotGame(targetUser);
+                // If it is a bot, show incoming mock popup first to utilize connection prompt aesthetics
+                activeBot = targetUser;
+                $("#popup-name").text(targetUser.name);
+                showPopup();
             } else {
                 // If it is an online human, look them up dynamically in our database
                 db.collection("academy_players").doc(userId).get().then(doc => {
                     if (doc.exists) {
                         const humanUser = doc.data();
-                        startBotGame(humanUser);
+                        activeBot = humanUser;
+                        $("#popup-name").text(humanUser.name);
+                        showPopup();
                     } else {
                         alert("Player profile could not be found.");
                     }
@@ -766,6 +795,10 @@
             const score = userWon ? 1 : 0;
             const change = Math.round(K * (score - expected));
             
+            // Log old values to display beautiful gains or losses
+            const originalUserRating = currentUser.rating;
+            const originalBotRating = activeBot.rating;
+
             currentUser.rating += change;
             activeBot.rating -= change;
 
@@ -775,6 +808,54 @@
             
             $("#my-profile-rating, #user-display-rating").text(Math.round(currentUser.rating));
             $("#opp-rating").text(Math.round(activeBot.rating));
+
+            // Display dynamic card summarizing actual score changes
+            displayInteractiveRatingUpdate(
+                { name: currentUser.name, old: originalUserRating, cur: currentUser.rating, change: change },
+                { name: activeBot.name, old: originalBotRating, cur: activeBot.rating, change: -change }
+            );
+        }
+
+        // Beautifully Injectable Rating Update Card Overlay
+        function displayInteractiveRatingUpdate(userObj, opponentObj) {
+            // Remove previous instances if any are hanging
+            $("#rating-summary-overlay").remove();
+
+            const userSign = userObj.change >= 0 ? `+${userObj.change}` : `${userObj.change}`;
+            const oppSign = opponentObj.change >= 0 ? `+${opponentObj.change}` : `${opponentObj.change}`;
+            
+            const userBadgeColor = userObj.change >= 0 ? 'background: rgba(74,222,128,0.15); color: #4ade80;' : 'background: rgba(239,68,68,0.15); color: #ef4444;';
+            const oppBadgeColor = opponentObj.change >= 0 ? 'background: rgba(74,222,128,0.15); color: #4ade80;' : 'background: rgba(239,68,68,0.15); color: #ef4444;';
+
+            const summaryHTML = `
+                <div id="rating-summary-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 1001; display: flex; align-items: center; justify-content: center;">
+                    <div style="background: linear-gradient(135deg, #1c1a17 0%, #0f0e0c 100%); border: 1px solid rgba(251,191,36,0.25); border-radius: 24px; padding: 30px; width: 340px; box-sizing: border-box; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.9);">
+                        
+                        <div class="popup-pulse-ring" style="border-color: var(--gold); background: rgba(251,191,36,0.1);">
+                            <span style="font-size:24px;">📊</span>
+                        </div>
+                        
+                        <h3 style="font-size:11px; color:var(--gold); font-weight:700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom:16px;">Rating Updated</h3>
+                        
+                        <div style="display: flex; justify-content: space-around; align-items: center; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 14px; margin-bottom: 24px; border: 1px solid rgba(255,255,255,0.03);">
+                            <div>
+                                <div style="font-size: 13px; color: #aaa; margin-bottom: 4px; font-weight: 600;">${userObj.name}</div>
+                                <div style="font-size: 24px; font-weight: 700; color: white; font-family: monospace;">${Math.round(userObj.cur)}</div>
+                                <div style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; display: inline-block; margin-top: 4px; ${userBadgeColor}">${userSign}</div>
+                            </div>
+                            <div style="width: 1px; height: 50px; background: rgba(255,255,255,0.1);"></div>
+                            <div>
+                                <div style="font-size: 13px; color: #aaa; margin-bottom: 4px; font-weight: 600;">${opponentObj.name}</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #bbb; font-family: monospace;">${Math.round(opponentObj.cur)}</div>
+                                <div style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; display: inline-block; margin-top: 4px; ${oppBadgeColor}">${oppSign}</div>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-green" style="margin-bottom:0; width:100%;" onclick="$('#rating-summary-overlay').fadeOut(300, function() { $(this).remove(); });">VIEW ARENA MENU</button>
+                    </div>
+                </div>
+            `;
+            $('body').append(summaryHTML);
         }
 
         function acceptChallenge() {
@@ -785,16 +866,20 @@
             btnDecline.prop("disabled", true);
             
             let secondsRemaining = 3;
-            btnAccept.text(`CONNECTING (${secondsRemaining}s)...`);
-            
+            // Fully decorated, beautifully spinning matchmaking waiting prompt inside popup
+            btnAccept.html(`<span class="spinner-container"></span>CONNECTING (${secondsRemaining}s)...`);
+            btnAccept.css("background", "linear-gradient(90deg, #1d4ed8, #3b82f6)");
+
             const connectionInterval = setInterval(() => {
                 secondsRemaining--;
                 if (secondsRemaining > 0) {
-                    btnAccept.text(`CONNECTING (${secondsRemaining}s)...`);
+                    btnAccept.html(`<span class="spinner-container"></span>CONNECTING (${secondsRemaining}s)...`);
                 } else {
                     clearInterval(connectionInterval);
                     
+                    // Reset styling & state cleanly on completion
                     btnAccept.prop("disabled", false).text("ACCEPT");
+                    btnAccept.css("background", "");
                     btnDecline.prop("disabled", false);
                     
                     hidePopup();
