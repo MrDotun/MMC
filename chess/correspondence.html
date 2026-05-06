@@ -55,7 +55,7 @@
         .hidden { display: none !important; }
 
         /* Aesthetic Board Tweak */
-        #mainBoard { 
+        #mainBoard, #liveBoard { 
             border-radius: 8px; 
             overflow: hidden; 
             box-shadow: 0 0 25px rgba(0,0,0,0.8);
@@ -76,10 +76,10 @@
         .rating-tag { background: #333; padding: 2px 6px; border-radius: 4px; color: var(--gold); font-weight: 600; font-size: 11px; margin-left: 8px; }
         
         /* Interactive Menu */
-        .grid-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+        .grid-menu { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 20px; }
         .menu-card { 
             background: #262421; 
-            padding: 20px; 
+            padding: 15px 5px; 
             border-radius: 12px; 
             text-align: center; 
             cursor: pointer; 
@@ -92,7 +92,7 @@
             border-color: var(--secondary);
             box-shadow: 0 8px 20px rgba(74, 222, 128, 0.15);
         }
-        .menu-card span { font-size: 24px; display: block; margin-bottom: 8px; }
+        .menu-card span { font-size: 20px; display: block; margin-bottom: 5px; }
 
         /* Inputs & Buttons */
         input { 
@@ -105,11 +105,13 @@
         .btn { 
             padding: 12px; cursor: pointer; border-radius: 8px; border: none; 
             background: #363430; color: #fff; font-weight: 600; width: 100%; 
-            transition: all 0.2s; 
+            transition: all 0.2s; margin-bottom: 10px;
         }
         .btn:active { transform: scale(0.96); }
         .btn-green { background: #629924; box-shadow: 0 4px 0 #456d1a; }
         .btn-green:hover { background: #72a834; }
+        .btn-blue { background: #2563eb; box-shadow: 0 4px 0 #1d4ed8; }
+        .btn-blue:hover { background: #3b82f6; }
 
         #challenge-popup { 
             position: fixed; top: 30px; left: 50%; transform: translateX(-50%); 
@@ -134,7 +136,11 @@
         <h1 style="text-align:center; letter-spacing: -1px; margin-bottom: 30px;">MIND MASTERS</h1>
         <input type="text" id="login-name" placeholder="Arena Username">
         <input type="password" id="login-pass" placeholder="Arena Password">
-        <button class="btn btn-green" onclick="handleLogin()">ENTER ARENA</button>
+        
+        <button class="btn btn-green" onclick="handleLogin('login')">ENTER ARENA</button>
+        <button class="btn btn-blue" onclick="handleLogin('register')">REGISTER ACCOUNT</button>
+        <button class="btn" style="background:#555;" onclick="handleLogin('guest')">PLAY AS GUEST</button>
+
         <p style="font-size:11px; text-align:center; color:#555; margin-top:15px;">Official Mind Masters Tournament Server 2026</p>
     </div>
 
@@ -148,8 +154,9 @@
         </div>
 
         <div class="grid-menu">
-            <div class="menu-card" onclick="showSubSection('online')"><span>🟢</span><div class="menu-label">Live Players</div></div>
-            <div class="menu-card" onclick="showSubSection('leader')"><span>🏆</span><div class="menu-label">Top 20 Leaders</div></div>
+            <div class="menu-card" onclick="showSubSection('online')"><span>🟢</span><div class="menu-label">Live</div></div>
+            <div class="menu-card" onclick="showSubSection('leader')"><span>🏆</span><div class="menu-label">Leaders</div></div>
+            <div class="menu-card" onclick="showSubSection('live-games')"><span>📺</span><div class="menu-label">Watch Live</div></div>
         </div>
 
         <div id="lobby-content" style="margin-top:25px;">
@@ -160,14 +167,14 @@
 
     <div id="section-game" class="container hidden" style="padding: 10px;">
         <div class="player-bar top">
-            <div>⚫ <span id="opp-name">Opponent</span> <span class="rating-tag" id="opp-rating"></span></div>
+            <div><span id="opp-color-icon">⚫</span> <span id="opp-name">Opponent</span> <span class="rating-tag" id="opp-rating"></span></div>
             <div id="timer-top" style="font-family:monospace; font-weight:bold; color:var(--danger);">07:00</div>
         </div>
         
         <div id="mainBoard" style="width: 100%"></div>
 
         <div class="player-bar bottom">
-            <div>⚪ <span id="user-display-name">You</span> <span class="rating-tag" id="user-display-rating"></span></div>
+            <div><span id="user-color-icon">⚪</span> <span id="user-display-name">You</span> <span class="rating-tag" id="user-display-rating"></span></div>
             <div id="timer-bottom" style="font-family:monospace; font-weight:bold;">07:00</div>
         </div>
 
@@ -212,39 +219,70 @@
         let onlineBots = [];
         let board = null;
         let game = new Chess();
-        let engineWorker = new Worker('web-worker.js'); // Updated to your web worker file
+        
+        // Pointing to your correct chess-worker.js file path
+        let engineWorker = new Worker('chess-worker.js'); 
+        
         let gameTimer = null;
         let timeLeft = 420;
-        let clickedSquare = null; // State variable for tracking click-to-move square selections
+        let clickedSquare = null; 
+        let userColor = 'w'; // Dynamically chosen colors ('w' or 'b')
 
-        function handleLogin() {
+        // Variables for simulated Watch Live games
+        let liveBoard = null;
+        let liveGame = new Chess();
+        let liveGameInterval = null;
+
+        function handleLogin(mode) {
             const name = $("#login-name").val().trim();
             const pass = $("#login-pass").val().trim();
             
-            if (!name || !pass) {
+            if (mode !== 'guest' && (!name || !pass)) {
                 alert("Please enter credentials");
                 return;
             }
 
-            currentUser = { id: name.toLowerCase().replace(/\s/g, '_'), name: name, rating: 1500 };
-            
-            db.collection("academy_players").doc(currentUser.id).get().then(doc => {
-                if(doc.exists) currentUser = doc.data();
-                else db.collection("academy_players").doc(currentUser.id).set(currentUser);
+            if (mode === 'guest') {
+                currentUser = { 
+                    id: 'guest_' + Math.floor(Math.random() * 100000), 
+                    name: "Guest" + Math.floor(Math.random() * 1000), 
+                    rating: 1200 
+                };
+                proceedToLobby();
+            } else {
+                currentUser = { id: name.toLowerCase().replace(/\s/g, '_'), name: name, rating: 1500 };
                 
-                // Initialize bots in DB if they don't exist so they show in leaderboard
-                BOT_POOL.forEach(bot => {
-                    db.collection("academy_players").doc(bot.id).get().then(bDoc => {
-                        if(!bDoc.exists) db.collection("academy_players").doc(bot.id).set(bot);
+                db.collection("academy_players").doc(currentUser.id).get().then(doc => {
+                    if (doc.exists) {
+                        if (mode === 'register') {
+                            alert("Username already exists! Choose another name or use standard Login.");
+                            return;
+                        }
+                        currentUser = doc.data();
+                        proceedToLobby();
+                    } else {
+                        // Registration flow or creating on first login
+                        db.collection("academy_players").doc(currentUser.id).set(currentUser).then(() => {
+                            proceedToLobby();
+                        });
+                    }
+                    
+                    // Initialize bots in DB if they don't exist
+                    BOT_POOL.forEach(bot => {
+                        db.collection("academy_players").doc(bot.id).get().then(bDoc => {
+                            if(!bDoc.exists) db.collection("academy_players").doc(bot.id).set(bot);
+                        });
                     });
                 });
+            }
+        }
 
-                $("#section-auth").fadeOut(400, () => {
-                    $("#section-lobby").removeClass("hidden");
-                    $("#welcome-text").text(currentUser.name);
-                    $("#my-profile-rating").text(Math.round(currentUser.rating));
-                    setupLobby();
-                });
+        function proceedToLobby() {
+            $("#section-auth").fadeOut(400, () => {
+                $("#section-lobby").removeClass("hidden");
+                $("#welcome-text").text(currentUser.name);
+                $("#my-profile-rating").text(Math.round(currentUser.rating));
+                setupLobby();
             });
         }
 
@@ -263,6 +301,7 @@
 
         function showSubSection(type) {
             let html = "";
+            clearInterval(liveGameInterval); // Make sure live board loops are cleared if swapping screens
             $("#lobby-list").html('<div style="text-align:center; padding:20px;">Loading Arena...</div>');
 
             if (type === 'online') {
@@ -272,7 +311,7 @@
                     html += `
                         <div class="item-row">
                             <span>🟢 ${b.name} <span class="rating-tag">${Math.round(b.rating)}</span></span>
-                            <button class="btn" style="width:auto; padding:5px 12px; font-size:11px;" onclick="challengeUser('${b.id}')">Challenge</button>
+                            <button class="btn" style="width:auto; padding:5px 12px; font-size:11px; margin-bottom:0;" onclick="challengeUser('${b.id}')">Challenge</button>
                         </div>`;
                 });
                 $("#lobby-list").html(html);
@@ -292,7 +331,44 @@
                     });
                     $("#lobby-list").html(html);
                 });
+            } else if (type === 'live-games') {
+                $("#lobby-title").text("Live Arena Games");
+                html = `
+                    <div style="text-align:center; margin-bottom: 10px;">
+                        <span style="color:var(--secondary); font-size:12px; font-weight:bold;">🔴 WATCHING LIVE MATCH</span>
+                    </div>
+                    <div class="player-bar top" style="background:#151311; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                        <div>⚫ Grandmaster Bot <span class="rating-tag">2510</span></div>
+                    </div>
+                    <div id="liveBoard" style="width: 100%; margin-bottom:0;"></div>
+                    <div class="player-bar bottom" style="background:#151311; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                        <div>⚪ Candidate Master Bot <span class="rating-tag">2280</span></div>
+                    </div>
+                `;
+                $("#lobby-list").html(html);
+                setupLiveBoardStream();
             }
+        }
+
+        // Simulates continuous moves on the Watch Live board
+        function setupLiveBoardStream() {
+            liveGame = new Chess();
+            liveBoard = ChessBoard('liveBoard', {
+                position: 'start',
+                draggable: false,
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+            });
+
+            liveGameInterval = setInterval(() => {
+                if (liveGame.game_over()) {
+                    liveGame.reset();
+                    liveBoard.start();
+                }
+                const moves = liveGame.moves();
+                const randomMove = moves[Math.floor(Math.random() * moves.length)];
+                liveGame.move(randomMove);
+                liveBoard.position(liveGame.fen());
+            }, 1800);
         }
 
         function challengeUser(botId) {
@@ -303,8 +379,11 @@
         function startBotGame(bot) {
             activeBot = bot;
             game = new Chess();
-            timeLeft = 420; // 7 minutes
-            clickedSquare = null; // Clear selections
+            timeLeft = 420; 
+            clickedSquare = null; 
+
+            // 1. Randomize Colors
+            userColor = Math.random() > 0.5 ? 'w' : 'b';
             
             $("#section-lobby").addClass("hidden");
             $("#section-game").removeClass("hidden");
@@ -315,20 +394,44 @@
             $("#user-display-name").text(currentUser.name);
             $("#user-display-rating").text(Math.round(currentUser.rating));
 
-            // Setup chessboard.js with draggable disabled for click-to-move handling
+            // Dynamic Icons
+            if (userColor === 'w') {
+                $("#user-color-icon").text("⚪");
+                $("#opp-color-icon").text("⚫");
+            } else {
+                $("#user-color-icon").text("⚫");
+                $("#opp-color-icon").text("⚪");
+            }
+
             const config = {
                 draggable: false,
                 position: 'start',
+                orientation: userColor === 'w' ? 'white' : 'black',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             };
 
             if (!board) {
                 board = ChessBoard('mainBoard', config);
             } else {
+                board.orientation(config.orientation);
                 board.position('start');
             }
             
-            // Clean and mount click handler to chessboard squares
+            // 2. Randomize Openings from standard Opening Theories
+            const openingBook = [
+                ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5'], // Ruy Lopez
+                ['d4', 'Nf6', 'c4', 'g6', 'Nc3', 'Bg7'], // King's Indian
+                ['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4', 'Nxd4'], // Sicilian
+                ['d4', 'd5', 'c4', 'e6', 'Nc3', 'Nf6'], // Queen's Gambit Declined
+                ['e4', 'e6', 'd4', 'd5'] // French Defense
+            ];
+            const randomLine = openingBook[Math.floor(Math.random() * openingBook.length)];
+            
+            // Apply opening moves
+            randomLine.forEach(move => game.move(move));
+            board.position(game.fen());
+
+            // Click Handlers
             $('#mainBoard').off('click', '.square-55d63');
             $('#mainBoard').on('click', '.square-55d63', function() {
                 const targetSquare = $(this).data('square');
@@ -337,29 +440,29 @@
             
             startTimer();
             updateStatus();
+
+            // If user ended up playing Black, trigger the Bot to make White's first response post-opening
+            if (game.turn() !== userColor) {
+                triggerBotEngine();
+            }
         }
 
-        // Click-To-Move selection and movement handler
         function handleSquareClick(square) {
-            // Human is White ('w') in this standard game setup
-            if (game.turn() !== 'w') return;
+            if (game.turn() !== userColor) return;
 
             const piece = game.get(square);
 
             if (clickedSquare === null) {
-                // First click: Highlight selected human piece
-                if (piece && piece.color === 'w') {
+                if (piece && piece.color === userColor) {
                     clickedSquare = square;
                     highlightSquare(square);
                 }
             } else {
-                // Second click: Try to execute move
                 const move = game.move({ from: clickedSquare, to: square, promotion: 'q' });
                 clearHighlights();
 
                 if (move === null) {
-                    // Clicked another of your own pieces instead: Switch selection
-                    if (piece && piece.color === 'w') {
+                    if (piece && piece.color === userColor) {
                         clickedSquare = square;
                         highlightSquare(square);
                     } else {
@@ -384,14 +487,22 @@
 
         function onMoveComplete() {
             updateStatus();
-            
-            // Trigger opponent engine (GarboChess) thinking via web-worker.js
+            if(!game.game_over()) {
+                triggerBotEngine();
+            }
+        }
+
+        function triggerBotEngine() {
             setTimeout(() => {
+                // Bridge FEN state to your active chess worker script
                 engineWorker.postMessage("position " + game.fen());
+                
                 engineWorker.onmessage = (e) => {
                     const fromSquare = e.data.slice(0, 2);
                     const toSquare = e.data.slice(2, 4);
-                    game.move({ from: fromSquare, to: toSquare, promotion: 'q' });
+                    const promotion = e.data.length > 4 ? e.data.charAt(4) : null;
+                    
+                    game.move({ from: fromSquare, to: toSquare, promotion: promotion || 'q' });
                     board.position(game.fen());
                     updateStatus();
                 };
@@ -401,7 +512,7 @@
         function startTimer() {
             clearInterval(gameTimer);
             gameTimer = setInterval(() => {
-                if (game.turn() === 'w') { // Only count down player time in this sim
+                if (game.turn() === userColor) { 
                     timeLeft--;
                     let mins = Math.floor(timeLeft / 60);
                     let secs = timeLeft % 60;
@@ -425,9 +536,9 @@
         }
 
         function updateStatus() {
-            let status = game.turn() === 'b' ? "Opponent thinking..." : "Your move";
+            let status = game.turn() !== userColor ? "Opponent thinking..." : "Your move";
             if (game.in_checkmate()) {
-                const userWon = game.turn() === 'b'; // Human wins if checkmate occurs on black's move turn
+                const userWon = game.turn() !== userColor; 
                 status = `Checkmate! ${userWon ? currentUser.name : activeBot.name} wins!`;
                 handleGameOver(userWon);
             } else if (game.in_draw()) {
@@ -441,7 +552,7 @@
             clearInterval(gameTimer);
             $("#btn-rematch").show();
             
-            if (userWon === null) return; // Draw
+            if (userWon === null || currentUser.id.startsWith("guest_")) return; // Skip rating database commits for guest users
 
             const K = 32;
             const expected = 1 / (1 + Math.pow(10, (activeBot.rating - currentUser.rating) / 400));
@@ -461,11 +572,10 @@
             const btnAccept = $("#btn-accept");
             const btnDecline = $("#btn-decline");
             
-            // Disable buttons to prevent multi-clicks
             btnAccept.prop("disabled", true);
             btnDecline.prop("disabled", true);
             
-            let secondsRemaining = 15;
+            let secondsRemaining = 3;
             btnAccept.text(`CONNECTING (${secondsRemaining}s)...`);
             
             const connectionInterval = setInterval(() => {
@@ -475,11 +585,9 @@
                 } else {
                     clearInterval(connectionInterval);
                     
-                    // Reset buttons
                     btnAccept.prop("disabled", false).text("ACCEPT");
                     btnDecline.prop("disabled", false);
                     
-                    // Start Game Room transition
                     $("#challenge-popup").fadeOut();
                     startBotGame(activeBot);
                 }
