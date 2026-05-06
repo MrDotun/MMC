@@ -450,8 +450,10 @@
 
         function triggerEngine() {
             setTimeout(() => {
+                if (game.game_over()) return; // Prevent worker execution if user resigned/timed out
                 engineWorker.postMessage("position " + game.fen());
                 engineWorker.onmessage = (e) => {
+                    if (game.game_over()) return;
                     game.move({ from: e.data.slice(0, 2), to: e.data.slice(2, 4), promotion: 'q' });
                     board.position(game.fen());
                     updateStatus();
@@ -477,6 +479,13 @@
 
         async function handleGameOver(userWon) {
             clearInterval(gameTimer);
+            
+            // Explicitly force game-over state within chess.js so no residual loops/clicks register moves
+            if (userWon === false) {
+                // If the user resigned (userWon is false), load an artificial mate state or draw-like string in FEN to stop move registrations
+                game.load("8/8/8/8/8/8/8/8 w - - 0 1"); 
+            }
+
             let changeStr = "";
             let detailStr = "";
             if (userWon !== null && !currentUser.id.startsWith("guest_")) {
@@ -496,6 +505,9 @@
             $("#game-status").html(`<span style="font-size:18px;">${res}${changeStr}</span>${detailStr}`);
             $("#btn-draw, #btn-resign").hide(); $("#btn-rematch, #btn-lobby-home, #btn-exit-home").show();
         }
+
+        // Bind cleanly to the window namespace so the inline HTML button handles the reference successfully
+        window.handleGameOver = handleGameOver;
 
         function acceptChallenge() {
             const btn = $("#btn-accept");
