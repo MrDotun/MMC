@@ -304,7 +304,7 @@
             { id: 'm_olumide', name: 'Olumide Falola', rating: 1805 },
             { id: 'm_kabiru', name: 'Kabiru Gwarzo', rating: 1510 },
             { id: 'm_somto', name: 'Somtochukwu Ani', rating: 1580 },
-            { id: 'funmi', name: 'Funmilayo Balogun', rating: 1630 },
+            { id: 'm_funmi', name: 'Funmilayo Balogun', rating: 1630 },
             { id: 'm_shehu', name: 'Shehu Garba', rating: 1545 },
             { id: 'm_eke', name: 'Ekeledirichukwu Opara', rating: 1795 },
             { id: 'm_folake', name: 'Folake Ademola', rating: 1475 },
@@ -319,7 +319,7 @@
             'r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/2NP3/PPP2PPP/R1BQKBNR w KQkq - 1 4', // Four Knights, Quiet Line
             'r1bqk2r/pppp1ppp/2n5/4p3/2B1P1n1/2NP1N2/PPP2KPP/R1BQ3R w kq - 1 6', // Fried Liver Attack setup
             'r1b1kb1r/ppp2ppp/2np1q1n/4p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 1 6', // Bishop Opening, active lines
-            'rnbqkb1r/pp3ppp/2p2n2/3pp3/4P3/2NP1N2/PPP2PPP/R1BQKB1R w KQkq - 0 5', // Scandinavian defense transpositions
+            'rnbqkb1r/pp3ppp/2p2n2/3pp3/4P3/2NP3N2/PPP2PPP/R1BQKB1R w KQkq - 0 5', // Scandinavian defense transpositions
             'r1bqkb1r/pp2pppp/2np1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 1 6', // Sicilian Defense, Classical
             'rn1qkb1r/pp2pppp/3p1n2/8/3QP3/2N2N2/PPP2PPP/R1B1KB1R b KQkq - 0 5', // Sicilian, modern center lines
             'r1bqkb1r/pp1pppp1/2n2n1p/2p5/4P3/2NP1N2/PPP2PPP/R1BQKB1R w KQkq - 0 5', // Sicilian closed positions
@@ -344,7 +344,7 @@
             'rnbqk2r/ppp2ppp/4pn2/3p4/1bPP4/2N1P3/PP3PPP/R1BQKBNR w KQkq - 3 5', // Nimzo-Indian, Rubinstein variation
             'rn1qk2r/ppp1bppp/4pn2/3p1b2/2PP4/2N1PN2/PP3PPP/R1BQKB1R w KQkq - 3 6', // Queen's Gambit, Harrwitz Attack
             'rnbqkb1r/pp2pppp/3p1n2/8/3NP3/8/PPP2PPP/RNBQKB1R w KQkq - 1 5', // Sicilian Najdorf starting line
-            'rnbqk2r/pp2ppbp/3p1np1/8/3NP3/2N5/PPP1BPPP/R1BQK2R w KQkq - 2 7', // Sicilian Classical, Dragon setup
+            'rnbqkb1r/pp2ppbp/3p1np1/8/3NP3/2N5/PPP1BPPP/R1BQK2R w KQkq - 2 7', // Sicilian Classical, Dragon setup
             'rnbqkb1r/pp1p1ppp/4pn2/2p5/4P3/2NP3/PPP2PPP/R1BQKBNR w KQkq - 0 4'  // Sicilian, French-type configurations
         ];
 
@@ -478,11 +478,12 @@
                                 }
                             });
                     } else {
-                        // 2. Fallback: Run a realistic simulated engine game if no human is playing
+                        // 2. Fallback: Run a realistic simulated engine game (AI vs AI) if no human is playing
                         const m1 = MASTER_POOL[Math.floor(Math.random() * 15)];
                         const m2 = MASTER_POOL[Math.floor(Math.random() * 15) + 15];
                         setupLiveBoardUI(m1.name, m1.rating, m2.name, m2.rating);
 
+                        // Only live games from AI vs AI are chosen from RANDOM_POSITIONS
                         let simGame = new Chess(RANDOM_POSITIONS[Math.floor(Math.random() * RANDOM_POSITIONS.length)]);
                         liveBoard.position(simGame.fen());
 
@@ -554,8 +555,9 @@
         function startDuel(opponent) {
             activeOpponent = opponent;
             
-            const randomFen = RANDOM_POSITIONS[Math.floor(Math.random() * RANDOM_POSITIONS.length)];
-            game = new Chess(randomFen);
+            // Standard Starting Position used here for human games (including human vs engine/bot)
+            const initialFen = 'start';
+            game = new Chess();
             
             userTimeLeft = 420; oppTimeLeft = 420;
             userColor = Math.random() > 0.5 ? 'w' : 'b';
@@ -572,14 +574,14 @@
 
             const config = {
                 draggable: false, 
-                position: randomFen, 
+                position: initialFen, 
                 orientation: userColor === 'w' ? 'white' : 'black',
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
             };
             board = ChessBoard('mainBoard', config);
 
             // Register this game in Firestore so lobby viewers can see it in real-time
-            registerLiveBroadcast(currentUser.id, randomFen, opponent);
+            registerLiveBroadcast(currentUser.id, game.fen(), opponent);
 
             $('#mainBoard').off('click', '.square-55d63');
             $('#mainBoard').on('click', '.square-55d63', function() { handleSquareClick($(this).data('square')); });
@@ -629,6 +631,7 @@
             }, Math.random() * 12000 + 3000);
         }
 
+        // Start timer counts down active sides
         function startTimer() {
             clearInterval(gameTimer);
             gameTimer = setInterval(() => {
