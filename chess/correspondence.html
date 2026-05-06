@@ -338,6 +338,11 @@
         let userColor = 'w';
         let isGameOverManually = false;
 
+        // Watch Live Active Reference Elements
+        let liveMatchInterval = null;
+        let liveGameInstance = null;
+        let liveBoardInstance = null;
+
         function showPopup() {
             $("#popup-overlay").fadeIn(300);
             $("#challenge-popup").fadeIn(300);
@@ -360,6 +365,7 @@
 
         function goToAuthPage() {
             clearInterval(gameTimer);
+            clearInterval(liveMatchInterval);
             $("#section-game").addClass("hidden");
             $("#section-lobby").addClass("hidden");
             $("#section-auth").fadeIn(400);
@@ -400,6 +406,7 @@
         function showSubSection(type) {
             let html = "";
             $("#lobby-list").html('<div style="text-align:center; padding:20px;">Synchronizing...</div>');
+            clearInterval(liveMatchInterval); // Stop any running live board simulations on tab swap
 
             if (type === 'online') {
                 $("#lobby-title").text("Masters Online");
@@ -436,10 +443,29 @@
                     <div class="player-bar bottom"><div>⚪ ${m2.name} <span class="rating-tag">${m2.rating}</span></div></div>
                 `);
                 
-                ChessBoard('liveBoard', { 
+                liveGameInstance = new Chess(randomFen);
+                liveBoardInstance = ChessBoard('liveBoard', { 
                     position: randomFen, 
                     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' 
                 });
+
+                // Generate real-time continuous gameplay for AI vs AI simulation
+                liveMatchInterval = setInterval(() => {
+                    if (liveGameInstance.game_over()) {
+                        // Restart game dynamically with a new opening setup when finished
+                        const nextOpening = RANDOM_OPENINGS[Math.floor(Math.random() * RANDOM_OPENINGS.length)];
+                        liveGameInstance.load(nextOpening);
+                        liveBoardInstance.position(nextOpening);
+                        return;
+                    }
+
+                    const moves = liveGameInstance.moves();
+                    if (moves.length > 0) {
+                        const randomMove = moves[Math.floor(Math.random() * moves.length)];
+                        liveGameInstance.move(randomMove);
+                        liveBoardInstance.position(liveGameInstance.fen());
+                    }
+                }, 1800); // Decent viewing speed updates
             }
         }
 
@@ -535,8 +561,8 @@
             let changeStr = "";
             let detailStr = "";
             
-            // Logic for Rating Update
-            if (userWon !== null && currentUser && !String(currentUser.id).startsWith("guest_")) {
+            // Fixed validation layer: userWon strictly checked for boolean values to accommodate resignation losses.
+            if ((userWon === true || userWon === false) && currentUser && !String(currentUser.id).startsWith("guest_")) {
                 const myRating = Number(currentUser.rating);
                 const oppRating = Number(activeOpponent.rating);
                 
