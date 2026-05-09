@@ -3,10 +3,8 @@ importScripts('engine/garbochess.js');
 
 self.onmessage = function(e) {
     if (e.data.startsWith("position")) {
-        // substring(9) removes "position " to get the FEN
-        var fen = e.data.substring(9);
-        
-        // Initialize the board with the puzzle FEN
+        // Remove ResetGame() - it was forcing the engine back to the start
+        var fen = e.data.substring(9); 
         var result = InitializeFromFen(fen);
         
         if (result.length == 0) {
