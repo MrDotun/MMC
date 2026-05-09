@@ -13,160 +13,79 @@
 
     <style>
         #board { width: 100%; max-width: 500px; margin: 0 auto; }
-        /* Generic data-square selector ensures it always highlights properly */
         .highlight-square { box-shadow: inset 0 0 4px 4px rgba(250, 204, 21, 0.9) !important; }
         [data-square] { cursor: pointer; }
+        /* ESSENTIAL: This allows clicks to pass through the image to the square div below */
+        #board img { pointer-events: none; }
     </style>
 </head>
-<body class="bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900 via-slate-900 to-black min-h-screen flex items-center justify-center p-4">
+<body class="bg-slate-900 min-h-screen flex items-center justify-center p-4">
 
-    <!-- Added a slight glassy shadow and border for a more premium design -->
-    <div class="bg-white/95 backdrop-blur-sm w-full max-w-2xl rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.4)] border border-white/10 overflow-hidden p-6 md:p-10">
+    <div class="bg-white w-full max-w-2xl rounded-3xl shadow-2xl p-10">
         <header class="text-center mb-6">
-            <h1 class="text-3xl font-black text-gray-800 tracking-tight">Week 4 Mission</h1>
-            <h2 id="puzzle-title" class="text-gray-500 italic mt-2">Loading...</h2>
+            <h1 id="puzzle-title" class="text-3xl font-black text-gray-800">Loading...</h1>
         </header>
 
         <div id="board" class="rounded shadow-xl"></div>
         
-        <div id="status-container" class="mt-6 text-center">
-            <p id="status" class="text-xl font-bold text-gray-700 transition-colors duration-300">White to Move</p>
-            <p id="solution" class="text-blue-600 font-medium h-6 mt-1"></p>
+        <div class="mt-6 text-center">
+            <p id="status" class="text-xl font-bold text-gray-700">White to Move</p>
         </div>
 
         <div class="grid grid-cols-2 gap-4 mt-8">
-            <button onclick="prevPuzzle()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 px-6 rounded-xl transition">Previous</button>
-            <button onclick="nextPuzzle()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition shadow-lg shadow-blue-600/30">Next Mission</button>
-        </div>
-
-        <div class="mt-8">
-            <div class="flex justify-between text-xs font-bold text-gray-400 mb-1 uppercase tracking-wider">
-                <span>Mission Progress</span>
-                <span id="progress-text">1 / 44</span>
-            </div>
-            <div class="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
-                <div id="progress-bar" class="bg-blue-500 h-full transition-all duration-500 ease-out" style="width: 0%"></div>
-            </div>
+            <button onclick="prevPuzzle()" class="bg-gray-200 py-3 rounded-xl font-bold">Previous</button>
+            <button onclick="nextPuzzle()" class="bg-blue-600 text-white py-3 rounded-xl font-bold">Next</button>
         </div>
     </div>
 
 <script>
+    // Your Puzzle Data
     const puzzles = [
-        { title: "Morphy vs Duke Isouard (1858)", fen: "4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w k - 1 0", moves: ["b3b8", "d7b8", "d1d8"] },
-        { title: "Zukertort vs Anderssen (1865)", fen: "r1b2k1r/ppp1bppp/8/1B1Q4/5q2/2P5/PPP2PPP/R3R1K1 w - - 1 0", moves: ["d5d8", "e7d8", "e1e8"] },
-        { title: "Neumann vs Mayet (1866)", fen: "5rkr/pp2Rp2/1b1p1Pb1/3P2Q1/2n3P1/2p5/P4P2/4R1K1 w - - 1 0", moves: ["g5g6", "f7g6", "e7g7"] },
-        { title: "Blackburne vs Martin (1876)", fen: "1r1kr3/Nbppn1pp/1b6/8/6Q1/3B1P2/Pq3P1P/3RR1K1 w - - 1 0", moves: ["g4d7", "d8d7", "d3b5"] },
-        { title: "Paulsen vs Anderssen (1878)", fen: "5rk1/1p1q2bp/p2pN1p1/2pP2Bn/2P3P1/1P6/P4QKP/5R2 w - - 1 0", moves: ["f2f8", "g7f8", "f1f8"] },
-        { title: "Blackburne vs Smith (1882)", fen: "r1nk3r/2b2ppp/p3b3/3NN3/Q2P3q/B2B4/P4PPP/4R1K1 w - - 1 0", moves: ["a4d7", "e6d7", "e5f7"] },
-        { title: "Steinitz vs Sands (1887)", fen: "r4br1/3b1kpp/1q1P4/1pp1RP1N/p7/6Q1/PPB3PP/2KR4 w - - 1 0", moves: ["g3g6", "h7g6", "f5g6"] },
-        { title: "Steinitz vs Hodges (1891)", fen: "r1b2k1r/ppppq3/5N1p/4P2Q/4PP2/1B6/PP5P/n2K2R1 w - - 1 0", moves: ["h5h6", "h8h6", "g1g8"] },
-        { title: "Tarrasch vs Fiedler (1892)", fen: "r2q1b1r/1pN1n1pp/p1n3k1/4Pb2/2BP4/8/PPP3PP/R1BQ1RK1 w - - 1 0", moves: ["d1g4", "f5g4", "c4f7"] },
-        { title: "Pillsbury vs Rodgers (1893)", fen: "3q2r1/4n2k/p1p1rBpp/PpPpPp2/1P3P1Q/2P3R1/7P/1R5K w - - 1 0", moves: ["h4h6", "h7h6", "g3h3"] },
-        { title: "Tarrasch vs Kurschner (1893)", fen: "r2qk2r/pb4pp/1n2Pb2/2B2Q2/p1p5/2P5/2B2PPP/RN2R1K1 w - - 1 0", moves: ["f5g6", "h7g6", "c2g6"] },
-        { title: "James Mason vs Georg Marco (1894)", fen: "6k1/pp4p1/2p5/2bp4/8/P5Pb/1P3rrP/2BRRN1K b - - 0 1", moves: ["g2g1", "k1g1", "f2f1"] },
-        { title: "Teed vs Delmar (1896)", fen: "rnbqkbn1/ppppp3/7r/6pp/3P1p2/3BP1B1/PPP2PPP/RN1QK1NR w - - 1 0", moves: ["d1h5", "h6h5", "d3g6"] },
-        { title: "Steinitz vs Trenchard (1898)", fen: "r2qrb2/p1pn1Qp1/1p4Nk/4PR2/3n4/7N/P5PP/R6K w - - 1 0", moves: ["g6e7", "d4f5", "f7g6"] },
-        { title: "James Mason vs Emanuel Lasker (1899)", fen: "8/2r5/1k5p/1pp4P/8/K2P4/PR2QB2/2q5 b - - 0 1", moves: ["c1c3", "b2b3", "c7a7"] },
-        { title: "Nimzowitsch vs Neumann (1899)", fen: "r1b3nr/ppqk1Bbp/2pp4/4P1B1/3n4/3P4/PPP2QPP/R4RK1 w - - 1 0", moves: ["f2f5", "d4f5", "e5e6"] },
-        { title: "Pillsbury vs Tinsley (1899)", fen: "3k1r1r/pb3p2/1p4p1/1B2B3/3qn3/6QP/P4RP1/2R3K1 w - - 1 0", moves: ["e5f6", "d4f6", "g3c7"] },
-        { title: "Ryder vs NN (1899)", fen: "rn2kb1r/1pQbpppp/1p6/qp1N4/6n1/8/PPP3PP/2KR2NR w - - 1 0", moves: ["c7c8", "d7c8", "d5c7"] },
-        { title: "Pulitzer vs Marco (1900)", fen: "r2k2nr/pp1b1Q1p/2n4b/3N4/3q4/3P4/PPP3PP/4RR1K w - - 1 0", moves: ["e1e8", "d7e8", "f7c7"] },
-        { title: "Arturo Reggio vs Georg Marco (1902)", fen: "7k/1p4p1/p4b1p/3N3P/2p5/2rb4/PP2r3/K2R2R1 b - - 0 1", moves: ["e2c2", "b2c2", "f6b2"] },
-        { title: "Lasker vs NN (1903)", fen: "r2q2nr/5p1p/p1Bp3b/1p1NkP2/3pP1p1/2PP2P1/PP5P/R1Bb1RK1 w - - 1 0", moves: ["c1f4", "h6f4", "g3f4"] },
-        { title: "Schwartz vs Samsonov (1908)", fen: "r2q1k1r/ppp1bB1p/2np4/6N1/3PP1bP/8/PPP5/RNB2RK1 w - - 1 0", moves: ["g5e6", "g4e6", "f7h6"] },
-        { title: "Rotlevi vs Suchting (1911)", fen: "6k1/1p1r1pp1/p1r3b1/3pPqB1/2pP4/Q1P4R/P3P2K/6R1 w - - 1 0", moves: ["a3f8", "k8f8", "h3h8"] },
-        { title: "Flamberg vs Duras (1912)", fen: "r1b3k1/ppp3pp/8/3pB3/1P1P4/3K1P2/PP1n1q1P/R2Q3R b - - 0 1", moves: ["c8f5", "d3c3", "f2e3"] },
-        { title: "Lasker vs Englund (1913)", fen: "2kr1b1r/pp3ppp/2p1b2q/4B3/4Q3/2PB2R1/PPP2PPP/3R2K1 w - - 1 0", moves: ["e4c6", "bxc6", "d3a6"] },
-        { title: "Teichmann vs NN (1914)", fen: "rn2kb1r/pp3ppp/4p1qn/1p4B1/2B5/3P2QP/PPP2PP1/R3K2R w - - 1 0", moves: ["g3b8", "a8b8", "c4b5"] },
-        { title: "Watson vs NN (1916)", fen: "rnb2b1r/p3kBp1/3pNn1p/2pQNn1p/1p2PP2/4B3/Pq5P/4K3 w - - 1 0", moves: ["d5d6", "e7d6", "e3c5"] },
-        { title: "Brunnemer vs Patton (1920)", fen: "r1b1k2r/ppQ1q2n/2p2p2/P3p2p/N3P1pP/1B4P1/1PP2P2/3R1NK1 w - - 1 0", moves: ["d1d8", "e7d8", "c7f7"] },
-        { title: "Gerard Oskam vs Max Euwe (1920)", fen: "r6k/pp4pp/1b1P4/8/1n4Q1/2N1RP2/PPq3p1/1RB1K3 b - - 0 1", moves: ["c2d3", "c3d3", "b6f2"] },
-        { title: "Tartakower vs Reti (1920)", fen: "8/1r5p/kpQ3p1/p3rp2/P6P/8/4bPPK/1R6 w - - 1 0", moves: ["b1b6", "b7b6", "c3a8"] },
-        { title: "Sery vs Vecsey (1921)", fen: "r1b2rk1/2p2ppp/p7/1p6/3P3q/1BP3bP/PP3QP1/RNB1R1K1 w - - 1 0", moves: ["f2f7", "f8f7", "e1e8"] },
-        { title: "Berger vs Froehlich (1922)", fen: "r2qkb1r/2p1nppp/p2p4/np1NN3/4P3/1BP5/PP1P1PPP/R1B1K2R w - - 1 0", moves: ["d5f6", "g7f6", "b3f7"] },
-        { title: "Probst vs Lowig (1922)", fen: "rnbkn2r/pppp1Qpp/5b2/3NN3/3Pp3/8/PPP1KP1P/R1B4q w - - 1 0", moves: ["f7e7", "f6e7", "d5f7"] },
-        { title: "Lajos Steiner vs Becker (1923)", fen: "4rk2/2pQn2p/p4p2/1p2pN1P/4q3/2P3R1/5PPK/8 w - - 1 0", moves: ["g3g8", "f8f7", "f5h6"] },
-        { title: "Euwe vs Van Mindeno (1927)", fen: "r1b2rk1/pp3ppp/3p4/3Q1nq1/2B1R3/8/PP3PPP/R5K1 w - - 1 0", moves: ["d5f7", "f8f7", "e1e8"] },
-        { title: "Monterinas vs Max Euwe (1927)", fen: "7r/p3ppk1/3p4/2p1P1Kp/2Pb4/3P1QPq/PP5P/R6R b - - 0 1", moves: ["h3e3", "f3e3", "h8g4"] },
-        { title: "Ilya Rabinovich vs Grigori Levenfish (1927)", fen: "rn2kb1r/ppp1pppp/8/8/4q3/3P1N1b/PPP1BPnP/RNBQ1K1R b kq - 0 1", moves: ["e4h4", "f3h4", "g2f3"] },
-        { title: "Springe vs Gebhard (1927)", fen: "r1b1kb1r/pp1n1pp1/1qp1p2p/6B1/2PPQ3/3B1N2/P4PPP/R4RK1 w - - 1 0", moves: ["e4e6", "f7e6", "d3g6"] },
-        { title: "Vidmar vs Euwe (1929)", fen: "6k1/5p2/1p5p/p4Np1/5q2/Q6P/PPr5/3R3K w - - 1 0", moves: ["a3f8", "g8f8", "d1d8"] },
-        { title: "Winter vs Gemzoe (1933)", fen: "r3q3/ppp3k1/3p3R/5b2/2PR3Q/2P1PrP1/P7/4K3 w - - 1 0", moves: ["h4f6", "g7g8", "h6h8"] },
-        { title: "Nicolas Ticoulat vs Andor Lilienthal (1934)", fen: "r3k2r/1Bp2ppp/8/4q1b1/pP1n4/P1KP3P/1BP5/R2Q3R b - - 0 1", moves: ["d4b5", "c3c4", "b5d6"] },
-        { title: "Dake vs Cranston (1935)", fen: "r1bq2rk/pp3pbp/2p1p1p1/7P/3P4/2PB1N2/PP3PPR/2KR4 w - - 1 0", moves: ["h6h7", "h8h7", "h5g6"] },
-        { title: "Luckis vs Czerniak (1935)", fen: "k1n3rr/Pp3p2/3q4/3N4/3Pp2p/1Q2P1p1/3B1PP1/R4RK1 w - - 1 0", moves: ["b3b7", "k8b7", "a7a8q"] },
-        { title: "Cherubino Staldi vs Uulberg (1936)", fen: "8/1p3k2/4p1rp/p3Pp1Q/3qnP2/1P6/P6P/2R2R1K b - - 0 1", moves: ["d4g1", "f1g1", "e4f2"] }
+        { title: "Morphy vs Duke Isouard (1858)", fen: "4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w k - 1 0" },
+        { title: "Zukertort vs Anderssen (1865)", fen: "r1b2k1r/ppp1bppp/8/1B1Q4/5q2/2P5/PPP2PPP/R3R1K1 w - - 1 0" }
     ];
 
     let currentIdx = 0;
     let game = new Chess();
     let board = null;
     let firstClick = null;
-    
-    // Setup GarboChess worker
-    let engine = null;
-    if (window.Worker) {
-        try {
-            engine = new Worker('chess-worker.js');
-            engine.onmessage = function(event) {
-                const msg = event.data;
-                let moveStr = null;
-                
-                // Parse standard UCI (bestmove e7e5) or raw move strings
-                if (typeof msg === 'string') {
-                    const match = msg.match(/(?:bestmove|move)\s+([a-h][1-8][a-h][1-8][qrbn]?)/);
-                    if (match) {
-                        moveStr = match[1];
-                    } else if (/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(msg.trim())) {
-                        moveStr = msg.trim();
-                    }
-                }
+    let engine = new Worker('chess-worker.js');
 
-                if (moveStr) {
-                    game.move({ 
-                        from: moveStr.substring(0, 2), 
-                        to: moveStr.substring(2, 4), 
-                        promotion: moveStr.length === 5 ? moveStr[4] : 'q' 
-                    });
-                    board.position(game.fen());
-                    
-                    document.getElementById('status').innerText = (game.turn() === 'w' ? "White" : "Black") + " to Move";
-                    document.getElementById('status').className = "text-xl font-bold text-gray-700";
-                    
-                    if (game.game_over()) {
-                        document.getElementById('status').innerText = game.in_checkmate() ? "Checkmate!" : "Draw!";
-                        document.getElementById('status').className = "text-xl font-bold text-green-600";
-                    }
-                }
-            };
-        } catch(e) {
-            console.error("Worker failed to load: ", e);
+    // Handle engine move
+    engine.onmessage = function(e) {
+        const move = game.move({
+            from: e.data.substring(0, 2),
+            to: e.data.substring(2, 4),
+            promotion: 'q'
+        });
+        if (move) {
+            board.position(game.fen());
+            updateStatus();
         }
+    };
+
+    function updateStatus() {
+        let status = game.turn() === 'w' ? "White to Move" : "Black to Move (Thinking...)";
+        if (game.in_checkmate()) status = "Checkmate!";
+        document.getElementById('status').innerText = status;
     }
 
     function initPuzzle(idx) {
-        const p = puzzles[idx];
         currentIdx = idx;
-        firstClick = null;
+        const p = puzzles[idx];
         game.load(p.fen);
-        
         document.getElementById('puzzle-title').innerText = p.title;
-        document.getElementById('status').innerText = (game.turn() === 'w' ? "White" : "Black") + " to Move";
-        document.getElementById('status').className = "text-xl font-bold text-gray-700";
-        document.getElementById('solution').innerText = "";
-        document.getElementById('progress-text').innerText = (idx + 1) + " / " + puzzles.length;
-        document.getElementById('progress-bar').style.width = ((idx + 1) / puzzles.length * 100) + "%";
-
+        
         const config = {
             position: p.fen,
-            orientation: (game.turn() === 'w' ? 'white' : 'black'),
-            draggable: false, // Keeping false as requested, using click-to-move
-            // FIX #1: Replaced broken unpkg link with the official working chessboardjs asset link
+            orientation: game.turn() === 'w' ? 'white' : 'black',
+            draggable: false,
             pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
         };
         
         if (board) board.destroy();
         board = Chessboard('board', config);
+        updateStatus();
     }
 
     function handleSquareClick(square) {
@@ -180,50 +99,22 @@
                 $('[data-square="' + square + '"]').addClass('highlight-square');
             }
         } else {
-            // Allows player to change their mind and click a different piece they own
-            if (square === firstClick) {
-                firstClick = null;
-                $('[data-square]').removeClass('highlight-square');
-                return;
-            }
-
-            const moveAttempt = game.move({ from: firstClick, to: square, promotion: 'q' });
+            const move = game.move({ from: firstClick, to: square, promotion: 'q' });
             
-            if (moveAttempt) {
+            if (move) {
                 board.position(game.fen());
-                firstClick = null;
                 $('[data-square]').removeClass('highlight-square');
+                firstClick = null;
+                updateStatus();
                 
-                if (game.game_over()) {
-                    document.getElementById('status').innerText = game.in_checkmate() ? "Checkmate!" : "Draw!";
-                    document.getElementById('status').className = "text-xl font-bold text-green-600";
-                    return;
-                }
-
-                // FIX #3: Trigger GarboChess opponent response dynamically
-                document.getElementById('status').innerText = "GarboChess is thinking...";
-                document.getElementById('status').className = "text-xl font-bold text-orange-500";
-                
-                if (engine) {
-                    // Send position to worker (Standard UCI format & typical engine wrapper support)
-                    engine.postMessage("position fen " + game.fen());
-                    engine.postMessage("go movetime 1000"); // Standard UCI
-                    engine.postMessage("analyze"); // Fallback for raw garbochess builds
-                } else {
-                    document.getElementById('status').innerText = "Engine not found. Play manually.";
-                }
-                
+                // MATCHING YOUR WORKER: 
+                // "position " is 9 characters. Substring(9) will extract the FEN.
+                engine.postMessage("position " + game.fen());
             } else {
-                // If invalid move, maybe they just clicked a different piece they want to move
-                const piece = game.get(square);
-                if (piece && piece.color === game.turn()) {
-                    firstClick = square;
-                    $('[data-square]').removeClass('highlight-square');
-                    $('[data-square="' + square + '"]').addClass('highlight-square');
-                } else {
-                    firstClick = null;
-                    $('[data-square]').removeClass('highlight-square');
-                }
+                // Deselect or switch piece
+                firstClick = (game.get(square)?.color === game.turn()) ? square : null;
+                $('[data-square]').removeClass('highlight-square');
+                if (firstClick) $('[data-square="' + square + '"]').addClass('highlight-square');
             }
         }
     }
@@ -233,12 +124,10 @@
 
     $(document).ready(() => {
         initPuzzle(0);
-        // FIX #2: Rely on data-square natively so images don't block the click event
-        $('#board').on('click', '[data-square]', function(e) {
-            const square = $(this).closest('[data-square]').attr('data-square');
-            if (square) handleSquareClick(square);
+        // Delegate click to board squares
+        $('#board').on('click', '[data-square]', function() {
+            handleSquareClick($(this).attr('data-square'));
         });
-        window.addEventListener('resize', () => { if(board) board.resize(); });
     });
 </script>
 </body>
