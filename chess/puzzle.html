@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Week 4 Mission - Interactive Puzzles</title>
+    <!-- Include Chessboard.js CSS/JS and Chess.js -->
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <style>
+        #board { width: 400px; margin: 20px auto; }
+        .controls { text-align: center; font-family: sans-serif; }
+        .status-msg { margin-top: 10px; font-weight: bold; }
+        .solution-box { color: #555; font-style: italic; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="controls">
+    <h2>Week 4 Mission: Tactical Patterns</h2>
+    <h3 id="puzzle-title">Loading...</h3>
+    <div id="board"></div>
+    <p id="status" class="status-msg">White to Move</p>
+    <div id="solution" class="solution-box"></div>
+    <button onclick="prevPuzzle()">Previous</button>
+    <button onclick="nextPuzzle()">Next Puzzle</button>
+</div>
+
+<script>
+    const puzzles = [
+        { title: "Morphy vs Duke Isouard (1858)", fen: "4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w k - 1 0", moves: ["b3b8", "d7b8", "d1d8"] },
+        { title: "Zukertort vs Anderssen (1865)", fen: "r1b2k1r/ppp1bppp/8/1B1Q4/5q2/2P5/PPP2PPP/R3R1K1 w - - 1 0", moves: ["d5d8", "e7d8", "e1e8"] },
+        { title: "Neumann vs Mayet (1866)", fen: "5rkr/pp2Rp2/1b1p1Pb1/3P2Q1/2n3P1/2p5/P4P2/4R1K1 w - - 1 0", moves: ["g5g6", "f7g6", "e7g7"] },
+        { title: "Blackburne vs Martin (1876)", fen: "1r1kr3/Nbppn1pp/1b6/8/6Q1/3B1P2/Pq3P1P/3RR1K1 w - - 1 0", moves: ["g4d7", "d8d7", "d3b5"] },
+        { title: "Paulsen vs Anderssen (1878)", fen: "5rk1/1p1q2bp/p2pN1p1/2pP2Bn/2P3P1/1P6/P4QKP/5R2 w - - 1 0", moves: ["f2f8", "g7f8", "f1f8"] },
+        { title: "Blackburne vs Smith (1882)", fen: "r1nk3r/2b2ppp/p3b3/3NN3/Q2P3q/B2B4/P4PPP/4R1K1 w - - 1 0", moves: ["a4d7", "e6d7", "e5f7"] },
+        { title: "Steinitz vs Sands (1887)", fen: "r4br1/3b1kpp/1q1P4/1pp1RP1N/p7/6Q1/PPB3PP/2KR4 w - - 1 0", moves: ["g3g6", "h7g6", "f5g6"] },
+        { title: "Steinitz vs Hodges (1891)", fen: "r1b2k1r/ppppq3/5N1p/4P2Q/4PP2/1B6/PP5P/n2K2R1 w - - 1 0", moves: ["h5h6", "h8h6", "g1g8"] },
+        { title: "Tarrasch vs Fiedler (1892)", fen: "r2q1b1r/1pN1n1pp/p1n3k1/4Pb2/2BP4/8/PPP3PP/R1BQ1RK1 w - - 1 0", moves: ["d1g4", "f5g4", "c4f7"] },
+        { title: "Pillsbury vs Rodgers (1893)", fen: "3q2r1/4n2k/p1p1rBpp/PpPpPp2/1P3P1Q/2P3R1/7P/1R5K w - - 1 0", moves: ["h4h6", "h7h6", "g3h3"] },
+        { title: "Tarrasch vs Kurschner (1893)", fen: "r2qk2r/pb4pp/1n2Pb2/2B2Q2/p1p5/2P5/2B2PPP/RN2R1K1 w - - 1 0", moves: ["f5g6", "h7g6", "c2g6"] },
+        { title: "Teed vs Delmar (1896)", fen: "rnbqkbn1/ppppp3/7r/6pp/3P1p2/3BP1B1/PPP2PPP/RN1QK1NR w - - 1 0", moves: ["d1h5", "h6h5", "d3g6"] },
+        { title: "Steinitz vs Trenchard (1898)", fen: "r2qrb2/p1pn1Qp1/1p4Nk/4PR2/3n4/7N/P5PP/R6K w - - 1 0", moves: ["g6e7", "d4f5", "f7g6"] },
+        { title: "Nimzowitsch vs Neumann (1899)", fen: "r1b3nr/ppqk1Bbp/2pp4/4P1B1/3n4/3P4/PPP2QPP/R4RK1 w - - 1 0", moves: ["f2f5", "d4f5", "e5e6"] },
+        { title: "Pillsbury vs Tinsley (1899)", fen: "3k1r1r/pb3p2/1p4p1/1B2B3/3qn3/6QP/P4RP1/2R3K1 w - - 1 0", moves: ["e5f6", "d4f6", "g3c7"] },
+        { title: "Ryder vs NN (1899)", fen: "rn2kb1r/1pQbpppp/1p6/qp1N4/6n1/8/PPP3PP/2KR2NR w - - 1 0", moves: ["c7c8", "d7c8", "d5c7"] },
+        { title: "Pulitzer vs Marco (1900)", fen: "r2k2nr/pp1b1Q1p/2n4b/3N4/3q4/3P4/PPP3PP/4RR1K w - - 1 0", moves: ["e1e8", "d7e8", "f7c7"] },
+        { title: "Lasker vs NN (1903)", fen: "r2q2nr/5p1p/p1Bp3b/1p1NkP2/3pP1p1/2PP2P1/PP5P/R1Bb1RK1 w - - 1 0", moves: ["c1f4", "h6f4", "g3f4"] },
+        { title: "Schwartz vs Samsonov (1908)", fen: "r2q1k1r/ppp1bB1p/2np4/6N1/3PP1bP/8/PPP5/RNB2RK1 w - - 1 0", moves: ["g5e6", "g4e6", "f7h6"] },
+        { title: "Rotlevi vs Suchting (1911)", fen: "6k1/1p1r1pp1/p1r3b1/3pPqB1/2pP4/Q1P4R/P3P2K/6R1 w - - 1 0", moves: ["a3f8", "k8f8", "h3h8"] },
+        { title: "Lasker vs Englund (1913)", fen: "2kr1b1r/pp3ppp/2p1b2q/4B3/4Q3/2PB2R1/PPP2PPP/3R2K1 w - - 1 0", moves: ["e4c6", "bxc6", "d3a6"] },
+        { title: "Teichmann vs NN (1914)", fen: "rn2kb1r/pp3ppp/4p1qn/1p4B1/2B5/3P2QP/PPP2PP1/R3K2R w - - 1 0", moves: ["g3b8", "a8b8", "c4b5"] },
+        { title: "Watson vs NN (1916)", fen: "rnb2b1r/p3kBp1/3pNn1p/2pQNn1p/1p2PP2/4B3/Pq5P/4K3 w - - 1 0", moves: ["d5d6", "e7d6", "e3c5"] },
+        { title: "Brunnemer vs Patton (1920)", fen: "r1b1k2r/ppQ1q2n/2p2p2/P3p2p/N3P1pP/1B4P1/1PP2P2/3R1NK1 w - - 1 0", moves: ["d1d8", "e7d8", "c7f7"] },
+        { title: "Tartakower vs Reti (1920)", fen: "8/1r5p/kpQ3p1/p3rp2/P6P/8/4bPPK/1R6 w - - 1 0", moves: ["b1b6", "b7b6", "c3a8"] },
+        { title: "Sery vs Vecsey (1921)", fen: "r1b2rk1/2p2ppp/p7/1p6/3P3q/1BP3bP/PP3QP1/RNB1R1K1 w - - 1 0", moves: ["f2f7", "f8f7", "e1e8"] },
+        { title: "Berger vs Froehlich (1922)", fen: "r2qkb1r/2p1nppp/p2p4/np1NN3/4P3/1BP5/PP1P1PPP/R1B1K2R w - - 1 0", moves: ["d5f6", "g7f6", "b3f7"] },
+        { title: "Probst vs Lowig (1922)", fen: "rnbkn2r/pppp1Qpp/5b2/3NN3/3Pp3/8/PPP1KP1P/R1B4q w - - 1 0", moves: ["f7e7", "f6e7", "d5f7"] },
+        { title: "Lajos Steiner vs Becker (1923)", fen: "4rk2/2pQn2p/p4p2/1p2pN1P/4q3/2P3R1/5PPK/8 w - - 1 0", moves: ["g3g8", "f8f7", "f5h6"] },
+        { title: "Euwe vs Van Mindeno (1927)", fen: "r1b2rk1/pp3ppp/3p4/3Q1nq1/2B1R3/8/PP3PPP/R5K1 w - - 1 0", moves: ["d5f7", "f8f7", "e1e8"] },
+        { title: "Springe vs Gebhard (1927)", fen: "r1b1kb1r/pp1n1pp1/1qp1p2p/6B1/2PPQ3/3B1N2/P4PPP/R4RK1 w - - 1 0", moves: ["e4e6", "f7e6", "d3g6"] },
+        { title: "Vidmar vs Euwe (1929)", fen: "6k1/5p2/1p5p/p4Np1/5q2/Q6P/PPr5/3R3K w - - 1 0", moves: ["a3f8", "g8f8", "d1r8"] },
+        { title: "Winter vs Gemzoe (1933)", fen: "r3q3/ppp3k1/3p3R/5b2/2PR3Q/2P1PrP1/P7/4K3 w - - 1 0", moves: ["h4f6", "g7g8", "h6h8"] },
+        { title: "Dake vs Cranston (1935)", fen: "r1bq2rk/pp3pbp/2p1p1pQ/7P/3P4/2PB1N2/PP3PPR/2KR4 w - - 1 0", moves: ["h6h7", "h8h7", "h5g6"] },
+        { title: "Luckis vs Czerniak (1935)", fen: "k1n3rr/Pp3p2/3q4/3N4/3Pp2p/1Q2P1p1/3B1PP1/R4RK1 w - - 1 0", moves: ["b3b7", "k8b7", "a7a8q"] }
+    ];
+
+    let currentIdx = 0;
+    let game = new Chess();
+    let board = null;
+    let moveIdx = 0;
+    let firstClick = null;
+
+    function initPuzzle(idx) {
+        const p = puzzles[idx];
+        currentIdx = idx;
+        moveIdx = 0;
+        firstClick = null;
+        game.load(p.fen);
+        document.getElementById('puzzle-title').innerText = p.title;
+        document.getElementById('status').innerText = (game.turn() === 'w' ? "White" : "Black") + " to Move";
+        document.getElementById('status').style.color = "black";
+        document.getElementById('solution').innerText = "";
+        
+        const config = {
+            position: p.fen,
+            orientation: (game.turn() === 'w' ? 'white' : 'black')
+        };
+        board = Chessboard('board', config);
+        
+        // Handle Click-to-Move
+        $('#board').find('.square-55d63').on('click', function() {
+            const square = $(this).attr('data-square');
+            handleSquareClick(square);
+        });
+    }
+
+    function handleSquareClick(square) {
+        if (!firstClick) {
+            // Highlight source square
+            if (game.get(square)) {
+                firstClick = square;
+                $('.square-55d63').css('background', '');
+                $('.square-' + square).css('background', '#a9bb6d');
+            }
+        } else {
+            // Attempt move
+            const moveAttempt = game.move({ from: firstClick, to: square, promotion: 'q' });
+            
+            if (moveAttempt) {
+                const correctMove = puzzles[currentIdx].moves[moveIdx];
+                if (moveAttempt.from + moveAttempt.to === correctMove || moveAttempt.san === correctMove) {
+                    board.position(game.fen());
+                    moveIdx++;
+                    
+                    // Trigger opponent response automatically
+                    if (moveIdx < puzzles[currentIdx].moves.length) {
+                        setTimeout(() => {
+                            game.move(puzzles[currentIdx].moves[moveIdx]);
+                            board.position(game.fen());
+                            moveIdx++;
+                        }, 500);
+                    } else {
+                        document.getElementById('status').innerText = "Correct! Mission Accomplished.";
+                        document.getElementById('status').style.color = "green";
+                    }
+                } else {
+                    // Wrong move: reset
+                    game.undo();
+                    document.getElementById('status').innerText = "Incorrect move, try again!";
+                    document.getElementById('status').style.color = "red";
+                    document.getElementById('solution').innerText = "Hint: " + puzzles[currentIdx].moves[moveIdx];
+                }
+            }
+            firstClick = null;
+            $('.square-55d63').css('background', '');
+        }
+    }
+
+    function nextPuzzle() {
+        if (currentIdx < puzzles.length - 1) initPuzzle(currentIdx + 1);
+    }
+
+    function prevPuzzle() {
+        if (currentIdx > 0) initPuzzle(currentIdx - 1);
+    }
+
+    // Start with the first puzzle
+    $(document).ready(() => initPuzzle(0));
+
+</script>
+
+</body>
+</html>
