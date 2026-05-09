@@ -19,10 +19,14 @@
             max-width: 500px;
             margin: 0 auto;
         }
+        /* Highlight for selected square */
         .highlight-square {
-            box-shadow: inset 0 0 3px 3px rgba(255, 255, 0, 0.75);
+            box-shadow: inset 0 0 3px 3px rgba(255, 255, 0, 0.8) !important;
         }
-        /* Smooth transitions for UI elements */
+        /* Make squares look clickable */
+        .square-55d63 {
+            cursor: pointer;
+        }
         .transition-all { transition: all 0.3s ease; }
     </style>
 </head>
@@ -138,7 +142,7 @@
         firstClick = null;
         game.load(p.fen);
         
-        // Update UI
+        // Update UI Text and Progress
         document.getElementById('puzzle-title').innerText = p.title;
         const turnColor = game.turn() === 'w' ? "White" : "Black";
         document.getElementById('status').innerText = turnColor + " to Move";
@@ -151,36 +155,31 @@
             position: p.fen,
             orientation: (game.turn() === 'w' ? 'white' : 'black'),
             draggable: false,
-            // Updated CDN for reliable piece loading
-            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+            // Using UNPKG for piece images to avoid standard CORS/loading issues
+            pieceTheme: 'https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/img/chesspieces/wikipedia/{piece}.png'
         };
         
         if (board) board.destroy();
         board = Chessboard('board', config);
-        
-        // Re-bind listeners after board creation
-        setTimeout(bindBoardEvents, 100);
     }
 
-    function bindBoardEvents() {
-        $('#board .square-55d63').off('click').on('click', function() {
-            const square = $(this).attr('data-square');
-            handleSquareClick(square);
-        });
-    }
-
+    // Fixed Interaction: Using Event Delegation on the #board container
     function handleSquareClick(square) {
         if (!firstClick) {
-            if (game.get(square) && game.get(square).color === game.turn()) {
+            // First click: Select a piece of the current turn's color
+            const piece = game.get(square);
+            if (piece && piece.color === game.turn()) {
                 firstClick = square;
                 $('.square-55d63').removeClass('highlight-square');
                 $('.square-' + square).addClass('highlight-square');
             }
         } else {
+            // Second click: Try to move
             const moveAttempt = game.move({ from: firstClick, to: square, promotion: 'q' });
             
             if (moveAttempt) {
                 const correctMove = puzzles[currentIdx].moves[moveIdx];
+                // Check move equality (coordinate format "e2e4" or SAN format "Qe4")
                 if (moveAttempt.from + moveAttempt.to === correctMove || moveAttempt.san === correctMove) {
                     board.position(game.fen());
                     moveIdx++;
@@ -197,15 +196,16 @@
                     } else {
                         document.getElementById('status').innerText = "Checkmate!";
                         document.getElementById('status').className = "text-2xl font-black text-green-600 uppercase";
-                        document.getElementById('solution').innerText = "Puzzle Solved successfully.";
+                        document.getElementById('solution').innerText = "Mission Accomplished.";
                     }
                 } else {
                     game.undo();
-                    document.getElementById('status').innerText = "Try Again!";
+                    document.getElementById('status').innerText = "Incorrect!";
                     document.getElementById('status').className = "text-2xl font-black text-red-500 uppercase";
-                    document.getElementById('solution').innerText = "That wasn't the winning move.";
+                    document.getElementById('solution').innerText = "Try a different tactical sequence.";
                 }
             }
+            // Reset selection
             firstClick = null;
             $('.square-55d63').removeClass('highlight-square');
         }
@@ -214,10 +214,19 @@
     function nextPuzzle() { if (currentIdx < puzzles.length - 1) initPuzzle(currentIdx + 1); }
     function prevPuzzle() { if (currentIdx > 0) initPuzzle(currentIdx - 1); }
 
-    // Handle board resize automatically
-    window.addEventListener('resize', () => { if(board) board.resize(); });
+    $(document).ready(() => {
+        // Initialize the first puzzle
+        initPuzzle(0);
 
-    $(document).ready(() => initPuzzle(0));
+        // One-time binding: Delegate click events to the board container
+        $('#board').on('click', '.square-55d63', function() {
+            const square = $(this).attr('data-square');
+            handleSquareClick(square);
+        });
+
+        // Ensure board resizes correctly
+        window.addEventListener('resize', () => { if(board) board.resize(); });
+    });
 </script>
 
 </body>
