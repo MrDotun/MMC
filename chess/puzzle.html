@@ -1,113 +1,104 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Friday Qualifier - Maryland Convent</title>
+    <title>Master Chess Lab</title>
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-    
     <style>
-        body { background: #0f172a; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        #board { width: 350px; max-width: 90vw; margin: 20px 0; border: 4px solid #334155; border-radius: 8px; overflow: hidden; }
-        .highlight-square { box-shadow: inset 0 0 3px 3px yellow; }
-        .controls { width: 350px; max-width: 90vw; display: flex; flex-direction: column; gap: 10px; }
-        input { padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: white; outline: none; }
-        button { padding: 12px; border-radius: 8px; border: none; background: #22c55e; color: white; font-weight: bold; cursor: pointer; text-transform: uppercase; }
-        button:hover { background: #16a34a; }
+        body { background: #0f172a; color: white; font-family: sans-serif; text-align: center; }
+        #board { width: 360px; max-width: 95vw; margin: 20px auto; border: 5px solid #334155; }
+        .highlight { box-shadow: inset 0 0 3px 3px yellow; }
+        .btn-green { background: #22c55e; color: white; padding: 15px; border-radius: 10px; font-weight: bold; width: 100%; border: none; }
     </style>
 </head>
 <body>
 
-    <h2>Friday Qualifier</h2>
-    <p>Solve the puzzle to qualify for Top 9!</p>
-
-    <div class="controls">
-        <input type="text" id="studentName" placeholder="ENTER YOUR FULL NAME">
-    </div>
-
     <div id="board"></div>
-
-    <div class="controls">
-        <p id="status" style="text-align: center; color: #94a3b8; font-size: 0.9rem;">White to move: Mate in 2</p>
+    <div style="padding: 20px;">
+        <h3 id="status">White to move: Mate in 2</h3>
+        <button class="btn-green" onclick="nextPuzzle()">Next Puzzle</button>
     </div>
 
-    <script>
-        // 1. Firebase Configuration (assignments-de95a)
-        const firebaseConfig = {
-            apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
-            authDomain: "assignments-de95a.firebaseapp.com",
-            projectId: "assignments-de95a",
-            storageBucket: "assignments-de95a.appspot.com",
-            messagingSenderId: "951478149818",
-            appId: "1:951478149818:web:757e78044737d97609710d"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+<script>
+// THE PUZZLE DATABASE (Extracted from your mate2.txt)
+const puzzleRepo = [
+    { fen: 'r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 0', moves: ['Nf6+', 'gxf6', 'Bxf7#'] },
+    { fen: '1rb4r/pkPp3p/1b1P3n/1Q6/N3Pp2/8/P1P3PP/7K w - - 1 0', moves: ['Qd5+', 'Ka6', 'cxb8=N#'] },
+    { fen: '4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w k - 1 0', moves: ['Qb8+', 'Nxb8', 'Rd8#'] },
+    { fen: 'r1b2k1r/ppp1bppp/8/1B1Q4/5q2/2P5/PPP2PPP/R3R1K1 w - - 1 0', moves: ['Qd8+', 'Bxd8', 'Re8#'] },
+    { fen: '5rkr/pp2pRp1/1b1p1Pb1/3P2Q1/2n3P1/2p5/P4P2/4R1K1 w - - 1 0', moves: ['Qxg7#'] } 
+    // Add all 50 here following this exact format: { fen: '...', moves: ['move1', 'reply', 'mate'] }
+];
 
-        // 2. Puzzle Data (From your mate2.txt: Henry Buckle vs NN)
-        const puzzleFEN = 'r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 0';
-        const solution = ['f2f6', 'd5f6', 'c4f7']; // The coordinates for Nf6+ and Bxf7#
-        
-        let game = new Chess(puzzleFEN);
-        let board = null;
-        let selectedSquare = null;
+let currentIndex = 0;
+let game = new Chess();
+let board = null;
+let selectedSquare = null;
 
-        function onSquareClick(square) {
-            if (selectedSquare === null) {
-                // First click: Select White Piece
-                let piece = game.get(square);
-                if (piece && piece.color === 'w') {
-                    selectedSquare = square;
-                    $('.square-' + square).addClass('highlight-square');
-                }
-            } else {
-                // Second click: Execute Move
-                let move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
-                $('.highlight-square').removeClass('highlight-square');
-                selectedSquare = null;
+function loadPuzzle(index) {
+    const p = puzzleRepo[index];
+    game = new Chess(p.fen);
+    board.position(p.fen);
+    selectedSquare = null;
+    $('#status').text(game.turn() === 'w' ? "White to move: Mate in 2" : "Black to move: Mate in 2");
+}
 
-                if (move === null) return; // Invalid move
+function onSquareClick(square) {
+    const p = puzzleRepo[currentIndex];
+    
+    if (selectedSquare === null) {
+        if (game.get(square) && game.get(square).color === game.turn()) {
+            selectedSquare = square;
+            $('.square-' + square).addClass('highlight');
+        }
+        return;
+    }
 
+    // Attempt Move
+    let move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
+    $('.highlight').removeClass('highlight');
+    selectedSquare = null;
+
+    if (move === null) return;
+
+    board.position(game.fen());
+
+    // COMPUTER REPLY LOGIC
+    // Check if the move matches the solution
+    let moveIndex = game.history().length - 1;
+    if (move.san === p.moves[0]) {
+        // If there's a reply defined in the array, play it
+        if (p.moves.length > 1 && !game.in_checkmate()) {
+            setTimeout(() => {
+                game.move(p.moves[1]);
                 board.position(game.fen());
-
-                // Auto-respond for Mate in 2 (Henry Buckle vs NN logic)
-                if (move.from === 'e5' && move.to === 'f6') { // Nf6+
-                    setTimeout(() => {
-                        game.move('g7f6'); // Black takes gxf6
-                        board.position(game.fen());
-                        document.getElementById('status').innerText = "Black played gxf6. Finish the Mate!";
-                    }, 500);
-                } else if (game.in_checkmate()) {
-                    document.getElementById('status').innerText = "CHECKMATE! Well done.";
-                    document.getElementById('status').style.color = "#22c55e";
-                    submitResult();
-                }
-            }
+                $('#status').text("Computer replied. Find the Mate!");
+            }, 600);
         }
+    } else {
+        $('#status').text("Wrong move. Try again!");
+        setTimeout(() => loadPuzzle(currentIndex), 1000);
+    }
 
-        function submitResult() {
-            const name = document.getElementById('studentName').value;
-            if (!name) return;
-            
-            db.collection("leaderboard").add({
-                name: name,
-                score: 1,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp()
-            }).then(() => {
-                alert("Score Submitted! You are on the leaderboard.");
-            });
-        }
+    if (game.in_checkmate()) {
+        $('#status').text("MATE! EXCELLENT.");
+    }
+}
 
-        board = Chessboard('board', {
-            position: puzzleFEN,
-            draggable: false, // CLICK TO MOVE ONLY
-            onSquareClick: onSquareClick
-        });
-    </script>
+function nextPuzzle() {
+    currentIndex = (currentIndex + 1) % puzzleRepo.length;
+    loadPuzzle(currentIndex);
+}
+
+board = Chessboard('board', {
+    position: 'start',
+    draggable: false, // Click-to-move
+    onSquareClick: onSquareClick
+});
+
+loadPuzzle(0);
+</script>
 </body>
 </html>
