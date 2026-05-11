@@ -3,225 +3,111 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maryland Convent Weekly Qualifiers</title>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Friday Qualifier - Maryland Convent</title>
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
-    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-
+    
     <style>
-        :root { --accent: #c5a059; }
-        body { background: #0b0e14; color: #e6edf3; }
-        #board { width: 400px; margin: 0 auto; border: 4px solid #30363d; border-radius: 4px; }
-        @media (max-width: 600px) { #board { width: 340px; } }
-        .square-55d63 { transition: background-color 0.2s; }
-        .highlight-selected { background-color: rgba(197, 160, 89, 0.6) !important; }
-        .qualifying-border { border-left: 4px solid var(--accent); background: rgba(197, 160, 89, 0.05); }
+        body { background: #0f172a; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        #board { width: 350px; max-width: 90vw; margin: 20px 0; border: 4px solid #334155; border-radius: 8px; overflow: hidden; }
+        .highlight-square { box-shadow: inset 0 0 3px 3px yellow; }
+        .controls { width: 350px; max-width: 90vw; display: flex; flex-direction: column; gap: 10px; }
+        input { padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: white; outline: none; }
+        button { padding: 12px; border-radius: 8px; border: none; background: #22c55e; color: white; font-weight: bold; cursor: pointer; text-transform: uppercase; }
+        button:hover { background: #16a34a; }
     </style>
 </head>
-<body class="min-h-screen p-4 flex flex-col items-center">
+<body>
 
-    <div class="text-center mb-8">
-        <h1 class="text-4xl font-black text-[#c5a059] uppercase tracking-tighter">Maryland Convent</h1>
-        <p class="text-lg text-slate-400">Weekly Qualifier Challenge</p>
-        <div class="mt-2 text-sm bg-[#c5a059]/20 text-[#c5a059] px-4 py-1 rounded-full border border-[#c5a059]/30">
-            🥇 Winner gets a Medal! Top 9 qualify.
-        </div>
+    <h2>Friday Qualifier</h2>
+    <p>Solve the puzzle to qualify for Top 9!</p>
+
+    <div class="controls">
+        <input type="text" id="studentName" placeholder="ENTER YOUR FULL NAME">
     </div>
 
-    <div id="reg-box" class="w-full max-w-md bg-[#161b22] p-8 rounded-2xl border border-[#30363d] shadow-2xl">
-        <div class="space-y-4">
-            <input type="text" id="name" placeholder="Student Full Name" class="w-full bg-[#0b0e14] border border-[#30363d] p-4 rounded-xl focus:border-[#c5a059] outline-none transition">
-            <input type="text" id="class" placeholder="Class (e.g. Basic 5)" class="w-full bg-[#0b0e14] border border-[#30363d] p-4 rounded-xl focus:border-[#c5a059] outline-none transition">
-            <button onclick="startChallenge()" class="w-full bg-[#c5a059] hover:bg-[#b38f4d] text-black font-black py-4 rounded-xl text-lg transition-all shadow-lg">START CHALLENGE</button>
-        </div>
-    </div>
+    <div id="board"></div>
 
-    <div id="game-section" class="hidden w-full max-w-5xl flex flex-col lg:flex-row gap-8">
-        
-        <div class="flex-1 bg-[#161b22] p-6 rounded-2xl border border-[#30363d]">
-            <div class="flex justify-between mb-4 px-2">
-                <div><span class="text-xs text-slate-500 block uppercase">Player</span><span id="p-name" class="font-bold"></span></div>
-                <div class="text-right"><span class="text-xs text-slate-500 block uppercase">Solved</span><span id="p-score" class="text-2xl font-black text-[#c5a059]">0</span></div>
-            </div>
-            
-            <div id="status" class="bg-[#0b0e14] p-3 rounded-lg text-center text-sm font-mono text-blue-400 mb-4 border border-[#30363d]">
-                Loading First Puzzle...
-            </div>
-
-            <div id="board"></div>
-            
-            <div class="mt-6 flex gap-3">
-                <button onclick="location.reload()" class="flex-1 py-3 text-xs font-bold text-red-400 border border-red-400/20 rounded-lg hover:bg-red-400/10">RESTART (Sets Score to 0)</button>
-            </div>
-        </div>
-
-        <div class="w-full lg:w-80 bg-[#161b22] p-6 rounded-2xl border border-[#30363d]">
-            <h3 class="text-lg font-bold mb-4 flex items-center gap-2">🏆 Live Standings</h3>
-            <div id="leaderboard" class="space-y-2 overflow-y-auto max-h-[500px] pr-2">
-                </div>
-        </div>
-
+    <div class="controls">
+        <p id="status" style="text-align: center; color: #94a3b8; font-size: 0.9rem;">White to move: Mate in 2</p>
     </div>
 
     <script>
-        // --- CONFIG ---
+        // 1. Firebase Configuration (assignments-de95a)
         const firebaseConfig = {
             apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
             authDomain: "assignments-de95a.firebaseapp.com",
             projectId: "assignments-de95a",
-            storageBucket: "assignments-de95a.firebasestorage.app",
-            messagingSenderId: "1088073398299",
-            appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
+            storageBucket: "assignments-de95a.appspot.com",
+            messagingSenderId: "951478149818",
+            appId: "1:951478149818:web:757e78044737d97609710d"
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        const puzzleData = [
-            { fen: 'r1b2k1r/ppp1bppp/8/1B1Q4/5q2/2P5/PPP2PPP/R3R1K1 w - - 1 0', sol: ['Qd8+', 'Bxd8', 'Re8#'], title: 'Zukertort vs Anderssen' },
-            { fen: '5rkr/pp2Rp2/1b1p1Pb1/3P2Q1/2n3P1/2p5/P4P2/4R1K1 w - - 1 0', sol: ['Qxg6+', 'fxg6', 'Rg7#'], title: 'Neumann vs Mayet' },
-            { fen: '1r1kr3/Nbppn1pp/1b6/8/6Q1/3B1P2/Pq3P1P/3RR1K1 w - - 1 0', sol: ['Qxd7+', 'Kxd7', 'Bb5#'], title: 'Blackburne vs Martin' },
-            { fen: '5rk1/1p1q2bp/p2pN1p1/2pP2Bn/2P3P1/1P6/P4QKP/5R2 w - - 1 0', sol: ['Qxf8+', 'Bxf8', 'Rxf8#'], title: 'Paulsen vs Anderssen' },
-            { fen: 'r1nk3r/2b2ppp/p3b3/3NN3/Q2P3q/B2B4/P4PPP/4R1K1 w - - 1 0', sol: ['Qd7+', 'Bxd7', 'Nxf7#'], title: 'Blackburne vs Smith' },
-            { fen: 'r4br1/3b1kpp/1q1P4/1pp1RP1N/p7/6Q1/PPB3PP/2KR4 w - - 1 0', sol: ['Qg6+', 'hxg6', 'fxg6#'], title: 'Steinitz vs Sands' },
-            { fen: 'r1b2k1r/ppppq3/5N1p/4P2Q/4PP2/1B6/PP5P/n2K2R1 w - - 1 0', sol: ['Qxh6+', 'Rxh6', 'Rg8#'], title: 'Steinitz vs Hodges' },
-            { fen: 'r2q1b1r/1pN1n1pp/p1n3k1/4Pb2/2BP4/8/PPP3PP/R1BQ1RK1 w - - 1 0', sol: ['Qg4+', 'Bxg4', 'Bf7#'], title: 'Tarrasch vs Fiedler' },
-            { fen: '3q2r1/4n2k/p1p1rBpp/PpPpPp2/1P3P1Q/2P3R1/7P/1R5K w - - 1 0', sol: ['Qxh6+', 'Kxh6', 'Rh3#'], title: 'Pillsbury vs Rodgers' },
-            { fen: 'r2qk2r/pb4pp/1n2Pb2/2B2Q2/p1p5/2P5/2B2PPP/RN1QR1K1 w - - 1 0', sol: ['Qg6+', 'hxg6', 'Bxg6#'], title: 'Tarrasch vs Kurschner' },
-            { fen: '6k1/pp4p1/2p5/2bp4/8/P5Pb/1P3rrP/2BRRN1K b - - 0 1', sol: ['Rg1+', 'Kxg1', 'Rxf1#'], title: 'Mason vs Marco' },
-            { fen: 'rnbqkbn1/ppppp3/7r/6pp/3P1p2/3BP1B1/PPP2PPP/RN1QK1NR w - - 1 0', sol: ['Qxh5+', 'Rxh5', 'Bg6#'], title: 'Teed vs Delmar' },
-            { fen: 'r2qrb2/p1pn1Qp1/1p4Nk/4PR2/3n4/7N/P5PP/R6K w - - 1 0', sol: ['Ne7', 'Nxf5', 'Qg6#'], title: 'Steinitz vs Trenchard' },
-            { fen: '8/2r5/1k5p/1pp4P/8/K2P4/PR2QB2/2q5 b - - 0 1', sol: ['Qc3+', 'Rb3', 'Ra7#'], title: 'Mason vs Lasker' },
-            { fen: 'r1b3nr/ppqk1Bbp/2pp4/4P1B1/3n4/3P4/PPP2QPP/R4RK1 w - - 1 0', sol: ['Qf5+', 'Nxf5', 'e6#'], title: 'Nimzowitsch vs Neumann' },
-            { fen: '3k1r1r/pb3p2/1p4p1/1B2B3/3qn3/6QP/P4RP1/2R3K1 w - - 1 0', sol: ['Bf6+', 'Qxf6', 'Qc7#'], title: 'Pillsbury vs Tinsley' },
-            { fen: 'rn2kb1r/1pQbpppp/1p6/qp1N4/6n1/8/PPP3PP/2KR2NR w - - 1 0', sol: ['Qc8+', 'Bxc8', 'Nc7#'], title: 'Ryder vs NN' },
-            { fen: 'r2k2nr/pp1b1Q1p/2n4b/3N4/3q4/3P4/PPP3PP/4RR1K w - - 1 0', sol: ['Re8+', 'Bxe8', 'Qc7#'], title: 'Pulitzer vs Marco' },
-            { fen: '7k/1p4p1/p4b1p/3N3P/2p5/2rb4/PP2r3/K2R2R1 b - - 0 1', sol: ['Rc1+', 'Rxc1', 'Bxb2#'], title: 'Reggio vs Marco' },
-            { fen: 'r2q2nr/5p1p/p1Bp3b/1p1NkP2/3pP1p1/2PP2P1/PP5P/R1Bb1RK1 w - - 1 0', sol: ['Bf4+', 'Bxf4', 'gxf4#'], title: 'Lasker vs NN' },
-            { fen: 'r2q1k1r/ppp1bB1p/2np4/6N1/3PP1bP/8/PPP5/RNB2RK1 w - - 1 0', sol: ['Ne6+', 'Bxe6', 'Bh6#'], title: 'Schwartz vs Samsonov' },
-            { fen: '6k1/1p1r1pp1/p1r3b1/3pPqB1/2pP4/Q1P4R/P3P2K/6R1 w - - 1 0', sol: ['Qf8+', 'Kxf8', 'Rh8#'], title: 'Rotlevi vs Suchting' },
-            { fen: 'r1b3k1/ppp3pp/8/3pB3/1P1P4/3K1P2/PP1n1q1P/R2Q3R b - - 0 1', sol: ['Bf5+', 'Kc3', 'Qe3#'], title: 'Flamberg vs Duras' },
-            { fen: '2kr1b1r/pp3ppp/2p1b2q/4B3/4Q3/2PB2R1/PPP2PPP/3R2K1 w - - 1 0', sol: ['Qxc6+', 'bxc6', 'Ba6#'], title: 'Lasker vs Englund' },
-            { fen: 'rn2kb1r/pp3ppp/4p1qn/1p4B1/2B5/3P2QP/PPP2PP1/R3K2R w - - 1 0', sol: ['Qxb8+', 'Rxb8', 'Bxb5#'], title: 'Teichmann vs NN' },
-            { fen: 'rnb2b1r/p3kBp1/3pNn1p/2pQNn1/1p2PP2/4B3/Pq5P/4K3 w - - 1 0', sol: ['Qxd6+', 'Kxd6', 'Bxc5#'], title: 'Watson vs NN' },
-            { fen: 'r1b1k2r/ppQ1q2n/2p2p2/P3p2p/N3P1pP/1B4P1/1PP2P2/3R1NK1 w - - 1 0', sol: ['Rd8+', 'Qxd8', 'Qf7#'], title: 'Brunnemer vs Patton' },
-            { fen: 'r6k/pp4pp/1b1P4/8/1n4Q1/2N1RP2/PP2q3/1RB1K3 b - - 0 1', sol: ['Nd3+', 'Rxd3', 'Bf2#'], title: 'Oskam vs Euwe' },
-            { fen: '8/1r5p/kpQ3p1/p3rp2/P6P/8/4bPPK/1R6 w - - 1 0', sol: ['Rxb6+', 'Rxb6', 'Qa8#'], title: 'Tartakower vs Reti' },
-            { fen: 'r1b2rk1/2p2ppp/p7/1p6/3P3q/1BP3bP/PP3QP1/RNB1R1K1 w - - 1 0', sol: ['Qxf7+', 'Rxf7', 'Re8#'], title: 'Sery vs Vecsey' },
-            { fen: 'r2qkb1r/2p1nppp/p2p4/np1NN3/4P3/1BP3/PP1P1PPP/R1B1K2R w - - 1 0', sol: ['Nf6+', 'gxf6', 'Bxf7#'], title: 'Berger vs Froehlich' },
-            { fen: 'rnbkn2r/pppp1Qpp/5b2/3NN3/3Pp3/8/PPP1KP1P/R1B4q w - - 1 0', sol: ['Qe7+', 'Bxe7', 'Nf7#'], title: 'Probst vs Lowig' },
-            { fen: '4rk2/2pQn2p/p4p2/1p2pN1P/4q3/2P3R1/5PPK/8 w - - 1 0', sol: ['Rg8+', 'Kf7', 'Nh6#'], title: 'Steiner vs Becker' },
-            { fen: 'r1b2rk1/pp3ppp/3p4/3Q1nq1/2B1R3/8/PP3PPP/R5K1 w - - 1 0', sol: ['Qxf7+', 'Rxf7', 'Re8#'], title: 'Euwe vs Mindeno' }
-        ];
+        // 2. Puzzle Data (From your mate2.txt: Henry Buckle vs NN)
+        const puzzleFEN = 'r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 0';
+        const solution = ['f2f6', 'd5f6', 'c4f7']; // The coordinates for Nf6+ and Bxf7#
+        
+        let game = new Chess(puzzleFEN);
+        let board = null;
+        let selectedSquare = null;
 
-        let game = new Chess(), board = null, currentDoc = null, pIdx = 0, mStep = 0, srcSq = null;
-
-        async function startChallenge() {
-            const name = $('#name').val().trim(), sClass = $('#class').val().trim();
-            if (!name || !sClass) return alert("Enter Name & Class");
-
-            currentDoc = (name + "-" + sClass).toLowerCase().replace(/\s+/g, '-');
-            await db.collection("maryland_qualifiers").doc(currentDoc).set({
-                name, class: sClass, score: 0, ts: firebase.firestore.FieldValue.serverTimestamp()
-            });
-
-            $('#reg-box').hide();
-            $('#game-section').removeClass('hidden').addClass('flex');
-            $('#p-name').text(`${name} (${sClass})`);
-            
-            board = ChessBoard('board', {
-                position: 'start',
-                draggable: false,
-                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-            });
-
-            $(document).on('click', '.square-55d63', function() {
-                const square = $(this).attr('data-square');
-                handleSquareClick(square);
-            });
-
-            loadPuzzle();
-            listenLeaderboard();
-        }
-
-        function handleSquareClick(sq) {
-            if (!srcSq) {
-                const piece = game.get(sq);
-                if (piece && piece.color === game.turn()) {
-                    srcSq = sq;
-                    $('.square-55d63').removeClass('highlight-selected');
-                    $(`.square-${sq}`).addClass('highlight-selected');
+        function onSquareClick(square) {
+            if (selectedSquare === null) {
+                // First click: Select White Piece
+                let piece = game.get(square);
+                if (piece && piece.color === 'w') {
+                    selectedSquare = square;
+                    $('.square-' + square).addClass('highlight-square');
                 }
             } else {
-                const move = game.move({ from: srcSq, to: sq, promotion: 'q' });
-                $('.square-55d63').removeClass('highlight-selected');
-                
-                if (move) {
-                    if (move.san === puzzleData[pIdx].sol[mStep]) {
+                // Second click: Execute Move
+                let move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
+                $('.highlight-square').removeClass('highlight-square');
+                selectedSquare = null;
+
+                if (move === null) return; // Invalid move
+
+                board.position(game.fen());
+
+                // Auto-respond for Mate in 2 (Henry Buckle vs NN logic)
+                if (move.from === 'e5' && move.to === 'f6') { // Nf6+
+                    setTimeout(() => {
+                        game.move('g7f6'); // Black takes gxf6
                         board.position(game.fen());
-                        mStep++;
-                        checkProgress();
-                    } else {
-                        game.undo();
-                        $('#status').text("❌ Wrong Move. Try again!");
-                    }
+                        document.getElementById('status').innerText = "Black played gxf6. Finish the Mate!";
+                    }, 500);
+                } else if (game.in_checkmate()) {
+                    document.getElementById('status').innerText = "CHECKMATE! Well done.";
+                    document.getElementById('status').style.color = "#22c55e";
+                    submitResult();
                 }
-                srcSq = null;
             }
         }
 
-        function checkProgress() {
-            if (mStep === puzzleData[pIdx].sol.length) {
-                $('#status').text("✅ Mate Found!");
-                db.collection("maryland_qualifiers").doc(currentDoc).update({
-                    score: firebase.firestore.FieldValue.increment(1),
-                    ts: firebase.firestore.Timestamp.now()
-                });
-                $('#p-score').text(parseInt($('#p-score').text()) + 1);
-                pIdx++;
-                setTimeout(loadPuzzle, 1000);
-            } else {
-                setTimeout(() => {
-                    game.move(puzzleData[pIdx].sol[mStep]);
-                    board.position(game.fen());
-                    mStep++;
-                    $('#status').text("Opponent replied. Deliver the mate!");
-                }, 400);
-            }
-        }
-
-        function loadPuzzle() {
-            if (pIdx >= puzzleData.length) return $('#status').text("🏆 ALL DONE! MASTERPIECE!");
-            game.load(puzzleData[pIdx].fen);
-            board.position(puzzleData[pIdx].fen);
-            mStep = 0;
-            const turnStr = game.turn() === 'w' ? 'White' : 'Black';
-            $('#status').text(`${puzzleData[pIdx].title}: ${turnStr} to Mate in 2`);
-        }
-
-        function listenLeaderboard() {
-            db.collection("maryland_qualifiers").orderBy("score", "desc").orderBy("ts", "asc").limit(15).onSnapshot(snap => {
-                let html = '';
-                snap.forEach((doc, i) => {
-                    const d = doc.data();
-                    html += `
-                        <div class="p-3 rounded-lg flex items-center justify-between border border-[#30363d] ${i < 9 ? 'qualifying-border' : 'bg-[#0b0e14]'}">
-                            <div>
-                                <span class="text-xs font-bold ${i < 9 ? 'text-[#c5a059]' : 'text-slate-500'}">#${i+1}</span>
-                                <div class="text-sm font-bold">${d.name}</div>
-                                <div class="text-[10px] text-slate-500">${d.class}</div>
-                            </div>
-                            <div class="text-lg font-black text-[#c5a059]">${d.score}</div>
-                        </div>`;
-                });
-                $('#leaderboard').html(html);
+        function submitResult() {
+            const name = document.getElementById('studentName').value;
+            if (!name) return;
+            
+            db.collection("leaderboard").add({
+                name: name,
+                score: 1,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(() => {
+                alert("Score Submitted! You are on the leaderboard.");
             });
         }
+
+        board = Chessboard('board', {
+            position: puzzleFEN,
+            draggable: false, // CLICK TO MOVE ONLY
+            onSquareClick: onSquareClick
+        });
     </script>
 </body>
 </html>
