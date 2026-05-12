@@ -73,14 +73,14 @@
                 const cleanGame = game.replace(/\s\s+/g, ' ').trim();
                 const fullPgn = `${headerText}\n\n${cleanGame} *`;
                 
-                // This is the prompt that will be copied to Gemini
+                // Optimized Prompt with moves included
                 const gmPrompt = `Pretend you're a human 2700+ ELO GRANDMASTER. 
 You are writing a professional, elite-level course on the Ruy Lopez for White.
 Your tone should be human, simple English.
 
 TASK:
 1. Review the PGN below.
-2. Annotate EVERY key move.
+2. Annotate EVERY key move. 
 3. Keep all existing symbols ($1, !, etc.) and highlights ([%csl...]).
 4. Provide the final result as a SINGLE PGN BLOCK.
 
@@ -91,11 +91,16 @@ ${fullPgn}`;
 
                 const block = document.createElement('div');
                 block.className = 'game-block';
+                
+                // Escaping strings for HTML attributes
+                const escapedPrompt = gmPrompt.replace(/`/g, "\\`").replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const escapedPgn = fullPgn.replace(/`/g, "\\`").replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
                 block.innerHTML = `
                     <div class="controls">
                         <span class="badge">Variation ${idx + 1}</span>
-                        <button class="btn-prompt" onclick="copyText(this, \`${gmPrompt.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)">📋 Copy Prompt for Gemini</button>
-                        <button onclick="copyText(this, \`${fullPgn.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)">Copy Raw PGN</button>
+                        <button class="btn-prompt" onclick="copyText(this, \`${escapedPrompt}\`)">📋 Copy Prompt for Gemini</button>
+                        <button onclick="copyText(this, \`${escapedPgn}\`)">Copy Raw PGN</button>
                     </div>
                     <pre>${fullPgn}</pre>
                 `;
@@ -103,8 +108,34 @@ ${fullPgn}`;
             });
         }
 
+        // Updated copy function with fallback for local files
         function copyText(btn, text) {
-            navigator.clipboard.writeText(text);
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showSuccess(btn);
+                }).catch(err => {
+                    fallbackCopy(btn, text);
+                });
+            } else {
+                fallbackCopy(btn, text);
+            }
+        }
+
+        function fallbackCopy(btn, text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showSuccess(btn);
+            } catch (err) {
+                console.error('Fallback copy failed', err);
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function showSuccess(btn) {
             const original = btn.innerText;
             btn.innerText = "✅ Copied!";
             setTimeout(() => btn.innerText = original, 2000);
