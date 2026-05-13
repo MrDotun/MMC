@@ -2,34 +2,44 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>2700 GM Course Preparer</title>
+    <title>2700 GM Commentary Tool</title>
     <style>
-        :root { --primary: #2c3e50; --accent: #e67e22; --bg: #f8f9fa; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; max-width: 1000px; margin: 20px auto; background: var(--bg); color: var(--primary); padding: 20px; }
-        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        textarea { width: 100%; height: 200px; border: 2px solid #ddd; border-radius: 8px; padding: 15px; font-family: monospace; font-size: 14px; margin-bottom: 10px; transition: border-color 0.3s; }
+        :root { --primary: #2c3e50; --accent: #e67e22; --success: #27ae60; --bg: #f1f2f6; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; max-width: 1100px; margin: 20px auto; background: var(--bg); color: var(--primary); padding: 20px; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 30px; }
+        textarea { width: 100%; height: 200px; border: 2px solid #ddd; border-radius: 8px; padding: 15px; font-family: 'Courier New', Courier, monospace; font-size: 14px; margin-bottom: 10px; transition: 0.3s; resize: vertical; }
         textarea:focus { border-color: var(--accent); outline: none; }
-        button { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button { background: var(--primary); color: white; border: none; padding: 12px 22px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
         button:hover { background: #34495e; transform: translateY(-1px); }
-        .game-block { background: #fff; border: 1px solid #eee; border-left: 6px solid var(--accent); padding: 20px; margin-top: 20px; border-radius: 4px; position: relative; }
-        .controls { display: flex; gap: 10px; margin-bottom: 15px; }
         .btn-prompt { background: var(--accent); }
-        .btn-prompt:hover { background: #d35400; }
-        pre { background: #2d3436; color: #dfe6e9; padding: 15px; border-radius: 6px; overflow-x: auto; font-size: 13px; white-space: pre-wrap; }
-        .badge { background: #eee; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
-        h1 { text-align: center; color: var(--primary); }
+        .btn-assemble { background: var(--success); width: 100%; font-size: 1.2em; margin-top: 15px; }
+        .game-block { background: #fff; border: 1px solid #eee; border-left: 6px solid var(--accent); padding: 20px; margin-top: 20px; border-radius: 4px; }
+        .controls { display: flex; gap: 10px; margin-bottom: 15px; align-items: center; }
+        pre { background: #2d3436; color: #dfe6e9; padding: 15px; border-radius: 6px; overflow-x: auto; font-size: 13px; white-space: pre-wrap; border: 1px solid #000; }
+        .badge { background: #eee; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; color: #555; }
+        h1, h2 { text-align: center; margin-bottom: 10px; }
+        .instruction { font-style: italic; color: #666; margin-bottom: 20px; text-align: center; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>🏆 2700 GM Course Preparer</h1>
-        <p>Paste your raw PGN below. I will split the variations and create high-level prompts for Gemini to annotate them like a world-class Grandmaster.</p>
+        <h1>🏆 2700 GM Commentary Preparer</h1>
+        <p class="instruction">Paste your PGN (with symbols/highlights). This will generate prompts for Gemini to add <strong>human commentary only</strong>.</p>
         
-        <textarea id="pgnInput" placeholder="Paste your PGN analysis here..."></textarea>
-        <button onclick="processPGN()">Generate GM Study Material</button>
+        <textarea id="pgnInput" placeholder="Paste your PGN with symbols ($1, !, etc.) and highlights ([%csl...]) here..."></textarea>
+        <button onclick="processPGN()">1. Split Variations & Prepare GM Prompts</button>
 
         <div id="output"></div>
+    </div>
+
+    <div class="container" style="border-top: 8px solid var(--success);">
+        <h2>🧩 Master Course Assembler</h2>
+        <p class="instruction">Paste Gemini's annotated responses here. I will merge them into a single Master PGN file.</p>
+        
+        <textarea id="geminiOutput" placeholder="Paste all of Gemini's responses here..."></textarea>
+        <button class="btn-assemble" onclick="assemblePGN()">2. Export Final Annotated PGN</button>
+        <pre id="finalPgnPreview" style="display:none; margin-top: 20px;"></pre>
     </div>
 
     <script>
@@ -73,34 +83,31 @@
                 const cleanGame = game.replace(/\s\s+/g, ' ').trim();
                 const fullPgn = `${headerText}\n\n${cleanGame} *`;
                 
-                // Optimized Prompt with moves included
-                const gmPrompt = `Pretend you're a human 2700+ ELO GRANDMASTER. 
-You are writing a professional, elite-level course on the Ruy Lopez for White.
-Your tone should be human, simple English.
+                // SPECIFIC GM PROMPT FOR ADDING COMMENTS WITHOUT TOUCHING SYMBOLS
+                const gmPrompt = `Pretend you are a world-class 2700+ ELO HUMAN GRANDMASTER writing a professional course on the Ruy Lopez for White.
 
 TASK:
-1. Review the PGN below.
-2. Annotate EVERY key move. 
-3. Keep all existing symbols ($1, !, etc.) and highlights ([%csl...]).
-4. Provide the final result as a SINGLE PGN BLOCK.
+1. Review the PGN below. It already contains engine evaluations, symbols ($1, !, etc.), and board highlights ([%csl...]).
+2. YOUR JOB: Add human-like, instructional verbal commentary in simple English for the key moves.
+3. CRITICAL: Do NOT remove, change, or move any existing symbols, EVAL charts ([%evp]), or highlights. Just add your words inside curly braces { like this }.
+4. Start your verbal comments from Move 5 onwards.
+5. Return the result as a SINGLE PGN BLOCK inside a markdown code block.
 
-IMPORTANT: Wrap the final PGN in a markdown code block so I can copy it easily.
+TONE: 
+- Professional but accessible. 
+- Explain "Why" White is better or what the "Plan" is in simple terms.
 
 PGN TO ANNOTATE:
 ${fullPgn}`;
 
                 const block = document.createElement('div');
                 block.className = 'game-block';
-                
-                // Escaping strings for HTML attributes
                 const escapedPrompt = gmPrompt.replace(/`/g, "\\`").replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                const escapedPgn = fullPgn.replace(/`/g, "\\`").replace(/'/g, "\\'").replace(/"/g, '&quot;');
-
+                
                 block.innerHTML = `
                     <div class="controls">
                         <span class="badge">Variation ${idx + 1}</span>
                         <button class="btn-prompt" onclick="copyText(this, \`${escapedPrompt}\`)">📋 Copy Prompt for Gemini</button>
-                        <button onclick="copyText(this, \`${escapedPgn}\`)">Copy Raw PGN</button>
                     </div>
                     <pre>${fullPgn}</pre>
                 `;
@@ -108,37 +115,38 @@ ${fullPgn}`;
             });
         }
 
-        // Updated copy function with fallback for local files
+        function assemblePGN() {
+            const input = document.getElementById('geminiOutput').value;
+            const preview = document.getElementById('finalPgnPreview');
+            
+            // Extracts standard PGN structures
+            const pgnRegex = /\[Event[\s\S]*?\*|\[Date[\s\S]*?\*|1\.\s[e|d|N|c][\s\S]*?\*/g;
+            const matches = input.match(pgnRegex);
+
+            if (!matches) {
+                alert("No PGN blocks detected. Please paste Gemini's full response.");
+                return;
+            }
+
+            const masterPgn = matches.map(pgn => pgn.trim()).join('\n\n');
+            preview.textContent = masterPgn;
+            preview.style.display = 'block';
+
+            const blob = new Blob([masterPgn], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = "GM_Annotated_RuyLopez.pgn";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
         function copyText(btn, text) {
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(text).then(() => {
-                    showSuccess(btn);
-                }).catch(err => {
-                    fallbackCopy(btn, text);
-                });
-            } else {
-                fallbackCopy(btn, text);
-            }
-        }
-
-        function fallbackCopy(btn, text) {
-            const textArea = document.createElement("textarea");
-            textArea.value = text;
-            document.body.appendChild(textArea);
-            textArea.select();
-            try {
-                document.execCommand('copy');
-                showSuccess(btn);
-            } catch (err) {
-                console.error('Fallback copy failed', err);
-            }
-            document.body.removeChild(textArea);
-        }
-
-        function showSuccess(btn) {
-            const original = btn.innerText;
-            btn.innerText = "✅ Copied!";
-            setTimeout(() => btn.innerText = original, 2000);
+            navigator.clipboard.writeText(text).then(() => {
+                const original = btn.innerText;
+                btn.innerText = "✅ Copied!";
+                setTimeout(() => btn.innerText = original, 2000);
+            });
         }
     </script>
 </body>
