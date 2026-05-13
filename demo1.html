@@ -2,83 +2,236 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>PGN Master Collector</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DECIPHER HYBRID V3 | GM Architect</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: #27ae60; --bg: #f4f7f6; }
-        body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 30px auto; background: var(--bg); padding: 20px; }
-        .box { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        textarea { width: 100%; height: 150px; border: 2px solid #ddd; border-radius: 8px; padding: 10px; font-family: monospace; margin-bottom: 10px; }
-        .controls { margin-bottom: 20px; display: flex; gap: 10px; }
-        button { padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; }
-        .btn-add { background: var(--primary); color: white; }
-        .btn-clear { background: #e74c3c; color: white; }
-        .btn-download { background: #3498db; color: white; width: 100%; margin-top: 20px; font-size: 1.1em; }
-        #masterList { background: #2d3436; color: #fab1a0; padding: 15px; border-radius: 8px; white-space: pre-wrap; font-size: 12px; max-height: 400px; overflow-y: auto; }
-        .count { float: right; font-size: 0.8em; color: #666; }
+        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
+        .gold-text { color: #d4af37; }
+        .gold-bg { background-color: #d4af37; color: #1e293b; }
+        .glass { background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .variation-card { border-left: 4px solid #334155; transition: 0.3s; }
+        .variation-card:hover { border-left-color: #d4af37; background: rgba(30, 41, 59, 0.6); }
+        textarea { background: #0f172a !important; border: 1px solid #1e293b !important; font-family: 'Fira Code', monospace; }
+        textarea:focus { border-color: #d4af37 !important; outline: none; box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.1); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
     </style>
 </head>
-<body>
+<body class="p-6 md:p-12">
 
-    <div class="box">
-        <h2>📥 PGN Master Collector <span id="gameCount" class="count">Games: 0</span></h2>
-        <p>Paste the code block Gemini gives you here, then click "Add to Master".</p>
-        
-        <textarea id="singleInput" placeholder="Paste Gemini's annotated code block here..."></textarea>
-        
-        <div class="controls">
-            <button class="btn-add" onclick="addGame()">Add to Master</button>
-            <button class="btn-clear" onclick="clearAll()">Clear All</button>
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-10 flex justify-between items-end border-b border-slate-800 pb-6">
+            <div>
+                <h1 class="text-4xl font-black tracking-tighter italic gold-text">HYBRID <span class="text-white not-italic">V3 ENGINE</span></h1>
+                <p class="text-slate-500 text-xs uppercase tracking-[0.3em] mt-1">Multi-Variation Branching + 4-Ply Precision Analysis</p>
+            </div>
+            <nav class="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800">
+                <button onclick="showTab('fragmenter')" id="btn-f" class="px-8 py-2.5 rounded-lg text-xs font-bold uppercase gold-bg transition-all">1. Fragmenter</button>
+                <button onclick="showTab('reassembler')" id="btn-r" class="px-8 py-2.5 rounded-lg text-xs font-bold uppercase text-slate-500 hover:text-white transition-all">2. Reassembler</button>
+            </nav>
+        </header>
+
+        <!-- FRAGMENTER VIEW -->
+        <div id="view-fragmenter" class="space-y-8">
+            <div class="glass p-8 rounded-3xl">
+                <div class="flex justify-between items-center mb-4">
+                    <label class="text-[10px] font-black uppercase text-slate-500 tracking-widest">Master PGN Input</label>
+                    <span id="game-stats" class="text-[10px] gold-text font-bold uppercase">Ready for Input</span>
+                </div>
+                <textarea id="main-pgn" rows="8" class="w-full p-6 rounded-2xl text-sm mb-6 shadow-inner" placeholder="Paste PGN with branches/variations here..."></textarea>
+                <div class="flex gap-4">
+                    <button onclick="processHybrid()" class="px-10 py-4 bg-white text-black font-black rounded-xl hover:bg-slate-200 uppercase text-xs tracking-widest transition-all">Generate GM Prompts</button>
+                    <button onclick="clearState()" class="px-6 py-4 bg-red-950/20 text-red-400 font-bold rounded-xl border border-red-900/30 uppercase text-xs">Reset</button>
+                </div>
+            </div>
+
+            <div id="variation-output" class="grid grid-cols-1 gap-6">
+                <!-- Variations will be injected here -->
+            </div>
         </div>
 
-        <h3>Preview Master File:</h3>
-        <div id="masterList">No games added yet...</div>
-
-        <button class="btn-download" onclick="downloadPGN()">Download Complete PGN File</button>
+        <!-- REASSEMBLER VIEW -->
+        <div id="view-reassembler" class="hidden">
+            <div class="glass p-8 rounded-3xl grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="space-y-4">
+                    <label class="text-[10px] font-black uppercase text-slate-500 tracking-widest">AI JSON Input</label>
+                    <textarea id="ai-json" rows="18" class="w-full p-6 rounded-2xl text-xs" placeholder="Paste all Gemini JSON blocks here..."></textarea>
+                </div>
+                <div class="space-y-4">
+                    <label class="text-[10px] font-black uppercase text-slate-500 tracking-widest">Rebuilt PGN Output</label>
+                    <textarea id="final-pgn" rows="18" class="w-full p-6 rounded-2xl text-xs text-emerald-400" readonly></textarea>
+                    <div class="flex gap-4">
+                        <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-4 bg-slate-800 text-xs font-bold rounded-xl uppercase tracking-widest hover:bg-slate-700">Copy Result</button>
+                        <button onclick="downloadPgn()" class="flex-1 py-4 bg-emerald-600 text-white text-xs font-bold rounded-xl uppercase tracking-widest hover:bg-emerald-500 shadow-lg shadow-emerald-900/20">Download .PGN</button>
+                    </div>
+                </div>
+            </div>
+            <button onclick="rebuild()" class="w-full mt-6 py-5 gold-bg rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl shadow-yellow-900/20">Inject Comments & Synthesize File</button>
+        </div>
     </div>
 
     <script>
-        let allGames = [];
+        let globalTokens = [];
+        let variations = [];
+        let allChunks = [];
 
-        function addGame() {
-            const input = document.getElementById('singleInput').value.trim();
+        function showTab(tab) {
+            document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
+            document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
+            document.getElementById('btn-f').className = tab === 'fragmenter' ? 'px-8 py-2.5 rounded-lg text-xs font-bold uppercase gold-bg' : 'px-8 py-2.5 rounded-lg text-xs font-bold uppercase text-slate-500 hover:text-white';
+            document.getElementById('btn-r').className = tab === 'reassembler' ? 'px-8 py-2.5 rounded-lg text-xs font-bold uppercase gold-bg' : 'px-8 py-2.5 rounded-lg text-xs font-bold uppercase text-slate-500 hover:text-white';
+        }
+
+        function processHybrid() {
+            const input = document.getElementById('main-pgn').value;
             if (!input) return;
-            
-            allGames.push(input);
-            updateDisplay();
-            document.getElementById('singleInput').value = '';
-        }
 
-        function updateDisplay() {
-            const display = document.getElementById('masterList');
-            const count = document.getElementById('gameCount');
+            // 1. Tokenize entire PGN for reassembler
+            globalTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
             
-            if (allGames.length === 0) {
-                display.innerText = "No games added yet...";
-                count.innerText = "Games: 0";
-                return;
+            // 2. Parse variations for the UI (fragmenter)
+            const headerRegex = /\[.*?\]/g;
+            const headerText = (input.match(headerRegex) || []).join('\n');
+            let moveText = input.replace(headerRegex, '').trim();
+
+            variations = [];
+            allChunks = [];
+
+            function parseTree(text, path = [], tokenIdxOffset = 0) {
+                let currentPath = [...path];
+                let tokens = text.match(/(\(|\)|\d+\.{1,3}|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
+                
+                for(let i = 0; i < tokens.length; i++) {
+                    let t = tokens[i];
+                    if (t === '(') {
+                        let depth = 1, j = i + 1;
+                        while(depth > 0 && j < tokens.length) {
+                            if (tokens[j] === '(') depth++;
+                            if (tokens[j] === ')') depth--;
+                            j++;
+                        }
+                        parseTree(tokens.slice(i+1, j-1).join(' '), currentPath);
+                        i = j - 1;
+                    } else if (!t.includes('.') && !t.includes('{') && !t.includes(')') && isNaN(t[0])) {
+                        currentPath.push(t);
+                        // Add chunk logic here for stride
+                    }
+                }
+                variations.push(currentPath.join(' '));
             }
 
-            display.innerText = allGames.join('\n\n');
-            count.innerText = `Games: ${allGames.length}`;
+            // Simple chunking logic on the global stream
+            let moveCounter = 0;
+            globalTokens.forEach((token, idx) => {
+                const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                if (isMove) {
+                    moveCounter++;
+                    const hasSymbol = token.includes('!') || token.includes('?') || (globalTokens[idx+1] && globalTokens[idx+1].startsWith('$'));
+                    
+                    if (moveCounter % 4 === 0 || hasSymbol || moveCounter < 10) {
+                        allChunks.push({
+                            id: `GM_${allChunks.length + 1}`,
+                            target: token,
+                            idx: idx,
+                            context: globalTokens.slice(Math.max(0, idx - 12), idx).join(' '),
+                            subsequent: globalTokens.slice(idx + 1, idx + 12).join(' ')
+                        });
+                    }
+                }
+            });
+
+            renderVariations();
+            document.getElementById('game-stats').innerText = `${allChunks.length} Key Positions Found`;
         }
 
-        function clearAll() {
-            if(confirm("Are you sure you want to clear the list?")) {
-                allGames = [];
-                updateDisplay();
+        function renderVariations() {
+            const container = document.getElementById('variation-output');
+            container.innerHTML = '<h2 class="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Fragmented GM Batches</h2>';
+
+            const batchSize = 10;
+            for (let i = 0; i < allChunks.length; i += batchSize) {
+                const batch = allChunks.slice(i, i + batchSize);
+                const card = document.createElement('div');
+                card.className = 'variation-card glass p-6 rounded-2xl';
+                
+                const prompt = createPrompt(batch);
+                card.innerHTML = `
+                    <div class="flex justify-between items-center mb-4">
+                        <span class="text-[10px] font-bold gold-text uppercase">Batch ${Math.floor(i/10) + 1} (${batch.length} moves)</span>
+                        <button onclick="copyRaw('${btoa(prompt)}')" class="text-[10px] bg-white text-black px-4 py-1.5 rounded-full font-bold hover:invert">COPY PROMPT</button>
+                    </div>
+                    <div class="grid grid-cols-5 gap-2">
+                        ${batch.map(b => `<div class="text-[9px] bg-slate-900 p-2 rounded border border-slate-800 truncate text-slate-400"><b class="text-white">${b.target}</b></div>`).join('')}
+                    </div>
+                `;
+                container.appendChild(card);
             }
         }
 
-        function downloadPGN() {
-            if (allGames.length === 0) return alert("Add some games first!");
-            const content = allGames.join('\n\n');
-            const blob = new Blob([content], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = "Ruy_Lopez_Course_Master.pgn";
-            a.click();
-            URL.revokeObjectURL(url);
+        function createPrompt(batch) {
+            const body = batch.map(b => `ID: ${b.id}\nContext: ${b.context}\nTARGET: ${b.target}\nSubsequent: ${b.subsequent}`).join('\n---\n');
+            return `Role: 2700 ELO GM Analyst.
+Task: Simple high-level human analysis (max 30 words).
+Rules: 
+- Use next 4 moves to prove if TARGET is good/bad.
+- No engine-speak. Use "center", "structure", "exchange".
+- Start 50% of comments with different words.
+- 1 in 10 comments must be under 10 words.
+- Format: JSON ONLY.
+
+${body}`;
+        }
+
+        function rebuild() {
+            const rawJson = document.getElementById('ai-json').value;
+            let aiData = {};
+            const matches = rawJson.match(/\{[\s\S]*?\}/g);
+            if (matches) {
+                matches.forEach(m => { try { Object.assign(aiData, JSON.parse(m)); } catch(e){} });
+            }
+
+            let resultTokens = [...globalTokens];
+            // Sort keys descending to avoid index shifting
+            const sortedKeys = Object.keys(aiData).sort((a,b) => {
+                const idxA = allChunks.find(c => c.id === a)?.idx || 0;
+                const idxB = allChunks.find(c => c.id === b)?.idx || 0;
+                return idxB - idxA;
+            });
+
+            sortedKeys.forEach(key => {
+                const chunk = allChunks.find(c => c.id === key);
+                if (chunk) {
+                    resultTokens[chunk.idx] += ` { ${aiData[key]} }`;
+                }
+            });
+
+            document.getElementById('final-pgn').value = resultTokens.join(' ');
+        }
+
+        function copyRaw(b64) {
+            navigator.clipboard.writeText(atob(b64));
+            alert("Prompt Copied!");
+        }
+
+        function copyToClipboard(id) {
+            document.getElementById(id).select();
+            document.execCommand('copy');
+            alert("Copied to clipboard!");
+        }
+
+        function downloadPgn() {
+            const text = document.getElementById('final-pgn').value;
+            const blob = new Blob([text], { type: 'text/plain' });
+            const anchor = document.createElement('a');
+            anchor.download = 'Hybrid_GM_Course.pgn';
+            anchor.href = window.URL.createObjectURL(blob);
+            anchor.click();
+        }
+
+        function clearState() {
+            location.reload();
         }
     </script>
 </body>
