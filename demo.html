@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>2700 GM Commentary Tool</title>
+    <title>2700 GM Course Tool v2.0</title>
     <style>
         :root { --primary: #2c3e50; --accent: #e67e22; --success: #27ae60; --bg: #f1f2f6; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; max-width: 1100px; margin: 20px auto; background: var(--bg); color: var(--primary); padding: 20px; }
@@ -24,21 +24,21 @@
 <body>
 
     <div class="container">
-        <h1>🏆 2700 GM Commentary Preparer</h1>
-        <p class="instruction">Paste your PGN (with symbols/highlights). This will generate prompts for Gemini to add <strong>human commentary only</strong>.</p>
+        <h1>🏆 2700 GM Course Preparer</h1>
+        <p class="instruction">1. Paste PGN with branches. 2. Copy Prompts. 3. Let Gemini add human comments (keeping symbols/highlights).</p>
         
-        <textarea id="pgnInput" placeholder="Paste your PGN with symbols ($1, !, etc.) and highlights ([%csl...]) here..."></textarea>
-        <button onclick="processPGN()">1. Split Variations & Prepare GM Prompts</button>
+        <textarea id="pgnInput" placeholder="Paste your raw PGN with symbols and branches here..."></textarea>
+        <button onclick="processPGN()">1. Split into GM Prompts</button>
 
         <div id="output"></div>
     </div>
 
     <div class="container" style="border-top: 8px solid var(--success);">
         <h2>🧩 Master Course Assembler</h2>
-        <p class="instruction">Paste Gemini's annotated responses here. I will merge them into a single Master PGN file.</p>
+        <p class="instruction">Paste Gemini's responses. I will combine them into a single clean PGN file.</p>
         
-        <textarea id="geminiOutput" placeholder="Paste all of Gemini's responses here..."></textarea>
-        <button class="btn-assemble" onclick="assemblePGN()">2. Export Final Annotated PGN</button>
+        <textarea id="geminiOutput" placeholder="Paste Gemini's PGN results here..."></textarea>
+        <button class="btn-assemble" onclick="assemblePGN()">2. Export Final Combined PGN</button>
         <pre id="finalPgnPreview" style="display:none; margin-top: 20px;"></pre>
     </div>
 
@@ -55,6 +55,7 @@
 
             const variations = [];
             
+            // This parser now correctly handles nested variations and keeps the full path
             function parse(text, history = "") {
                 let current = "";
                 let i = 0;
@@ -79,25 +80,20 @@
             parse(moveText);
 
             variations.forEach((game, idx) => {
-                if (game.length < 10) return;
-                const cleanGame = game.replace(/\s\s+/g, ' ').trim();
-                const fullPgn = `${headerText}\n\n${cleanGame} *`;
+                if (game.length < 15) return;
+                const cleanMoves = game.replace(/\s\s+/g, ' ').trim();
+                const fullPgn = `${headerText}\n\n${cleanMoves} *`;
                 
-                // SPECIFIC GM PROMPT FOR ADDING COMMENTS WITHOUT TOUCHING SYMBOLS
-                const gmPrompt = `Pretend you are a world-class 2700+ ELO HUMAN GRANDMASTER writing a professional course on the Ruy Lopez for White.
+                const gmPrompt = `Pretend you are a 2700+ ELO HUMAN GM. 
+Annotate this PGN for a Ruy Lopez course.
 
-TASK:
-1. Review the PGN below. It already contains engine evaluations, symbols ($1, !, etc.), and board highlights ([%csl...]).
-2. YOUR JOB: Pretend you're a 2700+ GM preparing a course on Ruy Lopez for White. Annotate in simple English for the key moves.
-3. CRITICAL: Do NOT remove, change, or move any existing symbols, EVAL charts ([%evp]), or highlights. Just add your words inside curly braces { like this }.
-4. Start your verbal comments from Move 5 onwards.
-5. Return the result as a SINGLE PGN BLOCK inside a markdown code block.
+CRITICAL RULES:
+1. Do NOT add any comments { } to moves 1, 2, 3, or 4.
+2. DO NOT delete or change existing symbols ($16, $1, !, etc.) or highlights ([%csl...], [%cal...]).
+3. Starting from Move 5, add high-level HUMAN verbal commentary inside curly braces { } in simple English.
+4. Output the result ONLY as a single PGN block in a markdown code block.
 
-TONE: 
-- Pretend you're a 2700+ human GM. Professional, human. 
-- Human like GM, using simple English. Ruy Lopez for White.
-
-PGN TO ANNOTATE:
+PGN:
 ${fullPgn}`;
 
                 const block = document.createElement('div');
@@ -107,7 +103,7 @@ ${fullPgn}`;
                 block.innerHTML = `
                     <div class="controls">
                         <span class="badge">Variation ${idx + 1}</span>
-                        <button class="btn-prompt" onclick="copyText(this, \`${escapedPrompt}\`)">📋 Copy Prompt for Gemini</button>
+                        <button class="btn-prompt" onclick="copyText(this, \`${escapedPrompt}\`)">📋 Copy Prompt</button>
                     </div>
                     <pre>${fullPgn}</pre>
                 `;
@@ -119,23 +115,30 @@ ${fullPgn}`;
             const input = document.getElementById('geminiOutput').value;
             const preview = document.getElementById('finalPgnPreview');
             
-            // Extracts standard PGN structures
-            const pgnRegex = /\[Event[\s\S]*?\*|\[Date[\s\S]*?\*|1\.\s[e|d|N|c][\s\S]*?\*/g;
+            // Find all PGN sections starting from moves or headers
+            const pgnRegex = /(?:\[Event[\s\S]*?\]\s+)?1\.\s[\s\S]*?\*/g;
             const matches = input.match(pgnRegex);
 
             if (!matches) {
-                alert("No PGN blocks detected. Please paste Gemini's full response.");
+                alert("No valid PGN found in the input.");
                 return;
             }
 
-            const masterPgn = matches.map(pgn => pgn.trim()).join('\n\n');
+            // Cleanup: ensure move 1-4 comments are removed in the final merge if Gemini slipped up
+            let masterPgn = matches.map(pgn => {
+                let cleaned = pgn.trim();
+                // Regex to remove any {comments} appearing before the 5th move number
+                cleaned = cleaned.replace(/^(.*?1\..*?2\..*?3\..*?4\..*?)(\s\{.*?\})/s, '$1');
+                return cleaned;
+            }).join('\n\n');
+
             preview.textContent = masterPgn;
             preview.style.display = 'block';
 
             const blob = new Blob([masterPgn], { type: 'text/plain' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = "GM_Annotated_RuyLopez.pgn";
+            a.download = "Final_GM_Course.pgn";
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
