@@ -3,76 +3,233 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Universal PGN Manager</title>
+    <title>DECIPHER HYBRID V3 | GM Architect</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        body { font-family: sans-serif; background: #121212; color: #eee; padding: 15px; margin: 0; }
-        .container { max-width: 600px; margin: auto; }
-        textarea { width: 100%; height: 150px; background: #222; color: #ffcc00; border: 1px solid #444; border-radius: 8px; padding: 10px; font-family: monospace; box-sizing: border-box; }
-        .card { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; padding: 15px; margin-top: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-        .label { color: #4db8ff; font-weight: bold; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
-        .output-box { background: #000; padding: 12px; border-radius: 6px; margin: 10px 0; border: 1px solid #444; font-family: monospace; word-break: break-all; white-space: pre-wrap; font-size: 1rem; color: #ffcc00; }
-        button { background: #007bff; color: white; border: none; padding: 12px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; margin-top: 5px; }
-        button:active { background: #0056b3; }
-        .copy-all { background: #28a745; margin-top: 20px; }
-        .hint { font-size: 0.8rem; color: #888; margin-top: 5px; }
+        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
+        .gold-text { color: #d4af37; }
+        .gold-bg { background-color: #d4af37; color: #1e293b; }
+        .glass { background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .variation-card { border-left: 4px solid #334155; transition: 0.3s; }
+        .variation-card:hover { border-left-color: #d4af37; background: rgba(30, 41, 59, 0.6); }
+        textarea { background: #0f172a !important; border: 1px solid #1e293b !important; font-family: 'Fira Code', monospace; }
+        textarea:focus { border-color: #d4af37 !important; outline: none; box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.1); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
     </style>
 </head>
-<body>
+<body class="p-6 md:p-12">
 
-<div class="container">
-    <h2>PGN Smart-Parser</h2>
-    <textarea id="pgnInput" placeholder="Paste your full PGN here (including branches and symbols like ! and ?)..."></textarea>
-    <button onclick="processPGN()">Parse PGN for Gemini</button>
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-10 flex justify-between items-end border-b border-slate-800 pb-6">
+            <div>
+                <h1 class="text-4xl font-black tracking-tighter italic gold-text">HYBRID <span class="text-white not-italic">V3 ENGINE</span></h1>
+                <p class="text-slate-500 text-xs uppercase tracking-[0.3em] mt-1">Branch-First Annotation + 3-Box Synthesis</p>
+            </div>
+            <nav class="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800">
+                <button onclick="showTab('fragmenter')" id="btn-f" class="px-8 py-2.5 rounded-lg text-xs font-bold uppercase gold-bg transition-all">1. Fragmenter</button>
+                <button onclick="showTab('reassembler')" id="btn-r" class="px-8 py-2.5 rounded-lg text-xs font-bold uppercase text-slate-500 hover:text-white transition-all">2. Reassembler</button>
+            </nav>
+        </header>
 
-    <div id="results" style="display:none;">
-        <div class="card">
-            <span class="label">Primary Main Line</span>
-            <div id="mainLineOut" class="output-box"></div>
-            <button onclick="copyText('mainLineOut')">Copy Main Line</button>
+        <!-- FRAGMENTER VIEW -->
+        <div id="view-fragmenter" class="space-y-8">
+            <div class="glass p-8 rounded-3xl">
+                <div class="flex justify-between items-center mb-4">
+                    <label class="text-[10px] font-black uppercase text-slate-500 tracking-widest">Master PGN Input (Including Variations)</label>
+                    <span id="game-stats" class="text-[10px] gold-text font-bold uppercase">Ready</span>
+                </div>
+                <textarea id="main-pgn" rows="8" class="w-full p-6 rounded-2xl text-sm mb-6 shadow-inner" placeholder="Paste PGN with (brackets) here..."></textarea>
+                <div class="flex gap-4">
+                    <button onclick="processHybrid()" class="px-10 py-4 bg-white text-black font-black rounded-xl hover:bg-slate-200 uppercase text-xs tracking-widest transition-all">Extract Branches & Lines</button>
+                    <button onclick="clearState()" class="px-6 py-4 bg-red-950/20 text-red-400 font-bold rounded-xl border border-red-900/30 uppercase text-xs">Reset</button>
+                </div>
+            </div>
+
+            <div id="variation-output" class="grid grid-cols-1 gap-6">
+                <!-- Branches will be injected here -->
+            </div>
         </div>
 
-        <div class="card" style="border-left: 4px solid #ff4d4d;">
-            <span class="label">Decision Points & Branches</span>
-            <div id="branchesOut" class="output-box"></div>
-            <button onclick="copyText('branchesOut')">Copy All Branches</button>
-            <p class="hint">This includes all moves with symbols (?, !, !?) for context.</p>
+        <!-- REASSEMBLER VIEW -->
+        <div id="view-reassembler" class="hidden">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- BOX 1: AI JSON -->
+                <div class="glass p-6 rounded-3xl space-y-4">
+                    <label class="text-[10px] font-black uppercase text-slate-500 tracking-widest">1. AI JSON Input</label>
+                    <textarea id="ai-json" rows="15" class="w-full p-4 rounded-xl text-xs" placeholder="Paste Gemini JSON response here..."></textarea>
+                </div>
+
+                <!-- BOX 2: REFERENCE LOG -->
+                <div class="glass p-6 rounded-3xl space-y-4">
+                    <label class="text-[10px] font-black uppercase text-slate-500 tracking-widest">2. Reference / Metadata</label>
+                    <div id="rebuild-log" class="w-full h-[340px] p-4 rounded-xl text-[10px] overflow-y-auto bg-slate-950/50 border border-slate-800 text-slate-400 font-mono">
+                        No rebuild data yet.
+                    </div>
+                </div>
+
+                <!-- BOX 3: FINAL PGN -->
+                <div class="glass p-6 rounded-3xl space-y-4">
+                    <label class="text-[10px] font-black uppercase text-slate-500 tracking-widest">3. Rebuilt PGN Output</label>
+                    <textarea id="final-pgn" rows="15" class="w-full p-4 rounded-xl text-xs text-emerald-400" readonly></textarea>
+                </div>
+            </div>
+
+            <div class="mt-8 flex gap-4">
+                <button onclick="rebuild()" class="flex-[2] py-5 gold-bg rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl shadow-yellow-900/20">Synthesize Comments into PGN</button>
+                <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-5 bg-slate-800 text-xs font-bold rounded-2xl uppercase tracking-widest hover:bg-slate-700">Copy Result</button>
+                <button onclick="downloadPgn()" class="flex-1 py-5 bg-emerald-600 text-white text-xs font-bold rounded-2xl uppercase tracking-widest hover:bg-emerald-500">Download .PGN</button>
+            </div>
         </div>
     </div>
-</div>
 
-<script>
-    function processPGN() {
-        let raw = document.getElementById('pgnInput').value;
-        
-        // 1. Clean PGN: Remove comments in {} but KEEP symbols like ! ? and $
-        let clean = raw.replace(/\{[\s\S]*?\}/g, "");
+    <script>
+        let globalTokens = [];
+        let allChunks = [];
 
-        // 2. Extract Main Line (Everything NOT in parentheses)
-        let mainLine = clean;
-        while (mainLine.includes('(')) {
-            mainLine = mainLine.replace(/\([^()]*\)/g, "");
-        }
-        mainLine = mainLine.replace(/\s+/g, " ").trim();
-
-        // 3. Extract Branches (Find all content inside parentheses)
-        let branchRegex = /\(([^)]+)\)/g;
-        let branches = [];
-        let match;
-        while ((match = branchRegex.exec(clean)) !== null) {
-            branches.push("BRANCH: " + match[1].trim());
+        function showTab(tab) {
+            document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
+            document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
+            document.getElementById('btn-f').className = tab === 'fragmenter' ? 'px-8 py-2.5 rounded-lg text-xs font-bold uppercase gold-bg' : 'px-8 py-2.5 rounded-lg text-xs font-bold uppercase text-slate-500 hover:text-white';
+            document.getElementById('btn-r').className = tab === 'reassembler' ? 'px-8 py-2.5 rounded-lg text-xs font-bold uppercase gold-bg' : 'px-8 py-2.5 rounded-lg text-xs font-bold uppercase text-slate-500 hover:text-white';
         }
 
-        document.getElementById('mainLineOut').innerText = mainLine;
-        document.getElementById('branchesOut').innerText = branches.join("\n\n");
-        document.getElementById('results').style.display = "block";
-    }
+        function processHybrid() {
+            const input = document.getElementById('main-pgn').value;
+            if (!input) return;
 
-    function copyText(id) {
-        const text = document.getElementById(id).innerText;
-        navigator.clipboard.writeText(text);
-        alert("Copied!");
-    }
-</script>
+            // Tokenize including evaluation symbols ($1, !!, etc) and comments
+            globalTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$[0-9]+|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
+            allChunks = [];
+            let mainLinePath = [];
 
+            for (let i = 0; i < globalTokens.length; i++) {
+                let t = globalTokens[i];
+
+                if (t === '(') {
+                    // Extract branch
+                    let depth = 1, j = i + 1, branchTokens = [];
+                    while (depth > 0 && j < globalTokens.length) {
+                        if (globalTokens[j] === '(') depth++;
+                        if (globalTokens[j] === ')') depth--;
+                        if (depth > 0) branchTokens.push(globalTokens[j]);
+                        j++;
+                    }
+
+                    // Store branch and its preceding main line
+                    allChunks.push({
+                        id: `BR_${allChunks.length + 1}`,
+                        target: branchTokens[0] || "N/A",
+                        idx: i + 1, // First move of branch
+                        mainLine: mainLinePath.slice(-15).join(' '),
+                        variation: branchTokens.join(' '),
+                        eval: branchTokens.find(bt => bt.startsWith('$') || bt.includes('!') || bt.includes('?')) || "None"
+                    });
+                    i = j - 1; // Skip handled branch
+                } else if (!t.includes('[') && !t.includes('{') && !t.includes(')') && !t.includes('.')) {
+                    mainLinePath.push(t);
+                }
+            }
+
+            renderVariations();
+            document.getElementById('game-stats').innerText = `${allChunks.length} Branches Detected`;
+        }
+
+        function renderVariations() {
+            const container = document.getElementById('variation-output');
+            container.innerHTML = '<h2 class="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Extracted Variations</h2>';
+
+            const batchSize = 5;
+            for (let i = 0; i < allChunks.length; i += batchSize) {
+                const batch = allChunks.slice(i, i + batchSize);
+                const card = document.createElement('div');
+                card.className = 'variation-card glass p-6 rounded-2xl';
+                
+                const prompt = createPrompt(batch);
+                card.innerHTML = `
+                    <div class="flex justify-between items-center mb-4">
+                        <span class="text-[10px] font-bold gold-text uppercase italic">Batch ${Math.floor(i/batchSize) + 1} | ${batch.length} Branches</span>
+                        <button onclick="copyRaw('${btoa(unescape(encodeURIComponent(prompt)))}')" class="text-[10px] bg-white text-black px-6 py-2 rounded-full font-black hover:bg-gold-text transition-all">COPY BATCH PROMPT</button>
+                    </div>
+                    <div class="space-y-3">
+                        ${batch.map(b => `
+                            <div class="text-[10px] grid grid-cols-12 gap-2 border-b border-slate-800 pb-2">
+                                <div class="col-span-2 text-white font-bold">${b.id}</div>
+                                <div class="col-span-4 text-slate-500 truncate">${b.mainLine}</div>
+                                <div class="col-span-6 text-gold-text truncate">↳ ${b.variation}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(card);
+            }
+        }
+
+        function createPrompt(batch) {
+            const body = batch.map(b => `ID: ${b.id}\nMAIN LINE: ${b.mainLine}\nBRANCH START: ${b.target}\nVARIATION: ${b.variation}\nEVAL: ${b.eval}`).join('\n---\n');
+            return `Role: 2700 ELO HUMAN GM.
+Task: Write a natural human-like comment for each variation.
+Guidelines:
+- Use context of the "MAIN LINE" to explain the "BRANCH".
+- Terms: Use "center", "structure", "exchange". Do not use "central" or "liquidate".
+- Tone: Educational, student-friendly (Grade 1-6 level).
+- Eval: If eval is provided, explain WHY the position is better/worse.
+- Format: Return ONLY JSON where keys are the ID and values are the comment text.
+
+${body}`;
+        }
+
+        function rebuild() {
+            const rawJson = document.getElementById('ai-json').value;
+            const logBox = document.getElementById('rebuild-log');
+            let aiData = {};
+            logBox.innerHTML = "Processing tokens...<br>";
+
+            try {
+                const matches = rawJson.match(/\{[\s\S]*?\}/g);
+                if (matches) matches.forEach(m => Object.assign(aiData, JSON.parse(m)));
+            } catch(e) { logBox.innerHTML += "!! JSON Error: " + e.message; }
+
+            let resultTokens = [...globalTokens];
+            const sortedKeys = Object.keys(aiData).sort((a,b) => {
+                const idxA = allChunks.find(c => c.id === a)?.idx || 0;
+                const idxB = allChunks.find(c => c.id === b)?.idx || 0;
+                return idxB - idxA;
+            });
+
+            sortedKeys.forEach(key => {
+                const chunk = allChunks.find(c => c.id === key);
+                if (chunk) {
+                    resultTokens[chunk.idx] += ` { ${aiData[key]} }`;
+                    logBox.innerHTML += `✓ Injected: ${key} into ${chunk.target}<br>`;
+                }
+            });
+
+            document.getElementById('final-pgn').value = resultTokens.join(' ');
+        }
+
+        function copyRaw(b64) {
+            navigator.clipboard.writeText(decodeURIComponent(escape(atob(b64))));
+            alert("Prompt Copied for Gemini!");
+        }
+
+        function copyToClipboard(id) {
+            document.getElementById(id).select();
+            document.execCommand('copy');
+            alert("PGN Copied!");
+        }
+
+        function downloadPgn() {
+            const text = document.getElementById('final-pgn').value;
+            const blob = new Blob([text], { type: 'text/plain' });
+            const anchor = document.createElement('a');
+            anchor.download = 'Annotated_GM_Branches.pgn';
+            anchor.href = window.URL.createObjectURL(blob);
+            anchor.click();
+        }
+
+        function clearState() { location.reload(); }
+    </script>
 </body>
 </html>
