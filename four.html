@@ -109,6 +109,7 @@
             let moveNumber = 0;
             let variationLevel = 0;
             let currentPath = [];
+            let savedPaths = []; // ADDED: Stack to track the context of parent variations
             let depthPlyCounts = { 0: 0 }; 
             let justClosedVariation = false;
 
@@ -116,11 +117,23 @@
                 if (token === "(") {
                     variationLevel++;
                     depthPlyCounts[variationLevel] = 0; 
+                    
+                    // ADDED: Save the current path state before branching
+                    savedPaths.push([...currentPath]);
+                    // ADDED: A variation replaces the previous move, so step back one half-move to provide accurate context for the branch
+                    if (currentPath.length > 0) currentPath.pop();
+                    
                     return; 
                 }
                 if (token === ")") {
                     variationLevel--;
                     justClosedVariation = true; 
+                    
+                    // ADDED: Restore the path state to continue the main line or parent variation accurately
+                    if (savedPaths.length > 0) {
+                        currentPath = savedPaths.pop();
+                    }
+                    
                     return; 
                 }
                 
@@ -157,7 +170,7 @@
                                 id: `CHUNK_${chunks.length}`,
                                 target: token + evalSymbol,
                                 tokenIndex: index,
-                                context: currentPath.slice(-15).join(" "),
+                                context: currentPath.slice(-15).join(" "), // Context now strictly respects the true branching path
                                 future: subsequent.join(" ")
                             });
                             
