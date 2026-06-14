@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GM Variation Master Pro | Decipher Chess Academy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
+        .gold-text { color: #d4af37; }
+        .gold-bg { background-color: #d4af37; color: #1e293b; }
+        .glass { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .chunk-card { border-left: 4px solid #d4af37; transition: all 0.2s; cursor: pointer; }
+        .chunk-card.completed { border-left-color: #10b981; opacity: 0.5; }
+        textarea { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; scrollbar-width: thin; }
+        textarea:focus { border-color: #d4af37 !important; outline: none; }
+        #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="p-4 md:p-10">
+
+    <div class="max-w-6xl mx-auto">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
+            <div>
+                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 4-Move Stride + Simple GM Logic</p>
+            </div>
+            <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
+                <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
+                <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
+            </nav>
+        </header>
+
+        <div id="view-fragmenter" class="space-y-6">
+            <div class="glass p-6 rounded-2xl">
+                <div class="flex justify-between items-center mb-4">
+                    <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
+                    <div class="text-right">
+                        <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Ready</div>
+                        <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
+                    </div>
+                </div>
+                <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
+                
+                <div class="flex flex-wrap gap-3">
+                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
+                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden uppercase text-xs">Copy Next 10</button>
+                    <button onclick="copyAllRemaining()" id="all-btn" class="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold hidden uppercase text-xs">Copy All Remaining</button>
+                    <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
+                </div>
+            </div>
+            <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
+        </div>
+
+        <div id="view-reassembler" class="hidden space-y-6">
+            <div class="glass p-6 rounded-2xl">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste Gemini's Chat/JSON</label>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the entire Gemini response here..."></textarea>
+                    </div>
+                    <div class="space-y-4">
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Final Re-Assembled PGN</label>
+                        <textarea id="final-pgn" rows="14" class="w-full p-4 rounded-xl text-xs text-emerald-400" readonly></textarea>
+                        <div class="flex gap-2">
+                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Copy Final</button>
+                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Download</button>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20">Inject Annotations & Rebuild File</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let globalChunks = [];
+        let pgnTokens = [];
+        let currentBatchStart = 0;
+
+        window.onload = () => {
+            const saved = localStorage.getItem('gm_master_state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                document.getElementById('pgn-input').value = state.original;
+                processPgn(true);
+                currentBatchStart = state.batchStart;
+                updateUI();
+            }
+        };
+
+        function switchTab(tab) {
+            document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
+            document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
+            const f = document.getElementById('tab-f');
+            const r = document.getElementById('tab-r');
+            f.className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+            r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+        }
+
+        function processPgn(isLoad = false) {
+            const input = document.getElementById('pgn-input').value;
+            if (!input) return;
+
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
+            
+            let chunks = [];
+            let moveNumber = 0;
+            let variationLevel = 0;
+            let currentPath = [];
+            let savedPaths = [];
+            let depthPlyCounts = { 0: 0 }; 
+            let justClosedVariation = false;
+
+            pgnTokens.forEach((token, index) => {
+                if (token === "(") {
+                    variationLevel++;
+                    depthPlyCounts[variationLevel] = 0; 
+                    savedPaths.push([...currentPath]);
+                    if (currentPath.length > 0) currentPath.pop();
+                    return; 
+                }
+                if (token === ")") {
+                    variationLevel--;
+                    justClosedVariation = true; 
+                    if (savedPaths.length > 0) {
+                        currentPath = savedPaths.pop();
+                    }
+                    return; 
+                }
+                
+                const isMoveNum = /^\d+\./.test(token);
+                if (isMoveNum) {
+                    moveNumber = parseInt(token);
+                    return; 
+                }
+
+                const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                
+                if (isMove) {
+                    depthPlyCounts[variationLevel]++;
+                    currentPath.push(token);
+
+                    if (moveNumber > 5 || variationLevel > 0) {
+                        let evalSymbol = "";
+                        let nextToken = pgnTokens[index + 1];
+                        if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
+                            evalSymbol = ` ${nextToken}`;
+                        }
+
+                        const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
+                        const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
+                        const isStrideMove = (depthPlyCounts[variationLevel] % 4 === 0) || isFirstMoveOfVariation || justClosedVariation;
+
+                        if (isStrideMove || hasImportantSymbol) {
+                            let subsequent = [];
+                            for(let i = index + 1; i < index + 15 && i < pgnTokens.length; i++) {
+                                if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
+                            }
+
+                            // ADDED: Generate FEN on the fly using current path context
+                            let tempChess = new Chess();
+                            let currentFen = "";
+                            try {
+                                // chess.js doesn't like annotation symbols in moves (!, ?), so we strip them for the engine
+                                currentPath.forEach(m => tempChess.move(m.replace(/[!?]/g, '')));
+                                currentFen = tempChess.fen();
+                            } catch(e) {
+                                currentFen = "FEN unavailable";
+                            }
+
+                            chunks.push({
+                                id: `CHUNK_${chunks.length}`,
+                                target: token + evalSymbol,
+                                tokenIndex: index,
+                                context: currentPath.slice(-15).join(" "),
+                                future: subsequent.join(" "),
+                                // ADDED: Attach the generated FEN and explicit line type to the chunk
+                                fen: currentFen,
+                                lineType: variationLevel === 0 ? "Main Game Line" : `Alternative Variation (Depth Level: ${variationLevel})`
+                            });
+                            
+                            justClosedVariation = false; 
+                        }
+                    }
+                }
+            });
+
+            globalChunks = chunks;
+            if (!isLoad) currentBatchStart = 0;
+            document.getElementById('batch-btn').classList.remove('hidden');
+            document.getElementById('all-btn').classList.remove('hidden');
+            updateUI();
+            saveState();
+        }
+
+        function formatBatch(start, end) {
+            // ADDED: Feed the new FEN and Line Type data directly into the prompt structure
+            const batch = globalChunks.slice(start, end).map(c => 
+                `ID: ${c.id}\nLine Type: ${c.lineType}\nFEN: ${c.fen}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
+            ).join("\n---\n");
+
+            return `Role: PRETEND you are a 2700 ELO Human GM.
+Task: Provide human 2700+GM annotation on the game for the TARGET move.
+
+JUDGMENT RULES:
+1. USE 4 MOVES: Look at the first 4 moves in "Subsequent" while keeping the current position in mind to prove if the TARGET is good or bad. Note the "Line Type" to see if you are evaluating the main game or a hypothetical variation.
+2. FEN CONTEXT: Use the provided FEN to accurately understand the exact board state at the moment the TARGET move was played.
+3. SYMBOL LOGIC: If TARGET has a sign like !, ?, or !!, explain why that sign was given using the next 4 moves. Do not add the symbols to your comments. 
+4. PIECE QUALITY: Explain which pieces will likely be moved once in a while. Also give in simple English the plans for both sides, once in a while. Maximum of 30 words.
+5. 5 out of the 10 comments must begin differently. 
+6. Be human, dont let your statement at the begining and ending be consistent. 30- 50 words maximum. One of out every 10 comments must have less than 10 words.
+
+STRICT LANGUAGE RULES:
+- Use simple words. Use common chess terms, no uncommon chess words. Like a 2700 GM. 
+- Avoid "big" or rare words. But simple English than GMs understand. e g Transpose, attack, strong, decisive. 
+- Use "center" NOT "central".
+- Use "structure" NOT "structural".
+- Use "exchange" NOT "liquidate".
+- No "storytelling". Only clear chess reasons. Pretend youre a 2700 GM human GM.
+
+FORMAT: ONLY JSON
+{"CHUNK_ID": "Simple analysis of the move and evaluation sign based on the 4-move variation."}
+
+${batch}`;
+        }
+
+        function copyNextBatch() {
+            const end = Math.min(currentBatchStart + 10, globalChunks.length);
+            navigator.clipboard.writeText(formatBatch(currentBatchStart, end));
+            currentBatchStart = end;
+            updateUI();
+            saveState();
+            alert("Batch Copied!");
+        }
+
+        function copyAllRemaining() {
+            navigator.clipboard.writeText(formatBatch(currentBatchStart, globalChunks.length));
+            currentBatchStart = globalChunks.length;
+            updateUI();
+            saveState();
+            alert("Full Game Copied!");
+        }
+
+        function rebuildPgn() {
+            const raw = document.getElementById('ai-json').value;
+            let aiData = {};
+            const matches = raw.match(/\{[\s\S]*?\}/g);
+            if (matches) {
+                matches.forEach(m => {
+                    try { Object.assign(aiData, JSON.parse(m)); } catch(e){}
+                });
+            }
+            let workingTokens = [...pgnTokens];
+            const sortedIds = Object.keys(aiData).sort((a,b) => {
+                const idxA = globalChunks.find(c => c.id === a)?.tokenIndex || 0;
+                const idxB = globalChunks.find(c => c.id === b)?.tokenIndex || 0;
+                return idxB - idxA;
+            });
+            sortedIds.forEach(id => {
+                const chunk = globalChunks.find(c => c.id === id);
+                if (chunk) {
+                    workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
+                }
+            });
+            document.getElementById('final-pgn').value = workingTokens.join(" ");
+        }
+
+        function updateUI() {
+            const container = document.getElementById('chunks-container');
+            container.innerHTML = "";
+            globalChunks.forEach((c, i) => {
+                const div = document.createElement('div');
+                div.className = `chunk-card glass p-2 rounded-lg ${i < currentBatchStart ? 'completed' : ''}`;
+                div.innerHTML = `<p class="text-[8px] gold-text font-bold">${c.id}</p><p class="text-[10px] truncate">${c.target}</p>`;
+                container.appendChild(div);
+            });
+            const perc = (currentBatchStart / globalChunks.length) * 100 || 0;
+            document.getElementById('progress-fill').style.width = perc + "%";
+            document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} KEY POSITIONS`;
+        }
+
+        function saveState() {
+            localStorage.setItem('gm_master_state', JSON.stringify({
+                original: document.getElementById('pgn-input').value,
+                batchStart: currentBatchStart
+            }));
+        }
+
+        function clearAll() {
+            localStorage.removeItem('gm_master_state');
+            location.reload();
+        }
+
+        function copyToClipboard(id) {
+            const val = document.getElementById(id).value;
+            navigator.clipboard.writeText(val);
+            alert("Copied!");
+        }
+
+        function downloadPgn() {
+            const val = document.getElementById('final-pgn').value;
+            const blob = new Blob([val], {type: 'text/plain'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "GM_Variation_Analysis.pgn";
+            a.click();
+        }
+    </script>
+</body>
+</html>
