@@ -100,6 +100,22 @@
             r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
+        // ADDED: Helper function to generate FEN from a raw array of SAN moves
+        function getFenFromPath(path) {
+            try {
+                if (typeof Chess === 'undefined') return "FEN_ENGINE_MISSING";
+                const chess = new Chess();
+                for (let move of path) {
+                    // Strip ! and ? so chess.js can parse the SAN cleanly
+                    let cleanMove = move.replace(/[!?]+$/, '');
+                    chess.move(cleanMove, { sloppy: true });
+                }
+                return chess.fen();
+            } catch (e) {
+                return "FEN_GENERATION_FAILED";
+            }
+        }
+
         function processPgn(isLoad = false) {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
@@ -110,7 +126,7 @@
             let moveNumber = 0;
             let variationLevel = 0;
             let currentPath = [];
-            let savedPaths = [];
+            let savedPaths = []; 
             let depthPlyCounts = { 0: 0 }; 
             let justClosedVariation = false;
 
@@ -160,26 +176,16 @@
                                 if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
                             }
 
-                            // ADDED: Generate FEN on the fly using current path context
-                            let tempChess = new Chess();
-                            let currentFen = "";
-                            try {
-                                // chess.js doesn't like annotation symbols in moves (!, ?), so we strip them for the engine
-                                currentPath.forEach(m => tempChess.move(m.replace(/[!?]/g, '')));
-                                currentFen = tempChess.fen();
-                            } catch(e) {
-                                currentFen = "FEN unavailable";
-                            }
-
+                            // MODIFIED: Inject FEN using the sequence of moves BEFORE the target is played
+                            const pathBeforeTarget = currentPath.slice(0, -1);
+                            
                             chunks.push({
                                 id: `CHUNK_${chunks.length}`,
                                 target: token + evalSymbol,
                                 tokenIndex: index,
-                                context: currentPath.slice(-15).join(" "),
-                                future: subsequent.join(" "),
-                                // ADDED: Attach the generated FEN and explicit line type to the chunk
-                                fen: currentFen,
-                                lineType: variationLevel === 0 ? "Main Game Line" : `Alternative Variation (Depth Level: ${variationLevel})`
+                                context: currentPath.slice(-15).join(" "), 
+                                fen: getFenFromPath(pathBeforeTarget), // <--- FEN is generated here
+                                future: subsequent.join(" ")
                             });
                             
                             justClosedVariation = false; 
@@ -196,33 +202,31 @@
             saveState();
         }
 
+        // MODIFIED: Included FEN in the output to Gemini
         function formatBatch(start, end) {
-            // ADDED: Feed the new FEN and Line Type data directly into the prompt structure
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nLine Type: ${c.lineType}\nFEN: ${c.fen}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
+                `ID: ${c.id}\nFEN (Start of move): ${c.fen}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
             ).join("\n---\n");
 
             return `Role: PRETEND you are a 2700 ELO Human GM.
-Task: Provide human 2700+GM annotation on the game for the TARGET move.
+Task: Provide human 2700+GM annotation on the game. for the TARGET move.
 
 JUDGMENT RULES:
-1. USE 4 MOVES: Look at the first 4 moves in "Subsequent" while keeping the current position in mind to prove if the TARGET is good or bad. Note the "Line Type" to see if you are evaluating the main game or a hypothetical variation.
-2. FEN CONTEXT: Use the provided FEN to accurately understand the exact board state at the moment the TARGET move was played.
-3. SYMBOL LOGIC: If TARGET has a sign like !, ?, or !!, explain why that sign was given using the next 4 moves. Do not add the symbols to your comments. 
-4. PIECE QUALITY: Explain which pieces will likely be moved once in a while. Also give in simple English the plans for both sides, once in a while. Maximum of 30 words.
-5. 5 out of the 10 comments must begin differently. 
-6. Be human, dont let your statement at the begining and ending be consistent. 30- 50 words maximum. One of out every 10 comments must have less than 10 words.
-
+1. USE 4 MOVES & FEN: Look at the "FEN (Start of move)" as the absolute board state. Use the first 4 moves in "Subsequent" to prove if the TARGET is good or bad.
+2. SYMBOL LOGIC: If TARGET has a sign like !, ?, or !!, explain why that sign was given using the next 4 moves. Do not add thw symbols to your comments. 
+3. PIECE QUALITY: Explain which pieces will likely be moved once in a while. Also give in simple English the plans for both sides, once in a while. Maximum of 30 words.
+4. 5 out of the 10 comments must begin differently. 
+5. Be human, dont let your statement at the begining and ending be consistent. 30- 50 words maximum. One of out every 10 comments must have less than 10 words.
 STRICT LANGUAGE RULES:
-- Use simple words. Use common chess terms, no uncommon chess words. Like a 2700 GM. 
-- Avoid "big" or rare words. But simple English than GMs understand. e g Transpose, attack, strong, decisive. 
+- Use simple words.Use common chess terms, no uncommon chess words.Like a 2700 GM. 
+- Avoid "big" or rare words.But simple English than GMs understand. e g Transpose, attack, strong, decisive. 
 - Use "center" NOT "central".
 - Use "structure" NOT "structural".
 - Use "exchange" NOT "liquidate".
-- No "storytelling". Only clear chess reasons. Pretend youre a 2700 GM human GM.
+- No "storytelling". Only clear chess reasons.Pretend youre a 2700 GM human GM.
 
 FORMAT: ONLY JSON
-{"CHUNK_ID": "Simple analysis of the move and evaluation sign based on the 4-move variation."}
+{"CHUNK_ID": "Simple analysis of the move and evaluation sign based on the FEN and 4-move variation."}
 
 ${batch}`;
         }
