@@ -168,7 +168,6 @@
                     const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
                     
-                    // COOPERATIVE IMPROVEMENT: Stride increased from % 4 to % 6 for an optimal 3-move pace
                     const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
                     if (isStrideMove || hasImportantSymbol) {
@@ -186,7 +185,9 @@
                             tokenIndex: index,
                             context: currentPath.slice(-15, -1).join(" "), 
                             fen: getFenFromPath(pathWithTarget),
-                            future: subsequent.join(" ")
+                            future: subsequent.join(" "),
+                            isMainLine: variationLevel === 0,
+                            isReturning: justClosedVariation
                         });
                         
                         justClosedVariation = false; 
@@ -204,23 +205,27 @@
 
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nMove Number: ${c.moveNum}\nFEN: ${c.fen}\nContext: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nSubsequent/Variations: ${c.future}`
+                `ID: ${c.id}\nMove Number: ${c.moveNum}\nFEN: ${c.fen}\nContext: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nMain Line: ${c.isMainLine}\nReturning to Main: ${c.isReturning}\nSubsequent/Variations: ${c.future}`
             ).join("\n---\n");
 
             return `Role: You are a 2700 ELO Grandmaster creating an elite Nimzo-Indian Masterclass for BLACK.
 Task: Write professional course annotations for the TARGET MOVE.
 
 STRICT STYLE GUIDELINES:
-- PERSONA: Speak as a mentor to your student. Use "we" and "our" (e.g., "In our repertoire, we prefer...", "If White tries to be solid, we can...").
-- THEORETICAL ACCURACY: For moves between 5 and 8, you MUST identify the variation by name if applicable (e.g., Sämisch Variation, Rubinstein System, Classical 4.Qc2, Leningrad).
-- NO ROBOTIC TRANSITIONS: Never use "Alternatively" or "Another option". Instead, use: "Sometimes, White chooses a setup that...", "If they decide to play aggressively with...", or "In the event of a solid approach...".
-- SQUARES: You must explicitly mention key squares (e.g., "putting pressure on d4", "challenging the c3-knight", "securing the e6-pawn").
-- BRACKETS: The text in "(...)" contains variations. Explain the logic of why the variation exists or why the main line is better.
+- PERSONA: Speak as a mentor. Use "we" and "our".
+- PRIORITY SYSTEM: 
+    1. OPENING (Moves 1-12): Be descriptive and highlight theoretical goals.
+    2. MAIN LINE (Main Line: true): Provide insightful, deep coaching.
+    3. VARIATIONS (Main Line: false): Be very brief (10-15 words). Focus only on the immediate tactical or positional point.
+- RETURN SIGNAL: If "Returning to Main: true", start the comment with "Back to the main line," or "Returning to our primary path,".
+- NO $ SIGNS: Never use the "$" sign or NAG codes. Translate them into plain English.
+- TRANSITIONS: "Alternatively" is allowed but use it sparingly.
+- SQUARES: Explicitly mention key squares. Treat red highlights/unusual squares (e.g., Rc4, Re6) as weak squares that need attention based on the FEN.
 
 JUDGMENT RULES:
-1. Use the FEN to understand the board state resulting from the TARGET MOVE.
-2. Explain the chess logic behind any symbols (?, !, !?) attached to the move.
-3. Keep comments between 30-50 words. Make them feel like a high-level coaching session.
+1. Explain the chess logic concisely.
+2. SHORT WORDS: Use punchy, professional language. 
+3. LENGTH: 15-25 words for Main Line/Opening. Max 15 words for Variations.
 
 FORMAT: ONLY JSON
 {"CHUNK_ID": "Your GM course annotation here."}
