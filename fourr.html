@@ -25,7 +25,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 4-Move Stride + Simple GM Logic</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 4-Move Stride + Variation Logic</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -100,15 +100,16 @@
             r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
-        // ADDED: Helper function to generate FEN from a raw array of SAN moves
+        // FORTIFIED: Strips complex Lichess/Chess.com NAGs and symbols securely to prevent crash.
         function getFenFromPath(path) {
             try {
                 if (typeof Chess === 'undefined') return "FEN_ENGINE_MISSING";
                 const chess = new Chess();
                 for (let move of path) {
-                    // Strip ! and ? so chess.js can parse the SAN cleanly
-                    let cleanMove = move.replace(/[!?]+$/, '');
-                    chess.move(cleanMove, { sloppy: true });
+                    let cleanMove = move.replace(/[!?]+$/, '').replace(/\$\d+/g, '').trim();
+                    if (cleanMove && !/^\d+\.+$/.test(cleanMove) && cleanMove !== '(' && cleanMove !== ')') {
+                        chess.move(cleanMove, { sloppy: true });
+                    }
                 }
                 return chess.fen();
             } catch (e) {
@@ -120,7 +121,8 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
+            // FORTIFIED: Advanced regex to keep symbols attached and recognize NAGs safely.
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#]+[?!]*)/g) || [];
             
             let chunks = [];
             let moveNumber = 0;
@@ -172,19 +174,20 @@
 
                         if (isStrideMove || hasImportantSymbol) {
                             let subsequent = [];
-                            for(let i = index + 1; i < index + 15 && i < pgnTokens.length; i++) {
+                            // Expand the forward-look window to catch full bracket variations
+                            for(let i = index + 1; i < index + 20 && i < pgnTokens.length; i++) {
                                 if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
                             }
 
-                            // MODIFIED: Inject FEN using the sequence of moves BEFORE the target is played
-                            const pathBeforeTarget = currentPath.slice(0, -1);
+                            // FORTIFIED: FEN is now pulled exactly AFTER the target move is played.
+                            const pathWithTarget = currentPath.slice(0); 
                             
                             chunks.push({
                                 id: `CHUNK_${chunks.length}`,
                                 target: token + evalSymbol,
                                 tokenIndex: index,
-                                context: currentPath.slice(-15).join(" "), 
-                                fen: getFenFromPath(pathBeforeTarget), // <--- FEN is generated here
+                                context: currentPath.slice(-15, -1).join(" "), 
+                                fen: getFenFromPath(pathWithTarget),
                                 future: subsequent.join(" ")
                             });
                             
@@ -202,31 +205,33 @@
             saveState();
         }
 
-        // MODIFIED: Included FEN in the output to Gemini
+        // FORTIFIED: Heavily engineered prompt strictly forces the AI to acknowledge variations & symbols.
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nFEN (Start of move): ${c.fen}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
+                `ID: ${c.id}\nFEN (State AFTER move): ${c.fen}\nContext (Previous): ${c.context}\n--> TARGET MOVE: ${c.target} <--\nSubsequent / Variations (Notice brackets!): ${c.future}`
             ).join("\n---\n");
 
             return `Role: PRETEND you are a 2700 ELO Human GM.
-Task: Provide human 2700+GM annotation on the game. for the TARGET move.
+Task: Provide human 2700+GM annotation on the game for the TARGET MOVE.
+
+CRITICAL PGN SYMBOL INSTRUCTIONS:
+- Pay absolute attention to the symbols attached to the TARGET MOVE (like ?, !, !?, ?!, +-, =).
+- If the TARGET MOVE has a '?' (blunder) or '?!' (inaccuracy), AND the "Subsequent / Variations" section shows a move inside brackets like "(1... e6!)", you MUST explain why the TARGET MOVE was bad and why the variation inside the bracket was the superior alternative. 
+- NEVER comment blindly like "White moves the pawn". Acknowledge the blunder, inaccuracy, or brilliant move directly using the board state (FEN) and the alternative variations provided.
 
 JUDGMENT RULES:
-1. USE 4 MOVES & FEN: Look at the "FEN (Start of move)" as the absolute board state. Use the first 4 moves in "Subsequent" to prove if the TARGET is good or bad.
-2. SYMBOL LOGIC: If TARGET has a sign like !, ?, or !!, explain why that sign was given using the next 4 moves. Do not add thw symbols to your comments. 
-3. PIECE QUALITY: Explain which pieces will likely be moved once in a while. Also give in simple English the plans for both sides, once in a while. Maximum of 30 words.
-4. 5 out of the 10 comments must begin differently. 
-5. Be human, dont let your statement at the begining and ending be consistent. 30- 50 words maximum. One of out every 10 comments must have less than 10 words.
+1. USE FEN: The "FEN (State AFTER move)" is the exact board state resulting from the TARGET MOVE. 
+2. EXPLAIN THE SYMBOLS: Explain the chess logic behind why the move earned its evaluation symbol based on the next moves or variations. Do not output the symbols themselves in your comment.
+3. PIECE QUALITY: Give simple English plans. Identify which pieces are dominant or weak. 
+4. VARIETY: 5 out of 10 comments must begin differently. Avoid repetitive sentence structures.
+5. LENGTH: 30-50 words max. One out of every 10 comments must be punchy (under 10 words).
+
 STRICT LANGUAGE RULES:
-- Use simple words.Use common chess terms, no uncommon chess words.Like a 2700 GM. 
-- Avoid "big" or rare words.But simple English than GMs understand. e g Transpose, attack, strong, decisive. 
-- Use "center" NOT "central".
-- Use "structure" NOT "structural".
-- Use "exchange" NOT "liquidate".
-- No "storytelling". Only clear chess reasons.Pretend youre a 2700 GM human GM.
+- Use simple words (transpose, attack, decisive, structure, center). No rare vocabulary.
+- No "storytelling" or overly dramatic flowery language. 
 
 FORMAT: ONLY JSON
-{"CHUNK_ID": "Simple analysis of the move and evaluation sign based on the FEN and 4-move variation."}
+{"CHUNK_ID": "Your GM explanation here, strictly addressing the move quality and variations."}
 
 ${batch}`;
         }
