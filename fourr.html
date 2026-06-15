@@ -105,7 +105,11 @@
                 if (typeof Chess === 'undefined') return "FEN_ENGINE_MISSING";
                 const chess = new Chess();
                 for (let move of path) {
-                    let cleanMove = move.replace(/[!?]+$/, '').replace(/\$\d+/g, '').replace(/[\-+\/=].*$/, '').trim();
+                    // Strip engine evaluation marks (-/+, =/+, +/-) to prevent chess.js from crashing
+                    let cleanMove = move.replace(/[!?]+$/, '')
+                                        .replace(/\$\d+/g, '')
+                                        .replace(/(\+\/-|-\/\+|=\/\+|\+=|=\+|\+-|-\+|=)$/, '')
+                                        .trim();
                     if (cleanMove && !/^\d+\.+$/.test(cleanMove) && cleanMove !== '(' && cleanMove !== ')') {
                         chess.move(cleanMove, { sloppy: true });
                     }
@@ -120,8 +124,8 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            // Robust tokenization matching moves, evaluations (-/+), and custom engine positional parameters cleanly
-            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*[=\-+\/]*)/g) || [];
+            // Added '\/' to the regex to safely capture eval markers like =/+ without breaking tokens
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g) || [];
             
             let chunks = [];
             let moveNumber = 0;
@@ -129,7 +133,7 @@
             let currentPath = [];
             let savedPaths = []; 
             let depthPlyCounts = { 0: 0 }; 
-            let justClosedToMainLine = false;
+            let justClosedVariation = false;
 
             pgnTokens.forEach((token, index) => {
                 if (token === "(") {
@@ -137,13 +141,12 @@
                     depthPlyCounts[variationLevel] = 0; 
                     savedPaths.push([...currentPath]);
                     if (currentPath.length > 0) currentPath.pop();
+                    justClosedVariation = false; // Reset this so sibling variations aren't flagged as returning to the main line
                     return; 
                 }
                 if (token === ")") {
                     variationLevel--;
-                    if (variationLevel === 0) {
-                        justClosedToMainLine = true;
-                    }
+                    justClosedVariation = true; 
                     if (savedPaths.length > 0) {
                         currentPath = savedPaths.pop();
                     }
@@ -164,25 +167,19 @@
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
-                    if (nextToken && (nextToken.startsWith('$') || /^[!?\-+\/=]+$/.test(nextToken))) {
+                    if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
                         evalSymbol = ` ${nextToken}`;
                     }
 
-                    // Scans the immediate local array matrix to extract coordinate highlighted fields ([%csl ...])
-                    let associatedSquareHighlight = "";
-                    for (let i = Math.max(0, index - 3); i <= Math.min(pgnTokens.length - 1, index + 3); i++) {
-                        if (pgnTokens[i] && pgnTokens[i].startsWith('[%csl')) {
-                            associatedSquareHighlight = ` ${pgnTokens[i]}`;
-                        }
-                    }
-
-                    const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
+                    // Checks for '/' meaning engine evals (-/+, +/-) trigger chunks alongside !, ?
+                    const hasImportantSymbol = token.includes('!') || token.includes('?') || token.includes('/') || evalSymbol.includes('!') || evalSymbol.includes('?');
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-                    const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedToMainLine;
+                    
+                    const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
                     if (isStrideMove || hasImportantSymbol) {
                         let subsequent = [];
-                        for(let i = index + 1; i < index + 25 && i < pgnTokens.length; i++) {
+                        for(let i = index + 1; i < index + 20 && i < pgnTokens.length; i++) {
                             if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
                         }
 
@@ -190,17 +187,18 @@
                         
                         chunks.push({
                             id: `CHUNK_${chunks.length}`,
-                            target: token + evalSymbol + associatedSquareHighlight,
+                            target: token + evalSymbol,
                             moveNum: moveNumber,
                             tokenIndex: index,
-                            context: currentPath.slice(-12, -1).join(" "), 
+                            context: currentPath.slice(-15, -1).join(" "), 
                             fen: getFenFromPath(pathWithTarget),
                             future: subsequent.join(" "),
                             isMainLine: variationLevel === 0,
-                            isReturning: justClosedToMainLine
+                            // Only trigger returning specifically for Main Line
+                            isReturning: justClosedVariation && variationLevel === 0 
                         });
                         
-                        justClosedToMainLine = false; 
+                        justClosedVariation = false; 
                     }
                 }
             });
@@ -218,21 +216,26 @@
                 `ID: ${c.id}\nMove Number: ${c.moveNum}\nFEN: ${c.fen}\nContext: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nMain Line: ${c.isMainLine}\nReturning to Main: ${c.isReturning}\nSubsequent/Variations: ${c.future}`
             ).join("\n---\n");
 
-            return `Role: You are a 2700 ELO Grandmaster creating an elite Nimzo-Indian Masterclass for BLACK.
-Task: Write professional course annotations for the TARGET MOVE.
+            return `Role: You are a 2700 ELO Grandmaster creating an elite chess Masterclass for BLACK.
+Task: Write perfect, professional course annotations for the TARGET MOVE based on the provided FEN and context.
 
-STRICT STYLE GUIDELINES:
-- PERSONA: Speak as an authentic mentor. Use "we" and "our".
-- PRIORITY LENGTH CONFIGURATION: 
-    1. MAIN LINE (Main Line: true): Provide deep coaching annotations. Write EXACTLY between 15 and 25 words.
-    2. SIDE VARIATIONS (Main Line: false): Focus purely on immediate tactical threats or simple position properties. Write EXACTLY between 5 and 12 words (Keep it concise!).
-- RETURN SIGNAL: If "Returning to Main: true", start the comment exclusively with "Back to the main line," or "Returning to our primary path,".
-- EVALUATIONS: Translate complex suffixes like "-/+", "=/+", and "+/=" into clear chess terms (e.g., "Black is slightly better", "unclear equality"). Do not print structural symbol codes.
-- NO $ SIGNS: Never use raw "$" signs or NAG numerical entries in explanations.
-- SQUARES: Explicitly reference weak squares if highlighted via syntax strings (e.g., [%csl Rc4]).
+STRICT STYLE & STRUCTURAL GUIDELINES:
+1. PERSONA: Speak as a mentor using "we" and "our".
+2. SENTENCE LENGTH (Not too short, not too long): 
+   - MAIN LINES (Main Line: true): Write 2-3 flowing sentences (approx 30-45 words). Focus on deep, insightful coaching and positional goals.
+   - VARIATIONS (Main Line: false): Write 1-2 precise sentences (approx 15-25 words). Clearly explain the specific tactical or positional point of this alternative idea.
+3. VARIATION AWARENESS: 
+   - If "Returning to Main: true", you MUST start with a clear transition like "Back to our main line," or "Returning to the primary game plan,".
+   - For alternative ideas (Main Line: false), introduce them naturally (e.g., "If White instead tries...", "A tricky alternative is...").
+4. EVALUATION SIGNS & MARKS (CRITICAL): Absolutely NO raw symbols in the output (like -/+, =/+, +/-, +/=, !, ?, !?, ?!, $1). Translate them into natural prose! 
+   - "-/+" means Black is much better (e.g., "...giving us a clear advantage.").
+   - "=/+" means Black has a slight, comfortable edge.
+   - "+/=" means White has a slight edge.
+   - Recognize "!" as strong, "!?" as interesting/provocative, and "?!" as a dubious inaccuracy. Incorporate these into your tone.
+5. HIGHLIGHTS & SQUARES: If you see visual tags like [%csl Rc4,Rf2] or [%cal ...] in the target or future moves, you MUST explicitly mention those specific squares (e.g., c4 and f2). Treat them as critical targets, weak points, or key outposts based on the board state (FEN).
 
-FORMAT: Output ONLY plain valid JSON matching this schema:
-{"CHUNK_ID": "Your precise conditional instruction commentary text here."}
+FORMAT: ONLY return a valid JSON object. No markdown formatting outside the JSON.
+{"CHUNK_ID": "Your perfectly balanced GM annotation here."}
 
 ${batch}`;
         }
