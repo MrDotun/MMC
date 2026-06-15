@@ -25,7 +25,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision FEN Sync + Contextual Transitions</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 4-Move Stride + Variation Logic</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -100,19 +100,13 @@
             r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
-        // CORRECTED 1: FEN GENERATOR FIX. 
-        // Aggressively strips out ALL evaluation symbols (+-, =+, =, ?!) before feeding to chess.js so the FEN state never desyncs.
+        // FORTIFIED: Strips complex Lichess/Chess.com NAGs and symbols securely to prevent crash.
         function getFenFromPath(path) {
             try {
                 if (typeof Chess === 'undefined') return "FEN_ENGINE_MISSING";
                 const chess = new Chess();
                 for (let move of path) {
-                    let cleanMove = move
-                        .replace(/\$\d+/g, '') // remove NAGs
-                        .replace(/[!?]/g, '')  // remove !, ?
-                        .replace(/(\+-|-\+|=\+!|\+=|=|∞)$/g, '') // strictly remove eval symbols at the end
-                        .trim();
-
+                    let cleanMove = move.replace(/[!?]+$/, '').replace(/\$\d+/g, '').trim();
                     if (cleanMove && !/^\d+\.+$/.test(cleanMove) && cleanMove !== '(' && cleanMove !== ')') {
                         chess.move(cleanMove, { sloppy: true });
                     }
@@ -127,6 +121,7 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
+            // FORTIFIED: Advanced regex to keep symbols attached and recognize NAGs safely.
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#]+[?!]*)/g) || [];
             
             let chunks = [];
@@ -135,7 +130,7 @@
             let currentPath = [];
             let savedPaths = []; 
             let depthPlyCounts = { 0: 0 }; 
-            let justClosedVariationLevel = -1;
+            let justClosedVariation = false;
 
             pgnTokens.forEach((token, index) => {
                 if (token === "(") {
@@ -147,7 +142,7 @@
                 }
                 if (token === ")") {
                     variationLevel--;
-                    justClosedVariationLevel = variationLevel; 
+                    justClosedVariation = true; 
                     if (savedPaths.length > 0) {
                         currentPath = savedPaths.pop();
                     }
@@ -166,24 +161,8 @@
                     depthPlyCounts[variationLevel]++;
                     currentPath.push(token);
 
-                    // CORRECTED 2: LINE STATUS TRACKER
-                    // Determines exactly where we are in the PGN tree to pass context to the AI
-                    let currentLineContext = "MAIN LINE";
-                    if (variationLevel > 0) {
-                        if (depthPlyCounts[variationLevel] === 1) {
-                            let altTo = savedPaths[savedPaths.length-1] ? savedPaths[savedPaths.length-1][savedPaths[savedPaths.length-1].length - 1] : "previous move";
-                            currentLineContext = `START OF VARIATION (Alternative to ${altTo})`;
-                        } else {
-                            currentLineContext = `INSIDE VARIATION (Depth Level ${variationLevel})`;
-                        }
-                    } else if (justClosedVariationLevel !== -1) {
-                        currentLineContext = "RETURNED TO MAIN LINE";
-                    }
-                    
-                    // Reset closure flag after evaluating the current move
-                    justClosedVariationLevel = -1;
-
-                    if (moveNumber > 5 || variationLevel > 0) {
+                    // CORRECTION 1: Removed 'moveNumber > 5' constraint to guarantee first part of the game isn't skipped.
+                    if (moveNumber >= 1 || variationLevel > 0) {
                         let evalSymbol = "";
                         let nextToken = pgnTokens[index + 1];
                         if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
@@ -192,14 +171,16 @@
 
                         const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
                         const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-                        const isStrideMove = (depthPlyCounts[variationLevel] % 4 === 0) || isFirstMoveOfVariation || currentLineContext === "RETURNED TO MAIN LINE";
+                        const isStrideMove = (depthPlyCounts[variationLevel] % 4 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
                         if (isStrideMove || hasImportantSymbol) {
                             let subsequent = [];
+                            // Expand the forward-look window to catch full bracket variations
                             for(let i = index + 1; i < index + 20 && i < pgnTokens.length; i++) {
                                 if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
                             }
 
+                            // FORTIFIED: FEN is now pulled exactly AFTER the target move is played.
                             const pathWithTarget = currentPath.slice(0); 
                             
                             chunks.push({
@@ -208,9 +189,10 @@
                                 tokenIndex: index,
                                 context: currentPath.slice(-15, -1).join(" "), 
                                 fen: getFenFromPath(pathWithTarget),
-                                future: subsequent.join(" "),
-                                lineStatus: currentLineContext // Passes the generated context to the payload
+                                future: subsequent.join(" ")
                             });
+                            
+                            justClosedVariation = false; 
                         }
                     }
                 }
@@ -224,35 +206,41 @@
             saveState();
         }
 
-        // CORRECTED 2 (Continued): PROMPT MODIFICATION
-        // AI is strictly ordered to use the new LINE STATUS property to structure its sentences.
+        // FORTIFIED & OPTIMIZED: Instruction set fine-tuned to eradicate robotic wordings and process coordinates.
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nFEN (State AFTER move): ${c.fen}\nLINE STATUS: ${c.lineStatus}\nContext: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nSubsequent / Variations: ${c.future}`
+                `ID: ${c.id}\nFEN (State AFTER move): ${c.fen}\nContext (Previous): ${c.context}\n--> TARGET MOVE: ${c.target} <--\nSubsequent / Variations (Notice brackets!): ${c.future}`
             ).join("\n---\n");
 
             return `Role: PRETEND you are a 2700 ELO Human GM for course: Nimzo Indian Defense for Black
 Task: Provide human 2700+GM annotation on the course: Nimzo Indian for Black for the TARGET MOVE.
 
-CRITICAL INSTRUCTIONS:
-1. LINE STATUS TRANSITIONS: Look at the "LINE STATUS" provided for each chunk. 
-   - If it says "RETURNED TO MAIN LINE", your comment MUST guide the reader back (e.g., "Returning to the main line, White plays..."). 
-   - If it says "START OF VARIATION", explicitly mention this is an alternative (e.g., "Alternatively, Black could try...").
-   - If it says "INSIDE VARIATION", keep your comment focused on the ongoing alternative plan.
-2. PGN SYMBOLS: Pay absolute attention to the symbols attached to the TARGET MOVE (like ?, !, !?, ?!, +-, =). Explain why the TARGET MOVE earned its evaluation symbol based on the next moves or variations in brackets. Do not output the symbols themselves in your comment.
+CRITICAL VARIATION & BRACKET LOGIC:
+- NEVER use the word "Alternatively" or "Alternative" to introduce branches. It sounds completely robotic and like AI.
+- Instead, incorporate brackets naturally like a master coach. Use conversational, strategic setups. For example:
+  * "Sometimes, White can choose a setup that allows..."
+  * "And if White decides to play aggressively with..."
+  * "A sharper try here involves..."
+  * "Should Black instead look to challenge the center with..."
+- If the TARGET MOVE has a chess symbol attached (?, !, !?, ?!, etc.), analyze why the alternative inside the brackets "( )" changes the dynamic or acts as a superior path.
+
+SQUARE & HIGHLIGHT FOCUS:
+- Pay active attention to square coordinates mentioned in the moves (e.g., Re6, Rd4, Ba6). 
+- Do not just say "the rook moves". Talk about the squares directly: analyze control over that specific outpost, the blockading value of that square, or the structural tension created on it.
 
 JUDGMENT RULES:
 1. USE FEN: The "FEN (State AFTER move)" is the exact board state resulting from the TARGET MOVE. 
-2. PIECE QUALITY: Give simple English plans. Identify which pieces are dominant or weak. 
-3. VARIETY: 5 out of 10 comments must begin differently. Avoid repetitive sentence structures.
-4. LENGTH: 30-50 words max. One out of every 10 comments must be punchy (under 10 words).
+2. EXPLAIN THE SYMBOLS: Explain the chess logic behind why the move earned its evaluation symbol based on the next moves or variations. Do not output the symbols themselves in your comment.
+3. PIECE QUALITY: Give simple English plans. Identify which pieces are dominant or weak. 
+4. VARIETY: 5 out of 10 comments must begin differently. Avoid repetitive sentence structures.
+5. LENGTH: 30-50 words max. One out of every 10 comments must be punchy (under 10 words).
 
 STRICT LANGUAGE RULES:
 - Use simple words (transpose, attack, decisive, structure, center). No rare vocabulary.
 - No "storytelling" or overly dramatic flowery language. 
 
 FORMAT: ONLY JSON
-{"CHUNK_ID": "Your GM explanation here, adapting to the Line Status."}
+{"CHUNK_ID": "Your GM explanation here, strictly addressing the move quality and variations."}
 
 ${batch}`;
         }
