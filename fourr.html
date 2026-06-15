@@ -25,7 +25,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 4-Move Stride + Variation Logic</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 6-Move Stride + Variation Logic</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -100,7 +100,6 @@
             r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
-        // FORTIFIED: Strips complex Lichess/Chess.com NAGs and symbols securely to prevent crash.
         function getFenFromPath(path) {
             try {
                 if (typeof Chess === 'undefined') return "FEN_ENGINE_MISSING";
@@ -121,7 +120,6 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            // FORTIFIED: Advanced regex to keep symbols attached and recognize NAGs safely.
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#]+[?!]*)/g) || [];
             
             let chunks = [];
@@ -169,23 +167,22 @@
 
                     const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-                    const isStrideMove = (depthPlyCounts[variationLevel] % 4 === 0) || isFirstMoveOfVariation || justClosedVariation;
+                    
+                    // COOPERATIVE IMPROVEMENT: Stride increased from % 4 to % 6 for an optimal 3-move pace
+                    const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
-                    // CORRECTION 1: Removed the "if (moveNumber > 5 || variationLevel > 0)" wrapper
-                    // Now it will correctly process the opening moves as well.
                     if (isStrideMove || hasImportantSymbol) {
                         let subsequent = [];
-                        // Expand the forward-look window to catch full bracket variations
                         for(let i = index + 1; i < index + 20 && i < pgnTokens.length; i++) {
                             if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
                         }
 
-                        // FORTIFIED: FEN is now pulled exactly AFTER the target move is played.
                         const pathWithTarget = currentPath.slice(0); 
                         
                         chunks.push({
                             id: `CHUNK_${chunks.length}`,
                             target: token + evalSymbol,
+                            moveNum: moveNumber,
                             tokenIndex: index,
                             context: currentPath.slice(-15, -1).join(" "), 
                             fen: getFenFromPath(pathWithTarget),
@@ -205,35 +202,28 @@
             saveState();
         }
 
-        // CORRECTION 2: Rewritten prompt to ban "Alternatively", handle bracket logic, and force square names.
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nFEN (State AFTER move): ${c.fen}\nContext (Previous): ${c.context}\n--> TARGET MOVE: ${c.target} <--\nSubsequent / Variations (Notice brackets!): ${c.future}`
+                `ID: ${c.id}\nMove Number: ${c.moveNum}\nFEN: ${c.fen}\nContext: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nSubsequent/Variations: ${c.future}`
             ).join("\n---\n");
 
-            return `Role: PRETEND you are a 2700 ELO Human GM for course: Nimzo Indian Defense for Black
-Task: Provide human 2700+GM annotation on the course: Nimzo Indian for Black for the TARGET MOVE.
+            return `Role: You are a 2700 ELO Grandmaster creating an elite Nimzo-Indian Masterclass for BLACK.
+Task: Write professional course annotations for the TARGET MOVE.
 
-CRITICAL INSTRUCTIONS ON VARIATIONS (BRACKETS) & SYMBOLS:
-- Pay absolute attention to the symbols attached to the TARGET MOVE (like ?, !, !?, ?!, +-, =).
-- BRACKETS indicate variations. Treat moves inside brackets "(...)" as specific alternative setups, timelines, or plans.
-- DO NOT use repetitive, robotic transition words like "Alternatively", "Another option", or "On the other hand". Instead, use natural GM phrasing like "Sometimes, White can choose a setup that allows...", "If White decides to play aggressively with...", or "Black can also steer the game toward..."
-- When explaining piece moves from the variations, explicitly and naturally mention the squares they control or occupy (e.g., "posting the Knight on e4", "challenging the d4 square", "swinging the rook to e6").
-- If the TARGET MOVE has a '?' (blunder) or '?!' (inaccuracy), explain why it fails and why the variation inside the bracket was superior.
+STRICT STYLE GUIDELINES:
+- PERSONA: Speak as a mentor to your student. Use "we" and "our" (e.g., "In our repertoire, we prefer...", "If White tries to be solid, we can...").
+- THEORETICAL ACCURACY: For moves between 5 and 8, you MUST identify the variation by name if applicable (e.g., Sämisch Variation, Rubinstein System, Classical 4.Qc2, Leningrad).
+- NO ROBOTIC TRANSITIONS: Never use "Alternatively" or "Another option". Instead, use: "Sometimes, White chooses a setup that...", "If they decide to play aggressively with...", or "In the event of a solid approach...".
+- SQUARES: You must explicitly mention key squares (e.g., "putting pressure on d4", "challenging the c3-knight", "securing the e6-pawn").
+- BRACKETS: The text in "(...)" contains variations. Explain the logic of why the variation exists or why the main line is better.
 
 JUDGMENT RULES:
-1. USE FEN: The "FEN (State AFTER move)" is the exact board state resulting from the TARGET MOVE. 
-2. EXPLAIN THE SYMBOLS: Explain the chess logic behind why the move earned its evaluation symbol. Do not output the symbols themselves in your comment.
-3. PIECE QUALITY & SQUARES: Give simple English plans. Identify dominant/weak pieces and actively reference specific squares on the board. 
-4. VARIETY: 5 out of 10 comments must begin differently. Never start consecutive comments the same way.
-5. LENGTH: 30-50 words max. One out of every 10 comments must be punchy (under 10 words).
-
-STRICT LANGUAGE RULES:
-- Use simple words (transpose, attack, decisive, structure, center). No rare vocabulary.
-- No "storytelling" or overly dramatic flowery language. 
+1. Use the FEN to understand the board state resulting from the TARGET MOVE.
+2. Explain the chess logic behind any symbols (?, !, !?) attached to the move.
+3. Keep comments between 30-50 words. Make them feel like a high-level coaching session.
 
 FORMAT: ONLY JSON
-{"CHUNK_ID": "Your GM explanation here, addressing the move quality, squares, and bracket variations naturally."}
+{"CHUNK_ID": "Your GM course annotation here."}
 
 ${batch}`;
         }
