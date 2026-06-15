@@ -161,39 +161,38 @@
                     depthPlyCounts[variationLevel]++;
                     currentPath.push(token);
 
-                    // CORRECTION 1: Removed 'moveNumber > 5' constraint to guarantee first part of the game isn't skipped.
-                    if (moveNumber >= 1 || variationLevel > 0) {
-                        let evalSymbol = "";
-                        let nextToken = pgnTokens[index + 1];
-                        if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
-                            evalSymbol = ` ${nextToken}`;
+                    let evalSymbol = "";
+                    let nextToken = pgnTokens[index + 1];
+                    if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
+                        evalSymbol = ` ${nextToken}`;
+                    }
+
+                    const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
+                    const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
+                    const isStrideMove = (depthPlyCounts[variationLevel] % 4 === 0) || isFirstMoveOfVariation || justClosedVariation;
+
+                    // CORRECTION 1: Removed the "if (moveNumber > 5 || variationLevel > 0)" wrapper
+                    // Now it will correctly process the opening moves as well.
+                    if (isStrideMove || hasImportantSymbol) {
+                        let subsequent = [];
+                        // Expand the forward-look window to catch full bracket variations
+                        for(let i = index + 1; i < index + 20 && i < pgnTokens.length; i++) {
+                            if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
                         }
 
-                        const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
-                        const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-                        const isStrideMove = (depthPlyCounts[variationLevel] % 4 === 0) || isFirstMoveOfVariation || justClosedVariation;
-
-                        if (isStrideMove || hasImportantSymbol) {
-                            let subsequent = [];
-                            // Expand the forward-look window to catch full bracket variations
-                            for(let i = index + 1; i < index + 20 && i < pgnTokens.length; i++) {
-                                if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
-                            }
-
-                            // FORTIFIED: FEN is now pulled exactly AFTER the target move is played.
-                            const pathWithTarget = currentPath.slice(0); 
-                            
-                            chunks.push({
-                                id: `CHUNK_${chunks.length}`,
-                                target: token + evalSymbol,
-                                tokenIndex: index,
-                                context: currentPath.slice(-15, -1).join(" "), 
-                                fen: getFenFromPath(pathWithTarget),
-                                future: subsequent.join(" ")
-                            });
-                            
-                            justClosedVariation = false; 
-                        }
+                        // FORTIFIED: FEN is now pulled exactly AFTER the target move is played.
+                        const pathWithTarget = currentPath.slice(0); 
+                        
+                        chunks.push({
+                            id: `CHUNK_${chunks.length}`,
+                            target: token + evalSymbol,
+                            tokenIndex: index,
+                            context: currentPath.slice(-15, -1).join(" "), 
+                            fen: getFenFromPath(pathWithTarget),
+                            future: subsequent.join(" ")
+                        });
+                        
+                        justClosedVariation = false; 
                     }
                 }
             });
@@ -206,7 +205,7 @@
             saveState();
         }
 
-        // FORTIFIED & OPTIMIZED: Instruction set fine-tuned to eradicate robotic wordings and process coordinates.
+        // CORRECTION 2: Rewritten prompt to ban "Alternatively", handle bracket logic, and force square names.
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
                 `ID: ${c.id}\nFEN (State AFTER move): ${c.fen}\nContext (Previous): ${c.context}\n--> TARGET MOVE: ${c.target} <--\nSubsequent / Variations (Notice brackets!): ${c.future}`
@@ -215,24 +214,18 @@
             return `Role: PRETEND you are a 2700 ELO Human GM for course: Nimzo Indian Defense for Black
 Task: Provide human 2700+GM annotation on the course: Nimzo Indian for Black for the TARGET MOVE.
 
-CRITICAL VARIATION & BRACKET LOGIC:
-- NEVER use the word "Alternatively" or "Alternative" to introduce branches. It sounds completely robotic and like AI.
-- Instead, incorporate brackets naturally like a master coach. Use conversational, strategic setups. For example:
-  * "Sometimes, White can choose a setup that allows..."
-  * "And if White decides to play aggressively with..."
-  * "A sharper try here involves..."
-  * "Should Black instead look to challenge the center with..."
-- If the TARGET MOVE has a chess symbol attached (?, !, !?, ?!, etc.), analyze why the alternative inside the brackets "( )" changes the dynamic or acts as a superior path.
-
-SQUARE & HIGHLIGHT FOCUS:
-- Pay active attention to square coordinates mentioned in the moves (e.g., Re6, Rd4, Ba6). 
-- Do not just say "the rook moves". Talk about the squares directly: analyze control over that specific outpost, the blockading value of that square, or the structural tension created on it.
+CRITICAL INSTRUCTIONS ON VARIATIONS (BRACKETS) & SYMBOLS:
+- Pay absolute attention to the symbols attached to the TARGET MOVE (like ?, !, !?, ?!, +-, =).
+- BRACKETS indicate variations. Treat moves inside brackets "(...)" as specific alternative setups, timelines, or plans.
+- DO NOT use repetitive, robotic transition words like "Alternatively", "Another option", or "On the other hand". Instead, use natural GM phrasing like "Sometimes, White can choose a setup that allows...", "If White decides to play aggressively with...", or "Black can also steer the game toward..."
+- When explaining piece moves from the variations, explicitly and naturally mention the squares they control or occupy (e.g., "posting the Knight on e4", "challenging the d4 square", "swinging the rook to e6").
+- If the TARGET MOVE has a '?' (blunder) or '?!' (inaccuracy), explain why it fails and why the variation inside the bracket was superior.
 
 JUDGMENT RULES:
 1. USE FEN: The "FEN (State AFTER move)" is the exact board state resulting from the TARGET MOVE. 
-2. EXPLAIN THE SYMBOLS: Explain the chess logic behind why the move earned its evaluation symbol based on the next moves or variations. Do not output the symbols themselves in your comment.
-3. PIECE QUALITY: Give simple English plans. Identify which pieces are dominant or weak. 
-4. VARIETY: 5 out of 10 comments must begin differently. Avoid repetitive sentence structures.
+2. EXPLAIN THE SYMBOLS: Explain the chess logic behind why the move earned its evaluation symbol. Do not output the symbols themselves in your comment.
+3. PIECE QUALITY & SQUARES: Give simple English plans. Identify dominant/weak pieces and actively reference specific squares on the board. 
+4. VARIETY: 5 out of 10 comments must begin differently. Never start consecutive comments the same way.
 5. LENGTH: 30-50 words max. One out of every 10 comments must be punchy (under 10 words).
 
 STRICT LANGUAGE RULES:
@@ -240,7 +233,7 @@ STRICT LANGUAGE RULES:
 - No "storytelling" or overly dramatic flowery language. 
 
 FORMAT: ONLY JSON
-{"CHUNK_ID": "Your GM explanation here, strictly addressing the move quality and variations."}
+{"CHUNK_ID": "Your GM explanation here, addressing the move quality, squares, and bracket variations naturally."}
 
 ${batch}`;
         }
