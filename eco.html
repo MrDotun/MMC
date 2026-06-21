@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master Pro | Nimzo-Indian Edition</title>
+    <title>GM Variation Master Pro | Decipher Chess Academy</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -24,8 +24,8 @@
     <div class="max-w-6xl mx-auto">
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
-                <h1 class="text-3xl font-bold gold-text tracking-tight italic">NIMZO-INDIAN <span class="text-white not-italic">DEFENSE FOR BLACK</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 6-Move Stride + Variation Logic</p>
+                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Global Context + Positional Logic Engine</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -171,15 +171,9 @@
 
                     const hasImportantSymbol = token.includes('!') || token.includes('?') || token.includes('/') || evalSymbol.includes('!') || evalSymbol.includes('?');
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-                    
                     const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
                     if (isStrideMove || hasImportantSymbol) {
-                        let subsequent = [];
-                        for(let i = index + 1; i < index + 20 && i < pgnTokens.length; i++) {
-                            if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
-                        }
-
                         const pathWithTarget = currentPath.slice(0); 
                         
                         chunks.push({
@@ -189,7 +183,6 @@
                             tokenIndex: index,
                             context: currentPath.slice(-15, -1).join(" "), 
                             fen: getFenFromPath(pathWithTarget),
-                            future: subsequent.join(" "),
                             isMainLine: variationLevel === 0,
                             isReturning: justClosedVariation && variationLevel === 0 
                         });
@@ -208,41 +201,43 @@
         }
 
         function formatBatch(start, end) {
-            const startMove = globalChunks[start].moveNum;
-            const endMove = globalChunks[end - 1].moveNum;
+            // 1. Grab the entire original PGN to provide global context
+            const masterPgn = document.getElementById('pgn-input').value;
+
+            // 2. Build the batch of specific moves to analyze
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nMove Number: ${c.moveNum}\nFEN: ${c.fen}\nContext: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nMain Line: ${c.isMainLine}\nReturning to Main: ${c.isReturning}\nSubsequent/Variations: ${c.future}`
-            ).join("\n---\n");
+                `[ID: ${c.id}]\nMove Number: ${c.moveNum}\nFEN: ${c.fen}\nPath taken to this move: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nMain Line: ${c.isMainLine}\nReturning to Main: ${c.isReturning}`
+            ).join("\n\n---\n\n");
 
-            return `Role: You are a world-class 2700+ ELO Grandmaster creating an elite Nimzo-Indian Defense for Black masterclass course. You possess deep positional intuition, a sharp eye for tactical nuances, and an engaging mentoring style packed with insightful prose, witty observations, and practical psychological side-notes.
+            // 3. The heavily optimized prompt
+            return `Role: You are a 2700+ ELO Super Grandmaster creating an elite chess masterclass.
+Task: Write deeply insightful, professional course annotations for the TARGET MOVES provided in the batch.
 
-Task: I am attaching reference screenshots. Use these files (Screenshot_20260617-052638.jpg, 1001460051.jpg, 1001460047.jpg, 1001460049.jpg, 1001460053.jpg) strictly as a guide to understand the positional layout of the move range ${startMove}-${endMove}. 
+=== MASTER GAME TREE (GLOBAL CONTEXT) ===
+Use this tree to understand the "big picture" and how variations relate to one another.
+${masterPgn}
+=========================================
 
-Analyze the visual layout from these files to understand where each variation begins and ends, and use the FENs to ground your positional evaluation.
+STRICT ANALYTICAL FRAMEWORK & STYLE GUIDELINES:
 
-IMPORTANT: Your response MUST NOT contain any mention of "screenshot", "file", "image", or "reference" in the text of the annotations. Your output must only contain the pure chess commentary text inside the JSON object.
+1. EXPLAIN THE "WHY" (The Ideas): Do not just list what pieces attack what. Explain the underlying positional goals, pawn structure shifts, or key square control. Why did the player choose this move over an obvious alternative? What is the long-term plan?
+2. VARIATION COMPARISON (CRITICAL): 
+   - Look at the MASTER GAME TREE. If the target move is at a fork in the game, explicitly compare its philosophy to the alternative branches (e.g., "Unlike the quiet 8.Nf3, this aggressive thrust immediately challenges the center...").
+   - If "Returning to Main: true", seamlessly transition back (e.g., "Returning to the main game plan after exploring that sideline...").
+3. SENTENCE LENGTH:
+   - MAIN LINES (Main Line: true): 2-3 flowing sentences. Deep strategic focus.
+   - VARIATIONS (Main Line: false): 1-2 precise sentences. Highlight the specific tactical or positional trick of the line.
+4. EVALUATION MARKS TO PROSE: Convert all raw symbols (!, ?, !?, +/=, -/+, etc.) into natural, expressive language. Absolutely NO raw symbols in the output text.
+5. HIGHLIGHTS & SQUARES: If visual tags like [%csl Rc4,Rf2] appear in the master PGN near the target move, you MUST explicitly mention those exact squares as critical outposts, targets, or weaknesses.
 
-CRITICAL STYLE & FORMATTING RULES:
-1. PERSONA: Speak as a veteran mentor using inclusive terms like "we", "our", and "us".
-2. SENTENCE LENGTH: 
-   - MAIN LINES (Main Line: true): Write 2-3 flowing sentences (approx 30-45 words).
-   - VARIATIONS (Main Line: false): Write 1-2 precise sentences (approx 15-25 words).
-3. VARIATION AWARENESS: 
-   - If "Returning to Main: true", start with a clear transition like "Back to our main line,".
-   - For alternative ideas (Main Line: false), introduce them naturally.
-4. ENGINE EVALUATION CONVERSION: Absolutely NO raw symbols. Translate everything into natural English prose.
-5. VISUAL MARKERS: If the provided data indicates visual markers (e.g., [%csl...]), incorporate the tactical reasoning of those squares (e.g., c4/f2) directly into your prose without citing the reference marker itself.
-
-OUTPUT FORMAT INSTRUCTIONS:
-- You must return ONLY a single, strictly valid JSON object. 
-- Do NOT wrap your response in markdown code blocks. Start your response immediately with "{" and end it with "}".
-
-JSON Template Required:
+FORMAT REQUIREMENT: 
+Return ONLY a valid JSON object mapping the chunk ID to the text. Do not include markdown blocks like \`\`\`json. Start immediately with the { bracket.
 {
-  "CHUNK_X": "Your 2700+ GM-level chess annotation text here."
+  "CHUNK_0": "Your brilliant GM annotation here...",
+  "CHUNK_1": "Your brilliant GM annotation here..."
 }
 
-DATA BATCH:
+=== BATCH TO ANALYZE ===
 ${batch}`;
         }
 
@@ -252,7 +247,7 @@ ${batch}`;
             currentBatchStart = end;
             updateUI();
             saveState();
-            alert("Batch Copied!");
+            alert("Batch Copied to Clipboard!");
         }
 
         function copyAllRemaining() {
@@ -260,7 +255,7 @@ ${batch}`;
             currentBatchStart = globalChunks.length;
             updateUI();
             saveState();
-            alert("Full Game Copied!");
+            alert("Full Game Copied to Clipboard!");
         }
 
         function rebuildPgn() {
@@ -314,7 +309,7 @@ ${batch}`;
         }
 
         function copyToClipboard(id) {
-            const val = document.getElementById('final-pgn').value;
+            const val = document.getElementById(id).value;
             navigator.clipboard.writeText(val);
             alert("Copied!");
         }
