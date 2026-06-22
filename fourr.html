@@ -25,7 +25,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 6-Move Stride + Variation Logic</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Global Context + Positional Logic Engine</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -58,8 +58,8 @@
             <div class="glass p-6 rounded-2xl">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="space-y-4">
-                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste Gemini's Chat/JSON</label>
-                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the entire Gemini response here..."></textarea>
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste AI JSON</label>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the entire JSON response here..."></textarea>
                     </div>
                     <div class="space-y-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Final Re-Assembled PGN</label>
@@ -105,12 +105,23 @@
                 if (typeof Chess === 'undefined') return "FEN_ENGINE_MISSING";
                 const chess = new Chess();
                 for (let move of path) {
-                    // Strip engine evaluation marks (-/+, =/+, +/-) to prevent chess.js from crashing
                     let cleanMove = move.replace(/[!?]+$/, '')
                                         .replace(/\$\d+/g, '')
                                         .replace(/(\+\/-|-\/\+|=\/\+|\+=|=\+|\+-|-\+|=)$/, '')
                                         .trim();
+                    
+                    // Normalize zero-castling formats to standard SAN to prevent chess.js from failing
+                    cleanMove = cleanMove.replace(/0-0-0/g, 'O-O-O').replace(/0-0/g, 'O-O');
+
                     if (cleanMove && !/^\d+\.+$/.test(cleanMove) && cleanMove !== '(' && cleanMove !== ')') {
+                        // Handle null moves manually by switching the active color
+                        if (cleanMove === '--' || cleanMove === 'Z0') {
+                            let tokens = chess.fen().split(' ');
+                            tokens[1] = tokens[1] === 'w' ? 'b' : 'w';
+                            tokens[3] = '-'; 
+                            chess.load(tokens.join(' '));
+                            continue;
+                        }
                         chess.move(cleanMove, { sloppy: true });
                     }
                 }
@@ -124,7 +135,6 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            // Added '\/' to the regex to safely capture eval markers like =/+ without breaking tokens
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g) || [];
             
             let chunks = [];
@@ -141,7 +151,7 @@
                     depthPlyCounts[variationLevel] = 0; 
                     savedPaths.push([...currentPath]);
                     if (currentPath.length > 0) currentPath.pop();
-                    justClosedVariation = false; // Reset this so sibling variations aren't flagged as returning to the main line
+                    justClosedVariation = false; 
                     return; 
                 }
                 if (token === ")") {
@@ -159,7 +169,8 @@
                     return; 
                 }
 
-                const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                // Recognize standard SAN and zero-castling
+                const isMove = (/^[a-zA-Z]/.test(token) || token.startsWith('0-0') || token.startsWith('O-O')) && !token.startsWith('{') && !token.startsWith('[');
                 
                 if (isMove) {
                     depthPlyCounts[variationLevel]++;
@@ -167,22 +178,21 @@
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
-                    if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
+                    
+                    // Comprehensive check for all standard PGN evaluation symbols (detached)
+                    const isEvalToken = nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken) || /^(\+\/-|-\/\+|=\/\+|\+=|=\+|\+-|-\+|=|∞|=\/∞)$/.test(nextToken));
+                    if (isEvalToken) {
                         evalSymbol = ` ${nextToken}`;
                     }
 
-                    // Checks for '/' meaning engine evals (-/+, +/-) trigger chunks alongside !, ?
-                    const hasImportantSymbol = token.includes('!') || token.includes('?') || token.includes('/') || evalSymbol.includes('!') || evalSymbol.includes('?');
+                    // Checks if symbol is attached directly to the move or exists detached
+                    const attachedEvalRegex = /[!?]+$|(\+\/-|-\/\+|=\/\+|\+=|=\+|\+-|-\+|=|∞|=\/∞)$/;
+                    const hasImportantSymbol = attachedEvalRegex.test(token) || evalSymbol !== "";
+
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-                    
                     const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
                     if (isStrideMove || hasImportantSymbol) {
-                        let subsequent = [];
-                        for(let i = index + 1; i < index + 20 && i < pgnTokens.length; i++) {
-                            if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
-                        }
-
                         const pathWithTarget = currentPath.slice(0); 
                         
                         chunks.push({
@@ -192,9 +202,7 @@
                             tokenIndex: index,
                             context: currentPath.slice(-15, -1).join(" "), 
                             fen: getFenFromPath(pathWithTarget),
-                            future: subsequent.join(" "),
                             isMainLine: variationLevel === 0,
-                            // Only trigger returning specifically for Main Line
                             isReturning: justClosedVariation && variationLevel === 0 
                         });
                         
@@ -212,31 +220,40 @@
         }
 
         function formatBatch(start, end) {
+            const masterPgn = document.getElementById('pgn-input').value;
+
             const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nMove Number: ${c.moveNum}\nFEN: ${c.fen}\nContext: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nMain Line: ${c.isMainLine}\nReturning to Main: ${c.isReturning}\nSubsequent/Variations: ${c.future}`
-            ).join("\n---\n");
+                `[ID: ${c.id}]\nMove Number: ${c.moveNum}\nFEN: ${c.fen}\nPath taken to this move: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nMain Line: ${c.isMainLine}\nReturning to Main: ${c.isReturning}`
+            ).join("\n\n---\n\n");
 
-            return `Role: You are a 2700 ELO Grandmaster creating an elite chess class on Semi-slav strategy.
-Task: Write perfect, professional course annotations for the TARGET MOVE based on the provided FEN and context.
+            return `Role: You are a 2700+ ELO Super Grandmaster and the author of an elite chess repertoire course on the Nimzo-Indian Defense for BLACK.
+Task: Write deeply insightful, practical course annotations for the TARGET MOVES provided in the batch.
 
-STRICT STYLE & STRUCTURAL GUIDELINES:
+=== MASTER GAME TREE (GLOBAL Context) ===
+Use this tree to understand the "big picture" and how variations relate to one another.
+${masterPgn}
+=========================================
 
-1. SENTENCE LENGTH (Not too short, not too long): 
-   - MAIN LINES (Main Line: true): Write 2-3 flowing sentences (approx 30-45 words). Focus on deep, insightful coaching and positional goals.
-   - VARIATIONS (Main Line: false): Write 1-2 precise sentences (approx 15-25 words). Clearly explain the specific tactical or positional point of this alternative idea.
-2. VARIATION AWARENESS: 
-   - If "Returning to Main: true", you MUST start with a clear transition like "Back to our main line," or "Returning to the primary game plan,".
-   - For alternative ideas (Main Line: false), introduce them naturally (e.g., "If White instead tries...", "A tricky alternative is...").
-3. EVALUATION SIGNS & MARKS (CRITICAL): Absolutely NO raw symbols in the output (like -/+, =/+, +/-, +/=, !, ?, !?, ?!, $1). Translate them into natural prose! 
-   - "-/+" means Black is much better (e.g., "...giving Black a clear advantage.").
-   - "=/+" means Black has a slight, comfortable edge.
-   - "+/=" means White has a slight edge.
-   - Recognize "!" as strong, "!?" as interesting/provocative, and "?!" as a dubious inaccuracy. Incorporate these into your tone.
-5. HIGHLIGHTS & SQUARES: If you see visual tags like [%csl Rc4,Rf2] or [%csl ...] in the target or future moves, you MUST explicitly mention those specific squares (e.g., c4 and f2). Treat them as critical targets, weak points, or key outposts based on the board state (FEN).
+STRICT ANALYTICAL FRAMEWORK & STYLE GUIDELINES:
 
-FORMAT: ONLY return a valid JSON object. No markdown formatting outside the JSON.
-{"CHUNK_ID": "Your perfectly balanced GM annotation here."}
+1. PERSPECTIVE & TONE: Write entirely from Black's perspective using inclusive language like "we" and "our" (e.g., "Here we develop our bishop"). Frame White's moves as attempts to challenge us. Reassure the student when White deviates (e.g., "White has three main tries here, but we aren't really bothered since our setup is so solid...").
+2. EXPLAIN THE "WHY": Explain the underlying positional goals, pawn structure shifts, or key square control (especially the fight for e4 and d5 in the Nimzo). 
+3. NO AI CLICHÉS (CRITICAL): Speak like a real, human Grandmaster giving a practical lesson. Do NOT use generic AI filler words such as: delve, crucial, pivotal, testament, tapestry, multifaceted, moreover, furthermore, importantly, underscore, or dynamic. Keep the tone natural and direct.
+4. STRICT LENGTH LIMITS (DON'T BORE THE READER):
+   - MAIN LINES (Main Line: true): Write 2-3 flowing sentences. Focus on our core Nimzo plans.
+   - VARIATIONS (Main Line: false): STRICTLY 1 SHORT, PUNCHY SENTENCE. Keep sidelines extremely brief so the reader does not get bored. Just quickly state the tactical point or how we equalize, then stop.
+5. VARIATION COMPARISON: If the target move is at a fork where White chooses between several lines, explicitly compare them. If "Returning to Main: true", seamlessly transition back (e.g., "Returning to our main game plan...").
+6. EVALUATION MARKS TO PROSE: Convert all raw symbols (!, ?, !?, +/=, -/+, etc.) into natural language. NO raw symbols in the output text. "-/+" means WE (Black) have a clear advantage.
+7. HIGHLIGHTS & SQUARES: If visual tags like [%csl Rc4,Rf2] appear in the master PGN near the target move, explicitly mention those exact squares.
 
+FORMAT REQUIREMENT: 
+Return ONLY a valid JSON object mapping the chunk ID to the text. Do not include markdown blocks like \`\`\`json. Start immediately with the { bracket.
+{
+  "CHUNK_0": "Your human-sounding GM annotation here...",
+  "CHUNK_1": "Your human-sounding GM annotation here..."
+}
+
+=== BATCH TO ANALYZE ===
 ${batch}`;
         }
 
@@ -246,7 +263,7 @@ ${batch}`;
             currentBatchStart = end;
             updateUI();
             saveState();
-            alert("Batch Copied!");
+            alert("Batch Copied to Clipboard!");
         }
 
         function copyAllRemaining() {
@@ -254,7 +271,7 @@ ${batch}`;
             currentBatchStart = globalChunks.length;
             updateUI();
             saveState();
-            alert("Full Game Copied!");
+            alert("Full Game Copied to Clipboard!");
         }
 
         function rebuildPgn() {
