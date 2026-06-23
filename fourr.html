@@ -15,118 +15,192 @@
         .chunk-card.completed { border-left-color: #10b981; opacity: 0.5; }
         .chunk-card.sideline { border-left-color: #64748b; }
         textarea { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; }
+        textarea:focus { border-color: #d4af37 !important; outline: none; }
+        #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.4s ease; }
     </style>
 </head>
-<body class="p-10">
+<body class="p-4 md:p-10">
 
-    <div class="max-w-4xl mx-auto glass p-8 rounded-xl shadow-2xl">
-        <h1 class="text-3xl font-bold gold-text mb-2">GM Tree Master Pro</h1>
-        <p class="text-slate-400 mb-6">Enhanced Context Engine Loaded. Ready to process PGN batches.</p>
-
-        <textarea class="w-full h-40 p-4 rounded-lg text-sm mb-6 shadow-inner focus:outline-none focus:border-[#d4af37]" placeholder="Paste your repertoire PGN here..."></textarea>
-
-        <button class="gold-bg font-bold py-2 px-6 rounded hover:opacity-90 transition shadow-lg mb-8">
-            Process Batches
-        </button>
-
-        <div class="grid grid-cols-1 gap-4">
-            <div class="chunk-card glass p-4 rounded shadow">
-                <div class="text-xs text-slate-400 font-mono mb-1">CHUNK_0</div>
-                <div class="font-bold text-lg">d4 Nf6 <span class="gold-text">c4 e6</span></div>
-                <div class="text-sm mt-2 text-slate-300">Awaiting GM evaluation...</div>
+    <div class="max-w-4xl mx-auto">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
+            <div>
+                <h1 class="text-3xl font-bold gold-text mb-2">GM Tree Master Pro</h1>
+                <p class="text-slate-400 text-sm">Enhanced Context Engine Loaded. Ready to process PGN batches.</p>
             </div>
-            
-            <div class="chunk-card sideline glass p-4 rounded shadow">
-                <div class="text-xs text-slate-400 font-mono mb-1">CHUNK_1 (Sideline)</div>
-                <div class="font-bold text-lg">Bf4</div>
-                <div class="text-sm mt-2 text-slate-300">London System setup detected.</div>
+            <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
+                <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
+                <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
+            </nav>
+        </header>
+
+        <div id="view-fragmenter" class="space-y-6">
+            <div class="glass p-8 rounded-xl shadow-2xl">
+                <div class="flex justify-between items-center mb-4">
+                    <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
+                    <div class="text-right">
+                        <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Awaiting PGN</div>
+                        <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
+                    </div>
+                </div>
+                
+                <textarea id="pgn-input" class="w-full h-40 p-4 rounded-lg text-sm mb-6 shadow-inner" placeholder="Paste your text repertoire PGN here..."></textarea>
+
+                <div class="flex flex-wrap gap-3 mb-8">
+                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded hover:bg-slate-200 transition shadow-lg text-sm">Initialize Engine</button>
+                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg font-bold rounded hover:opacity-90 transition shadow-lg text-sm hidden">Copy Next 10</button>
+                    <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 font-bold rounded transition text-sm">Reset</button>
+                </div>
+
+                <div id="chunks-container" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+            </div>
+        </div>
+
+        <div id="view-reassembler" class="hidden space-y-6">
+            <div class="glass p-8 rounded-xl shadow-2xl">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste AI JSON</label>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-lg text-sm" placeholder="Paste the generated JSON here..."></textarea>
+                    </div>
+                    <div class="space-y-4">
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Final Re-Assembled PGN</label>
+                        <textarea id="final-pgn" rows="14" class="w-full p-4 rounded-lg text-sm text-emerald-400" readonly></textarea>
+                        <div class="flex gap-2">
+                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-sm font-bold rounded hover:bg-slate-700">Copy Final</button>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded font-bold uppercase tracking-widest shadow-lg hover:opacity-90 transition">Inject Annotations & Rebuild File</button>
             </div>
         </div>
     </div>
+
     <script>
-        // Global state for array tracking across chunk batches
         let globalChunks = [];
+        let pgnTokens = [];
+        let currentBatchStart = 0;
 
-        // Helper to strip out engine evaluations and NAG markers (!, ?, $15)
-        function cleanMoveSyntax(val) {
-            if (!val) return '';
-            return val.replace(/[!?#+]+|(\$\d+)/g, '').trim();
+        function switchTab(tab) {
+            document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
+            document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
+            const f = document.getElementById('tab-f');
+            const r = document.getElementById('tab-r');
+            f.className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+            r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
-        // Isolated check for clean, executable move tokens
-        function isChessMove(val) {
-            const cleanVal = cleanMoveSyntax(val);
-            const isMove = (/^[a-zA-Z]/.test(cleanVal) || cleanVal.startsWith('0-0') || cleanVal.startsWith('O-O')) && !cleanVal.startsWith('{') && !cleanVal.startsWith('[');
-            const isMoveNum = /^\d+\./.test(cleanVal);
-            return isMove && !isMoveNum;
+        // Sanitize trailing custom evaluation metrics safely for chess.js engine calculation
+        function cleanSanForChessJs(move) {
+            let m = move.replace(/\$\d+/g, '');
+            const trailingEvalRegex = /(\+\/-|-\/\+|=\/\+|\+=|=\+|\+-|-\+|=|∞|=\/∞)[!?]*$/;
+            m = m.replace(trailingEvalRegex, '');
+            m = m.replace(/[!?]+$/g, '');
+            return m.trim();
         }
 
-        // Updated Flatten function to include Look-Ahead Context
-        function flattenAndExtract(node, chunks) {
-            if (!node) return;
-            
-            node.children.forEach((child, index) => {
-                if (child.type === 'token' && typeof child.value === 'string') {
-                    let val = child.value;
-                    
-                    if (isChessMove(val)) {
-                        let path = getMovePathForNode(child);
-                        let cleanVal = cleanMoveSyntax(val);
-                        
-                        // Calculate standard FEN using the cleaned representation to prevent chess.js errors
-                        let fen = calculateFen(path);
-                        
-                        // Look-Ahead Extraction: Confined to the current variation bracket
-                        let lookAhead = [];
-                        let cursor = index + 1;
-                        
-                        while (lookAhead.length < 3 && cursor < node.children.length) {
-                            let nextChild = node.children[cursor];
-                            
-                            // Skip nested variation tree branches entirely so we don't mix lines
-                            if (nextChild && nextChild.type === 'variation') {
-                                cursor++;
-                                continue;
-                            }
-                            
-                            if (nextChild && nextChild.type === 'token') {
-                                let nextVal = nextChild.value;
-                                if (isChessMove(nextVal)) {
-                                    lookAhead.push(cleanMoveSyntax(nextVal));
-                                }
-                            }
-                            cursor++;
+        // Generate tracking FEN matrix
+        function getFenFromPath(path) {
+            try {
+                const chess = new Chess();
+                for (let move of path) {
+                    let cleanMove = cleanSanForChessJs(move);
+                    if (cleanMove && !/^\d+\.+$/.test(cleanMove) && cleanMove !== '(' && cleanMove !== ')') {
+                        if (cleanMove === '--' || cleanMove === 'Z0') {
+                            let tokens = chess.fen().split(' ');
+                            tokens[1] = tokens[1] === 'w' ? 'b' : 'w';
+                            tokens[3] = '-'; 
+                            chess.load(tokens.join(' '));
+                            continue;
                         }
-
-                        let branchInfo = getBranchContext(child, node);
-                        
-                        chunks.push({
-                            id: `CHUNK_${chunks.length}`,
-                            target: cleanVal,
-                            fen: fen,
-                            lookAhead: lookAhead.join(" "), // Provided to AI (stays within current variation)
-                            hasAnnotation: /[!?$]+/.test(val), // Flag if original token had engine tags
-                            moveNum: extractMoveNumber(val, path.length),
-                            isMainLine: child.depth === 0,
-                            choicesCount: branchInfo.choices,
-                            alternatives: branchInfo.list.filter(m => cleanMoveSyntax(m) !== cleanVal).map(cleanMoveSyntax).join(", ")
-                        });
+                        chess.move(cleanMove, { sloppy: true });
                     }
-                } else if (child.type === 'variation') {
-                    // Recursively process the sidelines/brackets
-                    flattenAndExtract(child, chunks);
+                }
+                return chess.fen();
+            } catch (e) {
+                return "FEN_GENERATION_FAILED";
+            }
+        }
+
+        function processPgn() {
+            const input = document.getElementById('pgn-input').value;
+            if (!input) return alert("Please paste a PGN first.");
+
+            // Tokenizer explicitly tracking brackets, variations, evaluations, and standard move tokens
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/∞]+[?!]*)/g) || [];
+            
+            let chunks = [];
+            let moveNumber = 0;
+            let variationLevel = 0;
+            let currentPath = [];
+            let savedPaths = []; 
+
+            pgnTokens.forEach((token, index) => {
+                if (token === "(") {
+                    variationLevel++;
+                    savedPaths.push([...currentPath]);
+                    if (currentPath.length > 0) currentPath.pop();
+                    return; 
+                }
+                if (token === ")") {
+                    variationLevel--;
+                    if (savedPaths.length > 0) currentPath = savedPaths.pop();
+                    return; 
+                }
+                
+                if (/^\d+\./.test(token)) {
+                    moveNumber = parseInt(token);
+                    return; 
+                }
+
+                const isMove = (/^[a-zA-Z]/.test(token) || token.startsWith('0-0') || token.startsWith('O-O')) && !token.startsWith('{') && !token.startsWith('[');
+                
+                if (isMove) {
+                    currentPath.push(token);
+
+                    // Look-ahead extraction context restricted strictly to the current variation bracket tier
+                    let lookAhead = [];
+                    let lookAheadDepth = variationLevel;
+                    for (let j = index + 1; j < Math.min(index + 12, pgnTokens.length); j++) {
+                        let nextToken = pgnTokens[j];
+                        if (nextToken === "(") lookAheadDepth++;
+                        if (nextToken === ")") lookAheadDepth--;
+                        if (lookAheadDepth < variationLevel) break; 
+                        
+                        if (lookAheadDepth === variationLevel) {
+                            let isNextMove = (/^[a-zA-Z]/.test(nextToken) || nextToken.startsWith('0-0') || nextToken.startsWith('O-O')) && !nextToken.startsWith('{') && !nextToken.startsWith('[');
+                            if (isNextMove) {
+                                lookAhead.push(cleanSanForChessJs(nextToken));
+                                if (lookAhead.length >= 2) break;
+                            }
+                        }
+                    }
+
+                    chunks.push({
+                        id: `CHUNK_${chunks.length}`,
+                        target: token,
+                        moveNum: moveNumber,
+                        tokenIndex: index,
+                        lookAhead: lookAhead.join(" "),
+                        fen: getFenFromPath([...currentPath]),
+                        isMainLine: variationLevel === 0,
+                        hasAnnotation: /[!?]+$/.test(token) || (pgnTokens[index+1] && pgnTokens[index+1].startsWith('$'))
+                    });
                 }
             });
+
+            globalChunks = chunks;
+            currentBatchStart = 0;
+            document.getElementById('batch-btn').classList.remove('hidden');
+            updateUI();
         }
 
-        // Updated Prompt Generator
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => {
                 return `[ID: ${c.id}]
 TARGET MOVE: ${c.target} (Move ${c.moveNum}) ${c.hasAnnotation ? '[CRITICAL MOVE]' : ''}
 FEN POSITION: ${c.fen}
 LOOK-AHEAD: ${c.lookAhead}
-BRANCH CONTEXT: ${c.choicesCount} paths. Alternatives: [${c.alternatives}]`;
+MAIN LINE: ${c.isMainLine}`;
             }).join("\n\n---\n\n");
 
             return `Role: Super Grandmaster writing a repertoire for Black against the London System.
@@ -138,8 +212,8 @@ Task: Provide strategic annotations for the targets provided from Black's perspe
 3. OPENING PHASE (Moves 1-12): Discuss theoretical concepts, how Black counters standard London System setups, and why this transposition is chosen.
 4. DYNAMIC TONE: Avoid robotic, repetitive starts ("In this position..."). Vary your sentence structure with action verbs and structural insights.
 5. LENGTH:
-   - Main Lines: 1-2 flowing sentences.
-   - Sidelines/Branches: Exactly 1 punchy sentence.
+   - Main Lines (MAIN LINE: true): 1-2 flowing sentences.
+   - Sidelines/Branches (MAIN LINE: false): Exactly 1 punchy sentence.
 
 === BATCH DATA ===
 ${batch}
@@ -149,6 +223,78 @@ Format: Return ONLY valid JSON mapping chunk ID to string.
   "CHUNK_0": "GM analysis...",
   "CHUNK_1": "Sideline insight..."
 }`;
+        }
+
+        function copyNextBatch() {
+            if (globalChunks.length === 0) return;
+            const end = Math.min(currentBatchStart + 10, globalChunks.length);
+            navigator.clipboard.writeText(formatBatch(currentBatchStart, end));
+            currentBatchStart = end;
+            updateUI();
+            alert("Batch Copied! Send this to the AI, then paste the returned JSON block into Tab 2.");
+        }
+
+        function rebuildPgn() {
+            const raw = document.getElementById('ai-json').value;
+            let aiData = {};
+            const matches = raw.match(/\{[\s\S]*?\}/g);
+            if (matches) {
+                matches.forEach(m => {
+                    try { Object.assign(aiData, JSON.parse(m)); } catch(e){}
+                });
+            }
+            
+            let workingTokens = [...pgnTokens];
+            
+            // Reverse-ordered injection array to preserve accurate file string index offsets
+            const sortedIds = Object.keys(aiData).sort((a,b) => {
+                const idxA = globalChunks.find(c => c.id === a)?.tokenIndex || 0;
+                const idxB = globalChunks.find(c => c.id === b)?.tokenIndex || 0;
+                return idxB - idxA;
+            });
+
+            sortedIds.forEach(id => {
+                const chunk = globalChunks.find(c => c.id === id);
+                if (chunk && workingTokens[chunk.tokenIndex]) {
+                    workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
+                }
+            });
+
+            document.getElementById('final-pgn').value = workingTokens.join(" ");
+            alert("Annotations successfully injected into Master PGN!");
+        }
+
+        function updateUI() {
+            const container = document.getElementById('chunks-container');
+            container.innerHTML = "";
+            globalChunks.forEach((c, i) => {
+                const div = document.createElement('div');
+                div.className = `chunk-card glass p-4 rounded shadow ${!c.isMainLine ? 'sideline' : ''} ${i < currentBatchStart ? 'completed' : ''}`;
+                div.innerHTML = `
+                    <div class="text-xs text-slate-400 font-mono mb-1">${c.id} ${!c.isMainLine ? '(Sideline)' : ''}</div>
+                    <div class="font-bold text-lg">${c.target}</div>
+                    <div class="text-xs mt-2 text-slate-500">Look-ahead: ${c.lookAhead || 'End of line'}</div>
+                `;
+                container.appendChild(div);
+            });
+            const perc = (currentBatchStart / globalChunks.length) * 100 || 0;
+            document.getElementById('progress-fill').style.width = perc + "%";
+            document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} SPLITS`;
+        }
+
+        function clearAll() {
+            document.getElementById('pgn-input').value = "";
+            document.getElementById('ai-json').value = "";
+            document.getElementById('final-pgn').value = "";
+            globalChunks = [];
+            currentBatchStart = 0;
+            updateUI();
+        }
+
+        function copyToClipboard(id) {
+            const val = document.getElementById(id).value;
+            navigator.clipboard.writeText(val);
+            alert("Copied to clipboard!");
         }
     </script>
 </body>
