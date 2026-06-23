@@ -18,42 +18,77 @@
     </style>
 </head>
 <body class="p-10">
-    <!-- Keep previous UI structure, just update the logic in the script block below -->
     <script>
+        // Global state for array tracking across chunk batches
+        let globalChunks = [];
+
+        // Helper to strip out engine evaluations and NAG markers (!, ?, $15)
+        function cleanMoveSyntax(val) {
+            if (!val) return '';
+            return val.replace(/[!?#+]+|(\$\d+)/g, '').trim();
+        }
+
+        // Isolated check for clean, executable move tokens
+        function isChessMove(val) {
+            const cleanVal = cleanMoveSyntax(val);
+            const isMove = (/^[a-zA-Z]/.test(cleanVal) || cleanVal.startsWith('0-0') || cleanVal.startsWith('O-O')) && !cleanVal.startsWith('{') && !cleanVal.startsWith('[');
+            const isMoveNum = /^\d+\./.test(cleanVal);
+            return isMove && !isMoveNum;
+        }
+
         // Updated Flatten function to include Look-Ahead Context
         function flattenAndExtract(node, chunks) {
             if (!node) return;
+            
             node.children.forEach((child, index) => {
-                if (child.type === 'token') {
+                if (child.type === 'token' && typeof child.value === 'string') {
                     let val = child.value;
-                    const isMove = (/^[a-zA-Z]/.test(val) || val.startsWith('0-0') || val.startsWith('O-O')) && !val.startsWith('{') && !val.startsWith('[');
-                    const isMoveNum = /^\d+\./.test(val);
                     
-                    if (isMove && !isMoveNum) {
+                    if (isChessMove(val)) {
                         let path = getMovePathForNode(child);
+                        let cleanVal = cleanMoveSyntax(val);
+                        
+                        // Calculate standard FEN using the cleaned representation to prevent chess.js errors
                         let fen = calculateFen(path);
                         
-                        // NEW: Look-Ahead Extraction (next 3 moves)
+                        // Look-Ahead Extraction: Confined to the current variation bracket
                         let lookAhead = [];
-                        for(let i=1; i<=3; i++) {
-                            if(node.children[index + i]) lookAhead.push(node.children[index + i].value);
+                        let cursor = index + 1;
+                        
+                        while (lookAhead.length < 3 && cursor < node.children.length) {
+                            let nextChild = node.children[cursor];
+                            
+                            // Skip nested variation tree branches entirely so we don't mix lines
+                            if (nextChild && nextChild.type === 'variation') {
+                                cursor++;
+                                continue;
+                            }
+                            
+                            if (nextChild && nextChild.type === 'token') {
+                                let nextVal = nextChild.value;
+                                if (isChessMove(nextVal)) {
+                                    lookAhead.push(cleanMoveSyntax(nextVal));
+                                }
+                            }
+                            cursor++;
                         }
 
                         let branchInfo = getBranchContext(child, node);
                         
                         chunks.push({
                             id: `CHUNK_${chunks.length}`,
-                            target: val,
+                            target: cleanVal,
                             fen: fen,
-                            lookAhead: lookAhead.join(" "), // Provided to AI
-                            hasAnnotation: /[!?]+/.test(val),
+                            lookAhead: lookAhead.join(" "), // Provided to AI (stays within current variation)
+                            hasAnnotation: /[!?$]+/.test(val), // Flag if original token had engine tags
                             moveNum: extractMoveNumber(val, path.length),
                             isMainLine: child.depth === 0,
                             choicesCount: branchInfo.choices,
-                            alternatives: branchInfo.list.filter(m => m !== val).join(", ")
+                            alternatives: branchInfo.list.filter(m => cleanMoveSyntax(m) !== cleanVal).map(cleanMoveSyntax).join(", ")
                         });
                     }
                 } else if (child.type === 'variation') {
+                    // Recursively process the sidelines/brackets
                     flattenAndExtract(child, chunks);
                 }
             });
@@ -69,17 +104,20 @@ LOOK-AHEAD: ${c.lookAhead}
 BRANCH CONTEXT: ${c.choicesCount} paths. Alternatives: [${c.alternatives}]`;
             }).join("\n\n---\n\n");
 
-            return `Role: Super Grandmaster writing a London System repertoire.
-Task: Provide strategic annotations for the targets provided.
+            return `Role: Super Grandmaster writing a repertoire for Black against the London System.
+Task: Provide strategic annotations for the targets provided from Black's perspective.
 
 === STRICT GUIDELINES ===
 1. CRITICAL MOVES (!, ?, !?, ?!): If [CRITICAL MOVE] is present, you MUST explain the specific justification or tactical refutation.
 2. LOOK-AHEAD: Use the provided "LOOK-AHEAD" moves to frame your commentary, ensuring you mention where the line is leading.
-3. OPENING PHASE (Moves 1-12): Discuss theoretical concepts, standard London System setups, and why this transposition is chosen[span_1](start_span)[span_1](end_span).
-4. DYNAMIC TONE: Avoid robotic, repetitive starts ("In this position..."). Vary your sentence structure with action verbs and structural insights[span_2](start_span)[span_2](end_span).
+3. OPENING PHASE (Moves 1-12): Discuss theoretical concepts, how Black counters standard London System setups, and why this transposition is chosen.
+4. DYNAMIC TONE: Avoid robotic, repetitive starts ("In this position..."). Vary your sentence structure with action verbs and structural insights.
 5. LENGTH:
-   - Main Lines: 1-2 flowing sentences[span_3](start_span)[span_3](end_span).
-   - Sidelines/Branches: Exactly 1 punchy sentence[span_4](start_span)[span_4](end_span).
+   - Main Lines: 1-2 flowing sentences.
+   - Sidelines/Branches: Exactly 1 punchy sentence.
+
+=== BATCH DATA ===
+${batch}
 
 Format: Return ONLY valid JSON mapping chunk ID to string.
 {
