@@ -4,19 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GM Variation Master Pro | Decipher Chess Academy</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+    <script src="[https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js](https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js)"></script>
+    <link href="[https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap)" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
         .gold-text { color: #d4af37; }
         .gold-bg { background-color: #d4af37; color: #1e293b; }
         .glass { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .chunk-card { border-left: 4px solid #d4af37; transition: all 0.2s; cursor: pointer; }
-        .chunk-card.completed { border-left-color: #10b981; opacity: 0.5; }
         textarea { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; scrollbar-width: thin; }
         textarea:focus { border-color: #d4af37 !important; outline: none; }
-        #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        #pgn-viewer { max-height: 400px; overflow-y: auto; font-family: 'Fira Code', monospace; font-size: 13px; line-height: 1.6; }
+        .pgn-move { cursor: pointer; transition: color 0.2s; }
+        .pgn-move:hover { color: #d4af37; text-decoration: underline; }
+        .active-chunk { background: rgba(212, 175, 55, 0.2); border-radius: 4px; padding: 2px 0; }
     </style>
 </head>
 <body class="p-4 md:p-10">
@@ -35,28 +36,41 @@
 
         <div id="view-fragmenter" class="space-y-6">
             <div class="glass p-6 rounded-2xl">
-                <div class="flex justify-between items-center mb-4">
-                    <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
-                    <div class="text-right">
-                        <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Ready</div>
-                        <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
+                <label class="text-xs font-bold uppercase text-slate-500 mb-2 block">Master PGN Input</label>
+                <textarea id="pgn-input" rows="5" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste full course PGN here..."></textarea>
+                <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs w-full mb-6">Initialize & Map PGN Tree</button>
+
+                <div id="interactive-workspace" class="hidden grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-2 glass p-4 rounded-xl">
+                        <label class="text-xs font-bold uppercase text-slate-500 mb-2 block">Interactive PGN Tree (Click any move to segment)</label>
+                        <div id="pgn-viewer" class="p-4 bg-slate-900 rounded-lg text-slate-300"></div>
                     </div>
-                </div>
-                <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste full, unannotated PGN here to initialize..."></textarea>
-                
-                <div class="flex flex-wrap gap-3">
-                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize PGN Structure</button>
-                    <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset All Data</button>
+                    <div class="space-y-4">
+                        <div class="glass p-4 rounded-xl border border-yellow-900/50">
+                            <h3 class="text-xs font-bold text-yellow-500 uppercase mb-3">Screenshot Instructions</h3>
+                            <p id="capture-instructions" class="text-sm text-slate-300 mb-4">Click a move in the tree to isolate a variation.</p>
+                            
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Context FEN (Send to AI)</label>
+                            <textarea id="fen-output" rows="3" class="w-full p-2 rounded-lg text-[10px] text-emerald-400 mt-1" readonly></textarea>
+                            <button onclick="copyToClipboard('fen-output')" class="mt-2 w-full py-2 bg-slate-800 text-[10px] font-bold rounded-md uppercase">Copy FEN</button>
+                        </div>
+                        <button onclick="sendToReassembler()" id="btn-proceed" class="w-full py-3 gold-bg rounded-xl font-bold uppercase text-xs opacity-50 cursor-not-allowed" disabled>Proceed to Re-assembler -> </button>
+                    </div>
                 </div>
             </div>
         </div>
 
         <div id="view-reassembler" class="hidden space-y-6">
             <div class="glass p-6 rounded-2xl">
+                <div class="mb-4 p-4 bg-slate-900 rounded-lg border border-slate-700">
+                    <span class="text-xs font-bold text-yellow-500 uppercase block mb-1">Target Segment</span>
+                    <span id="target-segment-display" class="text-sm text-slate-300">None selected. Go to Master Loader to select a branch.</span>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="space-y-4">
-                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste Screenshot JSON</label>
-                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the exact JSON from the AI (e.g. { '10. dxc5': 'Annotation...' })"></textarea>
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste GM JSON</label>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder='{ "10. dxc5": "GM Comment..." }'></textarea>
                     </div>
                     <div class="space-y-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Stacked Final PGN</label>
@@ -67,152 +81,222 @@
                         </div>
                     </div>
                 </div>
-                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20">Inject Batch & Stack to File</button>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20">Inject Annotations & Update Stack</button>
             </div>
         </div>
     </div>
 
     <script>
         let pgnTokens = [];
-
-        window.onload = () => {
-            const saved = localStorage.getItem('gm_master_state');
-            if (saved) {
-                const state = JSON.parse(saved);
-                document.getElementById('pgn-input').value = state.original;
-                processPgn(true);
-            }
-            
-            // Restore injected tokens if they exist from previous batches
-            const savedTokens = localStorage.getItem('gm_injected_tokens');
-            if (savedTokens) {
-                pgnTokens = JSON.parse(savedTokens);
-                document.getElementById('final-pgn').value = pgnTokens.join(" ").replace(/\s+/g, ' ');
-            }
-        };
+        let activeRange = null; // [startIndex, endIndex]
 
         function switchTab(tab) {
             document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
             document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
-            const f = document.getElementById('tab-f');
-            const r = document.getElementById('tab-r');
-            f.className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
-            r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+            document.getElementById('tab-f').className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+            document.getElementById('tab-r').className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
-        function processPgn(isLoad = false) {
+        function tokenizePGN(pgnString) {
+            const regex = /(\s+)|(\{[^}]*\})|(\[[^\]]*\])|(\()|(\))|(\d+\.{1,3})|([a-zA-Z0-9\-+=#]+[?!]*)|([^\s\w]+)/g;
+            let match;
+            const tokens = [];
+            while ((match = regex.exec(pgnString)) !== null) {
+                tokens.push({
+                    text: match[0],
+                    isSpace: !!match[1],
+                    isComment: !!match[2],
+                    isTag: !!match[3],
+                    isOpen: !!match[4],
+                    isClose: !!match[5],
+                    isNum: !!match[6],
+                    isSan: !!match[7] && !match[6],
+                    isSymbol: !!match[8]
+                });
+            }
+            return tokens;
+        }
+
+        function processPgn() {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            // Only parse fresh if we haven't already stacked injections on top of it
-            if (!localStorage.getItem('gm_injected_tokens')) {
-                pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#]+[?!]*)/g) || [];
-            }
+            pgnTokens = tokenizePGN(input);
+            calculateFENs();
+            renderPgnTree();
+
+            document.getElementById('interactive-workspace').classList.remove('hidden');
+        }
+
+        function calculateFENs() {
+            const chess = new Chess();
+            const fenStack = [];
             
-            document.getElementById('progress-fill').style.width = "100%";
-            document.getElementById('stats').innerText = `PGN STRUCTURE LOADED`;
-            
-            if (!isLoad) {
-                localStorage.setItem('gm_master_state', JSON.stringify({ original: input }));
-                alert("PGN Loaded! Switch to Re-assembler to begin injecting JSON batches.");
+            for (let i = 0; i < pgnTokens.length; i++) {
+                let t = pgnTokens[i];
+                if (t.isOpen) {
+                    fenStack.push(chess.fen());
+                } else if (t.isClose) {
+                    if(fenStack.length > 0) chess.load(fenStack.pop());
+                } else if (t.isSan) {
+                    let cleanSan = t.text.replace(/[!?]+$/, '');
+                    
+                    // Attach the FEN *before* the move is made
+                    t.startFen = chess.fen(); 
+
+                    try {
+                        let move = chess.move(cleanSan);
+                        if (!move) {
+                            // Try reverting fallback
+                            chess.move(cleanSan, {sloppy: true});
+                        }
+                    } catch(e) { }
+                }
             }
         }
 
+        function renderPgnTree() {
+            const viewer = document.getElementById('pgn-viewer');
+            viewer.innerHTML = '';
+            
+            let html = '';
+            for (let i = 0; i < pgnTokens.length; i++) {
+                let t = pgnTokens[i];
+                if (t.isSan) {
+                    html += `<span class="pgn-move font-bold text-white" data-idx="${i}">${t.text}</span>`;
+                } else if (t.isNum) {
+                    html += `<span class="text-slate-400" data-idx="${i}">${t.text}</span>`;
+                } else if (t.isComment) {
+                    html += `<span class="text-emerald-500">${t.text}</span>`;
+                } else if (t.isOpen || t.isClose) {
+                    html += `<span class="text-yellow-500 font-bold">${t.text}</span>`;
+                } else {
+                    html += t.text; // spaces, symbols
+                }
+            }
+            viewer.innerHTML = html;
+
+            document.querySelectorAll('.pgn-move').forEach(el => {
+                el.addEventListener('click', (e) => selectSegment(parseInt(e.target.getAttribute('data-idx'))));
+            });
+            updateFinalOutput();
+        }
+
+        function selectSegment(startIndex) {
+            let endIndex = startIndex;
+            let depth = 0;
+
+            // Find the end of the current variation line
+            for (let i = startIndex; i < pgnTokens.length; i++) {
+                if (pgnTokens[i].isOpen) depth++;
+                if (pgnTokens[i].isClose) {
+                    if (depth === 0) { endIndex = i; break; }
+                    depth--;
+                }
+                endIndex = i;
+            }
+
+            activeRange = [startIndex, endIndex];
+            const startMove = pgnTokens[startIndex].text;
+            let endMove = pgnTokens[endIndex].text;
+            
+            // Backtrack to find the last actual SAN move for display purposes
+            for(let i = endIndex; i >= startIndex; i--){
+                if(pgnTokens[i].isSan) { endMove = pgnTokens[i].text; break; }
+            }
+
+            const fen = pgnTokens[startIndex].startFen || "Standard Starting Position";
+            
+            document.getElementById('capture-instructions').innerHTML = `Screenshot the sequence from <br><strong class="text-white">${startMove}</strong> to <strong class="text-white">${endMove}</strong>.`;
+            document.getElementById('fen-output').value = fen;
+            document.getElementById('target-segment-display').innerText = `Target locked: Move ${startMove} to ${endMove}`;
+
+            const btn = document.getElementById('btn-proceed');
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+
+            // Visual Highlight
+            renderPgnTree();
+            const spans = document.getElementById('pgn-viewer').childNodes;
+            // Since innerHTML converts to text nodes, we need to wrap the chunk logic.
+            // A simpler visual trick: just alert the user for now to keep performance high.
+        }
+
+        function sendToReassembler() {
+            switchTab('reassembler');
+        }
+
         function rebuildPgn() {
+            if (!activeRange) {
+                alert("Please select a segment in the Master Loader first.");
+                return;
+            }
+
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
             
             try {
-                const jsonMatch = raw.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    aiData = JSON.parse(jsonMatch[0]);
-                } else {
-                    alert("Could not detect valid JSON. Please check the AI output.");
-                    return;
-                }
+                aiData = JSON.parse(raw);
             } catch (e) {
-                alert("Error parsing JSON. Ensure the format is strictly { 'move': 'text' }.");
+                alert("Error parsing JSON. Ensure it has no markdown blocks and is strictly { 'move': 'text' }.");
                 return;
             }
 
-            // Copy the tokens array so we can inject safely
-            let workingTokens = [...pgnTokens];
-            
+            let [start, end] = activeRange;
+
             for (const [aiMoveKey, annotation] of Object.entries(aiData)) {
-                // Parse the AI's key (e.g., extracts "13", "..", and "Bxf3")
                 const keyMatch = aiMoveKey.match(/^(\d+)(\.+)\s*(.*)$/);
-                
-                if (!keyMatch) {
-                    console.warn(`Skipping invalid move key format: ${aiMoveKey}`);
-                    continue;
-                }
+                if (!keyMatch) continue;
 
-                const targetNum = parseInt(keyMatch[1]);
-                const isBlackTarget = keyMatch[2].includes('..'); 
+                const targetNum = keyMatch[1];
                 const targetMove = keyMatch[3].replace(/[!?]+$/, '').trim();
-
-                let currentNum = 0;
-                let isBlackTurn = false;
-                let injected = false;
-
-                // Walk through the PGN tokens to find the exact positional match
-                for (let i = 0; i < workingTokens.length; i++) {
-                    let token = workingTokens[i];
-
-                    // 1. Update move number and turn tracker
-                    if (/^\d+\.+$/.test(token)) {
-                        currentNum = parseInt(token);
-                        isBlackTurn = token.includes('..');
-                        continue; 
-                    }
-
-                    // 2. Identify if the token is an actual chess move
-                    const isMove = (/^[a-zA-Z]/.test(token) || token.startsWith('0-0') || token.startsWith('O-O')) 
-                                   && !token.startsWith('{') && !token.startsWith('[');
-
-                    if (isMove) {
-                        const cleanToken = token.replace(/[!?]+$/, '');
-                        
-                        // 3. Match the number, the move string, AND the color (White/Black)
-                        if (currentNum === targetNum && cleanToken === targetMove) {
-                            if (isBlackTarget === isBlackTurn && !workingTokens[i+1]?.startsWith('{')) {
-                                // Inject the annotation!
-                                workingTokens[i] += ` { ${annotation} }`;
-                                injected = true;
-                                break;
-                            }
-                        }
-                        
-                        // Flip the turn tracker after a move is processed
-                        isBlackTurn = !isBlackTurn; 
-                    }
-                }
                 
-                if (!injected) {
-                    console.warn(`Missed injection for: ${aiMoveKey}. Move may not exist in PGN or is already annotated.`);
+                // Track move numbers within the chunk
+                let currentNum = "";
+                
+                for (let i = start; i <= end; i++) {
+                    if (pgnTokens[i].isNum) currentNum = pgnTokens[i].text.replace(/\./g, '');
+                    
+                    if (pgnTokens[i].isSan) {
+                        const cleanToken = pgnTokens[i].text.replace(/[!?]+$/, '');
+                        
+                        if (currentNum === targetNum && cleanToken === targetMove) {
+                            
+                            // Look ahead to skip symbols (=/+, [%csl], etc) before injecting comment
+                            let insertIdx = i + 1;
+                            while (insertIdx < pgnTokens.length) {
+                                let t = pgnTokens[insertIdx];
+                                if (t.isSpace || t.isSymbol || (t.isComment && t.text.includes('[%csl'))) {
+                                    insertIdx++;
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            // Inject comment exactly after symbols
+                            pgnTokens.splice(insertIdx, 0, { text: ` { ${annotation} }`, isComment: true });
+                            end++; // expand the chunk boundaries because we added an element
+                            break; 
+                        }
+                    }
                 }
             }
 
-            // Update array state and save to LocalStorage so it stacks permanently
-            pgnTokens = workingTokens;
-            localStorage.setItem('gm_injected_tokens', JSON.stringify(pgnTokens));
-
-            // Output the final text
-            document.getElementById('final-pgn').value = workingTokens.join(" ").replace(/\s+/g, ' ');
-            document.getElementById('ai-json').value = ''; // Clear input for the next batch
-            alert("Batch successfully injected and saved! Paste the next JSON or copy the Final PGN.");
+            updateFinalOutput();
+            renderPgnTree(); // refresh tree
+            document.getElementById('ai-json').value = '';
+            alert("Annotations strictly injected! Paste next JSON or switch chunks.");
         }
 
-        function clearAll() {
-            localStorage.removeItem('gm_master_state');
-            localStorage.removeItem('gm_injected_tokens');
-            location.reload();
+        function updateFinalOutput() {
+            const finalString = pgnTokens.map(t => t.text).join('');
+            document.getElementById('final-pgn').value = finalString;
         }
 
         function copyToClipboard(id) {
             const val = document.getElementById(id).value;
             navigator.clipboard.writeText(val);
-            alert("Copied!");
+            alert("Copied successfully!");
         }
 
         function downloadPgn() {
@@ -221,7 +305,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = "GM_Variation_Analysis.pgn";
+            a.download = "Decipher_GM_Variation.pgn";
             a.click();
         }
     </script>
