@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GM Variation Master Pro | Decipher Chess Academy</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
@@ -24,11 +25,11 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Precision 4-Move Stride + Simple GM Logic</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Visual Vision-AI PGN Re-Assembler</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
-                <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
-                <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
+                <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Master Loader</button>
+                <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. AI Re-assembler</button>
             </nav>
         </header>
 
@@ -41,27 +42,24 @@
                         <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
                     </div>
                 </div>
-                <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
+                <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste full, unannotated PGN here to initialize..."></textarea>
                 
                 <div class="flex flex-wrap gap-3">
-                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
-                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden uppercase text-xs">Copy Next 10</button>
-                    <button onclick="copyAllRemaining()" id="all-btn" class="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold hidden uppercase text-xs">Copy All Remaining</button>
-                    <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
+                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize PGN Structure</button>
+                    <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset All Data</button>
                 </div>
             </div>
-            <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
         </div>
 
         <div id="view-reassembler" class="hidden space-y-6">
             <div class="glass p-6 rounded-2xl">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="space-y-4">
-                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste Gemini's Chat/JSON</label>
-                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the entire Gemini response here..."></textarea>
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste Screenshot JSON</label>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the exact JSON from the AI (e.g. { '10. dxc5': 'Annotation...' })"></textarea>
                     </div>
                     <div class="space-y-4">
-                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Final Re-Assembled PGN</label>
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Stacked Final PGN</label>
                         <textarea id="final-pgn" rows="14" class="w-full p-4 rounded-xl text-xs text-emerald-400" readonly></textarea>
                         <div class="flex gap-2">
                             <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Copy Final</button>
@@ -69,15 +67,13 @@
                         </div>
                     </div>
                 </div>
-                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20">Inject Annotations & Rebuild File</button>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20">Inject Batch & Stack to File</button>
             </div>
         </div>
     </div>
 
     <script>
-        let globalChunks = [];
         let pgnTokens = [];
-        let currentBatchStart = 0;
 
         window.onload = () => {
             const saved = localStorage.getItem('gm_master_state');
@@ -85,8 +81,13 @@
                 const state = JSON.parse(saved);
                 document.getElementById('pgn-input').value = state.original;
                 processPgn(true);
-                currentBatchStart = state.batchStart;
-                updateUI();
+            }
+            
+            // Restore injected tokens if they exist from previous batches
+            const savedTokens = localStorage.getItem('gm_injected_tokens');
+            if (savedTokens) {
+                pgnTokens = JSON.parse(savedTokens);
+                document.getElementById('final-pgn').value = pgnTokens.join(" ").replace(/\s+/g, ' ');
             }
         };
 
@@ -103,183 +104,108 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|[a-zA-Z0-9\-+=#$?!/]+)/g) || [];
+            // Only parse fresh if we haven't already stacked injections on top of it
+            if (!localStorage.getItem('gm_injected_tokens')) {
+                pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#]+[?!]*)/g) || [];
+            }
             
-            let chunks = [];
-            let moveNumber = 0;
-            let variationLevel = 0;
-            let currentPath = [];
-            let savedPaths = []; // ADDED: Stack to track the context of parent variations
-            let depthPlyCounts = { 0: 0 }; 
-            let justClosedVariation = false;
-
-            pgnTokens.forEach((token, index) => {
-                if (token === "(") {
-                    variationLevel++;
-                    depthPlyCounts[variationLevel] = 0; 
-                    
-                    // ADDED: Save the current path state before branching
-                    savedPaths.push([...currentPath]);
-                    // ADDED: A variation replaces the previous move, so step back one half-move to provide accurate context for the branch
-                    if (currentPath.length > 0) currentPath.pop();
-                    
-                    return; 
-                }
-                if (token === ")") {
-                    variationLevel--;
-                    justClosedVariation = true; 
-                    
-                    // ADDED: Restore the path state to continue the main line or parent variation accurately
-                    if (savedPaths.length > 0) {
-                        currentPath = savedPaths.pop();
-                    }
-                    
-                    return; 
-                }
-                
-                const isMoveNum = /^\d+\./.test(token);
-                if (isMoveNum) {
-                    moveNumber = parseInt(token);
-                    return; 
-                }
-
-                const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
-                
-                if (isMove) {
-                    depthPlyCounts[variationLevel]++;
-                    currentPath.push(token);
-
-                    if (moveNumber > 5 || variationLevel > 0) {
-                        let evalSymbol = "";
-                        let nextToken = pgnTokens[index + 1];
-                        if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
-                            evalSymbol = ` ${nextToken}`;
-                        }
-
-                        const hasImportantSymbol = token.includes('!') || token.includes('?') || evalSymbol.includes('!') || evalSymbol.includes('?');
-                        const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-                        const isStrideMove = (depthPlyCounts[variationLevel] % 4 === 0) || isFirstMoveOfVariation || justClosedVariation;
-
-                        if (isStrideMove || hasImportantSymbol) {
-                            let subsequent = [];
-                            for(let i = index + 1; i < index + 15 && i < pgnTokens.length; i++) {
-                                if (!pgnTokens[i].startsWith('{')) subsequent.push(pgnTokens[i]);
-                            }
-
-                            chunks.push({
-                                id: `CHUNK_${chunks.length}`,
-                                target: token + evalSymbol,
-                                tokenIndex: index,
-                                context: currentPath.slice(-15).join(" "), // Context now strictly respects the true branching path
-                                future: subsequent.join(" ")
-                            });
-                            
-                            justClosedVariation = false; 
-                        }
-                    }
-                }
-            });
-
-            globalChunks = chunks;
-            if (!isLoad) currentBatchStart = 0;
-            document.getElementById('batch-btn').classList.remove('hidden');
-            document.getElementById('all-btn').classList.remove('hidden');
-            updateUI();
-            saveState();
-        }
-
-        function formatBatch(start, end) {
-            const batch = globalChunks.slice(start, end).map(c => 
-                `ID: ${c.id}\nContext: ${c.context}\nTARGET: ${c.target}\nSubsequent: ${c.future}`
-            ).join("\n---\n");
-
-            return `Role: PRETEND you are a 2700 ELO Human GM.
-Task: Provide human 2700+GM annotation on the game. for the TARGET move.
-
-JUDGMENT RULES:
-1. USE 4 MOVES: Look at the first 4 moves in "Subsequent" while keeping the current position in mind to prove if the TARGET is good or bad.
-2. SYMBOL LOGIC: If TARGET has a sign like !, ?, or !!, explain why that sign was given using the next 4 moves. Do not add thw symbols to your comments. 
-3. PIECE QUALITY: Explain which pieces will likely be moved once in a while. Also give in simple English the plans for both sides, once in a while. Maximum of 30 words.
-4. 5 out of the 10 comments must begin differently. 
-5. Be human, dont let your statement at the begining and ending be consistent. 30- 50 words maximum. One of out every 10 comments must have less than 10 words.
-STRICT LANGUAGE RULES:
-- Use simple words.Use common chess terms, no uncommon chess words.Like a 2700 GM. 
-- Avoid "big" or rare words.But simple English than GMs understand. e g Transpose, attack, strong, decisive. 
-- Use "center" NOT "central".
-- Use "structure" NOT "structural".
-- Use "exchange" NOT "liquidate".
-- No "storytelling". Only clear chess reasons.Pretend youre a 2700 GM human GM.
-
-FORMAT: ONLY JSON
-{"CHUNK_ID": "Simple analysis of the move and evaluation sign based on the 4-move variation."}
-
-${batch}`;
-        }
-
-        function copyNextBatch() {
-            const end = Math.min(currentBatchStart + 10, globalChunks.length);
-            navigator.clipboard.writeText(formatBatch(currentBatchStart, end));
-            currentBatchStart = end;
-            updateUI();
-            saveState();
-            alert("Batch Copied!");
-        }
-
-        function copyAllRemaining() {
-            navigator.clipboard.writeText(formatBatch(currentBatchStart, globalChunks.length));
-            currentBatchStart = globalChunks.length;
-            updateUI();
-            saveState();
-            alert("Full Game Copied!");
+            document.getElementById('progress-fill').style.width = "100%";
+            document.getElementById('stats').innerText = `PGN STRUCTURE LOADED`;
+            
+            if (!isLoad) {
+                localStorage.setItem('gm_master_state', JSON.stringify({ original: input }));
+                alert("PGN Loaded! Switch to Re-assembler to begin injecting JSON batches.");
+            }
         }
 
         function rebuildPgn() {
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
-            const matches = raw.match(/\{[\s\S]*?\}/g);
-            if (matches) {
-                matches.forEach(m => {
-                    try { Object.assign(aiData, JSON.parse(m)); } catch(e){}
-                });
-            }
-            let workingTokens = [...pgnTokens];
-            const sortedIds = Object.keys(aiData).sort((a,b) => {
-                const idxA = globalChunks.find(c => c.id === a)?.tokenIndex || 0;
-                const idxB = globalChunks.find(c => c.id === b)?.tokenIndex || 0;
-                return idxB - idxA;
-            });
-            sortedIds.forEach(id => {
-                const chunk = globalChunks.find(c => c.id === id);
-                if (chunk) {
-                    workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
+            
+            try {
+                const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    aiData = JSON.parse(jsonMatch[0]);
+                } else {
+                    alert("Could not detect valid JSON. Please check the AI output.");
+                    return;
                 }
-            });
-            document.getElementById('final-pgn').value = workingTokens.join(" ");
-        }
+            } catch (e) {
+                alert("Error parsing JSON. Ensure the format is strictly { 'move': 'text' }.");
+                return;
+            }
 
-        function updateUI() {
-            const container = document.getElementById('chunks-container');
-            container.innerHTML = "";
-            globalChunks.forEach((c, i) => {
-                const div = document.createElement('div');
-                div.className = `chunk-card glass p-2 rounded-lg ${i < currentBatchStart ? 'completed' : ''}`;
-                div.innerHTML = `<p class="text-[8px] gold-text font-bold">${c.id}</p><p class="text-[10px] truncate">${c.target}</p>`;
-                container.appendChild(div);
-            });
-            const perc = (currentBatchStart / globalChunks.length) * 100 || 0;
-            document.getElementById('progress-fill').style.width = perc + "%";
-            document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} KEY POSITIONS`;
-        }
+            // Copy the tokens array so we can inject safely
+            let workingTokens = [...pgnTokens];
+            
+            for (const [aiMoveKey, annotation] of Object.entries(aiData)) {
+                // Parse the AI's key (e.g., extracts "13", "..", and "Bxf3")
+                const keyMatch = aiMoveKey.match(/^(\d+)(\.+)\s*(.*)$/);
+                
+                if (!keyMatch) {
+                    console.warn(`Skipping invalid move key format: ${aiMoveKey}`);
+                    continue;
+                }
 
-        function saveState() {
-            localStorage.setItem('gm_master_state', JSON.stringify({
-                original: document.getElementById('pgn-input').value,
-                batchStart: currentBatchStart
-            }));
+                const targetNum = parseInt(keyMatch[1]);
+                const isBlackTarget = keyMatch[2].includes('..'); 
+                const targetMove = keyMatch[3].replace(/[!?]+$/, '').trim();
+
+                let currentNum = 0;
+                let isBlackTurn = false;
+                let injected = false;
+
+                // Walk through the PGN tokens to find the exact positional match
+                for (let i = 0; i < workingTokens.length; i++) {
+                    let token = workingTokens[i];
+
+                    // 1. Update move number and turn tracker
+                    if (/^\d+\.+$/.test(token)) {
+                        currentNum = parseInt(token);
+                        isBlackTurn = token.includes('..');
+                        continue; 
+                    }
+
+                    // 2. Identify if the token is an actual chess move
+                    const isMove = (/^[a-zA-Z]/.test(token) || token.startsWith('0-0') || token.startsWith('O-O')) 
+                                   && !token.startsWith('{') && !token.startsWith('[');
+
+                    if (isMove) {
+                        const cleanToken = token.replace(/[!?]+$/, '');
+                        
+                        // 3. Match the number, the move string, AND the color (White/Black)
+                        if (currentNum === targetNum && cleanToken === targetMove) {
+                            if (isBlackTarget === isBlackTurn && !workingTokens[i+1]?.startsWith('{')) {
+                                // Inject the annotation!
+                                workingTokens[i] += ` { ${annotation} }`;
+                                injected = true;
+                                break;
+                            }
+                        }
+                        
+                        // Flip the turn tracker after a move is processed
+                        isBlackTurn = !isBlackTurn; 
+                    }
+                }
+                
+                if (!injected) {
+                    console.warn(`Missed injection for: ${aiMoveKey}. Move may not exist in PGN or is already annotated.`);
+                }
+            }
+
+            // Update array state and save to LocalStorage so it stacks permanently
+            pgnTokens = workingTokens;
+            localStorage.setItem('gm_injected_tokens', JSON.stringify(pgnTokens));
+
+            // Output the final text
+            document.getElementById('final-pgn').value = workingTokens.join(" ").replace(/\s+/g, ' ');
+            document.getElementById('ai-json').value = ''; // Clear input for the next batch
+            alert("Batch successfully injected and saved! Paste the next JSON or copy the Final PGN.");
         }
 
         function clearAll() {
             localStorage.removeItem('gm_master_state');
+            localStorage.removeItem('gm_injected_tokens');
             location.reload();
         }
 
