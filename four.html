@@ -273,8 +273,7 @@ Provide the output strictly in valid JSON format mapping the move sequence to yo
         function sendToReassembler() {
             switchTab('reassembler');
         }
-
-        function rebuildPgn() {
+           function rebuildPgn() {
             if (!activeRange) {
                 alert("Please select a segment in the Master Loader first.");
                 return;
@@ -284,21 +283,26 @@ Provide the output strictly in valid JSON format mapping the move sequence to yo
             let aiData = {};
             
             try {
+                // 1. Clean the input: remove markdown, fix smart quotes, remove trailing commas
                 let cleanRaw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+                cleanRaw = cleanRaw.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+                cleanRaw = cleanRaw.replace(/,\s*([}\]])/g, '$1'); // Remove trailing comma before closing brace
+                
                 aiData = JSON.parse(cleanRaw);
             } catch (e) {
-                alert("Error parsing JSON. Ensure it has no markdown blocks and is strictly { 'move': 'text' }.");
+                alert("JSON Error: " + e.message + "\n\nEnsure your format is: { \"1. e4\": \"Comment\" }");
                 return;
             }
 
             let [start, end] = activeRange;
 
             for (const [aiMoveKey, annotation] of Object.entries(aiData)) {
-                const keyMatch = aiMoveKey.match(/^(\d+)(\.+)\s*(.*)$/);
+                // Extracts the move number and the SAN (e.g., "10. dxc5" -> "10", "dxc5")
+                const keyMatch = aiMoveKey.match(/^(\d+)(?:\.\.\.|\.)\s*(.*)$/);
                 if (!keyMatch) continue;
 
                 const targetNum = keyMatch[1];
-                const targetMove = keyMatch[3].replace(/[!?]+$/, '').trim();
+                const targetMove = keyMatch[2].replace(/[!?]+$/, '').trim();
                 
                 let currentNum = "";
                 
@@ -309,14 +313,12 @@ Provide the output strictly in valid JSON format mapping the move sequence to yo
                         const cleanToken = pgnTokens[i].text.replace(/[!?]+$/, '');
                         
                         if (currentNum === targetNum && cleanToken === targetMove) {
+                            // Find insertion point after current move and any following punctuation/symbols
                             let insertIdx = i + 1;
-                            while (insertIdx < pgnTokens.length) {
-                                let t = pgnTokens[insertIdx];
-                                if (t.isSpace || t.isSymbol || (t.isComment && t.text.includes('[%csl'))) {
-                                    insertIdx++;
-                                } else {
-                                    break;
-                                }
+                            while (insertIdx < pgnTokens.length && 
+                                  (pgnTokens[insertIdx].isSpace || pgnTokens[insertIdx].isSymbol || 
+                                  (pgnTokens[insertIdx].isComment && pgnTokens[insertIdx].text.includes('[%')))) {
+                                insertIdx++;
                             }
 
                             pgnTokens.splice(insertIdx, 0, { text: ` { ${annotation} }`, isComment: true });
@@ -330,7 +332,7 @@ Provide the output strictly in valid JSON format mapping the move sequence to yo
             updateFinalOutput();
             renderPgnTree(); 
             document.getElementById('ai-json').value = '';
-            alert("Annotations strictly injected! Paste next JSON or switch chunks.");
+            alert("Annotations successfully injected!");
         }
 
         function updateFinalOutput() {
