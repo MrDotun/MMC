@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GM Variation Master Pro | Decipher Chess Academy</title>
-    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
-    <script src="[https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js](https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js)"></script>
-    <link href="[https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap)" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
         .gold-text { color: #d4af37; }
@@ -17,7 +17,8 @@
         #pgn-viewer { max-height: 400px; overflow-y: auto; font-family: 'Fira Code', monospace; font-size: 13px; line-height: 1.6; }
         .pgn-move { cursor: pointer; transition: color 0.2s; }
         .pgn-move:hover { color: #d4af37; text-decoration: underline; }
-        .active-chunk { background: rgba(212, 175, 55, 0.2); border-radius: 4px; padding: 2px 0; }
+        /* Highlight style for the mapped section */
+        .highlight-chunk { background-color: rgba(212, 175, 55, 0.3); border-radius: 2px; }
     </style>
 </head>
 <body class="p-4 md:p-10">
@@ -47,12 +48,19 @@
                     </div>
                     <div class="space-y-4">
                         <div class="glass p-4 rounded-xl border border-yellow-900/50">
-                            <h3 class="text-xs font-bold text-yellow-500 uppercase mb-3">Screenshot Instructions</h3>
+                            <h3 class="text-xs font-bold text-yellow-500 uppercase mb-3">Target Details</h3>
                             <p id="capture-instructions" class="text-sm text-slate-300 mb-4">Click a move in the tree to isolate a variation.</p>
                             
-                            <label class="text-[10px] font-bold text-slate-500 uppercase">Context FEN (Send to AI)</label>
-                            <textarea id="fen-output" rows="3" class="w-full p-2 rounded-lg text-[10px] text-emerald-400 mt-1" readonly></textarea>
-                            <button onclick="copyToClipboard('fen-output')" class="mt-2 w-full py-2 bg-slate-800 text-[10px] font-bold rounded-md uppercase">Copy FEN</button>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Context FEN (Editable)</label>
+                            <textarea id="fen-output" rows="2" class="w-full p-2 rounded-lg text-[10px] text-emerald-400 mt-1"></textarea>
+                            
+                            <label class="text-[10px] font-bold text-slate-500 uppercase mt-4 block">AI Prompt (Auto-Generated)</label>
+                            <textarea id="ai-prompt-output" rows="6" class="w-full p-2 rounded-lg text-[10px] text-blue-300 mt-1" readonly></textarea>
+                            
+                            <div class="flex gap-2 mt-2">
+                                <button onclick="copyToClipboard('fen-output')" class="flex-1 py-2 bg-slate-800 text-[10px] font-bold rounded-md uppercase hover:bg-slate-700">Copy FEN</button>
+                                <button onclick="copyToClipboard('ai-prompt-output')" class="flex-1 py-2 bg-blue-900/50 text-blue-300 text-[10px] font-bold rounded-md uppercase hover:bg-blue-800/50">Copy Prompt</button>
+                            </div>
                         </div>
                         <button onclick="sendToReassembler()" id="btn-proceed" class="w-full py-3 gold-bg rounded-xl font-bold uppercase text-xs opacity-50 cursor-not-allowed" disabled>Proceed to Re-assembler -> </button>
                     </div>
@@ -76,12 +84,12 @@
                         <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Stacked Final PGN</label>
                         <textarea id="final-pgn" rows="14" class="w-full p-4 rounded-xl text-xs text-emerald-400" readonly></textarea>
                         <div class="flex gap-2">
-                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Copy Final</button>
-                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Download</button>
+                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase hover:bg-slate-700">Copy Final</button>
+                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase hover:bg-slate-700">Download</button>
                         </div>
                     </div>
                 </div>
-                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20">Inject Annotations & Update Stack</button>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20 hover:bg-yellow-500">Inject Annotations & Update Stack</button>
             </div>
         </div>
     </div>
@@ -123,6 +131,7 @@
 
             pgnTokens = tokenizePGN(input);
             calculateFENs();
+            activeRange = null; // Reset selection on new PGN load
             renderPgnTree();
 
             document.getElementById('interactive-workspace').classList.remove('hidden');
@@ -162,20 +171,26 @@
             let html = '';
             for (let i = 0; i < pgnTokens.length; i++) {
                 let t = pgnTokens[i];
+                
+                // Check if current token falls within the highlighted mapped section
+                let highlightClass = (activeRange && i >= activeRange[0] && i <= activeRange[1]) ? 'highlight-chunk ' : '';
+                
                 if (t.isSan) {
-                    html += `<span class="pgn-move font-bold text-white" data-idx="${i}">${t.text}</span>`;
+                    html += `<span class="${highlightClass}pgn-move font-bold text-white" data-idx="${i}">${t.text}</span>`;
                 } else if (t.isNum) {
-                    html += `<span class="text-slate-400" data-idx="${i}">${t.text}</span>`;
+                    html += `<span class="${highlightClass}text-slate-400" data-idx="${i}">${t.text}</span>`;
                 } else if (t.isComment) {
-                    html += `<span class="text-emerald-500">${t.text}</span>`;
+                    html += `<span class="${highlightClass}text-emerald-500">${t.text}</span>`;
                 } else if (t.isOpen || t.isClose) {
-                    html += `<span class="text-yellow-500 font-bold">${t.text}</span>`;
+                    html += `<span class="${highlightClass}text-yellow-500 font-bold">${t.text}</span>`;
                 } else {
-                    html += t.text; // spaces, symbols
+                    // Wrap spaces and symbols in span to apply highlight background continuously
+                    html += `<span class="${highlightClass}">${t.text}</span>`; 
                 }
             }
             viewer.innerHTML = html;
 
+            // Re-attach event listeners for clicks
             document.querySelectorAll('.pgn-move').forEach(el => {
                 el.addEventListener('click', (e) => selectSegment(parseInt(e.target.getAttribute('data-idx'))));
             });
@@ -207,19 +222,32 @@
 
             const fen = pgnTokens[startIndex].startFen || "Standard Starting Position";
             
-            document.getElementById('capture-instructions').innerHTML = `Screenshot the sequence from <br><strong class="text-white">${startMove}</strong> to <strong class="text-white">${endMove}</strong>.`;
+            // Update UI Elements
+            document.getElementById('capture-instructions').innerHTML = `Screenshot the highlighted sequence from <br><strong class="text-white">${startMove}</strong> to <strong class="text-white">${endMove}</strong>.`;
             document.getElementById('fen-output').value = fen;
             document.getElementById('target-segment-display').innerText = `Target locked: Move ${startMove} to ${endMove}`;
 
+            // Build AI Prompt automatically
+            const aiPromptText = `Like a 2700+ human GM, annotate the course on the screenshot (Ruy Lopez for Black).
+
+**Starting FEN:**
+${fen}
+
+**Output Requirements:**
+Provide the output strictly in valid JSON format mapping the move sequence to your expert annotations:
+{
+  "1. e4": "Your detailed grandmaster commentary here...",
+  "2. Nf3": "Next annotation..."
+}`;
+            document.getElementById('ai-prompt-output').value = aiPromptText;
+
+            // Enable Proceed Button
             const btn = document.getElementById('btn-proceed');
             btn.disabled = false;
             btn.classList.remove('opacity-50', 'cursor-not-allowed');
 
-            // Visual Highlight
+            // Visually Update Tree Highlight
             renderPgnTree();
-            const spans = document.getElementById('pgn-viewer').childNodes;
-            // Since innerHTML converts to text nodes, we need to wrap the chunk logic.
-            // A simpler visual trick: just alert the user for now to keep performance high.
         }
 
         function sendToReassembler() {
@@ -236,7 +264,9 @@
             let aiData = {};
             
             try {
-                aiData = JSON.parse(raw);
+                // Strip markdown codeblocks if AI accidentally included them
+                let cleanRaw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+                aiData = JSON.parse(cleanRaw);
             } catch (e) {
                 alert("Error parsing JSON. Ensure it has no markdown blocks and is strictly { 'move': 'text' }.");
                 return;
@@ -283,7 +313,7 @@
             }
 
             updateFinalOutput();
-            renderPgnTree(); // refresh tree
+            renderPgnTree(); // refresh tree and preserve highlight
             document.getElementById('ai-json').value = '';
             alert("Annotations strictly injected! Paste next JSON or switch chunks.");
         }
@@ -296,7 +326,15 @@
         function copyToClipboard(id) {
             const val = document.getElementById(id).value;
             navigator.clipboard.writeText(val);
-            alert("Copied successfully!");
+            // Temporary button feedback
+            const btn = event.target;
+            const originalText = btn.innerText;
+            btn.innerText = "COPIED!";
+            btn.classList.add("text-white", "bg-emerald-600");
+            setTimeout(() => {
+                btn.innerText = originalText;
+                btn.classList.remove("text-white", "bg-emerald-600");
+            }, 1500);
         }
 
         function downloadPgn() {
