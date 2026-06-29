@@ -12,12 +12,11 @@
         .gold-text { color: #d4af37; }
         .gold-bg { background-color: #d4af37; color: #1e293b; }
         .glass { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .chunk-card { border-left: 4px solid #d4af37; transition: all 0.2s; cursor: pointer; }
+        .chunk-card.completed { border-left-color: #10b981; opacity: 0.5; }
         textarea { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; scrollbar-width: thin; }
         textarea:focus { border-color: #d4af37 !important; outline: none; }
-        #pgn-viewer { max-height: 400px; overflow-y: auto; font-family: 'Fira Code', monospace; font-size: 13px; line-height: 1.6; }
-        .pgn-move { cursor: pointer; transition: color 0.2s; }
-        .pgn-move:hover { color: #d4af37; text-decoration: underline; }
-        .active-chunk { background: rgba(212, 175, 55, 0.35); color: #fff; } 
+        #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
     </style>
 </head>
 <body class="p-4 md:p-10">
@@ -26,458 +25,344 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Visual Vision-AI PGN Re-Assembler</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Global Context + FEN Vision Logic Engine</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
-                <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Master Loader</button>
-                <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. AI Re-assembler</button>
+                <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
+                <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
             </nav>
         </header>
 
         <div id="view-fragmenter" class="space-y-6">
             <div class="glass p-6 rounded-2xl">
-                <label class="text-xs font-bold uppercase text-slate-500 mb-2 block">Master PGN Input</label>
-                <textarea id="pgn-input" rows="5" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste full course PGN here..."></textarea>
-                <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs w-full mb-6">Initialize & Map PGN Tree</button>
-
-                <div id="interactive-workspace" class="hidden grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="md:col-span-2 glass p-4 rounded-xl flex flex-col">
-                        <label class="text-xs font-bold uppercase text-slate-500 mb-2 block">Interactive PGN Tree</label>
-                        
-                        <div class="flex gap-2 mb-3 bg-slate-900/50 p-2 rounded-lg border border-slate-700">
-                            <input type="text" id="manual-start" placeholder="Start (e.g. 10. dxc5)" class="flex-1 p-2 bg-slate-800 rounded border border-slate-700 text-xs text-white focus:border-yellow-500 outline-none">
-                            <input type="text" id="manual-end" placeholder="End (e.g. 13... Bxf3)" class="flex-1 p-2 bg-slate-800 rounded border border-slate-700 text-xs text-white focus:border-yellow-500 outline-none">
-                            <button onclick="applyManualRange()" class="px-4 py-2 bg-slate-700 text-white rounded text-xs font-bold uppercase hover:bg-yellow-600 transition-colors">Select Range</button>
-                        </div>
-
-                        <div class="mb-3 bg-slate-900/50 p-3 rounded-lg border border-slate-700">
-                            <label class="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Quick Scrubber</label>
-                            <div class="flex flex-col gap-3">
-                                <div class="flex items-center gap-3">
-                                    <span class="text-xs text-slate-400 w-10 font-bold">START</span>
-                                    <input type="range" id="slider-start" min="0" max="100" value="0" class="flex-1 accent-yellow-500 cursor-pointer" oninput="syncSliders('start')">
-                                </div>
-                                <div class="flex items-center gap-3">
-                                    <span class="text-xs text-slate-400 w-10 font-bold">END</span>
-                                    <input type="range" id="slider-end" min="0" max="100" value="100" class="flex-1 accent-emerald-500 cursor-pointer" oninput="syncSliders('end')">
-                                </div>
-                            </div>
-                        </div>
-
-                        <div id="pgn-viewer" class="p-4 bg-slate-900 rounded-lg text-slate-300 flex-grow"></div>
-                    </div>
-                    <div class="space-y-4">
-                        <div class="glass p-4 rounded-xl border border-yellow-900/50">
-                            <h3 class="text-xs font-bold text-yellow-500 uppercase mb-3">Screenshot Instructions</h3>
-                            <p id="capture-instructions" class="text-sm text-slate-300 mb-4"><span class="text-emerald-400 font-bold">Left-Click</span> a move to start/auto-select.<br><br><span class="text-yellow-500 font-bold">Right-Click</span> another move to instantly set the end boundary.</p>
-                            
-                            <label class="text-[10px] font-bold text-slate-500 uppercase">Context FEN (Send to AI)</label>
-                            <textarea id="fen-output" rows="2" class="w-full p-2 rounded-lg text-[10px] text-emerald-400 mt-1" readonly></textarea>
-                            <button onclick="copyToClipboard('fen-output')" class="mt-2 w-full py-2 bg-slate-800 text-[10px] font-bold rounded-md uppercase hover:bg-slate-700 transition-colors">Copy FEN</button>
-
-                            <label class="text-[10px] font-bold text-slate-500 uppercase mt-4 block">System Prompt (Send to AI)</label>
-                            <textarea id="prompt-output" rows="10" class="w-full p-2 rounded-lg text-[10px] text-slate-300 mt-1" readonly>Like a 2700+ human GM, annotate the course on the screenshot (Ruy Lopez for Black). I will provide the starting FEN to ground the position. Provide deep, instructional, human-like commentary.
-
-CRITICAL FORMATTING RULES (FAILURE WILL BREAK THE SYSTEM):
-1. Output strictly as a raw JSON object. NO markdown formatting, NO conversational intro/outro, NO ```json blocks. Just the { and }.
-2. JSON Keys MUST perfectly match the branch tags and moves shown in the screenshot.
-3. Key format requirement: "B[Branch Number]: [Move Number]. [Move]" (e.g., "B1: 10. dxc5" or "B3: 13... Bxf3").
-4. Cross-reference the visual moves with the provided FEN to ensure legal continuations. Do not hallucinate OCR errors.</textarea>
-                            <button onclick="copyToClipboard('prompt-output')" class="mt-2 w-full py-2 bg-slate-800 text-[10px] font-bold rounded-md uppercase hover:bg-slate-700 transition-colors">Copy Prompt</button>
-                        </div>
-                        <button onclick="sendToReassembler()" id="btn-proceed" class="w-full py-3 gold-bg rounded-xl font-bold uppercase text-xs opacity-50 cursor-not-allowed transition-all" disabled>Proceed to Re-assembler -> </button>
+                <div class="flex justify-between items-center mb-4">
+                    <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
+                    <div class="text-right">
+                        <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Ready</div>
+                        <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
                     </div>
                 </div>
+                <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
+                
+                <div class="flex flex-wrap gap-3">
+                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
+                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden uppercase text-xs">Copy Next 10</button>
+                    <button onclick="copyAllRemaining()" id="all-btn" class="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold hidden uppercase text-xs">Copy All Remaining</button>
+                    <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
+                </div>
             </div>
+            <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
         </div>
 
         <div id="view-reassembler" class="hidden space-y-6">
             <div class="glass p-6 rounded-2xl">
-                <div class="mb-4 p-4 bg-slate-900 rounded-lg border border-slate-700">
-                    <span class="text-xs font-bold text-yellow-500 uppercase block mb-1">Target Segment</span>
-                    <span id="target-segment-display" class="text-sm text-slate-300">None selected. Go to Master Loader to select a branch.</span>
-                </div>
-
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="space-y-4">
-                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste GM JSON</label>
-                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder='{ "B0: 10. dxc5": "GM Mainline Comment...", "B1: 10. dxc5": "Sideline Comment..." }'></textarea>
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste AI JSON</label>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the entire JSON response here..."></textarea>
                     </div>
                     <div class="space-y-4">
-                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Stacked Final PGN</label>
+                        <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Final Re-Assembled PGN</label>
                         <textarea id="final-pgn" rows="14" class="w-full p-4 rounded-xl text-xs text-emerald-400" readonly></textarea>
                         <div class="flex gap-2">
-                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase hover:bg-slate-700">Copy Final</button>
-                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase hover:bg-slate-700">Download</button>
+                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Copy Final</button>
+                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Download</button>
                         </div>
                     </div>
                 </div>
-                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20 hover:brightness-110">Inject Annotations & Update Stack</button>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20">Inject Annotations & Rebuild File</button>
             </div>
         </div>
     </div>
 
     <script>
+        let globalChunks = [];
         let pgnTokens = [];
-        let activeRange = null; 
+        let currentBatchStart = 0;
+
+        window.onload = () => {
+            const saved = localStorage.getItem('gm_master_state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                document.getElementById('pgn-input').value = state.original;
+                processPgn(true);
+                currentBatchStart = state.batchStart;
+                updateUI();
+            }
+        };
 
         function switchTab(tab) {
             document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
             document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
-            document.getElementById('tab-f').className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
-            document.getElementById('tab-r').className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+            const f = document.getElementById('tab-f');
+            const r = document.getElementById('tab-r');
+            f.className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+            r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
-        function tokenizePGN(pgnString) {
-            const regex = /(\s+)|(\{[^}]*\})|(\[[^\]]*\])|(\()|(\))|(\d+\.{1,3})|([a-zA-Z0-9\-+=#]+[?!]*)|([^\s\w]+)/g;
-            let match;
-            const tokens = [];
-            while ((match = regex.exec(pgnString)) !== null) {
-                tokens.push({
-                    text: match[0],
-                    isSpace: !!match[1],
-                    isComment: !!match[2],
-                    isTag: !!match[3],
-                    isOpen: !!match[4],
-                    isClose: !!match[5],
-                    isNum: !!match[6],
-                    isSan: !!match[7] && !match[6],
-                    isSymbol: !!match[8]
-                });
+        function getFenFromPath(path) {
+            try {
+                if (typeof Chess === 'undefined') return "FEN_ENGINE_MISSING";
+                const chess = new Chess();
+                for (let move of path) {
+                    let cleanMove = move.replace(/[!?]+$/, '')
+                                        .replace(/\$\d+/g, '')
+                                        .replace(/(\+\/-|-\/\+|=\/\+|\+=|=\+|\+-|-\+|=)$/, '')
+                                        .trim();
+                    if (cleanMove && !/^\d+\.+$/.test(cleanMove) && cleanMove !== '(' && cleanMove !== ')') {
+                        chess.move(cleanMove, { sloppy: true });
+                    }
+                }
+                return chess.fen();
+            } catch (e) {
+                return "FEN_GENERATION_FAILED";
             }
-            return tokens;
         }
 
-        function processPgn() {
+        function processPgn(isLoad = false) {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            pgnTokens = tokenizePGN(input);
-            calculateFENs();
-            renderPgnTree();
-
-            document.getElementById('slider-start').max = pgnTokens.length - 1;
-            document.getElementById('slider-end').max = pgnTokens.length - 1;
-
-            document.getElementById('interactive-workspace').classList.remove('hidden');
-        }
-
-        function calculateFENs() {
-            const chess = new Chess();
-            const fenStack = [];
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g) || [];
             
-            let branchCounter = 0;
-            let branchStack = [0]; 
-            
-            for (let i = 0; i < pgnTokens.length; i++) {
-                let t = pgnTokens[i];
-                
-                if (t.isOpen) {
-                    branchCounter++;
-                    branchStack.push(branchCounter);
-                    t.branchId = branchStack[branchStack.length - 1];
-                    fenStack.push(chess.fen());
-                } else if (t.isClose) {
-                    t.branchId = branchStack[branchStack.length - 1];
-                    branchStack.pop();
-                    if(fenStack.length > 0) chess.load(fenStack.pop());
-                } else {
-                    t.branchId = branchStack[branchStack.length - 1];
+            let chunks = [];
+            let moveNumber = 0;
+            let variationLevel = 0;
+            let currentPath = [];
+            let savedPaths = []; 
+            let depthPlyCounts = { 0: 0 }; 
+            let justClosedVariation = false;
+
+            pgnTokens.forEach((token, index) => {
+                if (token === "(") {
+                    variationLevel++;
+                    depthPlyCounts[variationLevel] = 0; 
+                    savedPaths.push([...currentPath]);
+                    if (currentPath.length > 0) currentPath.pop();
+                    justClosedVariation = false; 
+                    return; 
                 }
-
-                if (t.isSan) {
-                    let cleanSan = t.text.replace(/[!?]+$/, '');
-                    t.startFen = chess.fen(); 
-
-                    try {
-                        let move = chess.move(cleanSan);
-                        if (!move) chess.move(cleanSan, {sloppy: true});
-                    } catch(e) { }
-                }
-            }
-        }
-
-        function renderPgnTree() {
-            const viewer = document.getElementById('pgn-viewer');
-            viewer.innerHTML = '';
-            
-            let html = '';
-            let currentBranchDisplay = -1;
-
-            for (let i = 0; i < pgnTokens.length; i++) {
-                let t = pgnTokens[i];
-                
-                const inRange = activeRange && i >= activeRange[0] && i <= activeRange[1];
-                const hClass = inRange ? 'active-chunk' : '';
-
-                if (t.branchId !== currentBranchDisplay && t.branchId !== undefined) {
-                    if (t.isOpen || i === 0) {
-                        html += `<span class="text-[10px] bg-slate-800 text-slate-400 px-1 rounded ml-1 mr-1 ${hClass}">[B${t.branchId}]</span>`;
+                if (token === ")") {
+                    variationLevel--;
+                    justClosedVariation = true; 
+                    if (savedPaths.length > 0) {
+                        currentPath = savedPaths.pop();
                     }
-                    currentBranchDisplay = t.branchId;
+                    return; 
                 }
-
-                if (t.isSan) {
-                    html += `<span class="pgn-move font-bold ${hClass ? 'text-white' : 'text-slate-200'} ${hClass}" data-idx="${i}" title="Branch B${t.branchId}">${t.text}</span>`;
-                } else if (t.isNum) {
-                    html += `<span class="text-slate-400 ${hClass}" data-idx="${i}">${t.text}</span>`;
-                } else if (t.isComment) {
-                    html += `<span class="text-emerald-500 ${hClass}">${t.text}</span>`;
-                } else if (t.isOpen || t.isClose) {
-                    html += `<span class="text-yellow-500 font-bold ${hClass}">${t.text}</span>`;
-                } else {
-                    html += `<span class="${hClass}">${t.text}</span>`;
-                }
-            }
-            viewer.innerHTML = html;
-
-            document.querySelectorAll('.pgn-move').forEach(el => {
-                el.addEventListener('click', (e) => {
-                    if (!el.dataset.longPressed) {
-                        selectSegment(parseInt(e.target.getAttribute('data-idx')), e);
-                    }
-                    el.dataset.longPressed = ''; 
-                });
                 
-                el.addEventListener('contextmenu', (e) => {
-                    e.preventDefault();
-                    let clickedIdx = parseInt(e.target.getAttribute('data-idx'));
-                    if(activeRange) {
-                        let start = Math.min(activeRange[0], clickedIdx);
-                        let end = Math.max(activeRange[0], clickedIdx);
-                        updateTargetDetails(start, end);
-                    } else {
-                        selectSegment(clickedIdx, e);
-                    }
-                });
+                const isMoveNum = /^\d+\./.test(token);
+                if (isMoveNum) {
+                    moveNumber = parseInt(token);
+                    return; 
+                }
 
-                let touchTimer;
-                el.addEventListener('touchstart', (e) => {
-                    let clickedIdx = parseInt(e.target.getAttribute('data-idx'));
-                    
-                    touchTimer = setTimeout(() => {
-                        el.dataset.longPressed = 'true'; 
-                        if (navigator.vibrate) navigator.vibrate(50); 
-                        
-                        if(activeRange) {
-                            let start = Math.min(activeRange[0], clickedIdx);
-                            let end = Math.max(activeRange[0], clickedIdx);
-                            updateTargetDetails(start, end);
-                        } else {
-                            selectSegment(clickedIdx, e);
+                const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                
+                if (isMove) {
+                    depthPlyCounts[variationLevel]++;
+                    currentPath.push(token);
+
+                    let evalSymbol = "";
+                    let nextToken = pgnTokens[index + 1];
+                    if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken))) {
+                        evalSymbol = ` ${nextToken}`;
+                    }
+
+                    // Look ahead for the next 3 moves in the current variation depth
+                    let nextMoves = [];
+                    let lookAheadIndex = index + 1;
+                    let tempVarLevel = variationLevel;
+                    while (lookAheadIndex < pgnTokens.length && nextMoves.length < 3) {
+                        let fToken = pgnTokens[lookAheadIndex];
+                        if (fToken === '(') tempVarLevel++;
+                        else if (fToken === ')') tempVarLevel--;
+                        else if (tempVarLevel === variationLevel) {
+                            if (/^[a-zA-Z]/.test(fToken) && !fToken.startsWith('{') && !fToken.startsWith('[')) {
+                                nextMoves.push(fToken);
+                            }
                         }
-                    }, 500); 
-                }, { passive: true });
-
-                el.addEventListener('touchmove', () => clearTimeout(touchTimer), { passive: true });
-                el.addEventListener('touchend', () => clearTimeout(touchTimer), { passive: true });
-            });
-            updateFinalOutput();
-        }
-
-        function selectSegment(clickedIndex, event) {
-            let startIndex = clickedIndex;
-            let endIndex = clickedIndex;
-
-            if (event && event.shiftKey && activeRange) {
-                startIndex = Math.min(activeRange[0], clickedIndex);
-                endIndex = Math.max(activeRange[0], clickedIndex);
-            } else {
-                let depth = 0;
-                for (let i = startIndex; i < pgnTokens.length; i++) {
-                    if (pgnTokens[i].isOpen) depth++;
-                    if (pgnTokens[i].isClose) {
-                        if (depth === 0) { endIndex = i; break; }
-                        depth--;
+                        lookAheadIndex++;
                     }
-                    endIndex = i;
+
+                    const hasImportantSymbol = token.includes('!') || token.includes('?') || token.includes('/') || evalSymbol.includes('!') || evalSymbol.includes('?');
+                    const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
+                    const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedVariation;
+
+                    if (isStrideMove || hasImportantSymbol) {
+                        const pathWithTarget = currentPath.slice(0); 
+                        
+                        chunks.push({
+                            id: `CHUNK_${chunks.length}`,
+                            target: token + evalSymbol,
+                            moveNum: moveNumber,
+                            tokenIndex: index,
+                            context: currentPath.slice(-15, -1).join(" "), 
+                            nextMoves: nextMoves.join(" "),
+                            fen: getFenFromPath(pathWithTarget),
+                            isMainLine: variationLevel === 0,
+                            isReturning: justClosedVariation && variationLevel === 0,
+                            isVariationStart: isFirstMoveOfVariation
+                        });
+                        
+                        justClosedVariation = false; 
+                    }
                 }
-            }
-            updateTargetDetails(startIndex, endIndex);
+            });
+
+            globalChunks = chunks;
+            if (!isLoad) currentBatchStart = 0;
+            document.getElementById('batch-btn').classList.remove('hidden');
+            document.getElementById('all-btn').classList.remove('hidden');
+            updateUI();
+            saveState();
         }
 
-        function findMoveIndex(searchString, startIndex = 0) {
-            let parts = searchString.trim().split(/\s+/);
-            if (parts.length === 0 || parts[0] === "") return -1;
+        function formatBatch(start, end) {
+            const masterPgn = document.getElementById('pgn-input').value;
+            const batchChunks = globalChunks.slice(start, end);
+
+            // Calculate starting and ending moves for screenshot reference
+            const startMove = batchChunks.length > 0 ? `${batchChunks[0].moveNum}. ${batchChunks[0].target}` : 'N/A';
+            const endMove = batchChunks.length > 0 ? `${batchChunks[batchChunks.length - 1].moveNum}. ${batchChunks[batchChunks.length - 1].target}` : 'N/A';
+            const moveRange = `BATCH RANGE: From move ${startMove} to ${endMove}`;
+
+            const batch = batchChunks.map(c => 
+                `Move Number: ${c.moveNum}\nFEN: ${c.fen}\nPath taken to this move: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nNext 3 moves in this line: ${c.nextMoves}\nMain Line: ${c.isMainLine}\nReturning to Main: ${c.isReturning}\nVariation Start: ${c.isVariationStart}`
+            ).join("\n\n---\n\n");
+
+            return `[${moveRange}]
+
+Role: You are a 2700+ ELO Super Grandmaster and the author of an elite chess repertoire course on the Ruy Lopez for Black.
+Task: Look at the attached image showing the variation tree, but look at the provided text chunks below for the exact context and FEN strings. Provide deeply insightful, practical course annotations for the TARGET MOVES provided in the batch.
+
+=== MASTER GAME TREE (GLOBAL CONTEXT) ===
+Use this tree to understand the "big picture" and how variations relate to one another.
+${masterPgn}
+=========================================
+
+STRICT ANALYTICAL FRAMEWORK & STYLE GUIDELINES:
+
+1. PERSPECTIVE & TONE: Write entirely from Black's perspective. Frame White's moves as attempts to challenge us. Use instructive phrasing like "This is Black's best way to play," or "We must challenge the center here."
+2. EXPLAIN THE "WHY": Explain the underlying positional goals, pawn structure shifts, or key square control (especially dealing with White's light-squared bishop and central tension in the Ruy Lopez).
+3. NO AI CLICHÉS & NO ROBOTIC REPETITION (CRITICAL): Speak like a real, human Grandmaster giving a practical lesson. Do NOT use generic AI filler words such as: delve, crucial, pivotal, testament, tapestry, multifaceted, moreover, furthermore, importantly, underscore, or dynamic. **CRITICAL: Vary your sentence structures. DO NOT repeatedly use the formulaic "If White plays [X], we play [Y]". Use diverse phrasing, passive/active voice, and focus on the conceptual battle.**
+4. CROSS-REFERENCE SCREENSHOT: Match the moves shown in the screenshot with the FEN strings provided below to ensure you are analyzing the correct exact position.
+5. STRICT LENGTH LIMITS:
+   - MAIN LINES (Main Line: true): Write 2-3 flowing sentences. Focus on our core plans against the Ruy Lopez.
+   - VARIATIONS (Main Line: false): STRICTLY 1 SHORT, PUNCHY SENTENCE. Just quickly state the tactical point or how we equalize, then stop.
+6. VARIATION AWARENESS:
+   - If "Variation Start: true": You MUST explicitly acknowledge the deviation.
+   - If "Returning to Main: true": You MUST acknowledge the return to the main game. Start with phrases like "Returning to our main plan...", or "Back in the actual game...".
+7. EVALUATION MARKS TO PROSE: Convert all raw symbols (!, ?, !?, +/=, -/+, etc.) into natural language. NO raw symbols in the output text. Explain why certain variations or moves are sub-optimal based on the evaluations visible in the screenshot. "-/+" means WE (Black) have a clear advantage.
+8. FORWARD VISION: Use the provided "Next 3 moves in this line" to inform your analysis. Explain *why* the target move is played based on the upcoming sequence, rather than just reacting blindly. Do not simply list the next moves; explain the concept they create.
+
+FORMAT REQUIREMENT: 
+Return ONLY a valid JSON object mapping the EXACT FEN STRING to the text. Do not include markdown blocks like \`\`\`json. Start immediately with the { bracket.
+{
+  "FEN_STRING_1": "Your human-sounding GM annotation here...",
+  "FEN_STRING_2": "Your human-sounding GM annotation here..."
+}
+
+=== BATCH TO ANALYZE ===
+${batch}`;
+        }
+
+        function copyNextBatch() {
+            const end = Math.min(currentBatchStart + 10, globalChunks.length);
             
-            let san = parts.pop().replace(/[!?]+$/, '');
-            let num = parts.length > 0 ? parts.pop().replace(/\./g, '') : null;
+            // Extract range for the alert popup
+            const batchChunks = globalChunks.slice(currentBatchStart, end);
+            const startMove = batchChunks.length > 0 ? `${batchChunks[0].moveNum}. ${batchChunks[0].target}` : 'N/A';
+            const endMove = batchChunks.length > 0 ? `${batchChunks[batchChunks.length - 1].moveNum}. ${batchChunks[batchChunks.length - 1].target}` : 'N/A';
 
-            let currentNum = "";
-            for (let i = startIndex; i < pgnTokens.length; i++) {
-                if (pgnTokens[i].isNum) currentNum = pgnTokens[i].text.replace(/\./g, '');
-                
-                if (pgnTokens[i].isSan && pgnTokens[i].text.replace(/[!?]+$/, '') === san) {
-                    if (!num || currentNum === num) return i;
-                }
-            }
-            return -1;
-        }
-
-        function applyManualRange() {
-            const startVal = document.getElementById('manual-start').value;
-            const endVal = document.getElementById('manual-end').value;
-
-            if (!startVal || !endVal) {
-                alert("Please enter both start and end moves.");
-                return;
-            }
-
-            let startIdx = findMoveIndex(startVal);
-            if (startIdx === -1) {
-                alert("Start move not found in PGN.");
-                return;
-            }
-
-            let endIdx = findMoveIndex(endVal, startIdx);
-            if (endIdx === -1) {
-                alert("End move not found after the start move.");
-                return;
-            }
-
-            updateTargetDetails(startIdx, endIdx);
-        }
-
-        function syncSliders(sourceId) {
-            if (pgnTokens.length === 0) return;
+            navigator.clipboard.writeText(formatBatch(currentBatchStart, end));
+            currentBatchStart = end;
+            updateUI();
+            saveState();
             
-            let startIdx = parseInt(document.getElementById('slider-start').value);
-            let endIdx = parseInt(document.getElementById('slider-end').value);
-
-            if (startIdx > endIdx) {
-                if (sourceId === 'start') {
-                    endIdx = startIdx;
-                    document.getElementById('slider-end').value = endIdx;
-                } else {
-                    startIdx = endIdx;
-                    document.getElementById('slider-start').value = startIdx;
-                }
-            }
-
-            updateTargetDetails(startIdx, endIdx);
+            alert(`Batch Copied to Clipboard!\n\nTake a screenshot spanning:\nMove ${startMove}  --->  Move ${endMove}`);
         }
 
-        function updateTargetDetails(startIndex, endIndex) {
-            document.getElementById('slider-start').value = startIndex;
-            document.getElementById('slider-end').value = endIndex;
+        function copyAllRemaining() {
+            const batchChunks = globalChunks.slice(currentBatchStart, globalChunks.length);
+            const startMove = batchChunks.length > 0 ? `${batchChunks[0].moveNum}. ${batchChunks[0].target}` : 'N/A';
+            const endMove = batchChunks.length > 0 ? `${batchChunks[batchChunks.length - 1].moveNum}. ${batchChunks[batchChunks.length - 1].target}` : 'N/A';
 
-            activeRange = [startIndex, endIndex];
-            renderPgnTree();
-
-            const startMove = pgnTokens[startIndex].text;
-            let endMove = pgnTokens[endIndex].text;
+            navigator.clipboard.writeText(formatBatch(currentBatchStart, globalChunks.length));
+            currentBatchStart = globalChunks.length;
+            updateUI();
+            saveState();
             
-            for(let i = endIndex; i >= startIndex; i--){
-                if(pgnTokens[i].isSan) { endMove = pgnTokens[i].text; break; }
-            }
-
-            const fen = pgnTokens[startIndex].startFen || "Standard Starting Position";
-            
-            document.getElementById('capture-instructions').innerHTML = `Screenshot the visually highlighted sequence from <br><strong class="text-white">${startMove}</strong> to <strong class="text-white">${endMove}</strong>.<br><br><span class="text-xs text-slate-400 font-bold uppercase tracking-wide">💡 Tip: Click/Tap to reset start, Right-Click/Long-Press to extend end.</span>`;
-            document.getElementById('fen-output').value = fen;
-            document.getElementById('target-segment-display').innerText = `Target locked: Move ${startMove} to ${endMove} (Branch B${pgnTokens[startIndex].branchId})`;
-
-            const btn = document.getElementById('btn-proceed');
-            btn.disabled = false;
-            btn.classList.remove('opacity-50', 'cursor-not-allowed');
-        }
-
-        function sendToReassembler() {
-            switchTab('reassembler');
+            alert(`Full Game Copied to Clipboard!\n\nTake screenshot(s) spanning:\nMove ${startMove}  --->  Move ${endMove}`);
         }
 
         function rebuildPgn() {
-            if (!activeRange) {
-                alert("Please select a segment in the Master Loader first.");
-                return;
-            }
-
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
             
-            try {
-                aiData = JSON.parse(raw);
-            } catch (e) {
-                alert("Error parsing JSON. Ensure it has no markdown blocks and is strictly { 'B0: 10. dxc5': 'text' }.");
-                return;
+            // Extract JSON block from Gemini's response
+            const matches = raw.match(/\{[\s\S]*?\}/g);
+            if (matches) {
+                matches.forEach(m => {
+                    try { Object.assign(aiData, JSON.parse(m)); } catch(e){}
+                });
             }
 
-            // Loop through all parsed JSON keys
-            for (const [aiMoveKey, annotation] of Object.entries(aiData)) {
+            let workingTokens = [...pgnTokens];
+
+            // Create a base FEN mapping from your engine's parsed chunks
+            const chunkMapByFen = {};
+            globalChunks.forEach(chunk => {
+                // Strip out halfmove clocks and fullmove numbers for loose/perfect matching
+                const baseFen = chunk.fen.split(' ').slice(0, 4).join(' ');
+                chunkMapByFen[baseFen] = chunk;
+            });
+
+            // Match Gemini's keys back to the token positions
+            Object.keys(aiData).forEach(aiFen => {
+                const baseAiFen = aiFen.split(' ').slice(0, 4).join(' ');
+                const matchedChunk = chunkMapByFen[baseAiFen];
                 
-                // Forgiving regex that allows spaces before colons and handles missing spacing
-                const keyMatch = aiMoveKey.match(/^B(\d+)\s*:\s*(\d+)(\.+)\s*(.*)$/);
-                if (!keyMatch) {
-                    console.warn(`Skipped key ${aiMoveKey} - does not match B#: Move format`);
-                    continue;
+                if (matchedChunk) {
+                    // Inject the commentary right behind the move token in the array
+                    workingTokens[matchedChunk.tokenIndex] += ` { ${aiData[aiFen]} }`;
                 }
+            });
 
-                const targetBranch = parseInt(keyMatch[1]);
-                const targetNum = keyMatch[2].trim();
-                
-                // Clean the AI move by stripping +, #, !, and trimming whitespace
-                let targetMove = keyMatch[4].replace(/[!?+#]+$/, '').trim();
-                
-                // Normalize 0-0 vs O-O 
-                targetMove = targetMove.replace(/0-0-0/g, 'O-O-O').replace(/0-0/g, 'O-O');
-                
-                let currentNum = "";
-                
-                // GLOBALLY scan the token array (fixes the bug where branches outside selection were ignored)
-                for (let i = 0; i < pgnTokens.length; i++) {
-                    
-                    if (pgnTokens[i].isNum) {
-                        currentNum = pgnTokens[i].text.replace(/\./g, '').trim();
-                    }
-                    
-                    if (pgnTokens[i].isSan) {
-                        // Strip formatting and normalize castling for the token as well
-                        let cleanToken = pgnTokens[i].text.replace(/[!?+#]+$/, '').trim();
-                        cleanToken = cleanToken.replace(/0-0-0/g, 'O-O-O').replace(/0-0/g, 'O-O');
-                        
-                        // Strict check verifying Branch + Move Number + Move Text
-                        if (pgnTokens[i].branchId === targetBranch && currentNum === targetNum && cleanToken === targetMove) {
-                            
-                            let insertIdx = i + 1;
-                            while (insertIdx < pgnTokens.length) {
-                                let t = pgnTokens[insertIdx];
-                                // Skip past spaces, symbols, and graphic engine arrows before injecting
-                                if (t.isSpace || t.isSymbol || (t.isComment && t.text.includes('[%csl'))) {
-                                    insertIdx++;
-                                } else {
-                                    break;
-                                }
-                            }
-
-                            // Inject comment
-                            pgnTokens.splice(insertIdx, 0, { 
-                                text: ` { ${annotation} }`, 
-                                isComment: true,
-                                branchId: targetBranch
-                            });
-                            
-                            // Break to proceed to the next AI key!
-                            break; 
-                        }
-                    }
-                }
-            }
-
-            updateFinalOutput();
-            renderPgnTree(); 
-            document.getElementById('ai-json').value = '';
-            alert("Annotations strictly injected using Branch Context! Paste next JSON or switch chunks.");
+            document.getElementById('final-pgn').value = workingTokens.join(" ");
+            alert("Annotations successfully injected via FEN matching!");
         }
 
-        function updateFinalOutput() {
-            const finalString = pgnTokens.map(t => t.text).join('');
-            document.getElementById('final-pgn').value = finalString;
+        function updateUI() {
+            const container = document.getElementById('chunks-container');
+            container.innerHTML = "";
+            globalChunks.forEach((c, i) => {
+                const div = document.createElement('div');
+                div.className = `chunk-card glass p-2 rounded-lg ${i < currentBatchStart ? 'completed' : ''}`;
+                div.innerHTML = `<p class="text-[8px] gold-text font-bold">${c.id}</p><p class="text-[10px] truncate">${c.target}</p>`;
+                container.appendChild(div);
+            });
+            const perc = (currentBatchStart / globalChunks.length) * 100 || 0;
+            document.getElementById('progress-fill').style.width = perc + "%";
+            document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} KEY POSITIONS`;
+        }
+
+        function saveState() {
+            localStorage.setItem('gm_master_state', JSON.stringify({
+                original: document.getElementById('pgn-input').value,
+                batchStart: currentBatchStart
+            }));
+        }
+
+        function clearAll() {
+            localStorage.removeItem('gm_master_state');
+            location.reload();
         }
 
         function copyToClipboard(id) {
             const val = document.getElementById(id).value;
             navigator.clipboard.writeText(val);
-            alert("Copied successfully!");
+            alert("Copied!");
         }
 
         function downloadPgn() {
@@ -486,7 +371,7 @@ CRITICAL FORMATTING RULES (FAILURE WILL BREAK THE SYSTEM):
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = "Decipher_GM_Variation.pgn";
+            a.download = "GM_Variation_Analysis.pgn";
             a.click();
         }
     </script>
