@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GM Variation Master Pro | Decipher Chess Academy</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
@@ -14,8 +13,8 @@
         .glass { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
         .chunk-card { border-left: 4px solid #d4af37; transition: all 0.2s; cursor: pointer; }
         .chunk-card.completed { border-left-color: #10b981; opacity: 0.5; }
-        textarea { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; scrollbar-width: thin; }
-        textarea:focus { border-color: #d4af37 !important; outline: none; }
+        textarea, input[type="number"] { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; scrollbar-width: thin; }
+        textarea:focus, input[type="number"]:focus { border-color: #d4af37 !important; outline: none; }
         #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
     </style>
 </head>
@@ -25,7 +24,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Global Context + FEN Vision Logic Engine</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Selective Annotation Engine</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -44,9 +43,14 @@
                 </div>
                 <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
                 
-                <div class="flex flex-wrap gap-3">
+                <div class="flex flex-wrap items-center gap-3">
                     <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
-                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden uppercase text-xs">Copy Next 20</button>
+                    
+                    <div id="batch-controls" class="hidden flex items-center gap-2">
+                        <input type="number" id="batch-size" value="10" min="1" class="w-20 p-3 rounded-xl text-xs text-white" title="Batch Size">
+                        <button onclick="copyNextBatch()" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs">Copy Next Batch</button>
+                    </div>
+                    
                     <button onclick="copyAllRemaining()" id="all-btn" class="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold hidden uppercase text-xs">Copy All Remaining</button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
                 </div>
@@ -59,7 +63,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="space-y-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste AI JSON</label>
-                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the entire JSON response here..."></textarea>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the entire AI response (including thought process and JSON) here..."></textarea>
                     </div>
                     <div class="space-y-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Final Re-Assembled PGN</label>
@@ -100,25 +104,6 @@
             r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
-        function getFenFromPath(path) {
-            try {
-                if (typeof Chess === 'undefined') return "FEN_ENGINE_MISSING";
-                const chess = new Chess();
-                for (let move of path) {
-                    let cleanMove = move.replace(/[!?]+$/, '')
-                                        .replace(/\$\d+/g, '')
-                                        .replace(/(\+\/-|-\/\+|=\/\+|\+=|=\+|\+-|-\+|=)$/, '')
-                                        .trim();
-                    if (cleanMove && !/^\d+\.+$/.test(cleanMove) && cleanMove !== '(' && cleanMove !== ')') {
-                        chess.move(cleanMove, { sloppy: true });
-                    }
-                }
-                return chess.fen();
-            } catch (e) {
-                return "FEN_GENERATION_FAILED";
-            }
-        }
-
         function processPgn(isLoad = false) {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
@@ -128,26 +113,16 @@
             let chunks = [];
             let moveNumber = 0;
             let variationLevel = 0;
-            let currentPath = [];
-            let savedPaths = []; 
             let depthPlyCounts = { 0: 0 }; 
-            let justClosedVariation = false;
 
             pgnTokens.forEach((token, index) => {
                 if (token === "(") {
                     variationLevel++;
                     depthPlyCounts[variationLevel] = 0; 
-                    savedPaths.push([...currentPath]);
-                    if (currentPath.length > 0) currentPath.pop();
-                    justClosedVariation = false; 
                     return; 
                 }
                 if (token === ")") {
                     variationLevel--;
-                    justClosedVariation = true; 
-                    if (savedPaths.length > 0) {
-                        currentPath = savedPaths.pop();
-                    }
                     return; 
                 }
                 
@@ -160,8 +135,7 @@
                 const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
                 
                 if (isMove) {
-                    depthPlyCounts[variationLevel]++;
-                    currentPath.push(token);
+                    depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
@@ -169,137 +143,103 @@
                         evalSymbol = ` ${nextToken}`;
                     }
 
-                    const hasImportantSymbol = token.includes('!') || token.includes('?') || token.includes('/') || evalSymbol.includes('!') || evalSymbol.includes('?');
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-                    const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
-                    if (isStrideMove || hasImportantSymbol) {
-                        const pathWithTarget = currentPath.slice(0); 
-                        
-                        chunks.push({
-                            id: `CHUNK_${chunks.length}`,
-                            target: token + evalSymbol,
-                            moveNum: moveNumber,
-                            tokenIndex: index,
-                            context: currentPath.slice(-15, -1).join(" "), 
-                            fen: getFenFromPath(pathWithTarget),
-                            isMainLine: variationLevel === 0,
-                            isReturning: justClosedVariation && variationLevel === 0,
-                            isVariationStart: isFirstMoveOfVariation
-                        });
-                        
-                        justClosedVariation = false; 
-                    }
+                    // Push EVERY move (no skipping)
+                    chunks.push({
+                        id: `CHUNK_${chunks.length}`,
+                        target: token + evalSymbol,
+                        moveNum: moveNumber,
+                        tokenIndex: index,
+                        isMainLine: variationLevel === 0,
+                        isVariationStart: isFirstMoveOfVariation
+                    });
                 }
             });
 
             globalChunks = chunks;
             if (!isLoad) currentBatchStart = 0;
-            document.getElementById('batch-btn').classList.remove('hidden');
+            document.getElementById('batch-controls').classList.remove('hidden');
             document.getElementById('all-btn').classList.remove('hidden');
             updateUI();
             saveState();
         }
 
         function formatBatch(start, end) {
-            const batchChunks = globalChunks.slice(start, end);
+            const batch = globalChunks.slice(start, end).map(c => 
+                `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`
+            ).join("\n");
 
-            // Calculate starting and ending moves for screenshot reference
-            const startMove = batchChunks.length > 0 ? `${batchChunks[0].moveNum}. ${batchChunks[0].target}` : 'N/A';
-            const endMove = batchChunks.length > 0 ? `${batchChunks[batchChunks.length - 1].moveNum}. ${batchChunks[batchChunks.length - 1].target}` : 'N/A';
-            const moveRange = `BATCH RANGE: From move ${startMove} to ${endMove}`;
+            return `You are a Grandmaster annotating a chess course (Ruy Lopez for Black). 
+I will provide screenshots of this batch of moves.
 
-            const batch = batchChunks.map(c => 
-                `Move Number: ${c.moveNum}\nFEN: ${c.fen}\nPath taken to this move: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nMain Line: ${c.isMainLine}\nReturning to Main: ${c.isReturning}\nVariation Start: ${c.isVariationStart}`
-            ).join("\n\n---\n\n");
+Your task is to analyze the batch and provide high-quality, human-sounding annotations for the critical moments. 
 
-            // --- UPDATED PROMPT TEMPLATE START ---
-            return `[${moveRange}]
+INSTRUCTIONS:
+1. THINK FREELY FIRST: Before outputting the final JSON, deeply analyze the provided moves and screenshot. Write down your thought process in a <scratchpad> block. Evaluate which moves genuinely require commentary and plan your explanations.
+2. SELECTIVE ANNOTATION: Based on your analysis, choose WHICH moves to insert comments for. Do not annotate every move.
+   Preference MUST be given to:
+   - First moves of a variation (Variation Start: true). This move must make the reader know that it is an alternative move. Eg: "Sometimes, White can opt for ...." Or "If White decides to be greedy by snatching the pawn, we can play..."
+   - Moves with evaluation signs (!, ?, !?, etc.) and highlighted moves in the screenshot.
+3. FINAL OUTPUT: After your analysis, output ONLY a valid JSON object mapping the chunk ID to the text.
 
-TASK: Like a 2700+ human GM, annotate the course (Ruy Lopez for Black) based on the screenshot and the batch of moves below.
+FORMAT REQUIREMENT: 
+Start your response with your <scratchpad> analysis. Once complete, output the JSON block starting immediately with the { bracket. Do not include markdown blocks like \`\`\`json around the JSON. (Please avoid using curly brackets {} inside your scratchpad to ensure proper parsing).
 
-STEP 1: BOARD TRACKING & SELECTION (Thinking Phase)
-First, write out a brief thought process. Trace the sequence of moves to maintain the correct board state based on the screenshot provided. 
-Decide WHICH moves to annotate. Preference MUST be given to:
-1. First moves of a variation (Variation Start: true). Explain the alternative idea (e.g. "If White decides to be greedy...").
-2. Moves with evaluation signs (!, ?, !?, etc.) or highlighted moves in the screenshot.
+Example structure:
+<scratchpad>
+[Your free-flowing GM analysis, move selection, and drafting here]
+</scratchpad>
 
-STEP 2: JSON EXPORT
-After your analysis, provide the final annotations as a single JSON object. The JSON keys must be the EXACT FEN STRINGS from the batch. Do not use curly braces {} during your Step 1 thinking phase to prevent JSON parsing errors.
-        
 {
-  "FEN_STRING_1": "Your human-sounding GM annotation here...",
-  "FEN_STRING_2": "Your human-sounding GM annotation here..."
+  "CHUNK_0": "Your human-sounding GM annotation here...",
+  "CHUNK_5": "Your human-sounding GM annotation here..."
 }
 
 === BATCH TO ANALYZE ===
 ${batch}`;
-            // --- UPDATED PROMPT TEMPLATE END ---
         }
 
         function copyNextBatch() {
-            // Changed batch size from 10 to 20
-            const end = Math.min(currentBatchStart + 20, globalChunks.length);
-            
-            // Extract range for the alert popup
-            const batchChunks = globalChunks.slice(currentBatchStart, end);
-            const startMove = batchChunks.length > 0 ? `${batchChunks[0].moveNum}. ${batchChunks[0].target}` : 'N/A';
-            const endMove = batchChunks.length > 0 ? `${batchChunks[batchChunks.length - 1].moveNum}. ${batchChunks[batchChunks.length - 1].target}` : 'N/A';
-
+            const size = parseInt(document.getElementById('batch-size').value) || 10;
+            const end = Math.min(currentBatchStart + size, globalChunks.length);
             navigator.clipboard.writeText(formatBatch(currentBatchStart, end));
             currentBatchStart = end;
             updateUI();
             saveState();
-            
-            alert(`Batch Copied to Clipboard!\n\nTake a screenshot spanning:\nMove ${startMove}  --->  Move ${endMove}`);
+            alert(`Batch Copied to Clipboard! (${size} moves)`);
         }
 
         function copyAllRemaining() {
-            const batchChunks = globalChunks.slice(currentBatchStart, globalChunks.length);
-            const startMove = batchChunks.length > 0 ? `${batchChunks[0].moveNum}. ${batchChunks[0].target}` : 'N/A';
-            const endMove = batchChunks.length > 0 ? `${batchChunks[batchChunks.length - 1].moveNum}. ${batchChunks[batchChunks.length - 1].target}` : 'N/A';
-
             navigator.clipboard.writeText(formatBatch(currentBatchStart, globalChunks.length));
             currentBatchStart = globalChunks.length;
             updateUI();
             saveState();
-            
-            alert(`Full Game Copied to Clipboard!\n\nTake screenshot(s) spanning:\nMove ${startMove}  --->  Move ${endMove}`);
+            alert("All Remaining Moves Copied to Clipboard!");
         }
 
         function rebuildPgn() {
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
-            
-            // Extract JSON block from AI response
             const matches = raw.match(/\{[\s\S]*?\}/g);
             if (matches) {
                 matches.forEach(m => {
                     try { Object.assign(aiData, JSON.parse(m)); } catch(e){}
                 });
             }
-
             let workingTokens = [...pgnTokens];
-
-            // Create a base FEN mapping from engine's parsed chunks
-            const chunkMapByFen = {};
-            globalChunks.forEach(chunk => {
-                const baseFen = chunk.fen.split(' ').slice(0, 4).join(' ');
-                chunkMapByFen[baseFen] = chunk;
+            const sortedIds = Object.keys(aiData).sort((a,b) => {
+                const idxA = globalChunks.find(c => c.id === a)?.tokenIndex || 0;
+                const idxB = globalChunks.find(c => c.id === b)?.tokenIndex || 0;
+                return idxB - idxA;
             });
-
-            // Match AI keys back to the token positions
-            Object.keys(aiData).forEach(aiFen => {
-                const baseAiFen = aiFen.split(' ').slice(0, 4).join(' ');
-                const matchedChunk = chunkMapByFen[baseAiFen];
-                
-                if (matchedChunk) {
-                    workingTokens[matchedChunk.tokenIndex] += ` { ${aiData[aiFen]} }`;
+            sortedIds.forEach(id => {
+                const chunk = globalChunks.find(c => c.id === id);
+                if (chunk) {
+                    workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
                 }
             });
-
             document.getElementById('final-pgn').value = workingTokens.join(" ");
-            alert("Annotations successfully injected via FEN matching!");
         }
 
         function updateUI() {
@@ -313,7 +253,7 @@ ${batch}`;
             });
             const perc = (currentBatchStart / globalChunks.length) * 100 || 0;
             document.getElementById('progress-fill').style.width = perc + "%";
-            document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} KEY POSITIONS`;
+            document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} MOVES`;
         }
 
         function saveState() {
