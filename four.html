@@ -17,7 +17,7 @@
         #pgn-viewer { max-height: 400px; overflow-y: auto; font-family: 'Fira Code', monospace; font-size: 13px; line-height: 1.6; }
         .pgn-move { cursor: pointer; transition: color 0.2s; }
         .pgn-move:hover { color: #d4af37; text-decoration: underline; }
-        .active-chunk { background: rgba(212, 175, 55, 0.2); border-radius: 4px; padding: 2px 0; }
+        .active-chunk { background: rgba(212, 175, 55, 0.4); border-radius: 2px; padding: 2px 0; }
     </style>
 </head>
 <body class="p-4 md:p-10">
@@ -48,7 +48,7 @@
                     <div class="space-y-4">
                         <div class="glass p-4 rounded-xl border border-yellow-900/50">
                             <h3 class="text-xs font-bold text-yellow-500 uppercase mb-3">Screenshot Instructions</h3>
-                            <p id="capture-instructions" class="text-sm text-slate-300 mb-4">Click a move in the tree to isolate a variation.</p>
+                            <p id="capture-instructions" class="text-sm text-slate-300 mb-4">Click a move to auto-select its variation line. <br><br><span class="text-yellow-500 font-bold">Shift+Click</span> another move to manually set an end point.</p>
                             
                             <label class="text-[10px] font-bold text-slate-500 uppercase">Context FEN (Send to AI)</label>
                             <textarea id="fen-output" rows="3" class="w-full p-2 rounded-lg text-[10px] text-emerald-400 mt-1" readonly></textarea>
@@ -132,14 +132,12 @@
             const chess = new Chess();
             const fenStack = [];
             
-            // New numerical branch tracking system
             let branchCounter = 0;
-            let branchStack = [0]; // 0 represents the Mainline (B0)
+            let branchStack = [0]; 
             
             for (let i = 0; i < pgnTokens.length; i++) {
                 let t = pgnTokens[i];
                 
-                // Track infinite tree branches
                 if (t.isOpen) {
                     branchCounter++;
                     branchStack.push(branchCounter);
@@ -155,7 +153,6 @@
 
                 if (t.isSan) {
                     let cleanSan = t.text.replace(/[!?]+$/, '');
-                    
                     t.startFen = chess.fen(); 
 
                     try {
@@ -178,48 +175,74 @@
             for (let i = 0; i < pgnTokens.length; i++) {
                 let t = pgnTokens[i];
                 
-                // Visually display the numerical branch tags (B0, B1, B2, etc.)
+                // VISUAL HIGHLIGHT LOGIC INJECTED HERE
+                const inRange = activeRange && i >= activeRange[0] && i <= activeRange[1];
+                const hClass = inRange ? 'active-chunk' : '';
+
                 if (t.branchId !== currentBranchDisplay && t.branchId !== undefined) {
                     if (t.isOpen || i === 0) {
-                        html += `<span class="text-[10px] bg-slate-800 text-slate-400 px-1 rounded ml-1 mr-1">[B${t.branchId}]</span>`;
+                        html += `<span class="text-[10px] bg-slate-800 text-slate-400 px-1 rounded ml-1 mr-1 ${hClass}">[B${t.branchId}]</span>`;
                     }
                     currentBranchDisplay = t.branchId;
                 }
 
                 if (t.isSan) {
-                    html += `<span class="pgn-move font-bold text-white" data-idx="${i}" title="Branch B${t.branchId}">${t.text}</span>`;
+                    html += `<span class="pgn-move font-bold text-white ${hClass}" data-idx="${i}" title="Branch B${t.branchId}">${t.text}</span>`;
                 } else if (t.isNum) {
-                    html += `<span class="text-slate-400" data-idx="${i}">${t.text}</span>`;
+                    html += `<span class="text-slate-400 ${hClass}" data-idx="${i}">${t.text}</span>`;
                 } else if (t.isComment) {
-                    html += `<span class="text-emerald-500">${t.text}</span>`;
+                    html += `<span class="text-emerald-500 ${hClass}">${t.text}</span>`;
                 } else if (t.isOpen || t.isClose) {
-                    html += `<span class="text-yellow-500 font-bold">${t.text}</span>`;
+                    html += `<span class="text-yellow-500 font-bold ${hClass}">${t.text}</span>`;
                 } else {
-                    html += t.text; // spaces, symbols
+                    // Wrap spaces and symbols in a span only if they need highlighting
+                    if (inRange && !t.isSpace) {
+                        html += `<span class="${hClass}">${t.text}</span>`;
+                    } else if (inRange && t.isSpace) {
+                        // Spaces need special handling to maintain highlight block continuity 
+                        html += `<span class="${hClass} inline-block">&nbsp;</span>`;
+                    } else {
+                        html += t.text;
+                    }
                 }
             }
             viewer.innerHTML = html;
 
             document.querySelectorAll('.pgn-move').forEach(el => {
-                el.addEventListener('click', (e) => selectSegment(parseInt(e.target.getAttribute('data-idx'))));
+                // Pass event (e) to handle Shift+Click
+                el.addEventListener('click', (e) => selectSegment(parseInt(e.target.getAttribute('data-idx')), e));
             });
             updateFinalOutput();
         }
 
-        function selectSegment(startIndex) {
-            let endIndex = startIndex;
-            let depth = 0;
+        // ADDED EVENT PARAMETER TO HANDLE SHIFT CLICK
+        function selectSegment(clickedIndex, event) {
+            let startIndex = clickedIndex;
+            let endIndex = clickedIndex;
 
-            for (let i = startIndex; i < pgnTokens.length; i++) {
-                if (pgnTokens[i].isOpen) depth++;
-                if (pgnTokens[i].isClose) {
-                    if (depth === 0) { endIndex = i; break; }
-                    depth--;
+            // SHIFT CLICK LOGIC
+            if (event && event.shiftKey && activeRange) {
+                startIndex = Math.min(activeRange[0], clickedIndex);
+                endIndex = Math.max(activeRange[0], clickedIndex);
+            } else {
+                // DEFAULT LOGIC: FIND VARIATION END
+                let depth = 0;
+                for (let i = startIndex; i < pgnTokens.length; i++) {
+                    if (pgnTokens[i].isOpen) depth++;
+                    if (pgnTokens[i].isClose) {
+                        if (depth === 0) { endIndex = i; break; }
+                        depth--;
+                    }
+                    endIndex = i;
                 }
-                endIndex = i;
             }
 
             activeRange = [startIndex, endIndex];
+            
+            // Re-render immediately to apply the visual highlight to the DOM
+            renderPgnTree();
+
+            // Extract display names
             const startMove = pgnTokens[startIndex].text;
             let endMove = pgnTokens[endIndex].text;
             
@@ -229,15 +252,13 @@
 
             const fen = pgnTokens[startIndex].startFen || "Standard Starting Position";
             
-            document.getElementById('capture-instructions').innerHTML = `Screenshot the sequence from <br><strong class="text-white">${startMove}</strong> to <strong class="text-white">${endMove}</strong>.`;
+            document.getElementById('capture-instructions').innerHTML = `Screenshot the visually highlighted sequence from <br><strong class="text-white">${startMove}</strong> to <strong class="text-white">${endMove}</strong>.`;
             document.getElementById('fen-output').value = fen;
             document.getElementById('target-segment-display').innerText = `Target locked: Move ${startMove} to ${endMove} (Branch B${pgnTokens[startIndex].branchId})`;
 
             const btn = document.getElementById('btn-proceed');
             btn.disabled = false;
             btn.classList.remove('opacity-50', 'cursor-not-allowed');
-
-            renderPgnTree();
         }
 
         function sendToReassembler() {
@@ -263,7 +284,6 @@
             let [start, end] = activeRange;
 
             for (const [aiMoveKey, annotation] of Object.entries(aiData)) {
-                // Now supports numerical branch IDs up to infinity
                 const keyMatch = aiMoveKey.match(/^B(\d+):\s*(\d+)(\.+)\s*(.*)$/);
                 if (!keyMatch) {
                     console.warn(`Skipped key ${aiMoveKey} - does not match B#: Move format`);
@@ -282,7 +302,6 @@
                     if (pgnTokens[i].isSan) {
                         const cleanToken = pgnTokens[i].text.replace(/[!?]+$/, '');
                         
-                        // Strict check: Must match branch ID, Move number, AND Move Text
                         if (pgnTokens[i].branchId === targetBranch && currentNum === targetNum && cleanToken === targetMove) {
                             
                             let insertIdx = i + 1;
@@ -295,7 +314,6 @@
                                 }
                             }
 
-                            // Inject comment and assign it to the target branch
                             pgnTokens.splice(insertIdx, 0, { 
                                 text: ` { ${annotation} }`, 
                                 isComment: true,
