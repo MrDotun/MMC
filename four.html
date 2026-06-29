@@ -46,7 +46,7 @@
                 
                 <div class="flex flex-wrap gap-3">
                     <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
-                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden uppercase text-xs">Copy Next 10</button>
+                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden uppercase text-xs">Copy Next 20</button>
                     <button onclick="copyAllRemaining()" id="all-btn" class="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold hidden uppercase text-xs">Copy All Remaining</button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
                 </div>
@@ -169,22 +169,6 @@
                         evalSymbol = ` ${nextToken}`;
                     }
 
-                    // Look ahead for the next 3 moves in the current variation depth
-                    let nextMoves = [];
-                    let lookAheadIndex = index + 1;
-                    let tempVarLevel = variationLevel;
-                    while (lookAheadIndex < pgnTokens.length && nextMoves.length < 3) {
-                        let fToken = pgnTokens[lookAheadIndex];
-                        if (fToken === '(') tempVarLevel++;
-                        else if (fToken === ')') tempVarLevel--;
-                        else if (tempVarLevel === variationLevel) {
-                            if (/^[a-zA-Z]/.test(fToken) && !fToken.startsWith('{') && !fToken.startsWith('[')) {
-                                nextMoves.push(fToken);
-                            }
-                        }
-                        lookAheadIndex++;
-                    }
-
                     const hasImportantSymbol = token.includes('!') || token.includes('?') || token.includes('/') || evalSymbol.includes('!') || evalSymbol.includes('?');
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
                     const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedVariation;
@@ -198,7 +182,6 @@
                             moveNum: moveNumber,
                             tokenIndex: index,
                             context: currentPath.slice(-15, -1).join(" "), 
-                            nextMoves: nextMoves.join(" "),
                             fen: getFenFromPath(pathWithTarget),
                             isMainLine: variationLevel === 0,
                             isReturning: justClosedVariation && variationLevel === 0,
@@ -219,7 +202,6 @@
         }
 
         function formatBatch(start, end) {
-            const masterPgn = document.getElementById('pgn-input').value;
             const batchChunks = globalChunks.slice(start, end);
 
             // Calculate starting and ending moves for screenshot reference
@@ -228,35 +210,15 @@
             const moveRange = `BATCH RANGE: From move ${startMove} to ${endMove}`;
 
             const batch = batchChunks.map(c => 
-                `Move Number: ${c.moveNum}\nFEN: ${c.fen}\nPath taken to this move: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nNext 3 moves in this line: ${c.nextMoves}\nMain Line: ${c.isMainLine}\nReturning to Main: ${c.isReturning}\nVariation Start: ${c.isVariationStart}`
+                `Move Number: ${c.moveNum}\nFEN: ${c.fen}\nPath taken to this move: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nMain Line: ${c.isMainLine}\nReturning to Main: ${c.isReturning}\nVariation Start: ${c.isVariationStart}`
             ).join("\n\n---\n\n");
 
             return `[${moveRange}]
 
-Role: You are a 2700+ ELO Super Grandmaster and the author of an elite chess repertoire course on the Ruy Lopez for Black.
-Task: Look at the attached image showing the variation tree, but look at the provided text chunks below for the exact context and FEN strings. Provide deeply insightful, practical course annotations for the TARGET MOVES provided in the batch.
+Like a 2700+ human GM, annotate the course (Ruy Lopez for Black) on the screenshot. 
+Starting from the FEN position (I will be the one to send it, together with the screenshot).
 
-=== MASTER GAME TREE (GLOBAL CONTEXT) ===
-Use this tree to understand the "big picture" and how variations relate to one another.
-${masterPgn}
-=========================================
-
-STRICT ANALYTICAL FRAMEWORK & STYLE GUIDELINES:
-
-1. PERSPECTIVE & TONE: Write entirely from Black's perspective. Frame White's moves as attempts to challenge us. Use instructive phrasing like "This is Black's best way to play," or "We must challenge the center here."
-2. EXPLAIN THE "WHY": Explain the underlying positional goals, pawn structure shifts, or key square control (especially dealing with White's light-squared bishop and central tension in the Ruy Lopez).
-3. NO AI CLICHÉS & NO ROBOTIC REPETITION (CRITICAL): Speak like a real, human Grandmaster giving a practical lesson. Do NOT use generic AI filler words such as: delve, crucial, pivotal, testament, tapestry, multifaceted, moreover, furthermore, importantly, underscore, or dynamic. **CRITICAL: Vary your sentence structures. DO NOT repeatedly use the formulaic "If White plays [X], we play [Y]". Use diverse phrasing, passive/active voice, and focus on the conceptual battle.**
-4. CROSS-REFERENCE SCREENSHOT: Match the moves shown in the screenshot with the FEN strings provided below to ensure you are analyzing the correct exact position.
-5. STRICT LENGTH LIMITS:
-   - MAIN LINES (Main Line: true): Write 2-3 flowing sentences. Focus on our core plans against the Ruy Lopez.
-   - VARIATIONS (Main Line: false): STRICTLY 1 SHORT, PUNCHY SENTENCE. Just quickly state the tactical point or how we equalize, then stop.
-6. VARIATION AWARENESS:
-   - If "Variation Start: true": You MUST explicitly acknowledge the deviation.
-   - If "Returning to Main: true": You MUST acknowledge the return to the main game. Start with phrases like "Returning to our main plan...", or "Back in the actual game...".
-7. EVALUATION MARKS TO PROSE: Convert all raw symbols (!, ?, !?, +/=, -/+, etc.) into natural language. NO raw symbols in the output text. Explain why certain variations or moves are sub-optimal based on the evaluations visible in the screenshot. "-/+" means WE (Black) have a clear advantage.
-8. FORWARD VISION: Use the provided "Next 3 moves in this line" to inform your analysis. Explain *why* the target move is played based on the upcoming sequence, rather than just reacting blindly. Do not simply list the next moves; explain the concept they create.
-
-FORMAT REQUIREMENT: 
+****FORMAT REQUIREMENT*****
 Return ONLY a valid JSON object mapping the EXACT FEN STRING to the text. Do not include markdown blocks like \`\`\`json. Start immediately with the { bracket.
 {
   "FEN_STRING_1": "Your human-sounding GM annotation here...",
@@ -268,7 +230,8 @@ ${batch}`;
         }
 
         function copyNextBatch() {
-            const end = Math.min(currentBatchStart + 10, globalChunks.length);
+            // Changed batch size from 10 to 20
+            const end = Math.min(currentBatchStart + 20, globalChunks.length);
             
             // Extract range for the alert popup
             const batchChunks = globalChunks.slice(currentBatchStart, end);
@@ -300,7 +263,7 @@ ${batch}`;
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
             
-            // Extract JSON block from Gemini's response
+            // Extract JSON block from AI response
             const matches = raw.match(/\{[\s\S]*?\}/g);
             if (matches) {
                 matches.forEach(m => {
@@ -310,21 +273,19 @@ ${batch}`;
 
             let workingTokens = [...pgnTokens];
 
-            // Create a base FEN mapping from your engine's parsed chunks
+            // Create a base FEN mapping from engine's parsed chunks
             const chunkMapByFen = {};
             globalChunks.forEach(chunk => {
-                // Strip out halfmove clocks and fullmove numbers for loose/perfect matching
                 const baseFen = chunk.fen.split(' ').slice(0, 4).join(' ');
                 chunkMapByFen[baseFen] = chunk;
             });
 
-            // Match Gemini's keys back to the token positions
+            // Match AI keys back to the token positions
             Object.keys(aiData).forEach(aiFen => {
                 const baseAiFen = aiFen.split(' ').slice(0, 4).join(' ');
                 const matchedChunk = chunkMapByFen[baseAiFen];
                 
                 if (matchedChunk) {
-                    // Inject the commentary right behind the move token in the array
                     workingTokens[matchedChunk.tokenIndex] += ` { ${aiData[aiFen]} }`;
                 }
             });
