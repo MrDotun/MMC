@@ -17,7 +17,7 @@
         #pgn-viewer { max-height: 400px; overflow-y: auto; font-family: 'Fira Code', monospace; font-size: 13px; line-height: 1.6; }
         .pgn-move { cursor: pointer; transition: color 0.2s; }
         .pgn-move:hover { color: #d4af37; text-decoration: underline; }
-        .active-chunk { background: rgba(212, 175, 55, 0.4); border-radius: 2px; padding: 2px 0; }
+        .active-chunk { background: rgba(212, 175, 55, 0.35); color: #fff; } 
     </style>
 </head>
 <body class="p-4 md:p-10">
@@ -41,20 +41,37 @@
                 <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs w-full mb-6">Initialize & Map PGN Tree</button>
 
                 <div id="interactive-workspace" class="hidden grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="md:col-span-2 glass p-4 rounded-xl">
-                        <label class="text-xs font-bold uppercase text-slate-500 mb-2 block">Interactive PGN Tree (Click any move to segment)</label>
-                        <div id="pgn-viewer" class="p-4 bg-slate-900 rounded-lg text-slate-300"></div>
+                    <div class="md:col-span-2 glass p-4 rounded-xl flex flex-col">
+                        <label class="text-xs font-bold uppercase text-slate-500 mb-2 block">Interactive PGN Tree</label>
+                        
+                        <div class="flex gap-2 mb-3 bg-slate-900/50 p-2 rounded-lg border border-slate-700">
+                            <input type="text" id="manual-start" placeholder="Start (e.g. 10. dxc5)" class="flex-1 p-2 bg-slate-800 rounded border border-slate-700 text-xs text-white focus:border-yellow-500 outline-none">
+                            <input type="text" id="manual-end" placeholder="End (e.g. 13... Bxf3)" class="flex-1 p-2 bg-slate-800 rounded border border-slate-700 text-xs text-white focus:border-yellow-500 outline-none">
+                            <button onclick="applyManualRange()" class="px-4 py-2 bg-slate-700 text-white rounded text-xs font-bold uppercase hover:bg-yellow-600 transition-colors">Select Range</button>
+                        </div>
+
+                        <div id="pgn-viewer" class="p-4 bg-slate-900 rounded-lg text-slate-300 flex-grow"></div>
                     </div>
                     <div class="space-y-4">
                         <div class="glass p-4 rounded-xl border border-yellow-900/50">
                             <h3 class="text-xs font-bold text-yellow-500 uppercase mb-3">Screenshot Instructions</h3>
-                            <p id="capture-instructions" class="text-sm text-slate-300 mb-4">Click a move to auto-select its variation line. <br><br><span class="text-yellow-500 font-bold">Shift+Click</span> another move to manually set an end point.</p>
+                            <p id="capture-instructions" class="text-sm text-slate-300 mb-4">Click a move to auto-select its variation line. <br><br><span class="text-yellow-500 font-bold">Shift+Click</span> another move or use the manual inputs to set custom boundaries.</p>
                             
                             <label class="text-[10px] font-bold text-slate-500 uppercase">Context FEN (Send to AI)</label>
-                            <textarea id="fen-output" rows="3" class="w-full p-2 rounded-lg text-[10px] text-emerald-400 mt-1" readonly></textarea>
-                            <button onclick="copyToClipboard('fen-output')" class="mt-2 w-full py-2 bg-slate-800 text-[10px] font-bold rounded-md uppercase">Copy FEN</button>
+                            <textarea id="fen-output" rows="2" class="w-full p-2 rounded-lg text-[10px] text-emerald-400 mt-1" readonly></textarea>
+                            <button onclick="copyToClipboard('fen-output')" class="mt-2 w-full py-2 bg-slate-800 text-[10px] font-bold rounded-md uppercase hover:bg-slate-700 transition-colors">Copy FEN</button>
+
+                            <label class="text-[10px] font-bold text-slate-500 uppercase mt-4 block">System Prompt (Send to AI)</label>
+                            <textarea id="prompt-output" rows="10" class="w-full p-2 rounded-lg text-[10px] text-slate-300 mt-1" readonly>Like a 2700+ human GM, annotate the course on the screenshot (Ruy Lopez for Black). I will provide the starting FEN to ground the position. Provide deep, instructional, human-like commentary.
+
+CRITICAL FORMATTING RULES (FAILURE WILL BREAK THE SYSTEM):
+1. Output strictly as a raw JSON object. NO markdown formatting, NO conversational intro/outro, NO ```json blocks. Just the { and }.
+2. JSON Keys MUST perfectly match the branch tags and moves shown in the screenshot.
+3. Key format requirement: "B[Branch Number]: [Move Number]. [Move]" (e.g., "B1: 10. dxc5" or "B3: 13... Bxf3").
+4. Cross-reference the visual moves with the provided FEN to ensure legal continuations. Do not hallucinate OCR errors.</textarea>
+                            <button onclick="copyToClipboard('prompt-output')" class="mt-2 w-full py-2 bg-slate-800 text-[10px] font-bold rounded-md uppercase hover:bg-slate-700 transition-colors">Copy Prompt</button>
                         </div>
-                        <button onclick="sendToReassembler()" id="btn-proceed" class="w-full py-3 gold-bg rounded-xl font-bold uppercase text-xs opacity-50 cursor-not-allowed" disabled>Proceed to Re-assembler -> </button>
+                        <button onclick="sendToReassembler()" id="btn-proceed" class="w-full py-3 gold-bg rounded-xl font-bold uppercase text-xs opacity-50 cursor-not-allowed transition-all" disabled>Proceed to Re-assembler -> </button>
                     </div>
                 </div>
             </div>
@@ -76,12 +93,12 @@
                         <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Stacked Final PGN</label>
                         <textarea id="final-pgn" rows="14" class="w-full p-4 rounded-xl text-xs text-emerald-400" readonly></textarea>
                         <div class="flex gap-2">
-                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Copy Final</button>
-                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Download</button>
+                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase hover:bg-slate-700">Copy Final</button>
+                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase hover:bg-slate-700">Download</button>
                         </div>
                     </div>
                 </div>
-                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20">Inject Annotations & Update Stack</button>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20 hover:brightness-110">Inject Annotations & Update Stack</button>
             </div>
         </div>
     </div>
@@ -157,9 +174,7 @@
 
                     try {
                         let move = chess.move(cleanSan);
-                        if (!move) {
-                            chess.move(cleanSan, {sloppy: true});
-                        }
+                        if (!move) chess.move(cleanSan, {sloppy: true});
                     } catch(e) { }
                 }
             }
@@ -175,7 +190,6 @@
             for (let i = 0; i < pgnTokens.length; i++) {
                 let t = pgnTokens[i];
                 
-                // VISUAL HIGHLIGHT LOGIC INJECTED HERE
                 const inRange = activeRange && i >= activeRange[0] && i <= activeRange[1];
                 const hClass = inRange ? 'active-chunk' : '';
 
@@ -187,7 +201,7 @@
                 }
 
                 if (t.isSan) {
-                    html += `<span class="pgn-move font-bold text-white ${hClass}" data-idx="${i}" title="Branch B${t.branchId}">${t.text}</span>`;
+                    html += `<span class="pgn-move font-bold ${hClass ? 'text-white' : 'text-slate-200'} ${hClass}" data-idx="${i}" title="Branch B${t.branchId}">${t.text}</span>`;
                 } else if (t.isNum) {
                     html += `<span class="text-slate-400 ${hClass}" data-idx="${i}">${t.text}</span>`;
                 } else if (t.isComment) {
@@ -195,37 +209,25 @@
                 } else if (t.isOpen || t.isClose) {
                     html += `<span class="text-yellow-500 font-bold ${hClass}">${t.text}</span>`;
                 } else {
-                    // Wrap spaces and symbols in a span only if they need highlighting
-                    if (inRange && !t.isSpace) {
-                        html += `<span class="${hClass}">${t.text}</span>`;
-                    } else if (inRange && t.isSpace) {
-                        // Spaces need special handling to maintain highlight block continuity 
-                        html += `<span class="${hClass} inline-block">&nbsp;</span>`;
-                    } else {
-                        html += t.text;
-                    }
+                    html += `<span class="${hClass}">${t.text}</span>`;
                 }
             }
             viewer.innerHTML = html;
 
             document.querySelectorAll('.pgn-move').forEach(el => {
-                // Pass event (e) to handle Shift+Click
                 el.addEventListener('click', (e) => selectSegment(parseInt(e.target.getAttribute('data-idx')), e));
             });
             updateFinalOutput();
         }
 
-        // ADDED EVENT PARAMETER TO HANDLE SHIFT CLICK
         function selectSegment(clickedIndex, event) {
             let startIndex = clickedIndex;
             let endIndex = clickedIndex;
 
-            // SHIFT CLICK LOGIC
             if (event && event.shiftKey && activeRange) {
                 startIndex = Math.min(activeRange[0], clickedIndex);
                 endIndex = Math.max(activeRange[0], clickedIndex);
             } else {
-                // DEFAULT LOGIC: FIND VARIATION END
                 let depth = 0;
                 for (let i = startIndex; i < pgnTokens.length; i++) {
                     if (pgnTokens[i].isOpen) depth++;
@@ -236,13 +238,55 @@
                     endIndex = i;
                 }
             }
+            updateTargetDetails(startIndex, endIndex);
+        }
 
-            activeRange = [startIndex, endIndex];
+        function findMoveIndex(searchString, startIndex = 0) {
+            let parts = searchString.trim().split(/\s+/);
+            if (parts.length === 0 || parts[0] === "") return -1;
             
-            // Re-render immediately to apply the visual highlight to the DOM
+            let san = parts.pop().replace(/[!?]+$/, '');
+            let num = parts.length > 0 ? parts.pop().replace(/\./g, '') : null;
+
+            let currentNum = "";
+            for (let i = startIndex; i < pgnTokens.length; i++) {
+                if (pgnTokens[i].isNum) currentNum = pgnTokens[i].text.replace(/\./g, '');
+                
+                if (pgnTokens[i].isSan && pgnTokens[i].text.replace(/[!?]+$/, '') === san) {
+                    if (!num || currentNum === num) return i;
+                }
+            }
+            return -1;
+        }
+
+        function applyManualRange() {
+            const startVal = document.getElementById('manual-start').value;
+            const endVal = document.getElementById('manual-end').value;
+
+            if (!startVal || !endVal) {
+                alert("Please enter both start and end moves.");
+                return;
+            }
+
+            let startIdx = findMoveIndex(startVal);
+            if (startIdx === -1) {
+                alert("Start move not found in PGN.");
+                return;
+            }
+
+            let endIdx = findMoveIndex(endVal, startIdx);
+            if (endIdx === -1) {
+                alert("End move not found after the start move.");
+                return;
+            }
+
+            updateTargetDetails(startIdx, endIdx);
+        }
+
+        function updateTargetDetails(startIndex, endIndex) {
+            activeRange = [startIndex, endIndex];
             renderPgnTree();
 
-            // Extract display names
             const startMove = pgnTokens[startIndex].text;
             let endMove = pgnTokens[endIndex].text;
             
@@ -355,3 +399,4 @@
     </script>
 </body>
 </html>
+.
