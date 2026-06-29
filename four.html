@@ -156,7 +156,6 @@ CRITICAL FORMATTING RULES (FAILURE WILL BREAK THE SYSTEM):
             calculateFENs();
             renderPgnTree();
 
-            // SET SLIDER BOUNDARIES
             document.getElementById('slider-start').max = pgnTokens.length - 1;
             document.getElementById('slider-end').max = pgnTokens.length - 1;
 
@@ -359,7 +358,6 @@ CRITICAL FORMATTING RULES (FAILURE WILL BREAK THE SYSTEM):
         }
 
         function updateTargetDetails(startIndex, endIndex) {
-            // SYNC SLIDERS VISUALLY
             document.getElementById('slider-start').value = startIndex;
             document.getElementById('slider-end').value = endIndex;
 
@@ -404,32 +402,46 @@ CRITICAL FORMATTING RULES (FAILURE WILL BREAK THE SYSTEM):
                 return;
             }
 
-            let [start, end] = activeRange;
-
+            // Loop through all parsed JSON keys
             for (const [aiMoveKey, annotation] of Object.entries(aiData)) {
-                const keyMatch = aiMoveKey.match(/^B(\d+):\s*(\d+)(\.+)\s*(.*)$/);
+                
+                // Forgiving regex that allows spaces before colons and handles missing spacing
+                const keyMatch = aiMoveKey.match(/^B(\d+)\s*:\s*(\d+)(\.+)\s*(.*)$/);
                 if (!keyMatch) {
                     console.warn(`Skipped key ${aiMoveKey} - does not match B#: Move format`);
                     continue;
                 }
 
                 const targetBranch = parseInt(keyMatch[1]);
-                const targetNum = keyMatch[2];
-                const targetMove = keyMatch[4].replace(/[!?]+$/, '').trim();
+                const targetNum = keyMatch[2].trim();
+                
+                // Clean the AI move by stripping +, #, !, and trimming whitespace
+                let targetMove = keyMatch[4].replace(/[!?+#]+$/, '').trim();
+                
+                // Normalize 0-0 vs O-O 
+                targetMove = targetMove.replace(/0-0-0/g, 'O-O-O').replace(/0-0/g, 'O-O');
                 
                 let currentNum = "";
                 
-                for (let i = start; i <= end; i++) {
-                    if (pgnTokens[i].isNum) currentNum = pgnTokens[i].text.replace(/\./g, '');
+                // GLOBALLY scan the token array (fixes the bug where branches outside selection were ignored)
+                for (let i = 0; i < pgnTokens.length; i++) {
+                    
+                    if (pgnTokens[i].isNum) {
+                        currentNum = pgnTokens[i].text.replace(/\./g, '').trim();
+                    }
                     
                     if (pgnTokens[i].isSan) {
-                        const cleanToken = pgnTokens[i].text.replace(/[!?]+$/, '');
+                        // Strip formatting and normalize castling for the token as well
+                        let cleanToken = pgnTokens[i].text.replace(/[!?+#]+$/, '').trim();
+                        cleanToken = cleanToken.replace(/0-0-0/g, 'O-O-O').replace(/0-0/g, 'O-O');
                         
+                        // Strict check verifying Branch + Move Number + Move Text
                         if (pgnTokens[i].branchId === targetBranch && currentNum === targetNum && cleanToken === targetMove) {
                             
                             let insertIdx = i + 1;
                             while (insertIdx < pgnTokens.length) {
                                 let t = pgnTokens[insertIdx];
+                                // Skip past spaces, symbols, and graphic engine arrows before injecting
                                 if (t.isSpace || t.isSymbol || (t.isComment && t.text.includes('[%csl'))) {
                                     insertIdx++;
                                 } else {
@@ -437,12 +449,14 @@ CRITICAL FORMATTING RULES (FAILURE WILL BREAK THE SYSTEM):
                                 }
                             }
 
+                            // Inject comment
                             pgnTokens.splice(insertIdx, 0, { 
                                 text: ` { ${annotation} }`, 
                                 isComment: true,
                                 branchId: targetBranch
                             });
-                            end++; 
+                            
+                            // Break to proceed to the next AI key!
                             break; 
                         }
                     }
