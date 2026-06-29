@@ -17,13 +17,7 @@
         #pgn-viewer { max-height: 400px; overflow-y: auto; font-family: 'Fira Code', monospace; font-size: 13px; line-height: 1.6; }
         .pgn-move { cursor: pointer; transition: color 0.2s; }
         .pgn-move:hover { color: #d4af37; text-decoration: underline; }
-        
-        /* Improved Highlight style for better screenshot visibility */
-        .highlight-chunk { 
-            background-color: rgba(212, 175, 55, 0.4); 
-            border-radius: 2px; 
-            box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.4);
-        }
+        .active-chunk { background: rgba(212, 175, 55, 0.2); border-radius: 4px; padding: 2px 0; }
     </style>
 </head>
 <body class="p-4 md:p-10">
@@ -48,24 +42,17 @@
 
                 <div id="interactive-workspace" class="hidden grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="md:col-span-2 glass p-4 rounded-xl">
-                        <label class="text-xs font-bold uppercase text-slate-500 mb-2 block">Interactive PGN Tree</label>
+                        <label class="text-xs font-bold uppercase text-slate-500 mb-2 block">Interactive PGN Tree (Click any move to segment)</label>
                         <div id="pgn-viewer" class="p-4 bg-slate-900 rounded-lg text-slate-300"></div>
                     </div>
                     <div class="space-y-4">
                         <div class="glass p-4 rounded-xl border border-yellow-900/50">
-                            <h3 class="text-xs font-bold text-yellow-500 uppercase mb-3">Target Details</h3>
-                            <p id="capture-instructions" class="text-sm text-slate-300 mb-4">Click a move to select start. Click again to set end.</p>
+                            <h3 class="text-xs font-bold text-yellow-500 uppercase mb-3">Screenshot Instructions</h3>
+                            <p id="capture-instructions" class="text-sm text-slate-300 mb-4">Click a move in the tree to isolate a variation.</p>
                             
-                            <label class="text-[10px] font-bold text-slate-500 uppercase">Context FEN (Editable)</label>
-                            <textarea id="fen-output" rows="2" class="w-full p-2 rounded-lg text-[10px] text-emerald-400 mt-1"></textarea>
-                            
-                            <label class="text-[10px] font-bold text-slate-500 uppercase mt-4 block">AI Prompt (Auto-Generated)</label>
-                            <textarea id="ai-prompt-output" rows="6" class="w-full p-2 rounded-lg text-[10px] text-blue-300 mt-1" readonly></textarea>
-                            
-                            <div class="flex gap-2 mt-2">
-                                <button onclick="copyToClipboard('fen-output')" class="flex-1 py-2 bg-slate-800 text-[10px] font-bold rounded-md uppercase hover:bg-slate-700">Copy FEN</button>
-                                <button onclick="copyToClipboard('ai-prompt-output')" class="flex-1 py-2 bg-blue-900/50 text-blue-300 text-[10px] font-bold rounded-md uppercase hover:bg-blue-800/50">Copy Prompt</button>
-                            </div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Context FEN (Send to AI)</label>
+                            <textarea id="fen-output" rows="3" class="w-full p-2 rounded-lg text-[10px] text-emerald-400 mt-1" readonly></textarea>
+                            <button onclick="copyToClipboard('fen-output')" class="mt-2 w-full py-2 bg-slate-800 text-[10px] font-bold rounded-md uppercase">Copy FEN</button>
                         </div>
                         <button onclick="sendToReassembler()" id="btn-proceed" class="w-full py-3 gold-bg rounded-xl font-bold uppercase text-xs opacity-50 cursor-not-allowed" disabled>Proceed to Re-assembler -> </button>
                     </div>
@@ -83,18 +70,18 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="space-y-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste GM JSON</label>
-                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder='{ "10. dxc5": "GM Comment..." }'></textarea>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder='{ "B0: 10. dxc5": "GM Mainline Comment...", "B1: 10. dxc5": "Sideline Comment..." }'></textarea>
                     </div>
                     <div class="space-y-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Stacked Final PGN</label>
                         <textarea id="final-pgn" rows="14" class="w-full p-4 rounded-xl text-xs text-emerald-400" readonly></textarea>
                         <div class="flex gap-2">
-                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase hover:bg-slate-700">Copy Final</button>
-                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase hover:bg-slate-700">Download</button>
+                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Copy Final</button>
+                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Download</button>
                         </div>
                     </div>
                 </div>
-                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20 hover:bg-yellow-500">Inject Annotations & Update Stack</button>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20">Inject Annotations & Update Stack</button>
             </div>
         </div>
     </div>
@@ -102,10 +89,6 @@
     <script>
         let pgnTokens = [];
         let activeRange = null; 
-        
-        // NEW Tracking Variables for point-and-click highlighting
-        let selectionStep = 1; 
-        let tempStartIndex = null;
 
         function switchTab(tab) {
             document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
@@ -140,8 +123,6 @@
 
             pgnTokens = tokenizePGN(input);
             calculateFENs();
-            activeRange = null; 
-            selectionStep = 1; // Reset selection tracking
             renderPgnTree();
 
             document.getElementById('interactive-workspace').classList.remove('hidden');
@@ -151,14 +132,30 @@
             const chess = new Chess();
             const fenStack = [];
             
+            // New numerical branch tracking system
+            let branchCounter = 0;
+            let branchStack = [0]; // 0 represents the Mainline (B0)
+            
             for (let i = 0; i < pgnTokens.length; i++) {
                 let t = pgnTokens[i];
+                
+                // Track infinite tree branches
                 if (t.isOpen) {
+                    branchCounter++;
+                    branchStack.push(branchCounter);
+                    t.branchId = branchStack[branchStack.length - 1];
                     fenStack.push(chess.fen());
                 } else if (t.isClose) {
+                    t.branchId = branchStack[branchStack.length - 1];
+                    branchStack.pop();
                     if(fenStack.length > 0) chess.load(fenStack.pop());
-                } else if (t.isSan) {
+                } else {
+                    t.branchId = branchStack[branchStack.length - 1];
+                }
+
+                if (t.isSan) {
                     let cleanSan = t.text.replace(/[!?]+$/, '');
+                    
                     t.startFen = chess.fen(); 
 
                     try {
@@ -176,20 +173,29 @@
             viewer.innerHTML = '';
             
             let html = '';
+            let currentBranchDisplay = -1;
+
             for (let i = 0; i < pgnTokens.length; i++) {
                 let t = pgnTokens[i];
-                let highlightClass = (activeRange && i >= activeRange[0] && i <= activeRange[1]) ? 'highlight-chunk ' : '';
                 
+                // Visually display the numerical branch tags (B0, B1, B2, etc.)
+                if (t.branchId !== currentBranchDisplay && t.branchId !== undefined) {
+                    if (t.isOpen || i === 0) {
+                        html += `<span class="text-[10px] bg-slate-800 text-slate-400 px-1 rounded ml-1 mr-1">[B${t.branchId}]</span>`;
+                    }
+                    currentBranchDisplay = t.branchId;
+                }
+
                 if (t.isSan) {
-                    html += `<span class="${highlightClass}pgn-move font-bold text-white" data-idx="${i}">${t.text}</span>`;
+                    html += `<span class="pgn-move font-bold text-white" data-idx="${i}" title="Branch B${t.branchId}">${t.text}</span>`;
                 } else if (t.isNum) {
-                    html += `<span class="${highlightClass}text-slate-400" data-idx="${i}">${t.text}</span>`;
+                    html += `<span class="text-slate-400" data-idx="${i}">${t.text}</span>`;
                 } else if (t.isComment) {
-                    html += `<span class="${highlightClass}text-emerald-500">${t.text}</span>`;
+                    html += `<span class="text-emerald-500">${t.text}</span>`;
                 } else if (t.isOpen || t.isClose) {
-                    html += `<span class="${highlightClass}text-yellow-500 font-bold">${t.text}</span>`;
+                    html += `<span class="text-yellow-500 font-bold">${t.text}</span>`;
                 } else {
-                    html += `<span class="${highlightClass}">${t.text}</span>`; 
+                    html += t.text; // spaces, symbols
                 }
             }
             viewer.innerHTML = html;
@@ -200,68 +206,32 @@
             updateFinalOutput();
         }
 
-        function selectSegment(idx) {
-            // FIX: If the user is manually clicking and dragging to highlight text, abort the script so their selection isn't wiped!
-            if (window.getSelection().toString().length > 0) return;
+        function selectSegment(startIndex) {
+            let endIndex = startIndex;
+            let depth = 0;
 
-            let startIndex, endIndex;
-
-            // Point-and-Click Highlight Bounds Logic
-            if (selectionStep === 1) {
-                // First click: Pick Start, auto-find branch end
-                tempStartIndex = idx;
-                startIndex = idx;
-                endIndex = idx;
-                let depth = 0;
-                for (let i = startIndex; i < pgnTokens.length; i++) {
-                    if (pgnTokens[i].isOpen) depth++;
-                    if (pgnTokens[i].isClose) {
-                        if (depth === 0) { endIndex = i; break; }
-                        depth--;
-                    }
-                    endIndex = i;
+            for (let i = startIndex; i < pgnTokens.length; i++) {
+                if (pgnTokens[i].isOpen) depth++;
+                if (pgnTokens[i].isClose) {
+                    if (depth === 0) { endIndex = i; break; }
+                    depth--;
                 }
-                activeRange = [startIndex, endIndex];
-                selectionStep = 2; // Next click shrinks the end
-            } else {
-                // Second click: Pick exact End
-                startIndex = Math.min(tempStartIndex, idx);
-                endIndex = Math.max(tempStartIndex, idx);
-                activeRange = [startIndex, endIndex];
-                selectionStep = 1; // Reset for next variation
+                endIndex = i;
             }
 
-            const startMove = pgnTokens[activeRange[0]].text;
-            let endMove = pgnTokens[activeRange[1]].text;
+            activeRange = [startIndex, endIndex];
+            const startMove = pgnTokens[startIndex].text;
+            let endMove = pgnTokens[endIndex].text;
             
-            for(let i = activeRange[1]; i >= activeRange[0]; i--){
+            for(let i = endIndex; i >= startIndex; i--){
                 if(pgnTokens[i].isSan) { endMove = pgnTokens[i].text; break; }
             }
 
-            const fen = pgnTokens[activeRange[0]].startFen || "Standard Starting Position";
+            const fen = pgnTokens[startIndex].startFen || "Standard Starting Position";
             
-            // Update UI based on selection step
-            if (selectionStep === 2) {
-                document.getElementById('capture-instructions').innerHTML = `Screenshot this sequence, or <strong>click a new end move</strong> to shrink the box.`;
-            } else {
-                document.getElementById('capture-instructions').innerHTML = `Screenshot the custom highlighted sequence from <br><strong class="text-white">${startMove}</strong> to <strong class="text-white">${endMove}</strong>.`;
-            }
-
+            document.getElementById('capture-instructions').innerHTML = `Screenshot the sequence from <br><strong class="text-white">${startMove}</strong> to <strong class="text-white">${endMove}</strong>.`;
             document.getElementById('fen-output').value = fen;
-            document.getElementById('target-segment-display').innerText = `Target locked: Move ${startMove} to ${endMove}`;
-
-            const aiPromptText = `Like a 2700+ human GM, annotate the course on the screenshot (Ruy Lopez for Black).
-
-**Starting FEN:**
-${fen}
-
-**Output Requirements:**
-Provide the output strictly in valid JSON format mapping the move sequence to your expert annotations:
-{
-  "1. e4": "Your detailed grandmaster commentary here...",
-  "2. Nf3": "Next annotation..."
-}`;
-            document.getElementById('ai-prompt-output').value = aiPromptText;
+            document.getElementById('target-segment-display').innerText = `Target locked: Move ${startMove} to ${endMove} (Branch B${pgnTokens[startIndex].branchId})`;
 
             const btn = document.getElementById('btn-proceed');
             btn.disabled = false;
@@ -273,7 +243,8 @@ Provide the output strictly in valid JSON format mapping the move sequence to yo
         function sendToReassembler() {
             switchTab('reassembler');
         }
-           function rebuildPgn() {
+
+        function rebuildPgn() {
             if (!activeRange) {
                 alert("Please select a segment in the Master Loader first.");
                 return;
@@ -283,26 +254,25 @@ Provide the output strictly in valid JSON format mapping the move sequence to yo
             let aiData = {};
             
             try {
-                // 1. Clean the input: remove markdown, fix smart quotes, remove trailing commas
-                let cleanRaw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-                cleanRaw = cleanRaw.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
-                cleanRaw = cleanRaw.replace(/,\s*([}\]])/g, '$1'); // Remove trailing comma before closing brace
-                
-                aiData = JSON.parse(cleanRaw);
+                aiData = JSON.parse(raw);
             } catch (e) {
-                alert("JSON Error: " + e.message + "\n\nEnsure your format is: { \"1. e4\": \"Comment\" }");
+                alert("Error parsing JSON. Ensure it has no markdown blocks and is strictly { 'B0: 10. dxc5': 'text' }.");
                 return;
             }
 
             let [start, end] = activeRange;
 
             for (const [aiMoveKey, annotation] of Object.entries(aiData)) {
-                // Extracts the move number and the SAN (e.g., "10. dxc5" -> "10", "dxc5")
-                const keyMatch = aiMoveKey.match(/^(\d+)(?:\.\.\.|\.)\s*(.*)$/);
-                if (!keyMatch) continue;
+                // Now supports numerical branch IDs up to infinity
+                const keyMatch = aiMoveKey.match(/^B(\d+):\s*(\d+)(\.+)\s*(.*)$/);
+                if (!keyMatch) {
+                    console.warn(`Skipped key ${aiMoveKey} - does not match B#: Move format`);
+                    continue;
+                }
 
-                const targetNum = keyMatch[1];
-                const targetMove = keyMatch[2].replace(/[!?]+$/, '').trim();
+                const targetBranch = parseInt(keyMatch[1]);
+                const targetNum = keyMatch[2];
+                const targetMove = keyMatch[4].replace(/[!?]+$/, '').trim();
                 
                 let currentNum = "";
                 
@@ -312,16 +282,25 @@ Provide the output strictly in valid JSON format mapping the move sequence to yo
                     if (pgnTokens[i].isSan) {
                         const cleanToken = pgnTokens[i].text.replace(/[!?]+$/, '');
                         
-                        if (currentNum === targetNum && cleanToken === targetMove) {
-                            // Find insertion point after current move and any following punctuation/symbols
+                        // Strict check: Must match branch ID, Move number, AND Move Text
+                        if (pgnTokens[i].branchId === targetBranch && currentNum === targetNum && cleanToken === targetMove) {
+                            
                             let insertIdx = i + 1;
-                            while (insertIdx < pgnTokens.length && 
-                                  (pgnTokens[insertIdx].isSpace || pgnTokens[insertIdx].isSymbol || 
-                                  (pgnTokens[insertIdx].isComment && pgnTokens[insertIdx].text.includes('[%')))) {
-                                insertIdx++;
+                            while (insertIdx < pgnTokens.length) {
+                                let t = pgnTokens[insertIdx];
+                                if (t.isSpace || t.isSymbol || (t.isComment && t.text.includes('[%csl'))) {
+                                    insertIdx++;
+                                } else {
+                                    break;
+                                }
                             }
 
-                            pgnTokens.splice(insertIdx, 0, { text: ` { ${annotation} }`, isComment: true });
+                            // Inject comment and assign it to the target branch
+                            pgnTokens.splice(insertIdx, 0, { 
+                                text: ` { ${annotation} }`, 
+                                isComment: true,
+                                branchId: targetBranch
+                            });
                             end++; 
                             break; 
                         }
@@ -332,7 +311,7 @@ Provide the output strictly in valid JSON format mapping the move sequence to yo
             updateFinalOutput();
             renderPgnTree(); 
             document.getElementById('ai-json').value = '';
-            alert("Annotations successfully injected!");
+            alert("Annotations strictly injected using Branch Context! Paste next JSON or switch chunks.");
         }
 
         function updateFinalOutput() {
@@ -343,14 +322,7 @@ Provide the output strictly in valid JSON format mapping the move sequence to yo
         function copyToClipboard(id) {
             const val = document.getElementById(id).value;
             navigator.clipboard.writeText(val);
-            const btn = event.target;
-            const originalText = btn.innerText;
-            btn.innerText = "COPIED!";
-            btn.classList.add("text-white", "bg-emerald-600");
-            setTimeout(() => {
-                btn.innerText = originalText;
-                btn.classList.remove("text-white", "bg-emerald-600");
-            }, 1500);
+            alert("Copied successfully!");
         }
 
         function downloadPgn() {
