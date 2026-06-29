@@ -1,3 +1,6 @@
+body>
+</html>
+.
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -55,7 +58,7 @@
                     <div class="space-y-4">
                         <div class="glass p-4 rounded-xl border border-yellow-900/50">
                             <h3 class="text-xs font-bold text-yellow-500 uppercase mb-3">Screenshot Instructions</h3>
-                            <p id="capture-instructions" class="text-sm text-slate-300 mb-4">Click a move to auto-select its variation line. <br><br><span class="text-yellow-500 font-bold">Shift+Click</span> another move or use the manual inputs to set custom boundaries.</p>
+                            <p id="capture-instructions" class="text-sm text-slate-300 mb-4"><span class="text-emerald-400 font-bold">Left-Click</span> a move to start/auto-select.<br><br><span class="text-yellow-500 font-bold">Right-Click</span> another move to instantly set the end boundary.</p>
                             
                             <label class="text-[10px] font-bold text-slate-500 uppercase">Context FEN (Send to AI)</label>
                             <textarea id="fen-output" rows="2" class="w-full p-2 rounded-lg text-[10px] text-emerald-400 mt-1" readonly></textarea>
@@ -214,8 +217,52 @@ CRITICAL FORMATTING RULES (FAILURE WILL BREAK THE SYSTEM):
             }
             viewer.innerHTML = html;
 
+            // UPDATED SELECTION LOGIC (ADDED MOBILE LONG-PRESS SUPPORT)
             document.querySelectorAll('.pgn-move').forEach(el => {
-                el.addEventListener('click', (e) => selectSegment(parseInt(e.target.getAttribute('data-idx')), e));
+                // Desktop: Standard Left Click
+                el.addEventListener('click', (e) => {
+                    // Prevent standard click from firing if we just completed a mobile long-press
+                    if (!el.dataset.longPressed) {
+                        selectSegment(parseInt(e.target.getAttribute('data-idx')), e);
+                    }
+                    el.dataset.longPressed = ''; // Reset flag
+                });
+                
+                // Desktop: Right-Click Context Menu triggers the end boundary setup
+                el.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    let clickedIdx = parseInt(e.target.getAttribute('data-idx'));
+                    if(activeRange) {
+                        let start = Math.min(activeRange[0], clickedIdx);
+                        let end = Math.max(activeRange[0], clickedIdx);
+                        updateTargetDetails(start, end);
+                    } else {
+                        selectSegment(clickedIdx, e);
+                    }
+                });
+
+                // Mobile: Touch Events for Long-Press (Simulates Right-Click)
+                let touchTimer;
+                el.addEventListener('touchstart', (e) => {
+                    let clickedIdx = parseInt(e.target.getAttribute('data-idx'));
+                    
+                    touchTimer = setTimeout(() => {
+                        el.dataset.longPressed = 'true'; // Flag to block subsequent 'click' event
+                        if (navigator.vibrate) navigator.vibrate(50); // Light haptic feedback for mobile
+                        
+                        if(activeRange) {
+                            let start = Math.min(activeRange[0], clickedIdx);
+                            let end = Math.max(activeRange[0], clickedIdx);
+                            updateTargetDetails(start, end);
+                        } else {
+                            selectSegment(clickedIdx, e);
+                        }
+                    }, 500); // 500ms long-press triggers the end boundary
+                }, { passive: true });
+
+                // Cancel the long-press if the user scrolls or lifts their finger early
+                el.addEventListener('touchmove', () => clearTimeout(touchTimer), { passive: true });
+                el.addEventListener('touchend', () => clearTimeout(touchTimer), { passive: true });
             });
             updateFinalOutput();
         }
@@ -296,7 +343,7 @@ CRITICAL FORMATTING RULES (FAILURE WILL BREAK THE SYSTEM):
 
             const fen = pgnTokens[startIndex].startFen || "Standard Starting Position";
             
-            document.getElementById('capture-instructions').innerHTML = `Screenshot the visually highlighted sequence from <br><strong class="text-white">${startMove}</strong> to <strong class="text-white">${endMove}</strong>.`;
+            document.getElementById('capture-instructions').innerHTML = `Screenshot the visually highlighted sequence from <br><strong class="text-white">${startMove}</strong> to <strong class="text-white">${endMove}</strong>.<br><br><span class="text-xs text-slate-400 font-bold uppercase tracking-wide">💡 Tip: Click/Tap to reset start, Right-Click/Long-Press to extend end.</span>`;
             document.getElementById('fen-output').value = fen;
             document.getElementById('target-segment-display').innerText = `Target locked: Move ${startMove} to ${endMove} (Branch B${pgnTokens[startIndex].branchId})`;
 
@@ -399,4 +446,3 @@ CRITICAL FORMATTING RULES (FAILURE WILL BREAK THE SYSTEM):
     </script>
 </body>
 </html>
-.
