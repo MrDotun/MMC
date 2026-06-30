@@ -6,16 +6,26 @@
     <title>GM Variation Master Pro | Decipher Chess Academy</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
         .gold-text { color: #d4af37; }
         .gold-bg { background-color: #d4af37; color: #1e293b; }
         .glass { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
         .chunk-card { border-left: 4px solid #d4af37; transition: all 0.2s; cursor: pointer; }
+        .chunk-card:hover { background: rgba(255, 255, 255, 0.05); }
         .chunk-card.completed { border-left-color: #10b981; opacity: 0.5; }
-        textarea, input[type="number"] { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; scrollbar-width: thin; }
-        textarea:focus, input[type="number"]:focus { border-color: #d4af37 !important; outline: none; }
+        .chunk-card.selected-move { border-left-color: #3b82f6; background: rgba(59, 130, 246, 0.15); }
+        
+        textarea, input[type="number"], input[type="text"] { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; scrollbar-width: thin; }
+        textarea:focus, input[type="number"]:focus, input[type="text"]:focus { border-color: #d4af37 !important; outline: none; }
         #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        /* Mini Chess Board Styles */
+        .chess-board { display: grid; grid-template-columns: repeat(8, 1fr); width: 100%; aspect-ratio: 1; border: 2px solid #1e293b; }
+        .sq { display: flex; align-items: center; justify-content: center; font-size: 1.75rem; user-select: none; }
+        .sq.light { background-color: #cbd5e1; }
+        .sq.dark { background-color: #475569; }
     </style>
 </head>
 <body class="p-4 md:p-10">
@@ -32,30 +42,45 @@
             </nav>
         </header>
 
-        <div id="view-fragmenter" class="space-y-6">
-            <div class="glass p-6 rounded-2xl">
-                <div class="flex justify-between items-center mb-4">
-                    <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
-                    <div class="text-right">
-                        <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Ready</div>
-                        <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
+        <div id="view-fragmenter" class="flex flex-col lg:flex-row gap-6">
+            <div class="flex-1 space-y-6">
+                <div class="glass p-6 rounded-2xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
+                        <div class="text-right">
+                            <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Ready</div>
+                            <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
+                        </div>
+                    </div>
+                    <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
+                    
+                    <div class="flex flex-wrap items-center gap-3">
+                        <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
+                        
+                        <div id="batch-controls" class="hidden flex items-center gap-2">
+                            <input type="number" id="batch-size" value="10" min="1" class="w-20 p-3 rounded-xl text-xs text-white" title="Batch Size">
+                            <button onclick="copyNextBatch()" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs shadow-lg shadow-yellow-900/20">Copy Next Batch</button>
+                        </div>
+                        
+                        <button onclick="copyAllRemaining()" id="all-btn" class="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold hidden uppercase text-xs">Copy All Remaining</button>
+                        <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
                     </div>
                 </div>
-                <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
-                
-                <div class="flex flex-wrap items-center gap-3">
-                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
-                    
-                    <div id="batch-controls" class="hidden flex items-center gap-2">
-                        <input type="number" id="batch-size" value="10" min="1" class="w-20 p-3 rounded-xl text-xs text-white" title="Batch Size">
-                        <button onclick="copyNextBatch()" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs">Copy Next Batch</button>
+                <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+            </div>
+            
+            <div class="w-full lg:w-72 shrink-0">
+                <div class="glass p-5 rounded-2xl sticky top-6">
+                    <h3 class="text-xs font-bold text-slate-500 uppercase mb-3 text-center">Board State Analyzer</h3>
+                    <div id="board-grid" class="chess-board rounded overflow-hidden mb-4">
+                        </div>
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">Target FEN</label>
+                        <input type="text" id="current-fen" class="w-full p-2 rounded text-[10px] text-white" readonly placeholder="Click a move to generate...">
+                        <button onclick="copyFenOnly()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded uppercase transition">Copy FEN Only</button>
                     </div>
-                    
-                    <button onclick="copyAllRemaining()" id="all-btn" class="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold hidden uppercase text-xs">Copy All Remaining</button>
-                    <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
                 </div>
             </div>
-            <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
         </div>
 
         <div id="view-reassembler" class="hidden space-y-6">
@@ -83,8 +108,16 @@
         let globalChunks = [];
         let pgnTokens = [];
         let currentBatchStart = 0;
+        let selectedChunkId = null;
+        let activeFen = "";
+
+        const pieceMap = { 
+            'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 
+            'P': '♟', 'R': '♜', 'N': '♞', 'B': '♝', 'Q': '♛', 'K': '♚' 
+        };
 
         window.onload = () => {
+            renderEmptyBoard();
             const saved = localStorage.getItem('gm_master_state');
             if (saved) {
                 const state = JSON.parse(saved);
@@ -145,7 +178,6 @@
 
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
 
-                    // Push EVERY move (no skipping)
                     chunks.push({
                         id: `CHUNK_${chunks.length}`,
                         target: token + evalSymbol,
@@ -165,15 +197,107 @@
             saveState();
         }
 
+        /* --- MINI ANALYZE APP LOGIC --- */
+        function selectMove(chunkId, targetTokenIndex) {
+            selectedChunkId = chunkId;
+            activeFen = calculateFenUpTo(targetTokenIndex);
+            document.getElementById('current-fen').value = activeFen;
+            renderBoard(activeFen);
+            updateUI(); // Re-render to highlight selected chunk
+        }
+
+        function calculateFenUpTo(targetIndex) {
+            if (typeof Chess === 'undefined') return "";
+            let chess = new Chess();
+            let line = [];
+            let stack = [];
+            
+            for (let i = 0; i <= targetIndex; i++) {
+                let t = pgnTokens[i];
+                if (!t) continue;
+                
+                if (t === '(') {
+                    stack.push([...line]); 
+                    line.pop(); // Go back one half-move to branch off
+                } else if (t === ')') {
+                    line = stack.pop(); // Restore main variation line
+                } else if (/^[a-zA-Z]/.test(t) && !t.startsWith('{') && !t.startsWith('[')) {
+                    // It's a move token, strip analysis symbols
+                    let cleanMove = t.replace(/[!?#+$]/g, '');
+                    line.push(cleanMove);
+                }
+            }
+            
+            // Play the exact move sequence
+            for (let m of line) {
+                try { chess.move(m); } catch(e) { console.warn("Engine rejected move:", m); }
+            }
+            return chess.fen();
+        }
+
+        function renderEmptyBoard() {
+            renderBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        }
+
+        function renderBoard(fen) {
+            const boardDiv = document.getElementById('board-grid');
+            boardDiv.innerHTML = '';
+            if (!fen) return;
+            
+            let rows = fen.split(' ')[0].split('/');
+            for (let r = 0; r < 8; r++) {
+                let col = 0;
+                for (let char of rows[r]) {
+                    if (/\d/.test(char)) {
+                        let emptySpaces = parseInt(char);
+                        for (let i = 0; i < emptySpaces; i++) {
+                            addSquare(r, col, '');
+                            col++;
+                        }
+                    } else {
+                        addSquare(r, col, char);
+                        col++;
+                    }
+                }
+            }
+        }
+
+        function addSquare(r, c, pieceChar) {
+            const sq = document.createElement('div');
+            const isLight = (r + c) % 2 === 0;
+            sq.className = `sq ${isLight ? 'light' : 'dark'}`;
+            
+            if (pieceChar) {
+                const isWhite = pieceChar === pieceChar.toUpperCase();
+                const color = isWhite ? '#ffffff' : '#000000';
+                // Add text stroke/shadow to make black pieces visible on dark squares and vice versa
+                const shadow = isWhite ? '0 0 2px rgba(0,0,0,0.8)' : '0 0 2px rgba(255,255,255,0.8)';
+                sq.innerHTML = `<span style="color: ${color}; text-shadow: ${shadow};">${pieceMap[pieceChar]}</span>`;
+            }
+            document.getElementById('board-grid').appendChild(sq);
+        }
+
+        function copyFenOnly() {
+            if (activeFen) {
+                navigator.clipboard.writeText(activeFen);
+                alert("FEN Copied!");
+            }
+        }
+        /* ------------------------------ */
+
         function formatBatch(start, end) {
             const batch = globalChunks.slice(start, end).map(c => 
                 `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`
             ).join("\n");
 
-            return `You are a 2700+ human Grandmaster annotating a chess course (Ruy Lopez for Black). 
-I will provide q screenshot of this batch of moves.
+            let prompt = `You are a 2700+ human Grandmaster annotating a chess course (Ruy Lopez for Black). \nI will provide q screenshot of this batch of moves.\n`;
+            
+            // Inject FEN into prompt if one is selected
+            if (activeFen) {
+                prompt += `\n=== TARGET BOARD STATE (REFERENCE) ===\nFEN: ${activeFen}\n\n`;
+            }
 
-INSTRUCTIONS:
+            prompt += `INSTRUCTIONS:
 1. THINK FREELY FIRST: Before outputting the final JSON, deeply analyze the provided moves and screenshot. 
 2. SELECTIVE ANNOTATION: Based on your analysis, choose WHICH moves to insert comments for. Do not annotate every move but at least 40% of the moves must have comments
    Preference MUST be given to:
@@ -193,6 +317,8 @@ Do not start by quoting the move or screenshot.
 
 === BATCH TO ANALYZE ===
 ${batch}`;
+
+            return prompt;
         }
 
         function copyNextBatch() {
@@ -242,7 +368,14 @@ ${batch}`;
             container.innerHTML = "";
             globalChunks.forEach((c, i) => {
                 const div = document.createElement('div');
-                div.className = `chunk-card glass p-2 rounded-lg ${i < currentBatchStart ? 'completed' : ''}`;
+                let classes = `chunk-card glass p-2 rounded-lg`;
+                if (i < currentBatchStart) classes += ` completed`;
+                if (c.id === selectedChunkId) classes += ` selected-move`; // Highlight active move
+                
+                div.className = classes;
+                // Added onclick to trigger the board state update
+                div.setAttribute('onclick', `selectMove('${c.id}', ${c.tokenIndex})`);
+                
                 div.innerHTML = `<p class="text-[8px] gold-text font-bold">${c.id}</p><p class="text-[10px] truncate">${c.target}</p>`;
                 container.appendChild(div);
             });
