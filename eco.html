@@ -4,28 +4,37 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GM Variation Master Pro | Decipher Chess Academy</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
         .gold-text { color: #d4af37; }
         .gold-bg { background-color: #d4af37; color: #1e293b; }
         .glass { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .chunk-card { border-left: 4px solid #d4af37; transition: all 0.2s; cursor: pointer; }
-        .chunk-card.completed { border-left-color: #10b981; opacity: 0.5; }
-        textarea { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; scrollbar-width: thin; }
-        textarea:focus { border-color: #d4af37 !important; outline: none; }
+        .chunk-card { border-left: 4px solid #334155; transition: all 0.2s; cursor: pointer; }
+        .chunk-card:hover { border-left-color: #d4af37; background: rgba(255,255,255,0.05); }
+        .chunk-card.selected-start { border-left-color: #d4af37; background-color: rgba(212, 175, 55, 0.3); }
+        .chunk-card.selected-range { border-left-color: #fde047; background-color: rgba(212, 175, 55, 0.15); }
+        
+        textarea, input[type="text"] { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; scrollbar-width: thin; color: #fff; }
+        textarea:focus, input[type="text"]:focus { border-color: #d4af37 !important; outline: none; }
         #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        /* Ensure chessboard doesn't compress */
+        .board-container { width: 100%; max-width: 360px; margin: 0 auto; flex-shrink: 0; }
     </style>
 </head>
 <body class="p-4 md:p-10">
 
-    <div class="max-w-6xl mx-auto">
+    <div class="max-w-7xl mx-auto">
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Global Context + Positional Logic Engine</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Selective Annotation Engine</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -42,16 +51,49 @@
                         <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
                     </div>
                 </div>
-                <textarea id="pgn-input" rows="6" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
+                <textarea id="pgn-input" rows="4" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
                 
-                <div class="flex flex-wrap gap-3">
-                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
-                    <button onclick="copyNextBatch()" id="batch-btn" class="px-6 py-3 gold-bg rounded-xl font-bold hidden uppercase text-xs">Copy Next 10</button>
-                    <button onclick="copyAllRemaining()" id="all-btn" class="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold hidden uppercase text-xs">Copy All Remaining</button>
+                <div class="flex flex-wrap items-center gap-3">
+                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize File</button>
+                    <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20">Copy Selected Batch</button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
                 </div>
             </div>
-            <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
+
+            <div id="workspace" class="flex flex-col lg:flex-row gap-6 hidden">
+                
+                <div class="lg:w-1/3 space-y-4">
+                    <div class="glass p-4 rounded-xl">
+                        <div class="flex justify-between items-center mb-3">
+                            <span class="text-xs font-bold text-slate-500 uppercase">Start Position</span>
+                        </div>
+                        <div class="board-container">
+                            <div id="board" style="width: 100%;"></div>
+                        </div>
+                        <div class="mt-4">
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">FEN (Feed to AI)</label>
+                            <input type="text" id="fen-output" class="w-full p-3 rounded-lg text-xs mt-1 text-emerald-400" readonly placeholder="FEN will appear here...">
+                        </div>
+                        
+                        <div class="mt-4 p-4 glass rounded-lg border-l-4 border-l-blue-500 relative overflow-hidden">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Stockfish 10 Engine</label>
+                                <button onclick="analyzePosition()" class="px-3 py-1.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600 hover:text-white transition-colors text-[10px] font-bold rounded uppercase">Run Engine</button>
+                            </div>
+                            <input type="text" id="engine-output" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-xs text-yellow-400 mb-2 font-mono" readonly placeholder="Engine line (Next 6 moves) will appear here...">
+                        </div>
+                        
+                    </div>
+                </div>
+
+                <div class="lg:w-2/3 glass p-4 rounded-xl">
+                    <div class="mb-3 text-xs text-slate-400 italic">
+                        <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch. Optionally click "Run Engine" to analyze it, then click another move to set the <span class="text-white">END</span> before copying.
+                    </div>
+                    <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
+                </div>
+                
+            </div>
         </div>
 
         <div id="view-reassembler" class="hidden space-y-6">
@@ -59,35 +101,100 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="space-y-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase">Step 1: Paste AI JSON</label>
-                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the entire JSON response here..."></textarea>
+                        <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste the entire AI response (including thought process and JSON) here..."></textarea>
                     </div>
                     <div class="space-y-4">
                         <label class="block text-xs font-bold text-slate-500 uppercase">Step 2: Final Re-Assembled PGN</label>
                         <textarea id="final-pgn" rows="14" class="w-full p-4 rounded-xl text-xs text-emerald-400" readonly></textarea>
                         <div class="flex gap-2">
-                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Copy Final</button>
-                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Download</button>
+                            <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase hover:bg-slate-700">Copy Final</button>
+                            <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase hover:bg-slate-700">Download</button>
                         </div>
                     </div>
                 </div>
-                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20">Inject Annotations & Rebuild File</button>
+                <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-yellow-900/20 hover:bg-yellow-500">Inject Annotations & Rebuild File</button>
             </div>
         </div>
     </div>
 
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+
     <script>
         let globalChunks = [];
         let pgnTokens = [];
-        let currentBatchStart = 0;
+        let board = null;
+        let engineWorker = null;
+        
+        // Selection State
+        let selStart = null;
+        let selEnd = null;
+
+        // Initialize Stockfish via Blob to bypass Same-Origin Web Worker restrictions
+        async function initEngine() {
+            try {
+                const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
+                const scriptText = await response.text();
+                const blob = new Blob([scriptText], { type: 'application/javascript' });
+                engineWorker = new Worker(URL.createObjectURL(blob));
+                
+                engineWorker.onmessage = function(event) {
+                    const line = event.data;
+                    
+                    if (line.includes("info depth") && line.includes(" pv ")) {
+                        const parts = line.split(" pv ");
+                        if (parts.length > 1) {
+                            const uciMoves = parts[1].trim().split(" ").slice(0, 6); // Grab next 6 moves
+                            
+                            const currentFen = document.getElementById('fen-output').value;
+                            if (!currentFen) return;
+                            
+                            // Use chess.js to convert UCI (e2e4) to SAN (e4)
+                            const tempChess = new Chess(currentFen);
+                            const sanMoves = [];
+                            
+                            for (let move of uciMoves) {
+                                const from = move.substring(0, 2);
+                                const to = move.substring(2, 4);
+                                const promotion = move.length > 4 ? move.substring(4, 5) : undefined;
+                                
+                                const result = tempChess.move({ from, to, promotion });
+                                if (result) {
+                                    sanMoves.push(result.san);
+                                } else {
+                                    break; 
+                                }
+                            }
+                            document.getElementById('engine-output').value = sanMoves.join(" ");
+                        }
+                    }
+                    if (line.includes("bestmove")) {
+                        document.getElementById('engine-output').classList.remove('opacity-50');
+                    }
+                };
+            } catch (e) {
+                console.error("Failed to load Stockfish", e);
+                document.getElementById('engine-output').value = "Error loading engine.";
+            }
+        }
 
         window.onload = () => {
+            initEngine(); // Boot up Stockfish
+
+            // Initialize empty board
+            board = Chessboard('board', {
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+                position: 'start'
+            });
+
             const saved = localStorage.getItem('gm_master_state');
             if (saved) {
                 const state = JSON.parse(saved);
                 document.getElementById('pgn-input').value = state.original;
-                processPgn(true);
-                currentBatchStart = state.batchStart;
-                updateUI();
+                if(state.original) {
+                    processPgn(true);
+                }
             }
         };
 
@@ -100,23 +207,25 @@
             r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
-        function getFenFromPath(path) {
-            try {
-                if (typeof Chess === 'undefined') return "FEN_ENGINE_MISSING";
-                const chess = new Chess();
-                for (let move of path) {
-                    let cleanMove = move.replace(/[!?]+$/, '')
-                                        .replace(/\$\d+/g, '')
-                                        .replace(/(\+\/-|-\/\+|=\/\+|\+=|=\+|\+-|-\+|=)$/, '')
-                                        .trim();
-                    if (cleanMove && !/^\d+\.+$/.test(cleanMove) && cleanMove !== '(' && cleanMove !== ')') {
-                        chess.move(cleanMove, { sloppy: true });
-                    }
-                }
-                return chess.fen();
-            } catch (e) {
-                return "FEN_GENERATION_FAILED";
+        function analyzePosition() {
+            const fen = document.getElementById('fen-output').value;
+            if (!fen) {
+                alert("Please select a move from the workspace first.");
+                return;
             }
+            if (!engineWorker) {
+                alert("Engine is still loading. Please wait a moment.");
+                return;
+            }
+
+            const outputEl = document.getElementById('engine-output');
+            outputEl.value = "Calculating...";
+            outputEl.classList.add('opacity-50');
+
+            engineWorker.postMessage("uci");
+            engineWorker.postMessage("ucinewgame");
+            engineWorker.postMessage("position fen " + fen);
+            engineWorker.postMessage("go depth 15"); // Depth 15 is fast and accurate enough for this
         }
 
         function processPgn(isLoad = false) {
@@ -128,25 +237,29 @@
             let chunks = [];
             let moveNumber = 0;
             let variationLevel = 0;
-            let currentPath = [];
-            let savedPaths = []; 
             let depthPlyCounts = { 0: 0 }; 
-            let justClosedVariation = false;
+
+            let chess = new Chess();
+            let stateStack = [];
+            let currentFEN = chess.fen();
+            let fenBeforeLastMove = currentFEN;
 
             pgnTokens.forEach((token, index) => {
                 if (token === "(") {
                     variationLevel++;
                     depthPlyCounts[variationLevel] = 0; 
-                    savedPaths.push([...currentPath]);
-                    if (currentPath.length > 0) currentPath.pop();
-                    justClosedVariation = false; 
+                    
+                    stateStack.push({ current: currentFEN, beforeLast: fenBeforeLastMove });
+                    chess.load(fenBeforeLastMove);
                     return; 
                 }
                 if (token === ")") {
                     variationLevel--;
-                    justClosedVariation = true; 
-                    if (savedPaths.length > 0) {
-                        currentPath = savedPaths.pop();
+                    let state = stateStack.pop();
+                    if(state) {
+                        chess.load(state.current);
+                        currentFEN = state.current;
+                        fenBeforeLastMove = state.beforeLast;
                     }
                     return; 
                 }
@@ -157,11 +270,15 @@
                     return; 
                 }
 
-                const isMove = /^[a-zA-Z]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                const isMove = /^[a-hA-ZRKNQBO]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
                 
                 if (isMove) {
-                    depthPlyCounts[variationLevel]++;
-                    currentPath.push(token);
+                    depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
+                    fenBeforeLastMove = chess.fen();
+
+                    let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O]/g, ''); 
+                    let moveObj = chess.move(cleanMove);
+                    currentFEN = chess.fen();
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
@@ -169,93 +286,132 @@
                         evalSymbol = ` ${nextToken}`;
                     }
 
-                    const hasImportantSymbol = token.includes('!') || token.includes('?') || token.includes('/') || evalSymbol.includes('!') || evalSymbol.includes('?');
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-                    const isStrideMove = (depthPlyCounts[variationLevel] % 6 === 0) || isFirstMoveOfVariation || justClosedVariation;
 
-                    if (isStrideMove || hasImportantSymbol) {
-                        const pathWithTarget = currentPath.slice(0); 
-                        
-                        chunks.push({
-                            id: `CHUNK_${chunks.length}`,
-                            target: token + evalSymbol,
-                            moveNum: moveNumber,
-                            tokenIndex: index,
-                            context: currentPath.slice(-15, -1).join(" "), 
-                            fen: getFenFromPath(pathWithTarget),
-                            isMainLine: variationLevel === 0,
-                            isReturning: justClosedVariation && variationLevel === 0,
-                            isVariationStart: isFirstMoveOfVariation
-                        });
-                        
-                        justClosedVariation = false; 
-                    }
+                    chunks.push({
+                        id: `CHUNK_${chunks.length}`,
+                        target: token + evalSymbol,
+                        moveNum: moveNumber,
+                        tokenIndex: index,
+                        isMainLine: variationLevel === 0,
+                        isVariationStart: isFirstMoveOfVariation,
+                        fen: fenBeforeLastMove 
+                    });
                 }
             });
 
             globalChunks = chunks;
-            if (!isLoad) currentBatchStart = 0;
-            document.getElementById('batch-btn').classList.remove('hidden');
-            document.getElementById('all-btn').classList.remove('hidden');
+            
+            document.getElementById('workspace').classList.remove('hidden');
+            document.getElementById('copy-btn').classList.remove('hidden');
+            
+            selStart = null;
+            selEnd = null;
+            board.position('start', false);
+            document.getElementById('fen-output').value = "";
+            document.getElementById('engine-output').value = "";
+
             updateUI();
             saveState();
         }
 
-        function formatBatch(start, end) {
-            const masterPgn = document.getElementById('pgn-input').value;
+        function selectChunk(index) {
+            if (selStart === null || (selStart !== null && selEnd !== null)) {
+                selStart = index;
+                selEnd = null;
+                
+                let fen = globalChunks[index].fen;
+                document.getElementById('fen-output').value = fen;
+                board.position(fen, false); 
+                document.getElementById('engine-output').value = ""; // Reset engine output on new start selection
+            } else {
+                selEnd = Math.max(selStart, index);
+                selStart = Math.min(selStart, index);
+            }
+            updateUI();
+        }
 
-            const batch = globalChunks.slice(start, end).map(c => 
-                `[ID: ${c.id}]\nMove Number: ${c.moveNum}\nFEN: ${c.fen}\nPath taken to this move: ${c.context}\n--> TARGET MOVE: ${c.target} <--\nMain Line: ${c.isMainLine}\nReturning to Main: ${c.isReturning}\nVariation Start: ${c.isVariationStart}`
-            ).join("\n\n---\n\n");
+        function formatSelectedBatch() {
+            if (selStart === null) return "";
+            
+            let endIdx = selEnd !== null ? selEnd : selStart;
+            let startingFen = globalChunks[selStart].fen;
 
-            return `Role: You are a 2700+ ELO Super Grandmaster and the author of an elite chess repertoire course on the Nimzo-Indian Defense for BLACK.
-Task: Write deeply insightful, practical course annotations for the TARGET MOVES provided in the batch.
+            const batch = globalChunks.slice(selStart, endIdx + 1).map(c => 
+                `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`
+            ).join("\n");
 
-=== MASTER GAME TREE (GLOBAL CONTEXT) ===
-Use this tree to understand the "big picture" and how variations relate to one another.
-${masterPgn}
-=========================================
+            // Extract the Engine Evaluation Line if it exists
+            let engineOutputEl = document.getElementById('engine-output');
+            let engineLineText = "";
+            if (engineOutputEl && engineOutputEl.value && !engineOutputEl.value.includes("Calculating") && !engineOutputEl.value.includes("will appear here")) {
+                engineLineText = `\nSTOCKFISH ENGINE ANALYSIS FOR STARTING POSITION:\nThe engine suggests the following optimal continuation (next 6 moves): ${engineOutputEl.value}\nUse this objective engine line to inform your explanations, especially to explain WHY moves with symbols (!, ?, !?) in this batch are good or bad. Incorporate these ideas naturally as a human GM would.\n`;
+            }
 
-STRICT ANALYTICAL FRAMEWORK & STYLE GUIDELINES:
+            return `You are a 2700+ human Grandmaster annotating a chess course (Ruy Lopez for Black). 
+I will provide a screenshot of this batch of moves.
 
-1. PERSPECTIVE & TONE: Write entirely from Black's perspective. Frame White's moves as attempts to challenge us. Use instructive phrasing like "This is Black's best way to play," or "We must challenge the center here."
-2. EXPLAIN THE "WHY": Explain the underlying positional goals, pawn structure shifts, or key square control (especially the fight for e4 and d5 in the Nimzo). 
-3. NO AI CLICHÉS (CRITICAL): Speak like a real, human Grandmaster giving a practical lesson. Do NOT use generic AI filler words such as: delve, crucial, pivotal, testament, tapestry, multifaceted, moreover, furthermore, importantly, underscore, or dynamic. Keep the tone natural and direct.
-4. STRICT LENGTH LIMITS:
-   - MAIN LINES (Main Line: true): Write 2-3 flowing sentences. Focus on our core Nimzo plans.
-   - VARIATIONS (Main Line: false): STRICTLY 1 SHORT, PUNCHY SENTENCE. Just quickly state the tactical point or how we equalize, then stop.
-5. VARIATION AWARENESS (CRITICAL - PAY ATTENTION TO THE METADATA FLAGS):
-   - If "Variation Start: true": You MUST explicitly acknowledge the deviation. Start your annotation with phrases like "If White decides to play...", "Alternatively, White might try...", or "A tricky sideline is...".
-   - If "Returning to Main: true": You MUST acknowledge the return to the main game. Start with phrases like "Returning to our main plan...", "Back in the actual game...", or "If White sticks to the main line...".
-6. EVALUATION MARKS TO PROSE: Convert all raw symbols (!, ?, !?, +/=, -/+, etc.) into natural language. NO raw symbols in the output text. "-/+" means WE (Black) have a clear advantage.
-7. HIGHLIGHTS & SQUARES: If visual tags like [%csl Rc4,Rf2] appear in the master PGN near the target move, explicitly mention those exact squares.
+STARTING POSITION FEN FOR THIS BATCH: ${startingFen}
+${engineLineText}
+INSTRUCTIONS:
+1. THINK FREELY FIRST: Before outputting the final JSON, deeply analyze the provided moves, starting FEN, engine analysis (if provided), and screenshot. 
+2. SELECTIVE ANNOTATION: Based on your analysis, choose WHICH moves to insert comments for. Do not annotate every move but at least 40% of the moves must have comments
+   Preference MUST be given to:
+   - First moves of a variation (Variation Start: true). This move must make the reader know that it is an alternative move. Eg: "Sometimes, White can opt for ...." Or "If White decides to be greedy by snatching the pawn, we can play..."
+   - Moves with evaluation signs (!, ?, !?, etc.) and highlighted moves in the screenshot. Explain the tactics behind these signs using the engine analysis provided.
+3. FINAL OUTPUT: After your analysis, output ONLY a valid JSON object mapping the chunk ID to the text. Replace words such as "Tuck, drop, jump" to "move" or "castle".
 
 FORMAT REQUIREMENT: 
-Return ONLY a valid JSON object mapping the chunk ID to the text. Do not include markdown blocks like \`\`\`json. Start immediately with the { bracket.
+Once complete, output the JSON block starting immediately with the { bracket. Do not include markdown blocks like \`\`\`json around the JSON. (Please avoid using curly brackets {} inside your scratchpad to ensure proper parsing).
+
+Example structure;
 {
   "CHUNK_0": "Your human-sounding GM annotation here...",
-  "CHUNK_1": "Your human-sounding GM annotation here..."
+  "CHUNK_5": "Your human-sounding GM annotation here..."
 }
+Change: Eg: "d4 square" to "d4-square", Also change, eg: "bishop pair" to "pair of bishops"
+Do not start by quoting the move or screenshot.
 
 === BATCH TO ANALYZE ===
 ${batch}`;
         }
 
-        function copyNextBatch() {
-            const end = Math.min(currentBatchStart + 10, globalChunks.length);
-            navigator.clipboard.writeText(formatBatch(currentBatchStart, end));
-            currentBatchStart = end;
-            updateUI();
-            saveState();
-            alert("Batch Copied to Clipboard!");
+        function copySelectedBatch() {
+            if (selStart === null) {
+                alert("Please click on a starting move and an ending move first!");
+                return;
+            }
+            
+            const content = formatSelectedBatch();
+            navigator.clipboard.writeText(content).then(() => {
+                let endIdx = selEnd !== null ? selEnd : selStart;
+                let count = (endIdx - selStart) + 1;
+                alert(`Selected Batch Copied! (${count} moves)\n\nPrompt is ready for the AI.`);
+            });
         }
 
-        function copyAllRemaining() {
-            navigator.clipboard.writeText(formatBatch(currentBatchStart, globalChunks.length));
-            currentBatchStart = globalChunks.length;
-            updateUI();
-            saveState();
-            alert("Full Game Copied to Clipboard!");
+        function updateUI() {
+            const container = document.getElementById('chunks-container');
+            container.innerHTML = "";
+            
+            globalChunks.forEach((c, i) => {
+                const div = document.createElement('div');
+                
+                let selectionClass = '';
+                if (selStart !== null) {
+                    let maxSelect = selEnd !== null ? selEnd : selStart;
+                    if (i === selStart) selectionClass = 'selected-start';
+                    else if (i > selStart && i <= maxSelect) selectionClass = 'selected-range';
+                }
+
+                div.className = `chunk-card glass p-3 rounded-lg ${selectionClass}`;
+                div.onclick = () => selectChunk(i);
+                
+                div.innerHTML = `<p class="text-[9px] gold-text font-bold mb-1">${c.id}</p><p class="text-xs font-semibold truncate">${c.moveNum}. ${c.target}</p>`;
+                container.appendChild(div);
+            });
+            
+            document.getElementById('stats').innerText = `${globalChunks.length} TOTAL MOVES`;
         }
 
         function rebuildPgn() {
@@ -282,24 +438,9 @@ ${batch}`;
             document.getElementById('final-pgn').value = workingTokens.join(" ");
         }
 
-        function updateUI() {
-            const container = document.getElementById('chunks-container');
-            container.innerHTML = "";
-            globalChunks.forEach((c, i) => {
-                const div = document.createElement('div');
-                div.className = `chunk-card glass p-2 rounded-lg ${i < currentBatchStart ? 'completed' : ''}`;
-                div.innerHTML = `<p class="text-[8px] gold-text font-bold">${c.id}</p><p class="text-[10px] truncate">${c.target}</p>`;
-                container.appendChild(div);
-            });
-            const perc = (currentBatchStart / globalChunks.length) * 100 || 0;
-            document.getElementById('progress-fill').style.width = perc + "%";
-            document.getElementById('stats').innerText = `${currentBatchStart}/${globalChunks.length} KEY POSITIONS`;
-        }
-
         function saveState() {
             localStorage.setItem('gm_master_state', JSON.stringify({
-                original: document.getElementById('pgn-input').value,
-                batchStart: currentBatchStart
+                original: document.getElementById('pgn-input').value
             }));
         }
 
