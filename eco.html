@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -302,9 +301,9 @@
                 let c = globalChunks[i];
                 let lineOutput = `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`;
 
-                // Check for !, ?, !?, or $ OR randomly select ~20% of moves for engine assistance
+                // Check for !, ?, !?, or $ OR randomly select ~60% of moves for engine assistance
                 let isCritical = /[!?$]/.test(c.target);
-                let getsEngineAssist = isCritical || (Math.random() < 0.20);
+                let getsEngineAssist = isCritical || (Math.random() < 0.60);
 
                 if (getsEngineAssist) {
                     let tempChess = new Chess(c.fen);
@@ -321,7 +320,18 @@
                         // Convert Engine UCI back to readable SAN using chess.js
                         for (let uci of pvUci) {
                             try {
-                                let move = tempChess.move(uci, {sloppy: true});
+                                // chess.js 0.10.3 requires an object dict to properly parse raw UCI notation reliably
+                                let moveObj = {
+                                    from: uci.substring(0, 2),
+                                    to: uci.substring(2, 4)
+                                };
+                                if (uci.length > 4) moveObj.promotion = uci.substring(4, 5);
+
+                                let move = tempChess.move(moveObj);
+                                
+                                // Fallback just in case standard UCI conversion failed
+                                if (!move) move = tempChess.move(uci, {sloppy: true}); 
+
                                 if (move) {
                                     pvSan.push(move.san);
                                 } else break;
