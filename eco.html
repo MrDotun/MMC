@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -74,10 +75,6 @@
                         <div class="mt-4">
                             <label class="text-[10px] font-bold text-slate-500 uppercase">FEN (Feed to AI)</label>
                             <input type="text" id="fen-output" class="w-full p-3 rounded-lg text-xs mt-1 text-emerald-400" readonly placeholder="FEN will appear here...">
-                        </div>
-                        <div class="mt-4">
-                            <label class="text-[10px] font-bold text-slate-500 uppercase">Live Engine Output</label>
-                            <textarea id="engine-log" class="w-full p-3 rounded-lg text-[10px] mt-1 text-yellow-400 h-32 resize-none" readonly placeholder="Engine lines will stream here during batch copy..."></textarea>
                         </div>
                     </div>
                 </div>
@@ -237,8 +234,8 @@
                         tokenIndex: index,
                         isMainLine: variationLevel === 0,
                         isVariationStart: isFirstMoveOfVariation,
-                        fenBefore: fenBeforeLastMove, // Explicitly save before-move FEN
-                        fenAfter: currentFEN          // Explicitly save after-move FEN safely
+                        fenBefore: fenBeforeLastMove, 
+                        fenAfter: currentFEN          
                     });
                 }
             });
@@ -251,7 +248,6 @@
             selEnd = null;
             board.position('start', false);
             document.getElementById('fen-output').value = "";
-            document.getElementById('engine-log').value = "";
 
             updateUI();
             saveState();
@@ -275,6 +271,7 @@
             return new Promise(async (resolve) => {
                 const worker = await initEngineWorker();
                 let uciMoves = [];
+                let searchStarted = false; // Fix: Tracks if engine actually began analyzing
                 
                 // 5-second hard timeout so it never hangs indefinitely
                 let timeoutId = setTimeout(() => {
@@ -285,16 +282,19 @@
                 worker.onmessage = function (e) {
                     const line = e.data;
                     if (typeof line === 'string') {
+                        // Confirm search has genuinely started for the new position
+                        if (line.includes('info ')) {
+                            searchStarted = true;
+                        }
+
                         if (line.includes(' pv ')) {
                             const parts = line.split(' pv ');
-                            // Extract calculation depth for the UI
-                            const depthMatch = line.match(/depth (\d+)/);
-                            const currentDepth = depthMatch ? depthMatch[1] : '?';
-                            
                             uciMoves = parts[1].trim().split(' ').slice(0, 6);
-                            if (onLiveLineUpdate) onLiveLineUpdate(uciMoves, currentDepth);
+                            if (onLiveLineUpdate) onLiveLineUpdate(uciMoves);
                         }
-                        if (line.includes('bestmove')) {
+                        
+                        // Ignore premature 'bestmove' triggers caused by the 'stop' command
+                        if (searchStarted && line.includes('bestmove')) {
                             clearTimeout(timeoutId);
                             worker.onmessage = null;
                             resolve(uciMoves);
@@ -318,11 +318,9 @@
             const btnText = document.getElementById('copy-text');
             const statsText = document.getElementById('stats');
             const progressFill = document.getElementById('progress-fill');
-            const engineLog = document.getElementById('engine-log');
             
             btn.classList.add('opacity-80', 'cursor-not-allowed');
             btn.disabled = true;
-            engineLog.value = "Starting batch analysis...\n\n";
 
             let endIdx = selEnd !== null ? selEnd : selStart;
             let startingFen = globalChunks[selStart].fenBefore;
@@ -344,10 +342,9 @@
 
                 if (getsEngineAssist) {
                     let fenAfterMove = c.fenAfter; 
-                    engineLog.value = `\n--- Calculating ${c.moveNum}. ${c.target} ---\n` + engineLog.value;
                     
                     try {
-                        let pvUci = await getStockfishPV(fenAfterMove, 14, (currentUciList, depth) => {
+                        let pvUci = await getStockfishPV(fenAfterMove, 14, (currentUciList) => {
                             let tempVisualChess = new Chess(fenAfterMove);
                             let visualSan = [];
                             for(let uci of currentUciList) {
@@ -360,7 +357,6 @@
                                 } catch(err){ break; }
                             }
                             statsText.innerText = `[${c.moveNum}.${c.target}] Lines: ${visualSan.join(" ")}`;
-                            engineLog.value = `[Depth ${depth}] ${visualSan.join(" ")}\n` + engineLog.value;
                         });
                         
                         let pvSan = [];
@@ -393,7 +389,6 @@
                     }
                 } else {
                     statsText.innerText = `Skipping Engine for ${c.moveNum}. ${c.target} (Normal Line)`;
-                    engineLog.value = `[Skipped] ${c.moveNum}. ${c.target} (Normal Line)\n` + engineLog.value;
                 }
                 batchData.push(lineOutput);
             }
@@ -401,7 +396,7 @@
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n");
             
-            const fullPrompt = `You are a 2700+ human Grandmaster annotating a chess course (Ruy Lopez for Black). 
+            const fullPrompt = `You are a 2700+ human Grandmaster annotating a chess course. The course is the London System for Black. We are preparing as Black. 
 I will provide a screenshot of this batch of moves.
 
 STARTING POSITION FEN FOR THIS BATCH: ${startingFen}
@@ -429,19 +424,33 @@ Do not start by quoting the move or screenshot.
 === BATCH TO ANALYZE ===
 ${batchString}`;
 
+            // Attempt standard copy, fallback if browser blocks late async clipboard writes
             navigator.clipboard.writeText(fullPrompt).then(() => {
-                btnText.innerText = "Copy Selected Batch";
-                statsText.innerText = `${globalChunks.length} TOTAL MOVES`;
-                btn.classList.remove('opacity-80', 'cursor-not-allowed');
-                btn.disabled = false;
-                setTimeout(() => { progressFill.style.width = '0%'; }, 1500);
+                resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
                 alert(`Selected Batch Copied! Analyzed ${totalSelectedMoves} moves.`);
             }).catch(err => {
-                alert("Clipboard error. Please try again.");
-                btnText.innerText = "Copy Selected Batch";
-                statsText.innerText = `${globalChunks.length} TOTAL MOVES`;
-                btn.disabled = false;
+                const textArea = document.createElement("textarea");
+                textArea.value = fullPrompt;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
+                    alert(`Selected Batch Copied! Analyzed ${totalSelectedMoves} moves.`);
+                } catch (e) {
+                    alert("Clipboard error. Please try again or copy manually.");
+                    resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
+                }
+                document.body.removeChild(textArea);
             });
+        }
+
+        function resetCopyBtnUI(btn, btnText, statsText, progressFill, total) {
+            btnText.innerText = "Copy Selected Batch";
+            statsText.innerText = `${globalChunks.length} TOTAL MOVES`;
+            btn.classList.remove('opacity-80', 'cursor-not-allowed');
+            btn.disabled = false;
+            setTimeout(() => { progressFill.style.width = '0%'; }, 1500);
         }
 
         function updateUI() {
@@ -514,3 +523,5 @@ ${batchString}`;
     </script>
 </body>
 </html>
+
+    
