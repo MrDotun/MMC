@@ -242,7 +242,7 @@
         }
 
         // --- NEW STOCKFISH ENGINE LOGIC ---
-        function getStockfishPV(fen, depth = 14) {
+        function getStockfishPV(fen, depth = 14, onLiveLineUpdate) {
             return new Promise((resolve) => {
                 try {
                     const sfCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');`;
@@ -260,6 +260,7 @@
                             if (line.includes(' pv ')) {
                                 const parts = line.split(' pv ');
                                 uciMoves = parts[1].trim().split(' ').slice(0, 6);
+                                if (onLiveLineUpdate) onLiveLineUpdate(uciMoves);
                             }
                             if (line.includes('bestmove')) {
                                 worker.terminate();
@@ -288,18 +289,28 @@
             // UI State change to show loading
             const btn = document.getElementById('copy-btn');
             const btnText = document.getElementById('copy-text');
+            const statsText = document.getElementById('stats');
+            const progressFill = document.getElementById('progress-fill');
+            
             btn.classList.add('opacity-80', 'cursor-not-allowed');
-            btnText.innerHTML = '<div class="spinner"></div>Analyzing Engine...';
             btn.disabled = true;
 
             let endIdx = selEnd !== null ? selEnd : selStart;
             let startingFen = globalChunks[selStart].fen;
             let batchData = [];
+            let totalSelectedMoves = (endIdx - selStart) + 1;
 
             // Iterate through selected moves
             for (let i = selStart; i <= endIdx; i++) {
+                let currentStep = (i - selStart) + 1;
                 let c = globalChunks[i];
                 let lineOutput = `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`;
+
+                // Update Progress metrics
+                let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
+                progressFill.style.width = `${currentProgress}%`;
+                btnText.innerHTML = `<div class="spinner"></div>Analyzing [${currentStep}/${totalSelectedMoves}]...`;
+                statsText.innerText = `Analyzing Move: ${c.moveNum}. ${c.target}`;
 
                 // Check for !, ?, !?, or $ OR randomly select ~60% of moves for engine assistance
                 let isCritical = /[!?$]/.test(c.target);
@@ -313,14 +324,26 @@
                         tempChess.move(cleanMove);
                         let fenAfterMove = tempChess.fen();
                         
-                        // Feed to Stockfish WebWorker
-                        let pvUci = await getStockfishPV(fenAfterMove, 14);
-                        let pvSan = [];
+                        // Live rendering handler so you can watch lines generate on the screen
+                        let pvUci = await getStockfishPV(fenAfterMove, 14, (currentUciList) => {
+                            let tempVisualChess = new Chess(fenAfterMove);
+                            let visualSan = [];
+                            for(let uci of currentUciList) {
+                                try {
+                                    let mObj = { from: uci.substring(0, 2), to: uci.substring(2, 4) };
+                                    if (uci.length > 4) mObj.promotion = uci.substring(4, 5);
+                                    let vMove = tempVisualChess.move(mObj);
+                                    if (!vMove) vMove = tempVisualChess.move(uci, {sloppy: true});
+                                    if(vMove) visualSan.push(vMove.san); else break;
+                                } catch(err){ break; }
+                            }
+                            statsText.innerText = `[${c.moveNum}.${c.target}] Lines: ${visualSan.join(" ")}`;
+                        });
                         
-                        // Convert Engine UCI back to readable SAN using chess.js
+                        let pvSan = [];
+                        // Final SAN Conversion
                         for (let uci of pvUci) {
                             try {
-                                // chess.js 0.10.3 requires an object dict to properly parse raw UCI notation reliably
                                 let moveObj = {
                                     from: uci.substring(0, 2),
                                     to: uci.substring(2, 4)
@@ -328,8 +351,6 @@
                                 if (uci.length > 4) moveObj.promotion = uci.substring(4, 5);
 
                                 let move = tempChess.move(moveObj);
-                                
-                                // Fallback just in case standard UCI conversion failed
                                 if (!move) move = tempChess.move(uci, {sloppy: true}); 
 
                                 if (move) {
@@ -344,10 +365,14 @@
                     } catch (e) {
                         console.error("Error playing move for evaluation:", e);
                     }
+                } else {
+                    statsText.innerText = `Skipping Engine for ${c.moveNum}. ${c.target} (Normal Line)`;
                 }
                 batchData.push(lineOutput);
             }
 
+            // Fill bar completely when processing ends
+            progressFill.style.width = '100%';
             const batchString = batchData.join("\n");
             
             const fullPrompt = `You are a 2700+ human Grandmaster annotating a chess course (Ruy Lopez for Black). 
@@ -380,14 +405,16 @@ ${batchString}`;
 
             // Restore UI and Copy
             navigator.clipboard.writeText(fullPrompt).then(() => {
-                let count = (endIdx - selStart) + 1;
                 btnText.innerText = "Copy Selected Batch";
+                statsText.innerText = `${globalChunks.length} TOTAL MOVES`;
                 btn.classList.remove('opacity-80', 'cursor-not-allowed');
                 btn.disabled = false;
-                alert(`Selected Batch Copied! Analyzed ${count} moves.`);
+                setTimeout(() => { progressFill.style.width = '0%'; }, 1500);
+                alert(`Selected Batch Copied! Analyzed ${totalSelectedMoves} moves.`);
             }).catch(err => {
                 alert("Clipboard error. Please try again.");
                 btnText.innerText = "Copy Selected Batch";
+                statsText.innerText = `${globalChunks.length} TOTAL MOVES`;
                 btn.disabled = false;
             });
         }
