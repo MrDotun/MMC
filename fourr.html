@@ -359,18 +359,27 @@ ${batch}`;
                 return idxB - idxA;
             });
 
-            sortedIds.forEach(id => {
+                        sortedIds.forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
                 if (chunk) {
-                    // Logic updated: If it's the start of an alternative variation, put the comment BEFORE the move.
-                    // Otherwise, append it AFTER the move.
                     if (chunk.isVariationStart) {
-                        workingTokens[chunk.tokenIndex] = `{ ${aiData[id]} } ` + workingTokens[chunk.tokenIndex];
+                        // Look at the token right before the move
+                        let prevToken = workingTokens[chunk.tokenIndex - 1];
+                        
+                        // If the previous token is a move number (like "11." or "6..."), put the comment before it
+                        if (prevToken && /^\d+\.{1,3}$/.test(prevToken)) {
+                            workingTokens[chunk.tokenIndex - 1] = `{ ${aiData[id]} } ` + prevToken;
+                        } else {
+                            // Fallback just in case
+                            workingTokens[chunk.tokenIndex] = `{ ${aiData[id]} } ` + workingTokens[chunk.tokenIndex];
+                        }
                     } else {
+                        // Standard mainline comments go after the move
                         workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
                     }
                 }
             });
+
 
             document.getElementById('final-pgn').value = workingTokens.join(" ");
         }
