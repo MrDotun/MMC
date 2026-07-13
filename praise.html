@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -42,7 +43,7 @@
         
         .container { 
             width: 100%; 
-            max-width: 650px; /* 1. BIGGER BOARD CONTAINER */
+            max-width: 650px; 
             background: var(--glass); 
             padding: 25px; 
             border-radius: 28px; 
@@ -54,7 +55,6 @@
         }
         .hidden { display: none !important; }
         
-        /* New Call Control Bar */
         .call-controls-bar {
             width: 100%;
             display: flex;
@@ -110,6 +110,7 @@
             box-shadow: 0 15px 35px rgba(0,0,0,0.4); 
             width: 100%; 
             touch-action: none; 
+            overflow: hidden;
         }
         #drawingCanvas { position: absolute; top: 0; left: 0; z-index: 10; pointer-events: none; border-radius: 8px; }
 
@@ -134,20 +135,27 @@
         audio { height: 35px; width: 100%; margin-top: 5px; filter: hue-rotate(90deg) brightness(1.5); }
         .del-btn { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 14px; margin-left: 5px; vertical-align: middle;}
         
-        .highlight-square { box-shadow: inset 0 0 3px 3px yellow; }
-
         .call-btn-small { background: var(--secondary); color: black; border: none; padding: 5px 10px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 10px; }
         .mute-btn-small { background: #555; color: white; border: none; padding: 5px 10px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 10px; }
         .danger-btn-small { background: var(--danger); color: white; border: none; padding: 5px 10px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 10px; }
 
-        /* 1. BOLDER LABELS AND PIECES OVERRIDE */
+        /* --- UPGRADED BOARD AESTHETICS (CHESS.COM GREEN) --- */
+        .white-1e1d7 { background-color: #ebecd0 !important; color: #739552 !important; }
+        .black-3c85d { background-color: #739552 !important; color: #ebecd0 !important; }
+        
+        /* Better, bolder coordinates */
+        .notation-322f9 { font-family: 'Inter', sans-serif !important; font-size: 15px !important; font-weight: 900 !important; opacity: 0.9; }
+        .numeric-fc462 { top: 3px !important; left: 4px !important; }
+        .alpha-d2270 { bottom: 2px !important; right: 4px !important; }
+
+        /* Highlight fix */
+        .highlight-square { background-color: rgba(255, 255, 51, 0.5) !important; box-shadow: none !important; }
         .board-b72b1 { font-size: 18px !important; font-weight: 900 !important; }
         .piece-417db { transform: scale(1.08); } 
     </style>
 </head>
 <body>
 
-    <!-- 4. REDESIGNED CLASSROOM TITLE -->
     <h1 style="color: var(--secondary); margin: 20px 0; font-weight: 900; letter-spacing: 2px; text-align: center; line-height: 1.2;">
         MR DOTUN CLASSROOM<br>
         <span style="font-size: 16px; color: var(--gold); letter-spacing: 4px;">FOR YOUNG MASTERS</span>
@@ -156,7 +164,6 @@
     <div id="password-overlay" class="hidden">
         <div class="pass-card">
             <div class="welcome-text">Welcome to</div>
-            <!-- 4. REDESIGNED CARD TITLE -->
             <div class="classroom-name">Mr Dotun Classroom<br><span style="font-size: 18px; color: var(--secondary);">For Young Masters</span></div>
             <div style="font-size: 40px; margin-bottom: 20px;">🏰</div>
             <input type="password" id="access-key" class="pass-input" placeholder="••••" maxlength="10">
@@ -221,6 +228,13 @@
                 <button class="tool-btn" onclick="clearDrawing()">🧼 ERASE LINES</button>
                 <button class="tool-btn" onclick="emptyBoard()" style="color:var(--danger);">🕳️ EMPTY BOARD</button>
             </div>
+            
+            <!-- NEW DRAW OPTIONS -->
+            <div id="draw-options" class="analysis-tools hidden" style="margin-top: 5px;">
+                <button id="btn-draw-arrow" class="tool-btn" style="background:var(--gold); color:#000;" onclick="setDrawType('arrow')">↗️ DRAW LINE</button>
+                <button id="btn-draw-circle" class="tool-btn" onclick="setDrawType('circle')">⭕ DRAW CIRCLE</button>
+            </div>
+
             <div id="pgn-player-controls" style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
                 <p style="font-size: 11px; color: var(--gold); margin-bottom: 5px; font-weight: bold;">PGN PLAYER</p>
                 <input type="text" id="coach-pgn-input" placeholder="Paste PGN here...">
@@ -257,6 +271,10 @@
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
+
+        // CHESS SOUNDS
+        const sndMove = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-self.mp3');
+        const sndCapture = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/capture.mp3');
 
         let myData = { name: "" }; 
         let masterBoard = null;
@@ -333,14 +351,8 @@
 
         function setStudentPresence(status) {
             const presenceRef = db.collection("special_rooms").doc("presence_status");
-            presenceRef.set({
-                status: status,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp()
-            });
-
-            window.addEventListener('beforeunload', () => {
-                presenceRef.update({ status: "offline" });
-            });
+            presenceRef.set({ status: status, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+            window.addEventListener('beforeunload', () => { presenceRef.update({ status: "offline" }); });
         }
 
         function monitorStudentPresence() {
@@ -362,18 +374,14 @@
         function initPeerCommunication() {
             peer = new Peer();
             peer.on('open', (id) => {
-                if(!isCoach) {
-                    db.collection("special_rooms").doc("masterclass_arena").update({ currentStudentPeer: id });
-                }
+                if(!isCoach) db.collection("special_rooms").doc("masterclass_arena").update({ currentStudentPeer: id });
             });
 
             peer.on('call', (call) => {
                 currentCall = call;
                 call.answer(myStream);
                 if(!isCoach) $("#call-status-text").text("Connected to Coach").css("color", "var(--secondary)");
-                call.on('stream', (remoteStream) => {
-                    document.getElementById('peer-audio-output').srcObject = remoteStream;
-                });
+                call.on('stream', (remoteStream) => { document.getElementById('peer-audio-output').srcObject = remoteStream; });
                 call.on('close', () => { resetCallUI(); });
             });
         }
@@ -386,9 +394,7 @@
                     currentCall = call;
                     $("#call-toggle-btn").addClass("hidden");
                     $("#mute-toggle-btn, #cut-call-btn").removeClass("hidden");
-                    call.on('stream', (remoteStream) => {
-                        document.getElementById('peer-audio-output').srcObject = remoteStream;
-                    });
+                    call.on('stream', (remoteStream) => { document.getElementById('peer-audio-output').srcObject = remoteStream; });
                 }
             });
         }
@@ -396,8 +402,7 @@
         function toggleMute() {
             isMuted = !isMuted;
             myStream.getAudioTracks()[0].enabled = !isMuted;
-            $("#mute-toggle-btn").text(isMuted ? "🎤 UNMUTE" : "🎤 MUTE")
-                                 .css("background", isMuted ? "var(--danger)" : "#555");
+            $("#mute-toggle-btn").text(isMuted ? "🎤 UNMUTE" : "🎤 MUTE").css("background", isMuted ? "var(--danger)" : "#555");
         }
 
         function cutCall() {
@@ -409,6 +414,14 @@
             $("#call-toggle-btn").removeClass("hidden");
             $("#mute-toggle-btn, #cut-call-btn").addClass("hidden");
             if(!isCoach) $("#call-status-text").text("Call Disconnected").css("color", "var(--danger)");
+        }
+
+        function applyHighlights(from, to) {
+            $('.square-55d63').removeClass('highlight-square');
+            if(from && to) {
+                $('.square-' + from).addClass('highlight-square');
+                $('.square-' + to).addClass('highlight-square');
+            }
         }
 
         function initBoard() {
@@ -428,6 +441,12 @@
                     let move = game.move({ from: source, to: target, promotion: 'q' });
                     if (move === null) return 'snapback';
                     
+                    // Play sound locally
+                    if(move.captured) sndCapture.play().catch(e=>{}); else sndMove.play().catch(e=>{});
+
+                    // Ensure highlight stays visually active immediately
+                    setTimeout(() => applyHighlights(move.from, move.to), 50);
+
                     db.collection("special_rooms").doc("masterclass_arena").update({ 
                         fen: game.fen(),
                         lastMove: { from: move.from, to: move.to },
@@ -444,7 +463,7 @@
             
             $('#masterBoard').off('click', '.square-55d63'); 
             $('#masterBoard').on('click', '.square-55d63', function() {
-                if (setupModeActive) return;
+                if (setupModeActive || drawModeActive) return;
                 const square = $(this).attr('data-square');
                 
                 if (!clickSource) {
@@ -458,7 +477,10 @@
                     clickSource = null;
                     
                     if (move) {
+                        if(move.captured) sndCapture.play().catch(e=>{}); else sndMove.play().catch(e=>{});
                         masterBoard.position(game.fen());
+                        setTimeout(() => applyHighlights(move.from, move.to), 50);
+
                         db.collection("special_rooms").doc("masterclass_arena").update({ 
                             fen: game.fen(),
                             lastMove: { from: move.from, to: move.to },
@@ -478,16 +500,23 @@
                 const data = doc.data();
                 if(!data) return;
                 
+                let posChanged = false;
                 if(data.fen && data.fen !== masterBoard.fen()) { 
                     masterBoard.position(data.fen); 
                     game.load(data.fen); 
+                    posChanged = true;
                 }
                 
-                $('.square-55d63').removeClass('highlight-square');
-                if(data.lastMove) {
-                    $('.square-' + data.lastMove.from).addClass('highlight-square');
-                    $('.square-' + data.lastMove.to).addClass('highlight-square');
+                // If position changed remotely, play sound
+                if(posChanged && data.lastMove) {
+                     sndMove.play().catch(e=>{});
                 }
+                
+                // Safely apply highlights after board redraws
+                setTimeout(() => {
+                    if(data.lastMove) applyHighlights(data.lastMove.from, data.lastMove.to);
+                    else $('.square-55d63').removeClass('highlight-square');
+                }, 100);
             });
             setTimeout(resizeCanvas, 500);
         }
@@ -532,24 +561,19 @@
             }
         }
 
-        // 2. LOAD ANY PGN (SLOPPY MODE)
         function loadCoachPGN() {
             const pgn = $("#coach-pgn-input").val();
-            // Sloppy set to true allows loading nearly ANY PGN type properly in chess.js 0.10.3
             if (pgnGame.load_pgn(pgn, { sloppy: true })) {
                 loadedPgnMoves = pgnGame.history();
                 pgnIndex = 0;
                 game.reset(); 
                 syncMasterPosition('start');
                 alert("PGN Loaded successfully!");
-            } else {
-                alert("Invalid PGN format. Check your text.");
-            }
+            } else { alert("Invalid PGN format. Check your text."); }
         }
 
         function stepPGN(action) {
             if (loadedPgnMoves.length === 0) return;
-
             if (action === 'start') pgnIndex = 0;
             else if (action === 'prev') pgnIndex = Math.max(0, pgnIndex - 1);
             else if (action === 'next') pgnIndex = Math.min(loadedPgnMoves.length, pgnIndex + 1);
@@ -558,16 +582,23 @@
             let tempGame = new Chess();
             let lastMoveObj = null;
 
-            for (let i = 0; i < pgnIndex; i++) {
-                lastMoveObj = tempGame.move(loadedPgnMoves[i]);
-            }
+            for (let i = 0; i < pgnIndex; i++) { lastMoveObj = tempGame.move(loadedPgnMoves[i]); }
 
             game.load(tempGame.fen());
             masterBoard.position(game.fen());
 
+            if(lastMoveObj) {
+                if(lastMoveObj.captured) sndCapture.play().catch(e=>{}); else sndMove.play().catch(e=>{});
+            }
+
             let updatePayload = { fen: game.fen(), pgn: game.pgn() };
-            if (lastMoveObj) updatePayload.lastMove = { from: lastMoveObj.from, to: lastMoveObj.to };
-            else updatePayload.lastMove = null;
+            if (lastMoveObj) {
+                updatePayload.lastMove = { from: lastMoveObj.from, to: lastMoveObj.to };
+                setTimeout(() => applyHighlights(lastMoveObj.from, lastMoveObj.to), 50);
+            } else {
+                updatePayload.lastMove = null;
+                $('.square-55d63').removeClass('highlight-square');
+            }
 
             db.collection("special_rooms").doc("masterclass_arena").update(updatePayload);
         }
@@ -629,16 +660,29 @@
             $("#master-chat-input").val("");
         }
 
+        // --- DRAWING SYSTEM (LINES & CIRCLES) ---
+        let currentDrawings = [];
+        let drawStartX = 0, drawStartY = 0, isDraggingCanvas = false;
+        let activeDrawType = 'arrow'; 
+
+        function setDrawType(type) {
+            activeDrawType = type;
+            $("#btn-draw-arrow").css('background', type === 'arrow' ? 'var(--gold)' : '').css('color', type === 'arrow' ? '#000' : '');
+            $("#btn-draw-circle").css('background', type === 'circle' ? 'var(--gold)' : '').css('color', type === 'circle' ? '#000' : '');
+        }
+
         function toggleDrawMode() {
             drawModeActive = !drawModeActive;
             canvas.style.pointerEvents = drawModeActive ? 'auto' : 'none';
             $("#toggle-draw-btn").css('background', drawModeActive ? 'var(--gold)' : '').css('color', drawModeActive ? '#000' : '');
-            if(drawModeActive) resizeCanvas();
+            
+            if (drawModeActive) {
+                $("#draw-options").removeClass('hidden');
+                resizeCanvas();
+            } else {
+                $("#draw-options").addClass('hidden');
+            }
         }
-
-        // 3. COMPLETE DRAWING SYSTEM FOR COACH TO HIGHLIGHT SQUARES AND DRAW ARROWS/LINES
-        let currentDrawings = [];
-        let drawStartX = 0, drawStartY = 0, isDraggingCanvas = false;
 
         function resizeCanvas() {
             const boardEl = document.getElementById('masterBoard');
@@ -653,10 +697,7 @@
         function initDrawingSync() {
             db.collection("special_rooms").doc("masterclass_arena").onSnapshot(doc => {
                 const data = doc.data();
-                if(data && data.drawings) {
-                    currentDrawings = data.drawings;
-                    redrawCanvas();
-                }
+                if(data && data.drawings) { currentDrawings = data.drawings; redrawCanvas(); }
             });
 
             canvas.addEventListener('mousedown', (e) => {
@@ -680,14 +721,16 @@
                 const colEnd = Math.floor(dropX / sqSize);
                 const rowEnd = Math.floor(dropY / sqSize);
 
-                if (colStart === colEnd && rowStart === rowEnd) {
-                    // Highlight single square with click
-                    currentDrawings.push({ type: 'highlight', col: colStart, row: rowStart, color: 'rgba(251, 191, 36, 0.6)' });
+                if (activeDrawType === 'circle') {
+                    currentDrawings.push({ type: 'circle', col: colEnd, row: rowEnd, color: 'rgba(239, 68, 68, 0.8)' });
                 } else {
-                    // Draw arrow when dragging across squares
-                    currentDrawings.push({ type: 'arrow', startCol: colStart, startRow: rowStart, endCol: colEnd, endRow: rowEnd, color: 'rgba(239, 68, 68, 0.8)' });
+                    if (colStart === colEnd && rowStart === rowEnd) {
+                        // Single click in line mode acts as a circle too (Chess.com style shortcut)
+                        currentDrawings.push({ type: 'circle', col: colStart, row: rowStart, color: 'rgba(239, 68, 68, 0.8)' });
+                    } else {
+                        currentDrawings.push({ type: 'arrow', startCol: colStart, startRow: rowStart, endCol: colEnd, endRow: rowEnd, color: 'rgba(239, 68, 68, 0.8)' });
+                    }
                 }
-                
                 db.collection("special_rooms").doc("masterclass_arena").update({ drawings: currentDrawings });
             });
         }
@@ -696,9 +739,12 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             const sqSize = canvas.width / 8;
             currentDrawings.forEach(d => {
-                if (d.type === 'highlight') {
-                    ctx.fillStyle = d.color;
-                    ctx.fillRect(d.col * sqSize, d.row * sqSize, sqSize, sqSize);
+                if (d.type === 'circle') {
+                    ctx.beginPath();
+                    ctx.arc(d.col * sqSize + sqSize/2, d.row * sqSize + sqSize/2, sqSize/2.3, 0, 2 * Math.PI);
+                    ctx.lineWidth = 5;
+                    ctx.strokeStyle = d.color;
+                    ctx.stroke();
                 } else if (d.type === 'arrow') {
                     drawArrow(
                         d.startCol * sqSize + sqSize/2, d.startRow * sqSize + sqSize/2,
@@ -715,14 +761,9 @@
             const dy = toY - fromY;
             const angle = Math.atan2(dy, dx);
             
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 7;
-            ctx.lineCap = "round";
+            ctx.strokeStyle = color; ctx.lineWidth = 7; ctx.lineCap = "round";
             
-            ctx.beginPath();
-            ctx.moveTo(fromX, fromY);
-            ctx.lineTo(toX, toY);
-            ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(fromX, fromY); ctx.lineTo(toX, toY); ctx.stroke();
             
             ctx.beginPath();
             ctx.moveTo(toX, toY);
@@ -738,18 +779,18 @@
             db.collection("special_rooms").doc("masterclass_arena").update({ drawings: [] });
         }
 
-        // Supporting Reset and Clear Board functions
         function syncMasterPosition(pos) {
             if (pos === 'start') {
                 game.reset();
                 masterBoard.position('start');
+                $('.square-55d63').removeClass('highlight-square');
                 db.collection("special_rooms").doc("masterclass_arena").update({ fen: game.fen(), lastMove: null, drawings: [] });
             }
         }
 
         function emptyBoard() {
-            game.clear();
-            masterBoard.clear();
+            game.clear(); masterBoard.clear();
+            $('.square-55d63').removeClass('highlight-square');
             db.collection("special_rooms").doc("masterclass_arena").update({ fen: game.fen(), lastMove: null, drawings: [] });
         }
     </script>
