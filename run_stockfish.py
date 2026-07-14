@@ -38,7 +38,7 @@ def main():
             print(f"*(Error: Invalid move format '{move_str}'. Use UCI format like 'e2e4'.)* ")
         
         # Analysis limited to 360 seconds (6 minutes) instead of fixed depth
-        info = engine.analyse(board, chess.engine.Limit(time=180))
+        info = engine.analyse(board, chess.engine.Limit(time=360))
         pv = info.get("pv", [])
         
         next_6 = pv[:6]
