@@ -37,6 +37,13 @@
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
                 <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Selective Annotation Engine</p>
             </div>
+            
+            <!-- Prompt Copying Controls -->
+            <div class="flex gap-2">
+                <button onclick="copyPrompt(1)" class="px-4 py-2 bg-slate-800 border border-slate-600 rounded-md font-bold text-[10px] uppercase text-slate-300 hover:bg-slate-700 transition">Copy Prompt 1 (Logical Draft)</button>
+                <button onclick="copyPrompt(2)" class="px-4 py-2 bg-slate-800 border border-slate-600 rounded-md font-bold text-[10px] uppercase text-slate-300 hover:bg-slate-700 transition">Copy Prompt 2 (Re-format)</button>
+            </div>
+
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
                 <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
@@ -58,13 +65,6 @@
                     <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
                     <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy Selected Batch</span></button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
-                </div>
-                <div id="copy-options" class="hidden mt-4 pt-4 border-t border-slate-700">
-                    <p class="text-[10px] text-slate-500 uppercase mb-2">Annotation Workflow:</p>
-                    <div class="flex gap-2">
-                        <button onclick="executeCopy('draft')" class="flex-1 bg-slate-800 py-2 rounded text-xs font-bold hover:bg-slate-700">1. COPY LOGIC DRAFT</button>
-                        <button onclick="executeCopy('refine')" class="flex-1 bg-gold-bg py-2 rounded text-xs font-bold text-slate-900 hover:bg-yellow-500">2. COPY REFINEMENT EDITOR</button>
-                    </div>
                 </div>
             </div>
 
@@ -121,22 +121,51 @@
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 
     <script>
+        // --- AI PROMPTS STORAGE ---
+        const PROMPT_STAGE_1 = `STAGE 1: THE LOGICAL DRAFT
+Using the provided FEN, batch of moves, and engine lines, generate the initial JSON draft. Act as a pragmatic, high-level Grandmaster annotator creating a premium opening course. 
+
+CRITICAL OPENING THEORY (Moves 1-10): For the early phase, treat the analysis strictly as opening theory. Clearly distinguish between heavily analyzed main lines and tricky sidelines. Explain the historical context, the resulting pawn structures, and the theoretical consensus of these setups.
+
+MIDDLEGAME IDEAS: Tell me the plan. Crucially, explain WHY a move was played, especially if there was an obvious alternative that fails tactically or positionally. Focus on piece activity, and practical over-the-board chances. Keep the analysis insightful but concise. Do not worry about perfect style yet; just get the pure chess logic down in JSON format matching the batch IDs.`;
+
+        const PROMPT_STAGE_2 = `STAGE 2: STRICT EDITORIAL PASS
+I need you to run a strict editorial pass on the JSON you just generated. Do not change the underlying chess logic, but you MUST rewrite the text to comply with these stylistic rules to sound like a real Human GM:
+
+1. THE BANNED LIST: Scrub the text completely. You are strictly forbidden from using any variations of these words: "Blunt", "Showing their hand", "Thrust", "Critical test", "Signals the intention", "Secure", "Dynamic", "Complexities", "Tale of two halves", "Double-edged", "Looming", "Testament". Replace them with straightforward, conversational terms.
+2. HUMAN TOUCH & PRACTICALITY: Frame evaluations practically. Use phrases like "From a human perspective, this is miserable to defend," "The engine prefers X, but Y is much easier to play over the board," or "In practice, this is very tricky to meet."
+3. THEORETICAL AUTHORITY (Early Moves): For moves in the opening (especially moves 4-7), use the tone of an opening theoretician. Explicitly mention when a move is a known sideline versus a main line. Use phrasing like "This sideline has gained traction," "Theoretical consensus," or "Historically considered inferior until..."
+4. REQUIRED VOCABULARY: Where appropriate, use phrases like: "unpleasant", "I prefer", "in my opinion", "more reasonable", "close to losing", "only move".
+5. BRITISH SPELLING: Change "center" to "centre".
+6. FORMATTING TWEAKS: Hyphenate squares (e.g., "d4-square"), change "bishop pair" to "pair of bishops", and replace words like "tuck", "drop", or "jump" with "move".
+
+OUTPUT REQUIREMENT:
+Return the finalized, edited text as a pure, raw JSON object. Start immediately with { and end with }. Do not include markdown, pleasantries, or explanations.`;
+
+        // Copy mechanism for prompts
+        function copyPrompt(stageNum) {
+            const textToCopy = stageNum === 1 ? PROMPT_STAGE_1 : PROMPT_STAGE_2;
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                alert(`Stage ${stageNum} Prompt successfully copied to clipboard!`);
+            }).catch(err => {
+                console.error("Failed to copy text: ", err);
+            });
+        }
+        // --------------------------------
+
         let globalChunks = [];
         let pgnTokens = [];
         let board = null;
         let selStart = null;
         let selEnd = null;
         let globalSfWorker = null; 
-        let cachedBatchString = "";
-
-        // --- CORE ENGINE LOGIC ---
-        // (Existing processPgn, selectChunk, getStockfishPV remain unchanged)
 
         window.onload = () => {
             board = Chessboard('board', {
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 position: 'start'
             });
+
             const saved = localStorage.getItem('gm_master_state');
             if (saved) {
                 const state = JSON.parse(saved);
@@ -153,6 +182,7 @@
                 const blob = new Blob([jsCode], { type: 'application/javascript' });
                 globalSfWorker = new Worker(URL.createObjectURL(blob));
             } catch(err) {
+                console.warn("Fetch failed, using fallback", err);
                 const sfCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');`;
                 const blob = new Blob([sfCode], { type: 'application/javascript' });
                 globalSfWorker = new Worker(URL.createObjectURL(blob));
@@ -164,105 +194,315 @@
         function switchTab(tab) {
             document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
             document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
+            const f = document.getElementById('tab-f');
+            const r = document.getElementById('tab-r');
+            f.className = tab === 'fragmenter' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+            r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
         function processPgn(isLoad = false) {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
-            initEngineWorker();
+
+            initEngineWorker(); 
+
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g) || [];
             
             let chunks = [];
             let moveNumber = 0;
             let variationLevel = 0;
+            let depthPlyCounts = { 0: 0 }; 
+            let lastChunkAtLevel = {};
+
             let chess = new Chess();
+            let stateStack = [];
             let currentFEN = chess.fen();
             let fenBeforeLastMove = currentFEN;
 
             pgnTokens.forEach((token, index) => {
+                if (token === "(") {
+                    variationLevel++;
+                    depthPlyCounts[variationLevel] = 0; 
+                    stateStack.push({ current: currentFEN, beforeLast: fenBeforeLastMove });
+                    chess.load(fenBeforeLastMove);
+                    return; 
+                }
+                if (token === ")") {
+                    if (lastChunkAtLevel[variationLevel]) {
+                        lastChunkAtLevel[variationLevel].isVariationEnd = true;
+                    }
+                    variationLevel--;
+                    let state = stateStack.pop();
+                    if(state) {
+                        chess.load(state.current);
+                        currentFEN = state.current;
+                        fenBeforeLastMove = state.beforeLast;
+                    }
+                    return; 
+                }
+                
                 const isMoveNum = /^\d+\./.test(token);
+                if (isMoveNum) {
+                    moveNumber = parseInt(token);
+                    return; 
+                }
+
                 const isMove = /^[a-hA-ZRKNQBO]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
                 
                 if (isMove) {
-                    fenBeforeLastMove = chess.fen();
+                    depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
+                    fenBeforeLastMove = chess.fen(); 
+
                     let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O]/g, ''); 
                     let moveObj = chess.move(cleanMove);
-                    currentFEN = chess.fen();
+                    currentFEN = chess.fen(); 
 
-                    chunks.push({
+                    let evalSymbol = "";
+                    let nextToken = pgnTokens[index + 1];
+                    if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken) || /^[\+\-=]+$/.test(nextToken))) {
+                        evalSymbol = ` ${nextToken}`;
+                    }
+
+                    const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
+
+                    let newChunk = {
                         id: `CHK_${chunks.length}_M${moveNumber}_V${variationLevel}`,
-                        target: token,
+                        target: token + evalSymbol,
                         moveNum: moveNumber,
                         tokenIndex: index,
-                        isVariationEnd: false, // simplified for structure
-                        fen: fenBeforeLastMove,
-                        fenAfter: currentFEN
-                    });
+                        isMainLine: variationLevel === 0,
+                        isVariationStart: isFirstMoveOfVariation,
+                        isVariationEnd: false,
+                        fen: fenBeforeLastMove,  
+                        fenAfter: currentFEN      
+                    };
+
+                    chunks.push(newChunk);
+                    lastChunkAtLevel[variationLevel] = newChunk;
                 }
             });
+
+            if (lastChunkAtLevel[0]) {
+                lastChunkAtLevel[0].isVariationEnd = true;
+            }
 
             globalChunks = chunks;
             document.getElementById('workspace').classList.remove('hidden');
             document.getElementById('copy-btn').classList.remove('hidden');
+            
+            selStart = null;
+            selEnd = null;
+            board.position('start', false);
+            document.getElementById('fen-output').value = "";
+
+            updateUI();
+            saveState();
+        }
+
+        function selectChunk(index) {
+            if (selStart === null || (selStart !== null && selEnd !== null)) {
+                selStart = index;
+                selEnd = null;
+                let fen = globalChunks[index].fen;
+                document.getElementById('fen-output').value = fen;
+                board.position(fen, false); 
+            } else {
+                selEnd = Math.max(selStart, index);
+                selStart = Math.min(selStart, index);
+            }
             updateUI();
         }
 
+        function getStockfishPV(fen, depth = 18, onLiveLineUpdate) {
+            return new Promise(async (resolve) => {
+                const worker = await initEngineWorker();
+                let uciMoves = [];
+                let searchStarted = false; 
+                
+                let timeoutId = setTimeout(() => {
+                    worker.onmessage = null;
+                    resolve(uciMoves);
+                }, 8000);
+
+                worker.onmessage = function (e) {
+                    const line = e.data;
+                    if (typeof line === 'string') {
+                        if (line.includes('info ')) searchStarted = true;
+
+                        if (line.includes(' pv ')) {
+                            const parts = line.split(' pv ');
+                            uciMoves = parts[1].trim().split(' ').slice(0, 6);
+                            if (onLiveLineUpdate) onLiveLineUpdate(uciMoves);
+                        }
+                        
+                        if (searchStarted && line.includes('bestmove')) {
+                            clearTimeout(timeoutId);
+                            worker.onmessage = null;
+                            resolve(uciMoves);
+                        }
+                    }
+                };
+
+                worker.postMessage('stop');
+                worker.postMessage(`position fen ${fen}`);
+                worker.postMessage(`go depth ${depth}`);
+            });
+        }
+
         async function copySelectedBatch() {
-            if (selStart === null) return;
+            if (selStart === null) {
+                alert("Please click on a starting move and an ending move first!");
+                return;
+            }
             
             const btn = document.getElementById('copy-btn');
             const btnText = document.getElementById('copy-text');
+            const statsText = document.getElementById('stats');
             const progressFill = document.getElementById('progress-fill');
             
+            btn.classList.add('opacity-80', 'cursor-not-allowed');
             btn.disabled = true;
+
             let endIdx = selEnd !== null ? selEnd : selStart;
+            let startingFen = globalChunks[selStart].fen;
             let batchData = [];
+            let totalSelectedMoves = (endIdx - selStart) + 1;
 
             for (let i = selStart; i <= endIdx; i++) {
+                let currentStep = (i - selStart) + 1;
                 let c = globalChunks[i];
-                let pvUci = await getStockfishPV(c.fenAfter, 14);
-                let tempChess = new Chess(c.fenAfter);
-                let pvSan = [];
-                for(let uci of pvUci) {
-                    let move = tempChess.move(uci, {sloppy: true});
-                    if(move) pvSan.push(move.san); else break;
+                let lineOutput = `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`;
+
+                let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
+                progressFill.style.width = `${currentProgress}%`;
+                btnText.innerHTML = `<div class="spinner"></div>Analyzing [${currentStep}/${totalSelectedMoves}]...`;
+                statsText.innerText = `Analyzing Move: ${c.moveNum}. ${c.target}`;
+
+                let getsEngineAssist = c.isVariationEnd;
+
+                if (getsEngineAssist) {
+                    let fenAfterMove = c.fenAfter; 
+                    
+                    try {
+                        let pvUci = await getStockfishPV(fenAfterMove, 18, (currentUciList) => {
+                            let tempVisualChess = new Chess(fenAfterMove);
+                            let visualSan = [];
+                            for(let uci of currentUciList) {
+                                try {
+                                    let mObj = { from: uci.substring(0, 2), to: uci.substring(2, 4) };
+                                    if (uci.length > 4) mObj.promotion = uci.substring(4, 5);
+                                    let vMove = tempVisualChess.move(mObj);
+                                    if (!vMove) vMove = tempVisualChess.move(uci, {sloppy: true});
+                                    if(vMove) visualSan.push(vMove.san); else break;
+                                } catch(err){ break; }
+                            }
+                            statsText.innerText = `[${c.moveNum}.${c.target}] Lines: ${visualSan.join(" ")}`;
+                        });
+                        
+                        let pvSan = [];
+                        let tempChess = new Chess(fenAfterMove);
+                        
+                        for (let uci of pvUci) {
+                            try {
+                                let moveObj = {
+                                    from: uci.substring(0, 2),
+                                    to: uci.substring(2, 4)
+                                };
+                                if (uci.length > 4) moveObj.promotion = uci.substring(4, 5);
+
+                                let move = tempChess.move(moveObj);
+                                if (!move) move = tempChess.move(uci, {sloppy: true});
+                                if (move) pvSan.push(move.san);
+                                else break;
+                            } catch(err) {
+                                break;
+                            }
+                        }
+                        
+                        if (pvSan.length > 0) {
+                            lineOutput += ` | Engine suggestion: ${pvSan.join(" ")}`;
+                        }
+
+                    } catch(e) {
+                        console.error("Engine processing error", e);
+                    }
                 }
-                batchData.push(`[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Engine: ${pvSan.join(" ")}`);
+                
+                batchData.push(lineOutput);
             }
 
-            cachedBatchString = batchData.join("\n");
-            document.getElementById('copy-options').classList.remove('hidden');
-            btn.innerText = "Batch Analyzed. Choose Copy Mode below:";
+            const finalBatchText = `START FEN: ${startingFen}\n\nDATA:\n` + batchData.join('\n');
+            navigator.clipboard.writeText(finalBatchText).then(() => {
+                progressFill.style.width = `100%`;
+                btnText.innerHTML = `Batch Copied!`;
+                statsText.innerText = `Complete! Ready for AI.`;
+                
+                setTimeout(() => {
+                    btn.classList.remove('opacity-80', 'cursor-not-allowed');
+                    btn.disabled = false;
+                    btnText.innerHTML = `Copy Selected Batch`;
+                    progressFill.style.width = `0%`;
+                }, 2500);
+            });
         }
 
-        function executeCopy(mode) {
-            let text = "";
-            if (mode === 'draft') {
-                text = `You are a 2700+ GM. Annotate this batch:\n${cachedBatchString}\n\nFormat as JSON object. Only JSON output.`;
-            } else {
-                text = `Refine this JSON. Banned: Blunt, Showing their hand, Thrust, Critical test, Signals the intention, Secure. Use: unpleasant, I prefer, in my Opinion, More reasonable, Close to losing, Only move, castling. Use "centre" (British). Hyphenate squares (d4-square), use "pair of bishops". For moves 4-7, include historical context (e.g. Grischuk/Fischer).`;
-            }
-            navigator.clipboard.writeText(text);
-            alert("Copied " + mode + " prompt to clipboard!");
-        }
-
-        // --- UI UTILS ---
         function updateUI() {
             const container = document.getElementById('chunks-container');
-            container.innerHTML = "";
-            globalChunks.forEach((c, i) => {
+            container.innerHTML = '';
+            
+            globalChunks.forEach((c, index) => {
+                const isSelected = selStart !== null && selEnd !== null && index >= selStart && index <= selEnd;
+                const isStart = selStart === index;
+                
+                let styleClass = 'bg-slate-800';
+                if (isStart) styleClass = 'selected-start';
+                else if (isSelected) styleClass = 'selected-range';
+                
                 const div = document.createElement('div');
-                div.className = 'chunk-card glass p-3 rounded-lg';
-                div.onclick = () => { selStart = i; updateUI(); };
-                div.innerHTML = `<p class="text-[9px] gold-text font-bold">${c.id}</p><p class="text-xs">${c.moveNum}. ${c.target}</p>`;
+                div.className = `chunk-card p-3 rounded-lg flex flex-col justify-between ${styleClass}`;
+                div.onclick = () => selectChunk(index);
+                div.innerHTML = `
+                    <div class="text-xs font-bold text-slate-300">${c.moveNum}. ${c.target}</div>
+                    <div class="text-[10px] text-slate-500 mt-2">${c.isMainLine ? 'Main Line' : 'Variation'}</div>
+                `;
                 container.appendChild(div);
             });
         }
+
+        function clearAll() {
+            localStorage.removeItem('gm_master_state');
+            location.reload();
+        }
+
+        function saveState() {
+            const input = document.getElementById('pgn-input').value;
+            localStorage.setItem('gm_master_state', JSON.stringify({ original: input }));
+        }
+
+        function copyToClipboard(elementId) {
+            const el = document.getElementById(elementId);
+            el.select();
+            document.execCommand('copy');
+            alert('Copied to clipboard!');
+        }
         
-        function rebuildPgn() { /* Existing Re-assembler logic */ }
-        function downloadPgn() { /* Existing Download logic */ }
-        function copyToClipboard(id) { navigator.clipboard.writeText(document.getElementById(id).value); alert("Copied!"); }
-        function clearAll() { localStorage.removeItem('gm_master_state'); location.reload(); }
+        function downloadPgn() {
+            const data = document.getElementById('final-pgn').value;
+            if(!data) return alert("No final PGN to download!");
+            const blob = new Blob([data], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'annotated_master.pgn';
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        function rebuildPgn() {
+            alert("Rebuilding logic goes here!");
+            // Implement JSON to PGN injection based on IDs
+        }
+
     </script>
 </body>
 </html>
