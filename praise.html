@@ -235,7 +235,7 @@
                         isMainLine: variationLevel === 0,
                         isVariationStart: isFirstMoveOfVariation,
                         isVariationEnd: false,
-                        fen: fenBeforeLastMove,   // used for UI / fourr logic
+                        fen: fenBeforeLastMove,   // used for UI / four logic
                         fenAfter: currentFEN      // used for engine logic
                     };
 
@@ -276,7 +276,7 @@
         }
 
         // Engine fetch function
-        function getStockfishPV(fen, depth = 14, onLiveLineUpdate) {
+        function getStockfishPV(fen, depth = 20, onLiveLineUpdate) {
             return new Promise(async (resolve) => {
                 const worker = await initEngineWorker();
                 let uciMoves = [];
@@ -285,7 +285,7 @@
                 let timeoutId = setTimeout(() => {
                     worker.onmessage = null;
                     resolve(uciMoves);
-                }, 5000);
+                }, 15000); // Increased engine timeout to 15 seconds
 
                 worker.onmessage = function (e) {
                     const line = e.data;
@@ -335,20 +335,26 @@
             for (let i = selStart; i <= endIdx; i++) {
                 let currentStep = (i - selStart) + 1;
                 let c = globalChunks[i];
-                let lineOutput = `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`;
+                let fenAfterMove = c.fenAfter; 
+                
+                // CRITICAL CHANGE: Append the exact FEN to every single move line so the AI sees the board.
+                let lineOutput = `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | FEN: ${fenAfterMove} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`;
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
                 btnText.innerHTML = `<div class="spinner"></div>Analyzing [${currentStep}/${totalSelectedMoves}]...`;
                 statsText.innerText = `Analyzing Move: ${c.moveNum}. ${c.target}`;
 
-                let getsEngineAssist = c.isVariationEnd;
+                // Check for evaluation symbols like ?, !, ??, !?, ?!, =, +, -
+                let hasEvalSymbol = /[?!]/.test(c.target) || /[\+\-=]/.test(c.target);
+                
+                // Get engine assist if it's the end of a line OR it has an evaluation symbol
+                let getsEngineAssist = c.isVariationEnd || hasEvalSymbol;
 
                 if (getsEngineAssist) {
-                    let fenAfterMove = c.fenAfter; 
-                    
                     try {
-                        let pvUci = await getStockfishPV(fenAfterMove, 14, (currentUciList) => {
+                        // Depth increased to 20
+                        let pvUci = await getStockfishPV(fenAfterMove, 20, (currentUciList) => {
                             let tempVisualChess = new Chess(fenAfterMove);
                             let visualSan = [];
                             for(let uci of currentUciList) {
@@ -384,7 +390,7 @@
                         }
 
                         if (pvSan.length > 0) {
-                            lineOutput += `\n   -> [CURRENT FEN]: ${fenAfterMove}\n   -> [STOCKFISH ENGINE NEXT 6 MOVES]: ${pvSan.join(" ")}`;
+                            lineOutput += `\n   -> [STOCKFISH ENGINE NEXT 6 MOVES]: ${pvSan.join(" ")}`;
                         } else {
                             lineOutput += `\n   -> [ENGINE NOTE]: Reached evaluation timeout or empty lines.`;
                         }
@@ -400,35 +406,33 @@
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n");
             
-            // Build Deep Prompt Instructions
-            const fullPrompt = `You are a 2700+ human Grandmaster annotating a chess course on London System for Black"
-I will provide a screenshot of this batch of moves, along with engine continuations for critical positions.
+            // UPGRADED DEEP PROMPT
+            const fullPrompt = `You are a pragmatic, 2700+ rated human Grandmaster annotator with 70% English.
+I am providing you a batch of moves. For EVERY move, I have included the exact FEN position immediately after the move is played. For critical mistakes, I have also provided the engine refutation.
 
-STARTING POSITION FEN FOR THIS BATCH: ${startingFen}
+STARTING POSITION FEN: ${startingFen}
 
-INSTRUCTION:
-1. Analyze the provided moves, starting FEN, and engine data. Do not annotate every move, but 50% must have comments.
-2. EXPLAINING EVALUATION SIGNS & SUMMARIZING:
-   - SUMMARIZE EARLY: When annotating the FIRST move of a line/variation (Variation Start: true), start summarizing the end of the line from that very first move (e.g., explain what the whole variation leads to right away).
-   - EXPLAIN EVAL SIGNS: Whenever there is an evaluation sign (like +-, =, -+, !?, !, ?), you MUST explain USING the engine moves EXACTLY why the GM assigned that sign. MAKE SURE TO USE the provided engine lines to uncover the tactic or positional edge. 
-     *Example 1:* "White is winning here due to the bishop maneuver on g7, the king will be trapped on h5, then the knight delivers a check." 
-     *Example 2:* "It's equal. Clearly, after Nxg5, the players can shake hands."
-3. NO "ENGINE" TALK: Never use phrases like "the engine says" or "Stockfish recommends". Internalize the engine data and translate it into human chess concepts.
-4. COMMENT PLACEMENT AWARENESS: 
-   - For Main Line moves (Main Line: true), your comment will be placed AFTER the move.
-   - For Variation Starts (Variation Start: true), your comment will be dynamically placed BEFORE the move. Phrase these as introductions (e.g., "If Black decides..").
-5. FINAL OUTPUT: Output ONLY a valid JSON object mapping the chunk ID to the text. Replace words such as "Tuck", "drop", or "jump" with "move".
+=== YOUR PERSONA & RULES ===
+1. Visual & Spatial Focus: Because you have the exact FEN for every move, talk about the physical state of the board. Mention specific squares (e.g., "the weak dark squares around the king"), open files, diagonals, pawn tension, and piece coordination.
+2. Human Practicality: Assess how difficult the position is for a human to play. A position might be 0.00 mathematically, but practically uncomfortable. Use phrases like "requires precise calculation," "a nightmare to defend in a blitz game," or "practically very tricky."
+3. GM Vocabulary: Use slang like "Unpleasant", "In my opinion" "I prefer", "practical chances," "dead lost," "hanging," or "playing for tricks, ," of course", "I prefer White"
+4. Banned Words: NEVER use "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," or "tuck." or other uncommon words. 
+5. No Engine Worship: NEVER say "Stockfish says" or "the engine recommends." State tactical refutations as your own calculations. Don't say "I calculated " Say "White will..." or " It's difficult, for instance, after..."
+6. For moves 4 to 7, Talk like a chess theoretian, eg " The most played move." Not as common as 4. Nc6." " 
+..Intil Fischer played it with success"
 
-FORMAT REQUIREMENT: 
-Output the JSON block starting immediately with the { bracket. Do not include markdown blocks like \`\`\`json around the JSON. (Please avoid using curly brackets {} inside your scratchpad to ensure proper parsing).
-
-Example structure:
-{
-  "CHK_0_M4_V0": "Your human-sounding GM annotation here...",
-  "CHK_5_M4_V1": "If White tries to preserve the bishop with:"
-}
-Change: Eg: "d4 square" to "d4-square", Also change, eg: "bishop pair" to "pair of bishops"
-Do not start by quoting the move or screenshot.REMEMBER TO USE STOCHFISH MOVES TO EXPLAIN IDEAS 
+=== ANNOTATION INSTRUCTIONS ===
+1. Only annotate about 50% of the moves. Your commments musnt be too long. 
+2. Explaining Refutations (!, ?, ??, !?): If a move has an evaluation sign, use the provided 6-move engine refutation to explain exactly why the tactic works. Do not just write the sequence, summarize the sequence using words. 
+   - Example: "Not Qxc4, as White loses instantly after Rh8+ Kg1 followed by Qxd4. The king is just too exposed on the light squares."
+3. Formatting rules:
+   - Change "d4 square" to "d4-square".
+   - Change "bishop pair" to "pair of bishops".
+   - Replace "Tuck", "drop", or "jump" with "move" change "center" to "centre". secure the king to castling or placing. 
+4. Comment Placement: 
+   - Main Line moves (Main Line: true): comment placed AFTER the move.
+   - Variation Starts (Variation Start: true): comment placed BEFORE the move (e.g., "If Black decides..").
+5. Final Output: Output ONLY a valid JSON object mapping the chunk ID to your comment. Do not use markdown blocks like \`\`\`json. 
 
 === BATCH TO ANALYZE ===
 ${batchString}`;
