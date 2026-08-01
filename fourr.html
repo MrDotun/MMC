@@ -119,7 +119,7 @@
         let board = null;
         let selStart = null;
         let selEnd = null;
-        let globalSfWorker = null; // Engine Instance
+        let globalSfWorker = null; 
 
         window.onload = () => {
             board = Chessboard('board', {
@@ -135,7 +135,6 @@
             }
         };
 
-        // Initialize Stockfish worker
         async function initEngineWorker() {
             if (globalSfWorker) return globalSfWorker;
             try {
@@ -153,21 +152,48 @@
             return globalSfWorker;
         }
 
-        // Fetch Lichess Masters Explorer Data
+        // UPGRADED: Smart fetch that gets Master DB, falling back to Lichess general DB
         async function fetchLichessExplorer(fen) {
             try {
-                const url = `https://explorer.lichess.ovh/master?fen=${encodeURIComponent(fen)}&moves=3&topGames=2`;
-                const response = await fetch(url);
-                if (!response.ok) return null;
-                const data = await response.json();
+                let encodedFen = encodeURIComponent(fen);
+                let url = `https://explorer.lichess.ovh/master?fen=${encodedFen}&moves=4&topGames=2`;
                 
+                let response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                
+                // Handle rate limits gently
+                if (response.status === 429) {
+                    await new Promise(r => setTimeout(r, 1500));
+                    response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                }
+
+                let data = response.ok ? await response.json() : null;
+                let isMaster = true;
+
+                // Fallback to full Lichess DB if master DB has no games for this deep line
+                if (!data || !data.moves || data.moves.length === 0) {
+                    url = `https://explorer.lichess.ovh/lichess?fen=${encodedFen}&moves=4&topGames=0`;
+                    response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                    if (response.status === 429) {
+                        await new Promise(r => setTimeout(r, 1500));
+                        response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                    }
+                    data = response.ok ? await response.json() : null;
+                    isMaster = false;
+                }
+
                 if (!data || !data.moves || data.moves.length === 0) return null;
 
-                let output = `[LICHESS MASTERS DB]: `;
-                let moveStrings = data.moves.slice(0, 3).map(m => `${m.san} (${m.white + m.draws + m.black} games)`);
-                output += `Top continuations here are: ${moveStrings.join(", ")}. `;
+                let dbType = isMaster ? "MASTERS DB" : "PLAYER DB";
+                let output = `[LICHESS ${dbType}]: `;
+                
+                let moveStrings = data.moves.slice(0, 4).map(m => {
+                    let total = m.white + m.draws + m.black;
+                    let winRate = Math.round((m.white / total) * 100);
+                    return `${m.san} (${total} games, ${winRate}% win)`;
+                });
+                output += `Top continuations here: ${moveStrings.join(" | ")}. `;
 
-                if (data.topGames && data.topGames.length > 0) {
+                if (isMaster && data.topGames && data.topGames.length > 0) {
                     let gameStrs = data.topGames.map(g => `${g.white.name} vs ${g.black.name} (${g.year})`);
                     output += `Notable games: ${gameStrs.join("; ")}.`;
                 }
@@ -176,6 +202,23 @@
                 console.warn("Lichess API error or rate limit hit:", e);
                 return null;
             }
+        }
+
+        // NEW: Check Lichess Cloud API for instant GM-level Stockfish evaluations
+        async function fetchLichessCloudEval(fen) {
+            try {
+                const url = `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}`;
+                const response = await fetch(url);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data && data.pvs && data.pvs.length > 0) {
+                        return data.pvs[0].moves.split(' ').slice(0, 6);
+                    }
+                }
+            } catch (e) {
+                console.warn("Cloud eval error", e);
+            }
+            return null;
         }
 
         function switchTab(tab) {
@@ -191,7 +234,7 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            initEngineWorker(); // Pre-boot engine silently
+            initEngineWorker(); 
 
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g) || [];
             
@@ -238,11 +281,11 @@
                 
                 if (isMove) {
                     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
-                    fenBeforeLastMove = chess.fen(); // FEN before move
+                    fenBeforeLastMove = chess.fen();
 
                     let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O]/g, ''); 
                     let moveObj = chess.move(cleanMove);
-                    currentFEN = chess.fen(); // FEN after move
+                    currentFEN = chess.fen();
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
@@ -260,8 +303,8 @@
                         isMainLine: variationLevel === 0,
                         isVariationStart: isFirstMoveOfVariation,
                         isVariationEnd: false,
-                        fen: fenBeforeLastMove,   // used for UI / fourr logic
-                        fenAfter: currentFEN      // used for engine logic
+                        fen: fenBeforeLastMove,   
+                        fenAfter: currentFEN      
                     };
 
                     chunks.push(newChunk);
@@ -300,9 +343,17 @@
             updateUI();
         }
 
-        // Engine fetch function
+        // UPGRADED: Hits Lichess Cloud Eval first. Falls back to local worker ONLY if no cloud eval exists.
         function getStockfishPV(fen, depth = 14, onLiveLineUpdate) {
             return new Promise(async (resolve) => {
+                
+                const cloudUciMoves = await fetchLichessCloudEval(fen);
+                if (cloudUciMoves) {
+                    if (onLiveLineUpdate) onLiveLineUpdate(cloudUciMoves);
+                    resolve(cloudUciMoves);
+                    return;
+                }
+
                 const worker = await initEngineWorker();
                 let uciMoves = [];
                 let searchStarted = false; 
@@ -356,7 +407,6 @@
             let batchData = [];
             let totalSelectedMoves = (endIdx - selStart) + 1;
 
-            // Run Engine Loop
             for (let i = selStart; i <= endIdx; i++) {
                 let currentStep = (i - selStart) + 1;
                 let c = globalChunks[i];
@@ -369,7 +419,9 @@
 
                 let fenAfterMove = c.fenAfter; 
 
-                // --- 1. Fetch Lichess Masters Opening Explorer ---
+                // ADDED STRICT DELAY: Protects against Lichess HTTP 429 Too Many Requests
+                await new Promise(r => setTimeout(r, 400));
+
                 let explorerInfo = await fetchLichessExplorer(fenAfterMove);
                 if (explorerInfo) {
                     lineOutput += `\n   -> ${explorerInfo}`;
@@ -377,12 +429,6 @@
 
                 let getsEngineAssist = c.isVariationEnd;
 
-                // Add a minor delay if no engine assist to avoid slamming the Lichess API too fast
-                if (!getsEngineAssist) {
-                    await new Promise(r => setTimeout(r, 250));
-                }
-
-                // --- 2. Fetch Engine Assist ---
                 if (getsEngineAssist) {
                     try {
                         let pvUci = await getStockfishPV(fenAfterMove, 14, (currentUciList) => {
@@ -437,9 +483,7 @@
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n");
             
-            // Build Deep Prompt Instructions
-            
-                        const fullPrompt = `You are a pragmatic, 2700+ rated human Grandmaster with 68% English skill, publishing an opening course. 
+            const fullPrompt = `You are a pragmatic, 2700+ rated human Grandmaster with 68% English skill, publishing an opening course. 
 I am providing you a batch of moves and screenshot. For EVERY move, I have included the exact FEN position immediately after the move is played. For critical mistakes, I have also provided the engine refutation.
 
 STARTING POSITION FEN: ${startingFen}
