@@ -24,7 +24,6 @@
         #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
         .board-container { width: 100%; max-width: 360px; margin: 0 auto; flex-shrink: 0; }
         
-        /* Spinner for loading state */
         .spinner { border: 3px solid rgba(255,255,255,0.1); border-left-color: #1e293b; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
@@ -56,13 +55,24 @@
                 
                 <div class="flex flex-wrap items-center gap-3">
                     <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
-                    <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy Selected Batch</span></button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
+                </div>
+
+                <!-- NEW: Separated Action Controls -->
+                <div id="action-controls" class="hidden mt-4 pt-4 border-t border-slate-700/50 flex flex-wrap gap-3">
+                    <button onclick="copySelectedBatch('lichess')" class="action-btn px-4 py-3 bg-blue-900/40 hover:bg-blue-800/60 text-blue-300 font-bold rounded-xl uppercase text-xs border border-blue-700/50">
+                        Copy: Lichess DB Only
+                    </button>
+                    <button onclick="copySelectedBatch('stockfish')" class="action-btn px-4 py-3 bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 font-bold rounded-xl uppercase text-xs border border-emerald-700/50">
+                        Copy: Stockfish Only
+                    </button>
+                    <button onclick="copySelectedBatch('both')" class="action-btn px-4 py-3 gold-bg font-bold rounded-xl uppercase text-xs shadow-lg shadow-yellow-900/20">
+                        Copy: Combined (Both)
+                    </button>
                 </div>
             </div>
 
             <div id="workspace" class="flex flex-col lg:flex-row gap-6 hidden">
-                
                 <div class="lg:w-1/3 space-y-4">
                     <div class="glass p-4 rounded-xl">
                         <div class="flex justify-between items-center mb-3">
@@ -84,7 +94,6 @@
                     </div>
                     <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
                 </div>
-                
             </div>
         </div>
 
@@ -119,7 +128,6 @@
         let board = null;
         let selStart = null;
         let selEnd = null;
-        let globalSfWorker = null; 
 
         window.onload = () => {
             board = Chessboard('board', {
@@ -135,90 +143,84 @@
             }
         };
 
-        async function initEngineWorker() {
-            if (globalSfWorker) return globalSfWorker;
-            try {
-                const resp = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');
-                const jsCode = await resp.text();
-                const blob = new Blob([jsCode], { type: 'application/javascript' });
-                globalSfWorker = new Worker(URL.createObjectURL(blob));
-            } catch(err) {
-                console.warn("Fetch failed, using fallback", err);
-                const sfCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');`;
-                const blob = new Blob([sfCode], { type: 'application/javascript' });
-                globalSfWorker = new Worker(URL.createObjectURL(blob));
-            }
-            globalSfWorker.postMessage('uci');
-            return globalSfWorker;
+        // Stockfish Engine Worker Logic
+        function getStockfishData(fen, targetDepth = 14) {
+            return new Promise((resolve) => {
+                let sfOutput = "[STOCKFISH 16.1 EVAL]: ";
+                try {
+                    let engine = new Worker('stockfish.js');
+                    let bestMove = "N/A";
+                    let score = "0.00";
+                    let pv = "";
+
+                    engine.onmessage = function(event) {
+                        let line = event.data;
+                        
+                        if (line.includes(`info depth ${targetDepth}`) || line.includes(`info depth ${targetDepth - 1}`)) {
+                            let scoreMatch = line.match(/score (cp|mate) (-?\d+)/);
+                            if (scoreMatch) {
+                                if (scoreMatch[1] === 'cp') {
+                                    score = (parseInt(scoreMatch[2]) / 100).toFixed(2);
+                                } else {
+                                    score = `Mate in ${Math.abs(parseInt(scoreMatch[2]))}`;
+                                }
+                            }
+                            let pvMatch = line.match(/ pv (.+)/);
+                            if (pvMatch) pv = pvMatch[1].split(' ').slice(0, 3).join(' ');
+                        }
+                        
+                        if (line.includes('bestmove')) {
+                            bestMove = line.split(' ')[1];
+                            engine.terminate();
+                            resolve(`${sfOutput} Evaluation: ${score} | Best Continuation: ${bestMove} (${pv}...)`);
+                        }
+                    };
+
+                    engine.postMessage('uci');
+                    engine.postMessage('setoption name Threads value 2');
+                    engine.postMessage(`position fen ${fen}`);
+                    engine.postMessage(`go depth ${targetDepth}`);
+
+                    // Timeout failsafe
+                    setTimeout(() => {
+                        engine.terminate();
+                        resolve(`${sfOutput} Engine timeout.`);
+                    }, 4000);
+
+                } catch (e) {
+                    console.error("Stockfish worker failed to load. Check path.", e);
+                    resolve(`${sfOutput} stockfish.js worker not found.`);
+                }
+            });
         }
 
-        // UPGRADED: Smart fetch that gets Master DB, falling back to Lichess general DB
+        // Lichess Explorer Fetch
         async function fetchLichessExplorer(fen) {
             try {
-                let encodedFen = encodeURIComponent(fen);
-                let url = `https://explorer.lichess.ovh/master?fen=${encodedFen}&moves=4&topGames=2`;
+                const url = `https://explorer.lichess.ovh/master?fen=${encodeURIComponent(fen)}&moves=4&topGames=2`;
+                const response = await fetch(url);
+                if (!response.ok) return null;
+                const data = await response.json();
                 
-                let response = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                
-                // Handle rate limits gently
-                if (response.status === 429) {
-                    await new Promise(r => setTimeout(r, 1500));
-                    response = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                }
-
-                let data = response.ok ? await response.json() : null;
-                let isMaster = true;
-
-                // Fallback to full Lichess DB if master DB has no games for this deep line
-                if (!data || !data.moves || data.moves.length === 0) {
-                    url = `https://explorer.lichess.ovh/lichess?fen=${encodedFen}&moves=4&topGames=0`;
-                    response = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                    if (response.status === 429) {
-                        await new Promise(r => setTimeout(r, 1500));
-                        response = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                    }
-                    data = response.ok ? await response.json() : null;
-                    isMaster = false;
-                }
-
                 if (!data || !data.moves || data.moves.length === 0) return null;
 
-                let dbType = isMaster ? "MASTERS DB" : "PLAYER DB";
-                let output = `[LICHESS ${dbType}]: `;
-                
-                let moveStrings = data.moves.slice(0, 4).map(m => {
+                let output = `[LICHESS MASTERS DATABASE]:\n`;
+                let moveStats = data.moves.map(m => {
                     let total = m.white + m.draws + m.black;
-                    let winRate = Math.round((m.white / total) * 100);
-                    return `${m.san} (${total} games, ${winRate}% win)`;
+                    return { san: m.san, total: total, w: Math.round((m.white/total)*100), d: Math.round((m.draws/total)*100), b: Math.round((m.black/total)*100) };
                 });
-                output += `Top continuations here: ${moveStrings.join(" | ")}. `;
 
-                if (isMaster && data.topGames && data.topGames.length > 0) {
+                let moveStrings = moveStats.slice(0, 4).map(m => `${m.san} (${m.total} games, W:${m.w}% D:${m.d}% B:${m.b}%)`);
+                output += `   -> Popular Continuations: ${moveStrings.join(" | ")}.\n`;
+
+                if (data.topGames && data.topGames.length > 0) {
                     let gameStrs = data.topGames.map(g => `${g.white.name} vs ${g.black.name} (${g.year})`);
-                    output += `Notable games: ${gameStrs.join("; ")}.`;
+                    output += `   -> Notable Master Games: ${gameStrs.join("; ")}.`;
                 }
                 return output;
             } catch (e) {
-                console.warn("Lichess API error or rate limit hit:", e);
                 return null;
             }
-        }
-
-        // NEW: Check Lichess Cloud API for instant GM-level Stockfish evaluations
-        async function fetchLichessCloudEval(fen) {
-            try {
-                const url = `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}`;
-                const response = await fetch(url);
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data && data.pvs && data.pvs.length > 0) {
-                        return data.pvs[0].moves.split(' ').slice(0, 6);
-                    }
-                }
-            } catch (e) {
-                console.warn("Cloud eval error", e);
-            }
-            return null;
         }
 
         function switchTab(tab) {
@@ -233,8 +235,6 @@
         function processPgn(isLoad = false) {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
-
-            initEngineWorker(); 
 
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g) || [];
             
@@ -258,9 +258,7 @@
                     return; 
                 }
                 if (token === ")") {
-                    if (lastChunkAtLevel[variationLevel]) {
-                        lastChunkAtLevel[variationLevel].isVariationEnd = true;
-                    }
+                    if (lastChunkAtLevel[variationLevel]) lastChunkAtLevel[variationLevel].isVariationEnd = true;
                     variationLevel--;
                     let state = stateStack.pop();
                     if(state) {
@@ -272,20 +270,17 @@
                 }
                 
                 const isMoveNum = /^\d+\./.test(token);
-                if (isMoveNum) {
-                    moveNumber = parseInt(token);
-                    return; 
-                }
+                if (isMoveNum) { moveNumber = parseInt(token); return; }
 
                 const isMove = /^[a-hA-ZRKNQBO]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
                 
                 if (isMove) {
                     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
-                    fenBeforeLastMove = chess.fen();
+                    fenBeforeLastMove = chess.fen(); 
 
                     let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O]/g, ''); 
                     let moveObj = chess.move(cleanMove);
-                    currentFEN = chess.fen();
+                    currentFEN = chess.fen(); 
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
@@ -312,13 +307,11 @@
                 }
             });
 
-            if (lastChunkAtLevel[0]) {
-                lastChunkAtLevel[0].isVariationEnd = true;
-            }
+            if (lastChunkAtLevel[0]) lastChunkAtLevel[0].isVariationEnd = true;
 
             globalChunks = chunks;
             document.getElementById('workspace').classList.remove('hidden');
-            document.getElementById('copy-btn').classList.remove('hidden');
+            document.getElementById('action-controls').classList.remove('hidden');
             
             selStart = null;
             selEnd = null;
@@ -343,65 +336,25 @@
             updateUI();
         }
 
-        // UPGRADED: Hits Lichess Cloud Eval first. Falls back to local worker ONLY if no cloud eval exists.
-        function getStockfishPV(fen, depth = 14, onLiveLineUpdate) {
-            return new Promise(async (resolve) => {
-                
-                const cloudUciMoves = await fetchLichessCloudEval(fen);
-                if (cloudUciMoves) {
-                    if (onLiveLineUpdate) onLiveLineUpdate(cloudUciMoves);
-                    resolve(cloudUciMoves);
-                    return;
-                }
-
-                const worker = await initEngineWorker();
-                let uciMoves = [];
-                let searchStarted = false; 
-                
-                let timeoutId = setTimeout(() => {
-                    worker.onmessage = null;
-                    resolve(uciMoves);
-                }, 5000);
-
-                worker.onmessage = function (e) {
-                    const line = e.data;
-                    if (typeof line === 'string') {
-                        if (line.includes('info ')) searchStarted = true;
-
-                        if (line.includes(' pv ')) {
-                            const parts = line.split(' pv ');
-                            uciMoves = parts[1].trim().split(' ').slice(0, 6);
-                            if (onLiveLineUpdate) onLiveLineUpdate(uciMoves);
-                        }
-                        
-                        if (searchStarted && line.includes('bestmove')) {
-                            clearTimeout(timeoutId);
-                            worker.onmessage = null;
-                            resolve(uciMoves);
-                        }
-                    }
-                };
-
-                worker.postMessage('stop');
-                worker.postMessage(`position fen ${fen}`);
-                worker.postMessage(`go depth ${depth}`);
+        function setButtonsState(disabled) {
+            const btns = document.querySelectorAll('.action-btn');
+            btns.forEach(b => {
+                b.disabled = disabled;
+                if(disabled) b.classList.add('opacity-50', 'cursor-not-allowed');
+                else b.classList.remove('opacity-50', 'cursor-not-allowed');
             });
         }
 
-        async function copySelectedBatch() {
+        async function copySelectedBatch(mode) {
             if (selStart === null) {
                 alert("Please click on a starting move and an ending move first!");
                 return;
             }
             
-            const btn = document.getElementById('copy-btn');
-            const btnText = document.getElementById('copy-text');
+            setButtonsState(true);
             const statsText = document.getElementById('stats');
             const progressFill = document.getElementById('progress-fill');
             
-            btn.classList.add('opacity-80', 'cursor-not-allowed');
-            btn.disabled = true;
-
             let endIdx = selEnd !== null ? selEnd : selStart;
             let startingFen = globalChunks[selStart].fen;
             let batchData = [];
@@ -414,110 +367,70 @@
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
-                btnText.innerHTML = `<div class="spinner"></div>Analyzing [${currentStep}/${totalSelectedMoves}]...`;
-                statsText.innerText = `Analyzing Move: ${c.moveNum}. ${c.target}`;
-
                 let fenAfterMove = c.fenAfter; 
 
-                // ADDED STRICT DELAY: Protects against Lichess HTTP 429 Too Many Requests
-                await new Promise(r => setTimeout(r, 400));
-
-                let explorerInfo = await fetchLichessExplorer(fenAfterMove);
-                if (explorerInfo) {
-                    lineOutput += `\n   -> ${explorerInfo}`;
+                // 1. Stockfish Logic
+                if (mode === 'stockfish' || mode === 'both') {
+                    statsText.innerText = `Calculating Eval: ${c.moveNum}. ${c.target}`;
+                    let sfResult = await getStockfishData(fenAfterMove, 14);
+                    lineOutput += `\n   -> ${sfResult}`;
                 }
 
-                let getsEngineAssist = c.isVariationEnd;
-
-                if (getsEngineAssist) {
-                    try {
-                        let pvUci = await getStockfishPV(fenAfterMove, 14, (currentUciList) => {
-                            let tempVisualChess = new Chess(fenAfterMove);
-                            let visualSan = [];
-                            for(let uci of currentUciList) {
-                                try {
-                                    let mObj = { from: uci.substring(0, 2), to: uci.substring(2, 4) };
-                                    if (uci.length > 4) mObj.promotion = uci.substring(4, 5);
-                                    let vMove = tempVisualChess.move(mObj);
-                                    if (!vMove) vMove = tempVisualChess.move(uci, {sloppy: true});
-                                    if(vMove) visualSan.push(vMove.san); else break;
-                                } catch(err){ break; }
-                            }
-                            statsText.innerText = `[${c.moveNum}.${c.target}] Lines: ${visualSan.join(" ")}`;
-                        });
-                        
-                        let pvSan = [];
-                        let tempChess = new Chess(fenAfterMove);
-                        
-                        for (let uci of pvUci) {
-                            try {
-                                let moveObj = {
-                                    from: uci.substring(0, 2),
-                                    to: uci.substring(2, 4)
-                                };
-                                if (uci.length > 4) moveObj.promotion = uci.substring(4, 5);
-
-                                let move = tempChess.move(moveObj);
-                                if (!move) move = tempChess.move(uci, {sloppy: true}); 
-
-                                if (move) {
-                                    pvSan.push(move.san);
-                                } else break;
-                            } catch (e) { break; }
-                        }
-
-                        if (pvSan.length > 0) {
-                            lineOutput += `\n   -> [CURRENT FEN]: ${fenAfterMove}\n   -> [STOCKFISH ENGINE NEXT 6 MOVES]: ${pvSan.join(" ")}`;
-                        } else {
-                            lineOutput += `\n   -> [ENGINE NOTE]: Reached evaluation timeout or empty lines.`;
-                        }
-                    } catch (e) {
-                        console.error("Engine failed for move:", e);
+                // 2. Lichess Logic
+                if (mode === 'lichess' || mode === 'both') {
+                    statsText.innerText = `Fetching Lichess: ${c.moveNum}. ${c.target}`;
+                    await new Promise(r => setTimeout(r, 1000)); // Crucial delay
+                    let explorerInfo = await fetchLichessExplorer(fenAfterMove);
+                    if (explorerInfo) {
+                        lineOutput += `\n   -> ${explorerInfo}`;
+                    } else {
+                        lineOutput += `\n   -> [LICHESS MASTERS DATABASE]: No significant master data found.`;
                     }
-                } else {
-                    statsText.innerText = `Skipping Engine for ${c.moveNum}. ${c.target} (Normal Line)`;
                 }
+
                 batchData.push(lineOutput);
             }
 
             progressFill.style.width = '100%';
-            const batchString = batchData.join("\n");
+            const batchString = batchData.join("\n\n");
             
+            // Build Contextual Prompt Based on User Selection
+            let modeInstructions = "";
+            if (mode === 'lichess') {
+                modeInstructions = "Use the provided Lichess Masters DB data to enrich your annotations with opening theory, popularity, and practical chances. Point out the most played moves.";
+            } else if (mode === 'stockfish') {
+                modeInstructions = "Use the Stockfish Evaluation to spot and explain the concrete tactics, threats, and blunders in these positions.";
+            } else {
+                modeInstructions = "Dual Context: Use the Lichess DB data to explain opening theory, and use the Stockfish Evaluation to spot concrete tactics.";
+            }
+
             const fullPrompt = `You are a pragmatic, 2700+ rated human Grandmaster with 68% English skill, publishing an opening course. 
-I am providing you a batch of moves and screenshot. For EVERY move, I have included the exact FEN position immediately after the move is played. For critical mistakes, I have also provided the engine refutation.
+I am providing you a batch of moves. For EVERY move, I have included the exact FEN position immediately after the move is played.
 
 STARTING POSITION FEN: ${startingFen}
 
 === YOUR PERSONA & RULES ===
-You're a very strong 2700+ HUMAN GM writing a course on an opening
-1. Visual & Spatial Focus: Because you have the exact FEN and screenshot for every move. Don't quote or mention "jpg screenshot" you're the author.
-2. Annotate like a 2700+ human GM with 75% English skill. Better than 75% of English speaking people 
-3. GM Vocabulary. Explain the structure, squares, ideas, move alternatives. USE HUMAN sentences (goigle search annotations by GMs and use 
-4. Banned Words: NEVER use "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," or "tuck." "clamp" "secure" "dynamic "or other uncommon words. 
-5. No Engine Worship: NEVER say "Stockfish says" or "the engine recommends." State tactical refutations as your own calculations. Don't say "I calculated " Say "White will..." or " It's difficult, for instance, after the knight gets to c5, White has no other way."
-6. For moves 4 to 7, Talk like a chess theoretian, eg " The most played move." Not as common as 4. Nc6." " The strongest"
-7. "tr " on the screenshot means the move transposes to the same position 
-8. Opening Explorer Data: When Lichess Masters DB data is provided in the batch, use it to state the most played moves, popular continuations, or notable players who popularized it (e.g. "When Black plays this they want to continue with Nc6-Bd6 ideas... This is the most played move, popularized by Ivanchuk").
+1. Focus: ${modeInstructions}
+2. Annotate like a 2700+ human GM. 
+3. GM Vocabulary: Explain the structure, squares, ideas, move alternatives. USE HUMAN sentences.
+4. Banned Words: NEVER use "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," or "tuck."
+5. No Engine Worship: Mention the engine evaluation if there is a massive tactical shift, but translate the engine lines into human strategic explanations.
+6. "tr" on the screenshot means the move transposes to the same position.
 
 === ANNOTATION INSTRUCTIONS ===
-1. Only annotate about 50% of the moves. Your commments must NOT be too long. 
-2. Explaining Refutations (!, ?, ??, !?): If a move has an evaluation sign, use the provided 6-move engine refutation to explain exactly why the tactic works. Do not just write the sequence, summarize the sequence using words. 
-   - Example: "Not Qxc4, as White loses instantly after Rh8+ Kg1 followed by Qxd4. The king is just too exposed on the light squares."
-3. Formatting rules:
-   - Change "d4 square" to "d4-square". Change "center" to "centre"
-   - Change "bishop pair" to "pair of bishops".
-   - Replace "Tuck", "drop", or "jump" with "move" change "center" to "centre". secure the king to castling or placing. DO NOT quote or mention "screenshot jpg" Youre the author.
-4. Comment Placement: 
+1. Only annotate about 50% of the moves. Your comments must NOT be too long. 
+2. Formatting rules: Change "d4 square" to "d4-square". Change "center" to "centre". Change "bishop pair" to "pair of bishops".
+3. Comment Placement: 
    - Main Line moves (Main Line: true): comment placed AFTER the move.
    - Variation Starts (Variation Start: true): comment placed BEFORE the move (e.g., "If Black decides..").
-5. Final Output: Output ONLY a valid JSON object mapping the chunk ID to your comment. Do not use markdown blocks like \`\`\`json. 
+4. Final Output: Output ONLY a valid JSON object mapping the chunk ID to your comment. Do not use markdown blocks like \`\`\`json. 
 
 === BATCH TO ANALYZE ===
 ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
-                resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                alert(`Selected Batch Copied! Analyzed ${totalSelectedMoves} moves.`);
+                resetCopyBtnUI(statsText, progressFill);
+                alert(`Selected Batch Copied! Prompt tailored for: ${mode.toUpperCase()}`);
             }).catch(err => {
                 const textArea = document.createElement("textarea");
                 textArea.value = fullPrompt;
@@ -525,21 +438,19 @@ ${batchString}`;
                 textArea.select();
                 try {
                     document.execCommand('copy');
-                    resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                    alert(`Selected Batch Copied! Analyzed ${totalSelectedMoves} moves.`);
+                    resetCopyBtnUI(statsText, progressFill);
+                    alert(`Selected Batch Copied! Prompt tailored for: ${mode.toUpperCase()}`);
                 } catch (e) {
                     alert("Clipboard error. Please try again or copy manually.");
-                    resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
+                    resetCopyBtnUI(statsText, progressFill);
                 }
                 document.body.removeChild(textArea);
             });
         }
 
-        function resetCopyBtnUI(btn, btnText, statsText, progressFill, total) {
-            btnText.innerText = "Copy Selected Batch";
+        function resetCopyBtnUI(statsText, progressFill) {
+            setButtonsState(false);
             statsText.innerText = `${globalChunks.length} TOTAL MOVES`;
-            btn.classList.remove('opacity-80', 'cursor-not-allowed');
-            btn.disabled = false;
             setTimeout(() => { progressFill.style.width = '0%'; }, 1500);
         }
 
