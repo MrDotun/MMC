@@ -153,6 +153,31 @@
             return globalSfWorker;
         }
 
+        // Fetch Lichess Masters Explorer Data
+        async function fetchLichessExplorer(fen) {
+            try {
+                const url = `https://explorer.lichess.ovh/masters?fen=${encodeURIComponent(fen)}&moves=3&topGames=2`;
+                const response = await fetch(url);
+                if (!response.ok) return null;
+                const data = await response.json();
+                
+                if (!data || !data.moves || data.moves.length === 0) return null;
+
+                let output = `[LICHESS MASTERS DB]: `;
+                let moveStrings = data.moves.slice(0, 3).map(m => `${m.san} (${m.white + m.draws + m.black} games)`);
+                output += `Top continuations here are: ${moveStrings.join(", ")}. `;
+
+                if (data.topGames && data.topGames.length > 0) {
+                    let gameStrs = data.topGames.map(g => `${g.white.name} vs ${g.black.name} (${g.year})`);
+                    output += `Notable games: ${gameStrs.join("; ")}.`;
+                }
+                return output;
+            } catch (e) {
+                console.warn("Lichess API error or rate limit hit:", e);
+                return null;
+            }
+        }
+
         function switchTab(tab) {
             document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
             document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
@@ -235,7 +260,7 @@
                         isMainLine: variationLevel === 0,
                         isVariationStart: isFirstMoveOfVariation,
                         isVariationEnd: false,
-                        fen: fenBeforeLastMove,   // used for UI / four logic
+                        fen: fenBeforeLastMove,   // used for UI / fourr logic
                         fenAfter: currentFEN      // used for engine logic
                     };
 
@@ -276,7 +301,7 @@
         }
 
         // Engine fetch function
-        function getStockfishPV(fen, depth = 20, onLiveLineUpdate) {
+        function getStockfishPV(fen, depth = 14, onLiveLineUpdate) {
             return new Promise(async (resolve) => {
                 const worker = await initEngineWorker();
                 let uciMoves = [];
@@ -285,7 +310,7 @@
                 let timeoutId = setTimeout(() => {
                     worker.onmessage = null;
                     resolve(uciMoves);
-                }, 15000); // Increased engine timeout to 15 seconds
+                }, 5000);
 
                 worker.onmessage = function (e) {
                     const line = e.data;
@@ -335,26 +360,32 @@
             for (let i = selStart; i <= endIdx; i++) {
                 let currentStep = (i - selStart) + 1;
                 let c = globalChunks[i];
-                let fenAfterMove = c.fenAfter; 
-                
-                // CRITICAL CHANGE: Append the exact FEN to every single move line so the AI sees the board.
-                let lineOutput = `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | FEN: ${fenAfterMove} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`;
+                let lineOutput = `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`;
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
                 btnText.innerHTML = `<div class="spinner"></div>Analyzing [${currentStep}/${totalSelectedMoves}]...`;
                 statsText.innerText = `Analyzing Move: ${c.moveNum}. ${c.target}`;
 
-                // Check for evaluation symbols like ?, !, ??, !?, ?!, =, +, -
-                let hasEvalSymbol = /[?!]/.test(c.target) || /[\+\-=]/.test(c.target);
-                
-                // Get engine assist if it's the end of a line OR it has an evaluation symbol
-                let getsEngineAssist = c.isVariationEnd || hasEvalSymbol;
+                let fenAfterMove = c.fenAfter; 
 
+                // --- 1. Fetch Lichess Masters Opening Explorer ---
+                let explorerInfo = await fetchLichessExplorer(fenAfterMove);
+                if (explorerInfo) {
+                    lineOutput += `\n   -> ${explorerInfo}`;
+                }
+
+                let getsEngineAssist = c.isVariationEnd;
+
+                // Add a minor delay if no engine assist to avoid slamming the Lichess API too fast
+                if (!getsEngineAssist) {
+                    await new Promise(r => setTimeout(r, 250));
+                }
+
+                // --- 2. Fetch Engine Assist ---
                 if (getsEngineAssist) {
                     try {
-                        // Depth increased to 20
-                        let pvUci = await getStockfishPV(fenAfterMove, 20, (currentUciList) => {
+                        let pvUci = await getStockfishPV(fenAfterMove, 14, (currentUciList) => {
                             let tempVisualChess = new Chess(fenAfterMove);
                             let visualSan = [];
                             for(let uci of currentUciList) {
@@ -390,7 +421,7 @@
                         }
 
                         if (pvSan.length > 0) {
-                            lineOutput += `\n   -> [STOCKFISH ENGINE NEXT 6 MOVES]: ${pvSan.join(" ")}`;
+                            lineOutput += `\n   -> [CURRENT FEN]: ${fenAfterMove}\n   -> [STOCKFISH ENGINE NEXT 6 MOVES]: ${pvSan.join(" ")}`;
                         } else {
                             lineOutput += `\n   -> [ENGINE NOTE]: Reached evaluation timeout or empty lines.`;
                         }
@@ -406,30 +437,32 @@
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n");
             
-            // UPGRADED DEEP PROMPT
-            const fullPrompt = `You are a pragmatic, 2700+ rated human Grandmaster with 68% English skill, publishing an opening course. 
+            // Build Deep Prompt Instructions
+            
+                        const fullPrompt = `You are a pragmatic, 2700+ rated human Grandmaster with 68% English skill, publishing an opening course. 
 I am providing you a batch of moves and screenshot. For EVERY move, I have included the exact FEN position immediately after the move is played. For critical mistakes, I have also provided the engine refutation.
 
 STARTING POSITION FEN: ${startingFen}
 
 === YOUR PERSONA & RULES ===
-You're a very strong 2700+ GM with 68% proficiency in English.
-1. Visual & Spatial Focus: Because you have the exact FEN and screenshot for every move, talk about the physical state of the board. Mention specific squares (e.g., "the weak dark squares around the king"), open files, diagonals, pawn tension, and piece coordination.
-2. Human Practicality: Assess how difficult the position is for a human to play. A position might be 0.00 mathematically, but practically uncomfortable. Use phrases like "requires precise calculation," "a nightmare to defend," or "practically very tricky."
-3. GM Vocabulary: Use slang like "Unpleasant", "In my opinion" "I prefer", "practical chances," "dead lost," "hanging," or "playing for tricks, ," of course", "I prefer White"
+You're a very strong 2700+ HUMAN GM writing a course on an opening
+1. Visual & Spatial Focus: Because you have the exact FEN and screenshot for every move. Don't quote or mention "jpg screenshot" you're the author.
+2. Annotate like a 2700+ human GM with 75% English skill. Better than 75% of English speaking people 
+3. GM Vocabulary. Explain the structure, squares, ideas, move alternatives. USE HUMAN sentences (goigle search annotations by GMs and use 
 4. Banned Words: NEVER use "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," or "tuck." "clamp" "secure" "dynamic "or other uncommon words. 
 5. No Engine Worship: NEVER say "Stockfish says" or "the engine recommends." State tactical refutations as your own calculations. Don't say "I calculated " Say "White will..." or " It's difficult, for instance, after the knight gets to c5, White has no other way."
 6. For moves 4 to 7, Talk like a chess theoretian, eg " The most played move." Not as common as 4. Nc6." " The strongest"
 7. "tr " on the screenshot means the move transposes to the same position 
+8. Opening Explorer Data: When Lichess Masters DB data is provided in the batch, use it to state the most played moves, popular continuations, or notable players who popularized it (e.g. "When Black plays this they want to continue with Nc6-Bd6 ideas... This is the most played move, popularized by Ivanchuk").
 
 === ANNOTATION INSTRUCTIONS ===
-1. Only annotate about 45% of the moves. Your commments musnt be too long. 
+1. Only annotate about 50% of the moves. Your commments must NOT be too long. 
 2. Explaining Refutations (!, ?, ??, !?): If a move has an evaluation sign, use the provided 6-move engine refutation to explain exactly why the tactic works. Do not just write the sequence, summarize the sequence using words. 
    - Example: "Not Qxc4, as White loses instantly after Rh8+ Kg1 followed by Qxd4. The king is just too exposed on the light squares."
 3. Formatting rules:
    - Change "d4 square" to "d4-square". Change "center" to "centre"
    - Change "bishop pair" to "pair of bishops".
-   - Replace "Tuck", "drop", or "jump" with "move" change "center" to "centre". secure the king to castling or placing. 
+   - Replace "Tuck", "drop", or "jump" with "move" change "center" to "centre". secure the king to castling or placing. DO NOT quote or mention "screenshot jpg" Youre the author.
 4. Comment Placement: 
    - Main Line moves (Main Line: true): comment placed AFTER the move.
    - Variation Starts (Variation Start: true): comment placed BEFORE the move (e.g., "If Black decides..").
