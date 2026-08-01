@@ -443,24 +443,48 @@ function showInterRoundScreen(pts) {
 
     $('#round-status-message').html(statusHtml);
 
-    // Generate Dynamic Standings (Ewaoluwa always in Top 10. If win = #1)
+    // Generate Dynamic Standings
     let playersPool = [...opponentNames].sort(() => 0.5 - Math.random()).slice(0, 77);
     let listHTML = "<ol style='margin: 0; padding-left: 20px; color: #cbd5e1;'>";
     
-    // Determine her position
+    // Simulate Swiss curve: Roughly half the players progress with perfect scores each round
+    let perfectCount = Math.floor(72 / Math.pow(2, currentRound)); 
+    let mockScores = [];
+    
+    for(let i=0; i<77; i++) {
+        if (i < perfectCount) {
+            mockScores.push(currentRound);
+        } else {
+            let scoreDrop = Math.floor((i - perfectCount) / 10) * 0.5;
+            let val = currentRound - 0.5 - scoreDrop;
+            mockScores.push(Math.max(0, val));
+        }
+    }
+    
+    // Position constraint: #1 if win, Top 10 if loss/draw
     let position = isWin ? 0 : Math.floor(Math.random() * 9) + 1; 
     playersPool.splice(position, 0, "Ewaoluwa Kola-Fajobi");
     
-    // Render list with mock points
+    // Render list while preserving visually descending logic
     for(let i=0; i<78; i++) {
         if(playersPool[i] === "Ewaoluwa Kola-Fajobi") {
             listHTML += `<li style="color: #0f172a; font-weight: bold; background: #4ade80; padding: 4px 8px; border-radius: 4px; margin-bottom: 4px;">${playersPool[i]} - ${totalTeamPoints.toFixed(1)} pts</li>`;
         } else {
-            // Give opponents realistic mock points near her score based on rank
-            let mockPts = Math.max(0, totalTeamPoints - (i * 0.08) + (Math.random() * 0.2)).toFixed(1);
-            if (i < position) mockPts = (totalTeamPoints + (Math.random() * 0.5) + 0.1).toFixed(1); // Keep them higher if she didn't win
-            if(mockPts > currentRound) mockPts = currentRound.toFixed(1); // Cap it
-            listHTML += `<li style="margin-bottom: 4px; border-bottom: 1px solid #1e293b; padding-bottom: 2px;">${playersPool[i]} - ${mockPts} pts</li>`;
+            let sIndex = (i > position) ? i - 1 : i;
+            let mockPts = mockScores[sIndex];
+            
+            // Adjust mock points around her explicitly to strictly uphold her placement logic visually
+            if (i < position) {
+                mockPts = Math.max(mockPts, totalTeamPoints + 0.5);
+                mockPts = Math.min(currentRound, mockPts);
+            } else if (i > position) {
+                if (mockPts >= totalTeamPoints) {
+                    mockPts = totalTeamPoints - (isWin ? 0.5 : 0);
+                    if(mockPts < 0) mockPts = 0;
+                }
+            }
+            
+            listHTML += `<li style="margin-bottom: 4px; border-bottom: 1px solid #1e293b; padding-bottom: 2px;">${playersPool[i]} - ${mockPts.toFixed(1)} pts</li>`;
         }
     }
     listHTML += "</ol>";
