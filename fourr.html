@@ -366,17 +366,14 @@
                 
                 statsText.innerText = `Analyzing Move: ${c.moveNum}. ${c.target}`;
 
-                // 1. Fetch Theory for Main Lines or Variation Starts
-                let getsTheoryAssist = c.isMainLine || c.isVariationStart;
-                if (getsTheoryAssist) {
-                    btnText.innerHTML = `<div class="spinner"></div>Fetching Theory [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(600); // Polite delay for the API
-                    let theoryData = await getTheoryFromFen(c.fen); // fetch theory BEFORE the move was played
-                    if (theoryData) {
-                        lineOutput += `\n   -> [CURRENT FEN (BEFORE MOVE)]: ${c.fen}`;
-                        lineOutput += `\n   -> [POSITION EVALUATION & BEST MOVE]: ${theoryData.san} (Eval: ${theoryData.eval})`;
-                        lineOutput += `\n   -> [THEORETICAL CONTINUATION]: ${theoryData.continuation}`;
-                    }
+                // 1. Fetch Theory for ALL moves (since it is an opening course)
+                btnText.innerHTML = `<div class="spinner"></div>Fetching Theory [${currentStep}/${totalSelectedMoves}]...`;
+                await delay(400); // Polite delay for the API
+                let theoryData = await getTheoryFromFen(c.fen); // fetch theory BEFORE the move was played
+                if (theoryData) {
+                    lineOutput += `\n   -> [CURRENT FEN (BEFORE MOVE)]: ${c.fen}`;
+                    lineOutput += `\n   -> [POSITION EVALUATION & BEST MOVE]: ${theoryData.san} (Eval: ${theoryData.eval})`;
+                    lineOutput += `\n   -> [THEORETICAL CONTINUATION]: ${theoryData.continuation}`;
                 }
 
                 // 2. Fetch Refutations for Variation Ends
@@ -429,8 +426,6 @@
                     } catch (e) {
                         console.error("Engine failed for move:", e);
                     }
-                } else if (!getsTheoryAssist) {
-                    statsText.innerText = `Skipping Engine for ${c.moveNum}. ${c.target} (Normal Line)`;
                 }
                 
                 batchData.push(lineOutput);
@@ -439,26 +434,26 @@
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            // Build Deep Prompt Instructions
+            // Build Deep Prompt Instructions matching user's exact authentic persona and formatting rules
             const fullPrompt = `You are a pragmatic, 2700+ rated human Grandmaster with 68% English skill, publishing an opening course. 
-I am providing you a batch of moves and screenshot. For EVERY move, I have included the exact FEN position immediately after the move is played. For critical mistakes, I have also provided the engine refutation.
+I am providing you a batch of moves. For EVERY move, I have included the exact FEN position immediately after the move is played. For critical mistakes, I have also provided the engine refutation.
 
 STARTING POSITION FEN: ${startingFen}
 
 === YOUR PERSONA & RULES ===
-You're a very strong 2700+ HUMAN GM writing a course on an opening
-1. Visual & Spatial Focus: Because you have the exact FEN and screenshot for every move. Don't quote or mention "jpg screenshot" you're the author.
-2. Annotate like a 2700+ human GM with 75% English skill. Better than 75% of English speaking people 
-3. GM Vocabulary. Explain the structure, squares, ideas, move alternatives. 
-4. Banned Words: NEVER use "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," or "tuck." "clamp" "secure" "dynamic "or other uncommon words. 
-5. No Engine Worship: NEVER say "Stockfish says" or "the engine recommends." State tactical refutations as your own calculations. Don't say "I calculated " Say "White will..." or " It's difficult, for instance, after the knight gets to c5, White has no other way."
-6. "tr " on the screenshot means the move transposes to the same position 
+You're a very strong 2700+ HUMAN GM with only 68% English skill writing a course on an opening. 
+1. Strict Anti-Repetition Rule: NEVER quote or repeat the move name at the beginning of your comment (e.g., DO NOT write "5. a5: This move..." or "Nxg6: White eliminates..."). Just jump straight into explaining the ideas, plans, and evaluation naturally as if writing a professional book.
+2. Visual & Spatial Focus: Because you have the exact FEN and screenshot for every move, speak directly from the position. Don't mention "jpg screenshot" or files—you are the author.
+3. Natural Human Tone (68% English skill): Sound like a seasoned grandmaster writing a masterclass manual. Avoid overly flowery, robotic, or hyper-polished AI buzzwords. 
+4. Banned Words: NEVER use "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," "tuck," "clamp," "secure," "dynamic," or other uncommon AI jargon. 
+5. No Engine Worship: NEVER say "Stockfish says" or "the engine recommends." State tactical refutations as your own calculations. Don't say "I calculated"—instead say "White will..." or "It's difficult, for instance, after the knight gets to c5, White has no other way."
+6. "tr" on the screenshot means the move transposes to the same position.
 
 === ANNOTATION INSTRUCTIONS ===
 1. Analyzing Novelties & Deviations: For every move, compare the GM's [ACTUAL MOVE PLAYED] to the provided [POSITION EVALUATION & BEST MOVE]. 
-2. If the GM plays the top theoretical move, briefly explain the modern consensus of this choice.
+2. If the GM plays the top theoretical move, briefly explain the modern choice and ideas/follow-up of this choice.
 3. If the GM deviates from the top theory, acknowledge the standard theoretical move and its typical plan (using the [THEORETICAL CONTINUATION]), then explain the positional, structural, or tactical justification for the GM's deviation. Why is this new idea playable? What specific imbalances does it create that an FM or IM would appreciate?
-4. Do not define basic concepts like "controlling the centre." Speak directly to the level of titled players (FMs and IMs), focusing on deep structural nuances and specific dynamic compensation.
+4. Your English skill is 68%.
 5. Explaining Refutations (!, ?, ??, !?): If a move has an evaluation sign, use the provided 6-move engine refutation to explain exactly why the tactic works. Summarize the sequence using words. 
    - Example: "Not Qxc4, as White loses instantly after Rh8+ Kg1 followed by Qxd4. The king is just too exposed on the light squares."
 6. Formatting rules:
