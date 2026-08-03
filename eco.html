@@ -24,6 +24,7 @@
         #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
         .board-container { width: 100%; max-width: 360px; margin: 0 auto; flex-shrink: 0; }
         
+        /* Spinner for loading state */
         .spinner { border: 3px solid rgba(255,255,255,0.1); border-left-color: #1e293b; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
@@ -31,7 +32,7 @@
 <body class="p-4 md:p-10">
 
     <div class="max-w-7xl mx-auto">
-        <header class="flex flex-col md:flex-row justify-between items-center mb-6 gap-6">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
                 <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Selective Annotation Engine</p>
@@ -41,18 +42,6 @@
                 <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
             </nav>
         </header>
-
-        <!-- Database Loader Bar for Android -->
-        <div id="db-loader-banner" class="glass p-4 rounded-xl mb-6 flex flex-col md:flex-row items-center justify-between gap-4 border border-yellow-500/30">
-            <div>
-                <h3 class="text-xs font-bold uppercase gold-text">Opening Database Status</h3>
-                <p id="db-status-text" class="text-xs text-slate-400">Database not loaded. Please select your najdorf_g3_db.js file below.</p>
-            </div>
-            <label class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg uppercase cursor-pointer border border-slate-600 text-center">
-                Select Database File (.js)
-                <input type="file" id="db-file-input" accept=".js,.json" class="hidden" onchange="loadDatabaseFile(event)">
-            </label>
-        </div>
 
         <div id="view-fragmenter" class="space-y-6">
             <div class="glass p-6 rounded-2xl">
@@ -120,9 +109,13 @@
         </div>
     </div>
 
+    <!-- Core Libraries -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+
+    <!-- 1. Imported Local Static DB with DEFER to prevent freezing -->
+    <script src="najdorf_g3_db.js" defer></script>
 
     <script>
         let globalChunks = [];
@@ -130,7 +123,6 @@
         let board = null;
         let selStart = null;
         let selEnd = null;
-        let memoryDatabase = null;
 
         const delay = ms => new Promise(res => setTimeout(res, ms));
 
@@ -148,68 +140,36 @@
             }
         };
 
-        // Handle runtime file selection of the 54MB database to bypass Android local CORS
-        function loadDatabaseFile(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const statusText = document.getElementById('db-status-text');
-            statusText.innerHTML = `<div class="spinner"></div> Reading and indexing database into memory (may take a few seconds)...`;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    let content = e.target.result;
-                    // If it starts with a variable assignment like "const NAJDORF_G3_MASTER_DB = {", strip it so we can parse/access it cleanly
-                    if (content.includes('=')) {
-                        const firstEquals = content.indexOf('=');
-                        content = content.substring(firstEquals + 1);
-                    }
-                    
-                    // Parse text content safely
-                    memoryDatabase = Function('"use strict";return (' + content + ')')();
-                    
-                    statusText.innerHTML = `<span class="text-emerald-400 font-bold">✔ Database Loaded Successfully!</span> (${file.name})`;
-                    document.getElementById('db-loader-banner').classList.remove('border-yellow-500/30');
-                    document.getElementById('db-loader-banner').classList.add('border-emerald-500/50');
-                } catch (err) {
-                    console.error(err);
-                    statusText.innerHTML = `<span class="text-red-400 font-bold">Error parsing database file. Ensure it's valid format.</span>`;
-                }
-            };
-            reader.readAsText(file);
-        }
-
         async function getOpeningDatabase(fen) {
             try {
-                if (!memoryDatabase) {
-                    return { notLoaded: true };
+                if (typeof NAJDORF_G3_MASTER_DB === 'undefined') {
+                    return { isError: true };
                 }
 
                 const parts = fen.split(' ');
                 if (parts.length < 4) return null;
 
-                const boardPart = parts[0];
+                const board = parts[0];
                 const turn = parts[1];
                 const castling = parts[2];
                 const ep = parts[3];
 
                 const formatsToTry = [
                     fen,
-                    `${boardPart} ${turn} ${castling} ${ep}`,
-                    `${boardPart} ${turn} ${castling} -`,
-                    `${boardPart} ${turn} ${castling}`
+                    `${board} ${turn} ${castling} ${ep}`,
+                    `${board} ${turn} ${castling} -`,
+                    `${board} ${turn} ${castling}`
                 ];
 
                 for (let f of formatsToTry) {
-                    if (memoryDatabase[f]) {
-                        return memoryDatabase[f];
+                    if (NAJDORF_G3_MASTER_DB[f]) {
+                        return NAJDORF_G3_MASTER_DB[f];
                     }
                 }
 
                 return null;
             } catch (e) {
-                console.error("Lookup failed:", e);
+                console.error("Local database fetch failed:", e);
                 return null;
             }
         }
@@ -384,12 +344,12 @@
                 statsText.innerText = `Analyzing Move: ${c.moveNum}. ${c.target}`;
 
                 btnText.innerHTML = `<div class="spinner"></div>Database [${currentStep}/${totalSelectedMoves}]...`;
-                await delay(30); 
+                await delay(50); 
                 
                 let theoryData = await getOpeningDatabase(c.fen); 
                 
-                if (theoryData && theoryData.notLoaded) {
-                    lineOutput += `\n   -> [DATABASE NOTICE]: Database file not selected yet. Make sure to choose your .js file at the top of the page if you want explorer stats.`;
+                if (theoryData && theoryData.isError) {
+                    lineOutput += `\n   -> [ERROR!]: The 54MB najdorf_g3_db.js file is blocked by your mobile browser's local file security. You need to run this on a PC or using a local server app on your phone.`;
                 } else if (theoryData) {
                     lineOutput += `\n   -> [CURRENT FEN (BEFORE MOVE)]: ${c.fen}`;
                     lineOutput += `\n   -> [OPENING EXPLORER (MASTER DATABASE)]: Total Games: ${theoryData.totalGames}`;
@@ -403,7 +363,7 @@
                 let getsEngineAssist = c.isVariationEnd;
                 if (getsEngineAssist) {
                     btnText.innerHTML = `<div class="spinner"></div>API Engine [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(400); 
+                    await delay(500); 
                     
                     let engineData = await getEngineRefutation(c.fenAfter);
                     if (engineData) {
