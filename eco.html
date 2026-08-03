@@ -137,22 +137,21 @@
             }
         };
 
-        // 1. Fetch Real Opening Explorer Data (Lichess Master DB via Proxy)
+        // 1. Fetch Real Opening Explorer Data (Lichess Master DB Direct)
         async function getOpeningDatabase(fen, retries = 2) {
             try {
                 // Strip the half-move and full-move clocks from the end of the FEN
                 const cleanFen = fen.split(' ').slice(0, 4).join(' ');
                 
-                // Target the correct official endpoint and route it through a reliable CORS proxy
+                // Fetch DIRECTLY from Lichess. Proxy removed to prevent CORS and 429 lockouts.
                 const targetUrl = `https://explorer.lichess.org/master?fen=${encodeURIComponent(cleanFen)}`;
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
                 
-                const response = await fetch(proxyUrl);
+                const response = await fetch(targetUrl);
                 
-                // If rate limited, wait 2 seconds and try again automatically
+                // Strict 61-second timeout if Lichess rate limit is actually hit
                 if (response.status === 429 && retries > 0) {
-                    console.warn("Rate limit hit. Pausing to reset limits...");
-                    await delay(2000); 
+                    console.warn("Rate limit hit. Waiting a full 61 seconds per Lichess API rules...");
+                    await delay(61000); 
                     return getOpeningDatabase(fen, retries - 1);
                 }
                 
@@ -181,50 +180,23 @@
             }
         }
 
-        // 2. Fetch Engine Data (Lichess Cloud Eval replacing external API)
-        async function getEngineRefutation(fen, retries = 2) {
+        // 2. Fetch Engine Data (chess-api.com replacing local Stockfish)
+        async function getEngineRefutation(fen) {
             try {
-                const targetUrl = `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}`;
-                const headers = { 'Accept': 'application/json' };
-
-                const response = await fetch(targetUrl, { headers });
-                
-                // Handle Rate Limiting (429 Status)
-                if (response.status === 429 && retries > 0) {
-                    console.warn("429 Rate limit hit. Pausing for 60 seconds as per Lichess guidelines...");
-                    await delay(60000); 
-                    return getEngineRefutation(fen, retries - 1);
-                }
-                
-                // 404 means position is not in cloud cache
-                if (response.status === 404) return null; 
+                const response = await fetch("https://chess-api.com/v1", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ fen: fen, depth: 14 })
+                });
                 if (!response.ok) return null;
-                
                 const data = await response.json();
-                
-                let evalScore = "";
-                let bestSan = "";
-                let continuationMoves = "";
-                
-                if (data.pvs && data.pvs.length > 0) {
-                    const movesArray = data.pvs[0].moves.split(" ");
-                    bestSan = movesArray[0] || ""; // Lichess returns UCI (e.g. e2e4)
-                    continuationMoves = movesArray.slice(1).join(" ");
-                    
-                    if (data.pvs[0].cp !== undefined) {
-                        evalScore = (data.pvs[0].cp / 100).toFixed(2);
-                    } else if (data.pvs[0].mate !== undefined) {
-                        evalScore = `Mate in ${data.pvs[0].mate}`;
-                    }
-                }
-
                 return {
-                    eval: evalScore,
-                    san: bestSan, 
-                    continuation: continuationMoves
+                    eval: data.eval,
+                    san: data.san,
+                    continuation: data.continuationArr ? data.continuationArr.join(" ") : ""
                 };
             } catch (e) {
-                console.error("Cloud Eval fetch failed:", e);
+                console.error("Engine API failed:", e);
                 return null;
             }
         }
@@ -397,16 +369,16 @@
                 // 2. Fetch Refutations for Variation Ends using API
                 let getsEngineAssist = c.isVariationEnd;
                 if (getsEngineAssist) {
-                    btnText.innerHTML = `<div class="spinner"></div>Cloud Eval [${currentStep}/${totalSelectedMoves}]...`;
+                    btnText.innerHTML = `<div class="spinner"></div>API Engine [${currentStep}/${totalSelectedMoves}]...`;
                     await delay(500); 
                     
                     let engineData = await getEngineRefutation(c.fenAfter);
                     if (engineData) {
                         lineOutput += `\n   -> [FEN AFTER MOVE (ENGINE CONTINUATION)]: ${c.fenAfter}`;
-                        lineOutput += `\n   -> [CLOUD EVAL & CONTINUATION]: Eval: ${engineData.eval} | Best line: ${engineData.san} ${engineData.continuation}`;
+                        lineOutput += `\n   -> [ENGINE EVAL & CONTINUATION]: Eval: ${engineData.eval} | Best line: ${engineData.san} ${engineData.continuation}`;
                         statsText.innerText = `[${c.moveNum}.${c.target}] Line: ${engineData.san}`;
                     } else {
-                        lineOutput += `\n   -> [CLOUD EVAL NOTE]: Position not in cloud cache or timeout reached.`;
+                        lineOutput += `\n   -> [ENGINE NOTE]: Reached evaluation timeout.`;
                     }
                 }
                 
@@ -423,7 +395,7 @@ I am providing you a batch of moves. For EVERY move, I have included the exact F
 STARTING POSITION FEN: ${startingFen}
 
 === YOUR PERSONA & RULES ===
-You're a very strong 2700+ HUMAN GM with only 68% English skill writing a course on advanced chess openings for FMs and IMs. 
+You're a very strong 2700+ HUMAN GM with only 68% English skill writing a course on an opening. 
 1. Strict Anti-Repetition Rule: NEVER quote or repeat the move name at the beginning of your comment (e.g., DO NOT write "5. a5: This move..." or "Nxg6: White eliminates..."). Just jump straight into explaining the ideas, plans, and evaluation naturally as if writing a professional book.
 2. Visual & Spatial Focus: Because you have the exact FEN and screenshot for every move, speak directly from the position. Don't mention "jpg screenshot" or files—you are the author.
 3. Natural Human Tone (68% English skill): Sound like a seasoned grandmaster writing a masterclass manual. Avoid overly flowery, robotic, or hyper-polished AI buzzwords. 
