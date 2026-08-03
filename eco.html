@@ -181,23 +181,50 @@
             }
         }
 
-        // 2. Fetch Engine Data (chess-api.com replacing local Stockfish)
-        async function getEngineRefutation(fen) {
+        // 2. Fetch Engine Data (Lichess Cloud Eval replacing external API)
+        async function getEngineRefutation(fen, retries = 2) {
             try {
-                const response = await fetch("https://chess-api.com/v1", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ fen: fen, depth: 14 })
-                });
+                const targetUrl = `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}`;
+                const headers = { 'Accept': 'application/json' };
+
+                const response = await fetch(targetUrl, { headers });
+                
+                // Handle Rate Limiting (429 Status)
+                if (response.status === 429 && retries > 0) {
+                    console.warn("429 Rate limit hit. Pausing for 60 seconds as per Lichess guidelines...");
+                    await delay(60000); 
+                    return getEngineRefutation(fen, retries - 1);
+                }
+                
+                // 404 means position is not in cloud cache
+                if (response.status === 404) return null; 
                 if (!response.ok) return null;
+                
                 const data = await response.json();
+                
+                let evalScore = "";
+                let bestSan = "";
+                let continuationMoves = "";
+                
+                if (data.pvs && data.pvs.length > 0) {
+                    const movesArray = data.pvs[0].moves.split(" ");
+                    bestSan = movesArray[0] || ""; // Lichess returns UCI (e.g. e2e4)
+                    continuationMoves = movesArray.slice(1).join(" ");
+                    
+                    if (data.pvs[0].cp !== undefined) {
+                        evalScore = (data.pvs[0].cp / 100).toFixed(2);
+                    } else if (data.pvs[0].mate !== undefined) {
+                        evalScore = `Mate in ${data.pvs[0].mate}`;
+                    }
+                }
+
                 return {
-                    eval: data.eval,
-                    san: data.san,
-                    continuation: data.continuationArr ? data.continuationArr.join(" ") : ""
+                    eval: evalScore,
+                    san: bestSan, 
+                    continuation: continuationMoves
                 };
             } catch (e) {
-                console.error("Engine API failed:", e);
+                console.error("Cloud Eval fetch failed:", e);
                 return null;
             }
         }
@@ -370,16 +397,16 @@
                 // 2. Fetch Refutations for Variation Ends using API
                 let getsEngineAssist = c.isVariationEnd;
                 if (getsEngineAssist) {
-                    btnText.innerHTML = `<div class="spinner"></div>API Engine [${currentStep}/${totalSelectedMoves}]...`;
+                    btnText.innerHTML = `<div class="spinner"></div>Cloud Eval [${currentStep}/${totalSelectedMoves}]...`;
                     await delay(500); 
                     
                     let engineData = await getEngineRefutation(c.fenAfter);
                     if (engineData) {
                         lineOutput += `\n   -> [FEN AFTER MOVE (ENGINE CONTINUATION)]: ${c.fenAfter}`;
-                        lineOutput += `\n   -> [ENGINE EVAL & CONTINUATION]: Eval: ${engineData.eval} | Best line: ${engineData.san} ${engineData.continuation}`;
+                        lineOutput += `\n   -> [CLOUD EVAL & CONTINUATION]: Eval: ${engineData.eval} | Best line: ${engineData.san} ${engineData.continuation}`;
                         statsText.innerText = `[${c.moveNum}.${c.target}] Line: ${engineData.san}`;
                     } else {
-                        lineOutput += `\n   -> [ENGINE NOTE]: Reached evaluation timeout.`;
+                        lineOutput += `\n   -> [CLOUD EVAL NOTE]: Position not in cloud cache or timeout reached.`;
                     }
                 }
                 
@@ -396,7 +423,7 @@ I am providing you a batch of moves. For EVERY move, I have included the exact F
 STARTING POSITION FEN: ${startingFen}
 
 === YOUR PERSONA & RULES ===
-You're a very strong 2700+ HUMAN GM with only 68% English skill writing a course on an opening. 
+You're a very strong 2700+ HUMAN GM with only 68% English skill writing a course on advanced chess openings for FMs and IMs. 
 1. Strict Anti-Repetition Rule: NEVER quote or repeat the move name at the beginning of your comment (e.g., DO NOT write "5. a5: This move..." or "Nxg6: White eliminates..."). Just jump straight into explaining the ideas, plans, and evaluation naturally as if writing a professional book.
 2. Visual & Spatial Focus: Because you have the exact FEN and screenshot for every move, speak directly from the position. Don't mention "jpg screenshot" or files—you are the author.
 3. Natural Human Tone (68% English skill): Sound like a seasoned grandmaster writing a masterclass manual. Avoid overly flowery, robotic, or hyper-polished AI buzzwords. 
