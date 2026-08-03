@@ -60,6 +60,13 @@
                 
                 <div class="flex flex-wrap items-center gap-3">
                     <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Data</button>
+
+                    <!-- ADDED DATABASE UPLOADER BUTTON HERE -->
+                    <label class="px-6 py-3 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-600 uppercase text-xs cursor-pointer flex items-center gap-2">
+                        <span>Upload Database</span>
+                        <input type="file" id="db-file-input" accept=".zip" class="hidden" onchange="handleFileUpload(event)">
+                    </label>
+
                     <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy Selected Batch</span></button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
                 </div>
@@ -130,7 +137,46 @@
 
         const delay = ms => new Promise(res => setTimeout(res, ms));
 
-        // Background loader for the zipped database
+        // Handler when the user selects a zipped database file via the button
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statsEl = document.getElementById('stats');
+            const spinnerEl = document.getElementById('db-spinner');
+
+            try {
+                statsEl.innerText = "EXTRACTING DATABASE...";
+                spinnerEl.classList.remove('hidden');
+
+                const zip = new JSZip();
+                const unzipped = await zip.loadAsync(file);
+
+                const jsFilename = Object.keys(unzipped.files).find(name => name.endsWith('.js'));
+                const dbFile = jsFilename ? unzipped.file(jsFilename) : null;
+
+                if (dbFile) {
+                    const jsContent = await dbFile.async("string");
+                    const scriptElement = document.createElement('script');
+                    scriptElement.textContent = jsContent;
+                    document.body.appendChild(scriptElement);
+                    isDbLoaded = true;
+                    statsEl.innerText = "DATABASE READY";
+                    alert("Database loaded successfully!");
+                } else {
+                    statsEl.innerText = "ERROR: NO JS FILE IN ZIP";
+                    alert("No valid .js database file was found inside the uploaded ZIP.");
+                }
+            } catch (e) {
+                console.error("Zip extraction failed:", e);
+                statsEl.innerText = "DB LOAD ERROR";
+                alert("Failed to extract ZIP file. Make sure it is valid.");
+            } finally {
+                spinnerEl.classList.add('hidden');
+            }
+        }
+
+        // Background loader for auto-fetching Sicilian.zip if hosted locally
         async function loadZippedDatabase() {
             if (isDbLoaded) return;
             try {
@@ -140,15 +186,14 @@
                 statsEl.innerText = "EXTRACTING DATABASE...";
                 spinnerEl.classList.remove('hidden');
 
-                // Fetches the 1.4 MB zip file instead of the heavy JS file
+                // Fetches the zip file if available on the server
                 const response = await fetch('Sicilian.zip');
-                if (!response.ok) throw new Error("Zip file not found. Ensure it is uploaded.");
+                if (!response.ok) throw new Error("Zip file not found locally. Use the Upload button.");
                 
                 const blob = await response.blob();
                 const zip = new JSZip();
                 const unzipped = await zip.loadAsync(blob);
 
-                // Automatically find whatever the .js file is named inside the zip
                 const jsFilename = Object.keys(unzipped.files).find(name => name.endsWith('.js'));
                 const dbFile = jsFilename ? unzipped.file(jsFilename) : null;
                 
@@ -160,11 +205,10 @@
                     isDbLoaded = true;
                     statsEl.innerText = "DATABASE READY";
                 } else {
-                    statsEl.innerText = "ERROR: NO JS FILE IN ZIP";
+                    statsEl.innerText = "NO DEFAULT DB (UPLOAD ZIP)";
                 }
             } catch (e) {
-                console.error("Zip extraction failed:", e);
-                document.getElementById('stats').innerText = "DB LOAD ERROR";
+                document.getElementById('stats').innerText = "READY (UPLOAD DB)";
             } finally {
                 document.getElementById('db-spinner').classList.add('hidden');
             }
@@ -176,7 +220,7 @@
                 position: 'start'
             });
 
-            // Start extracting the zip as soon as the page loads
+            // Attempt default load, fallback to asking user to click Upload
             loadZippedDatabase();
 
             const saved = localStorage.getItem('gm_master_state');
@@ -516,7 +560,6 @@ ${batchString}`;
             let aiData = {};
             
             try {
-                // Extracts the outermost JSON object to safely bypass markdown or text padding
                 const firstBrace = raw.indexOf('{');
                 const lastBrace = raw.lastIndexOf('}');
                 
