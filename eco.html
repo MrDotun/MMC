@@ -137,21 +137,22 @@
             }
         };
 
-        // 1. Fetch Real Opening Explorer Data (Lichess Master DB Direct)
+        // 1. Fetch Real Opening Explorer Data (Lichess Master DB via Proxy)
         async function getOpeningDatabase(fen, retries = 2) {
             try {
                 // Strip the half-move and full-move clocks from the end of the FEN
                 const cleanFen = fen.split(' ').slice(0, 4).join(' ');
                 
-                // Fetch DIRECTLY from Lichess. Proxy removed to prevent CORS and 429 lockouts.
+                // Target the correct official endpoint and route it through a reliable CORS proxy
                 const targetUrl = `https://explorer.lichess.org/master?fen=${encodeURIComponent(cleanFen)}`;
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
                 
-                const response = await fetch(targetUrl);
+                const response = await fetch(proxyUrl);
                 
-                // Strict 61-second timeout if Lichess rate limit is actually hit
+                // If rate limited, wait 2 seconds and try again automatically
                 if (response.status === 429 && retries > 0) {
-                    console.warn("Rate limit hit. Waiting a full 61 seconds per Lichess API rules...");
-                    await delay(61000); 
+                    console.warn("Rate limit hit. Pausing to reset limits...");
+                    await delay(2000); 
                     return getOpeningDatabase(fen, retries - 1);
                 }
                 
@@ -401,7 +402,7 @@ You're a very strong 2700+ HUMAN GM with only 68% English skill writing a course
 3. Natural Human Tone (68% English skill): Sound like a seasoned grandmaster writing a masterclass manual. Avoid overly flowery, robotic, or hyper-polished AI buzzwords. 
 4. Banned Words: NEVER use "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," "tuck," "clamp," "secure," "dynamic," or other uncommon AI jargon. 
 5. No Engine Worship: NEVER say "Stockfish says" or "the engine recommends." No opening explorer worship too. State tactical refutations as your own calculations. Don't say "I calculated"—instead say "White will..." or "It's difficult, for instance, after the knight gets to c5, White has no other way."
-6. Always make reference to the theoretical moves. Tell the most played and the continuations. 
+6. Focus exclusively on giving the best moves and the continuation ideas. For example: This is the most played move. When White plays 7. Bc4, they intend to put a knight on f4 with a kingside attack etc.
 
 === ANNOTATION INSTRUCTIONS ===
 1. Analyzing Novelties & Deviations: For every move, compare the [ACTUAL MOVE PLAYED] to the provided Opening Explorer stats. 
