@@ -39,7 +39,7 @@
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
-                <button onclick="switchTab('reassembled')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
+                <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
             </nav>
         </header>
 
@@ -60,13 +60,6 @@
                 
                 <div class="flex flex-wrap items-center gap-3">
                     <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Data</button>
-                    
-                    <!-- Direct Local Upload Button -->
-                    <label class="px-6 py-3 bg-slate-800 text-slate-200 font-bold rounded-xl hover:bg-slate-700 uppercase text-xs cursor-pointer border border-slate-700">
-                        Load DB File (.zip / .js)
-                        <input type="file" id="local-db-file" accept=".zip,.js,.txt" class="hidden" onchange="handleManualDbUpload(event)">
-                    </label>
-
                     <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy Selected Batch</span></button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
                 </div>
@@ -147,86 +140,34 @@
                 statsEl.innerText = "EXTRACTING DATABASE...";
                 spinnerEl.classList.remove('hidden');
 
-                // Fetches the zip file from server
+                // Fetches the 1.4 MB zip file instead of the heavy JS file
                 const response = await fetch('Sicilian.zip');
                 if (!response.ok) throw new Error("Zip file not found. Ensure it is uploaded.");
                 
                 const blob = await response.blob();
-                await parseAndLoadZip(blob);
+                const zip = new JSZip();
+                const unzipped = await zip.loadAsync(blob);
+
+                // Automatically find whatever the .js file is named inside the zip
+                const jsFilename = Object.keys(unzipped.files).find(name => name.endsWith('.js'));
+                const dbFile = jsFilename ? unzipped.file(jsFilename) : null;
+                
+                if (dbFile) {
+                    const jsContent = await dbFile.async("string");
+                    const scriptElement = document.createElement('script');
+                    scriptElement.textContent = jsContent;
+                    document.body.appendChild(scriptElement);
+                    isDbLoaded = true;
+                    statsEl.innerText = "DATABASE READY";
+                } else {
+                    statsEl.innerText = "ERROR: NO JS FILE IN ZIP";
+                }
             } catch (e) {
                 console.error("Zip extraction failed:", e);
                 document.getElementById('stats').innerText = "DB LOAD ERROR";
-            } flexFinally();
-        }
-
-        function flexFinally() {
-            document.getElementById('db-spinner').classList.add('hidden');
-        }
-
-        // Universal ZIP Parser
-        async function parseAndLoadZip(blobOrFile) {
-            const statsEl = document.getElementById('stats');
-            const zip = new JSZip();
-            const unzipped = await zip.loadAsync(blobOrFile);
-
-            const validFiles = Object.keys(unzipped.files).filter(name => {
-                const f = unzipped.files[name];
-                return !f.dir && !name.includes('__MACOSX') && !name.startsWith('.');
-            });
-
-            let targetFileName = validFiles.find(name => {
-                const lower = name.toLowerCase();
-                return lower.endsWith('.js') || lower.endsWith('.txt');
-            });
-
-            if (!targetFileName && validFiles.length > 0) {
-                targetFileName = validFiles[0];
-            }
-
-            const dbFile = targetFileName ? unzipped.file(targetFileName) : null;
-            
-            if (dbFile) {
-                const jsContent = await dbFile.async("string");
-                injectScript(jsContent);
-                isDbLoaded = true;
-                statsEl.innerText = "DATABASE READY";
-            } else {
-                statsEl.innerText = "ERROR: NO JS FILE IN ZIP";
-            }
-        }
-
-        // Manual File Upload Handler
-        async function handleManualDbUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const statsEl = document.getElementById('stats');
-            const spinnerEl = document.getElementById('db-spinner');
-            
-            statsEl.innerText = "LOADING FILE...";
-            spinnerEl.classList.remove('hidden');
-
-            try {
-                if (file.name.toLowerCase().endsWith('.zip')) {
-                    await parseAndLoadZip(file);
-                } else {
-                    const text = await file.text();
-                    injectScript(text);
-                    isDbLoaded = true;
-                    statsEl.innerText = "DATABASE READY";
-                }
-            } catch (e) {
-                console.error("Manual upload failed:", e);
-                statsEl.innerText = "LOAD ERROR";
             } finally {
-                spinnerEl.classList.add('hidden');
+                document.getElementById('db-spinner').classList.add('hidden');
             }
-        }
-
-        function injectScript(content) {
-            const scriptElement = document.createElement('script');
-            scriptElement.textContent = content;
-            document.body.appendChild(scriptElement);
         }
 
         window.onload = () => {
@@ -235,6 +176,7 @@
                 position: 'start'
             });
 
+            // Start extracting the zip as soon as the page loads
             loadZippedDatabase();
 
             const saved = localStorage.getItem('gm_master_state');
@@ -279,7 +221,7 @@
             }
         }
 
-        async function getEngineRefutation(fen) {
+        async function getEngineRefutation(fen, currentMoveNum, isBlackTurn) {
             try {
                 const response = await fetch("https://chess-api.com/v1", {
                     method: "POST",
@@ -288,10 +230,41 @@
                 });
                 if (!response.ok) return null;
                 const data = await response.json();
+
+                // Format up to 4 moves with proper move numbering, symbols, and signs
+                let formattedContinuation = "";
+                if (data.continuationArr && data.continuationArr.length > 0) {
+                    let tempChess = new Chess(fen);
+                    let moveList = data.continuationArr.slice(0, 4); 
+                    let formattedMoves = [];
+
+                    moveList.forEach((moveStr) => {
+                        let turn = tempChess.turn();
+                        let moveNum = tempChess.history().length === 0 ? currentMoveNum : Math.floor(tempChess.history().length / 2) + currentMoveNum;
+
+                        let moveRes = tempChess.move(moveStr, { sloppy: true });
+                        if (moveRes) {
+                            let sanMove = moveRes.san; 
+                            if (turn === 'w') {
+                                formattedMoves.push(`${moveNum}. ${sanMove}`);
+                            } else {
+                                if (formattedMoves.length === 0) {
+                                    formattedMoves.push(`${moveNum}... ${sanMove}`);
+                                } else {
+                                    formattedMoves.push(sanMove);
+                                }
+                            }
+                        }
+                    });
+                    formattedContinuation = formattedMoves.join(" ");
+                } else {
+                    formattedContinuation = data.san || "";
+                }
+
                 return {
                     eval: data.eval,
                     san: data.san,
-                    continuation: data.continuationArr ? data.continuationArr.join(" ") : ""
+                    continuation: formattedContinuation
                 };
             } catch (e) {
                 console.error("Engine API failed:", e);
@@ -470,11 +443,13 @@
                     btnText.innerHTML = `<div class="spinner"></div>API Engine [${currentStep}/${totalSelectedMoves}]...`;
                     await delay(500); 
                     
-                    let engineData = await getEngineRefutation(c.fenAfter);
+                    // Fetch Engine Continuation formatted with Move Numbers and Symbols
+                    let nextMoveNum = c.moveNum + (c.fenAfter.includes(' w ') ? 0 : 1);
+                    let engineData = await getEngineRefutation(c.fenAfter, nextMoveNum, c.fenAfter.includes(' b '));
                     if (engineData) {
                         lineOutput += `\n   -> [FEN AFTER MOVE (ENGINE CONTINUATION)]: ${c.fenAfter}`;
-                        lineOutput += `\n   -> [ENGINE EVAL & CONTINUATION]: Eval: ${engineData.eval} | Best line: ${engineData.san} ${engineData.continuation}`;
-                        statsText.innerText = `[${c.moveNum}.${c.target}] Line: ${engineData.san}`;
+                        lineOutput += `\n   -> [ENGINE EVAL & CONTINUATION]: Eval: ${engineData.eval} | Best line (4 moves): ${engineData.continuation}`;
+                        statsText.innerText = `[${c.moveNum}.${c.target}] Line: ${engineData.continuation}`;
                     } else {
                         lineOutput += `\n   -> [ENGINE NOTE]: Reached evaluation timeout.`;
                     }
@@ -572,11 +547,24 @@ ${batchString}`;
         function rebuildPgn() {
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
-            const matches = raw.match(/\{[\s\S]*?\}/g);
-            if (matches) {
-                matches.forEach(m => {
-                    try { Object.assign(aiData, JSON.parse(m)); } catch(e){}
-                });
+            
+            // Re-assembler logic: Parses standard JSON as well as raw key-value response formats
+            try {
+                const matches = raw.match(/\{[\s\S]*?\}/g);
+                if (matches) {
+                    matches.forEach(m => {
+                        try { Object.assign(aiData, JSON.parse(m)); } catch(e){}
+                    });
+                }
+            } catch(e){}
+
+            // Fallback Regex parser for unformatted key-value inputs
+            if (Object.keys(aiData).length === 0) {
+                const regex = /"(CHK_\d+_M\d+_V\d+)"\s*:\s*"([^"]+)"/g;
+                let match;
+                while ((match = regex.exec(raw)) !== null) {
+                    aiData[match[1]] = match[2];
+                }
             }
             
             let workingTokens = [...pgnTokens];
