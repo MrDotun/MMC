@@ -39,7 +39,7 @@
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
-                <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
+                <button onclick="switchTab('reassembled')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
             </nav>
         </header>
 
@@ -60,6 +60,13 @@
                 
                 <div class="flex flex-wrap items-center gap-3">
                     <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Data</button>
+                    
+                    <!-- Direct Local Upload Button -->
+                    <label class="px-6 py-3 bg-slate-800 text-slate-200 font-bold rounded-xl hover:bg-slate-700 uppercase text-xs cursor-pointer border border-slate-700">
+                        Load DB File (.zip / .js)
+                        <input type="file" id="local-db-file" accept=".zip,.js,.txt" class="hidden" onchange="handleManualDbUpload(event)">
+                    </label>
+
                     <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy Selected Batch</span></button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
                 </div>
@@ -140,34 +147,86 @@
                 statsEl.innerText = "EXTRACTING DATABASE...";
                 spinnerEl.classList.remove('hidden');
 
-                // Fetches the 1.4 MB zip file instead of the heavy JS file
+                // Fetches the zip file from server
                 const response = await fetch('Sicilian.zip');
                 if (!response.ok) throw new Error("Zip file not found. Ensure it is uploaded.");
                 
                 const blob = await response.blob();
-                const zip = new JSZip();
-                const unzipped = await zip.loadAsync(blob);
-
-                // Automatically find whatever the .js file is named inside the zip
-                const jsFilename = Object.keys(unzipped.files).find(name => name.endsWith('.js'));
-                const dbFile = jsFilename ? unzipped.file(jsFilename) : null;
-                
-                if (dbFile) {
-                    const jsContent = await dbFile.async("string");
-                    const scriptElement = document.createElement('script');
-                    scriptElement.textContent = jsContent;
-                    document.body.appendChild(scriptElement);
-                    isDbLoaded = true;
-                    statsEl.innerText = "DATABASE READY";
-                } else {
-                    statsEl.innerText = "ERROR: NO JS FILE IN ZIP";
-                }
+                await parseAndLoadZip(blob);
             } catch (e) {
                 console.error("Zip extraction failed:", e);
                 document.getElementById('stats').innerText = "DB LOAD ERROR";
-            } finally {
-                document.getElementById('db-spinner').classList.add('hidden');
+            } flexFinally();
+        }
+
+        function flexFinally() {
+            document.getElementById('db-spinner').classList.add('hidden');
+        }
+
+        // Universal ZIP Parser
+        async function parseAndLoadZip(blobOrFile) {
+            const statsEl = document.getElementById('stats');
+            const zip = new JSZip();
+            const unzipped = await zip.loadAsync(blobOrFile);
+
+            const validFiles = Object.keys(unzipped.files).filter(name => {
+                const f = unzipped.files[name];
+                return !f.dir && !name.includes('__MACOSX') && !name.startsWith('.');
+            });
+
+            let targetFileName = validFiles.find(name => {
+                const lower = name.toLowerCase();
+                return lower.endsWith('.js') || lower.endsWith('.txt');
+            });
+
+            if (!targetFileName && validFiles.length > 0) {
+                targetFileName = validFiles[0];
             }
+
+            const dbFile = targetFileName ? unzipped.file(targetFileName) : null;
+            
+            if (dbFile) {
+                const jsContent = await dbFile.async("string");
+                injectScript(jsContent);
+                isDbLoaded = true;
+                statsEl.innerText = "DATABASE READY";
+            } else {
+                statsEl.innerText = "ERROR: NO JS FILE IN ZIP";
+            }
+        }
+
+        // Manual File Upload Handler
+        async function handleManualDbUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statsEl = document.getElementById('stats');
+            const spinnerEl = document.getElementById('db-spinner');
+            
+            statsEl.innerText = "LOADING FILE...";
+            spinnerEl.classList.remove('hidden');
+
+            try {
+                if (file.name.toLowerCase().endsWith('.zip')) {
+                    await parseAndLoadZip(file);
+                } else {
+                    const text = await file.text();
+                    injectScript(text);
+                    isDbLoaded = true;
+                    statsEl.innerText = "DATABASE READY";
+                }
+            } catch (e) {
+                console.error("Manual upload failed:", e);
+                statsEl.innerText = "LOAD ERROR";
+            } finally {
+                spinnerEl.classList.add('hidden');
+            }
+        }
+
+        function injectScript(content) {
+            const scriptElement = document.createElement('script');
+            scriptElement.textContent = content;
+            document.body.appendChild(scriptElement);
         }
 
         window.onload = () => {
@@ -176,7 +235,6 @@
                 position: 'start'
             });
 
-            // Start extracting the zip as soon as the page loads
             loadZippedDatabase();
 
             const saved = localStorage.getItem('gm_master_state');
