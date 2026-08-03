@@ -130,7 +130,7 @@
 
         const delay = ms => new Promise(res => setTimeout(res, ms));
 
-        // Background loader for the zipped database[span_1](start_span)[span_1](end_span)
+        // Background loader for the zipped database
         async function loadZippedDatabase() {
             if (isDbLoaded) return;
             try {
@@ -140,6 +140,7 @@
                 statsEl.innerText = "EXTRACTING DATABASE...";
                 spinnerEl.classList.remove('hidden');
 
+                // Fetches the 1.4 MB zip file instead of the heavy JS file
                 const response = await fetch('Sicilian.zip');
                 if (!response.ok) throw new Error("Zip file not found. Ensure it is uploaded.");
                 
@@ -147,6 +148,7 @@
                 const zip = new JSZip();
                 const unzipped = await zip.loadAsync(blob);
 
+                // Automatically find whatever the .js file is named inside the zip
                 const jsFilename = Object.keys(unzipped.files).find(name => name.endsWith('.js'));
                 const dbFile = jsFilename ? unzipped.file(jsFilename) : null;
                 
@@ -174,6 +176,7 @@
                 position: 'start'
             });
 
+            // Start extracting the zip as soon as the page loads
             loadZippedDatabase();
 
             const saved = localStorage.getItem('gm_master_state');
@@ -437,7 +440,7 @@ You're a very strong 2700+ HUMAN GM with only 68% English skill writing a course
 3. Natural Human Tone (68% English skill): Sound like a seasoned grandmaster writing a masterclass manual. Avoid overly flowery, robotic, or hyper-polished AI buzzwords. 
 4. Banned Words: NEVER use "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," "tuck," "clamp," "secure," "dynamic," or other uncommon AI jargon. 
 5. No Engine Worship: NEVER say "Stockfish says" or "the engine recommends." No opening explorer worship too. State tactical refutations as your own calculations. Don't say "I calculated"—instead say "White will..." or "It's difficult, for instance, after the knight gets to c5, White has no other way."
-6. Focus exclusively on supplying ideas (10 moves) to explain important moves and the reason (followup ideas or plan), incorporating signs, symbols, and evaluation signs (e.g., !, ?, +=, etc.).
+6. Focus exclusively on giving the best moves and the continuation ideas. For example: This is the most played move. When White plays 7. Bc4, they intend to put a knight on f4 with a kingside attack etc.
 
 === ANNOTATION INSTRUCTIONS ===
 1. Analyzing Novelties & Deviations: For every move, compare the [ACTUAL MOVE PLAYED] to the provided Opening Explorer stats. 
@@ -511,11 +514,22 @@ ${batchString}`;
         function rebuildPgn() {
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
-            const matches = raw.match(/\{[\s\S]*?\}/g);
-            if (matches) {
-                matches.forEach(m => {
-                    try { Object.assign(aiData, JSON.parse(m)); } catch(e){}
-                });
+            
+            try {
+                // Extracts the outermost JSON object to safely bypass markdown or text padding
+                const firstBrace = raw.indexOf('{');
+                const lastBrace = raw.lastIndexOf('}');
+                
+                if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                    const jsonStr = raw.substring(firstBrace, lastBrace + 1);
+                    aiData = JSON.parse(jsonStr);
+                } else {
+                    aiData = JSON.parse(raw);
+                }
+            } catch (e) {
+                alert("Failed to parse the JSON. Please ensure the AI provided a valid JSON object mapping chunk IDs to comments.");
+                console.error("JSON Parse Error:", e);
+                return;
             }
             
             let workingTokens = [...pgnTokens];
