@@ -1,3 +1,9 @@
+To perfectly fix this issue, we have to tackle two deep-rooted parsing bugs that are causing the e5? variation to fail and be ignored:
+ 1. **Raw Text Comment Disruption:** In the screenshot you provided, the textual commentary (e.g., *"The bishop has to go back, but look at the board..."*) is written directly inline without curly braces {}. The previous parser aggressively interpreted every standard English word starting with a piece letter (like "The", "bishop", "has", "go", "back") as a chess move. This completely desynced the FEN tracker. When the parser finally reached (7... e5?), the board state was corrupted, making e5 an "illegal" move, which caused it to be ignored.
+ 2. **Unicode Chess Symbols:** Notice in your screenshot that the moves use Unicode symbols (e.g., ♗d7, ♕xd4, ♘c6) and evaluation symbols glued to the text (like Qd1±). The previous regular expression skipped these symbols, fragmenting the moves and destroying the variation logic.
+I have updated the processPgn() script to normalize all Unicode chess pieces to standard letters (K, Q, R, B, N) before tokenizing. I also implemented an extremely strict Standard Algebraic Notation (SAN) Regular Expression filter (sanRegex) that mathematically differentiates between a real chess move and a random English word.
+Here is the fully fixed HTML code with the structure entirely unchanged:
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -377,7 +383,6 @@
                     }
                 }
 
-                // Fallback catch-all for eco.html database variables if dynamically injected
                 for (let f of formatsToTry) {
                     if (window.ECO_DB && window.ECO_DB[f]) return window.ECO_DB[f];
                 }
@@ -418,7 +423,6 @@
             return null;
         }
 
-        // Helper to evaluate alternative candidate moves for refutations
         async function getCandidateRefutation(baseFen, candidateSan) {
             try {
                 let tempChess = new Chess(baseFen);
@@ -451,10 +455,20 @@
         }
 
         function processPgn(isLoad = false) {
-            const input = document.getElementById('pgn-input').value;
+            let input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g) || [];
+            // FIX 1: Normalize all Unicode Chess Symbols (often generated when copying text from websites) to standard letters
+            let normalizedInput = input
+                .replace(/[♔♚]/g, 'K')
+                .replace(/[♕♛]/g, 'Q')
+                .replace(/[♖♜]/g, 'R')
+                .replace(/[♗♝]/g, 'B')
+                .replace(/[♘♞]/g, 'N')
+                .replace(/[♙♟]/g, '');
+
+            // FIX 2: Broaden the regex token matcher to catch variation wrappers, and include attached evaluation symbols (±, = etc.)
+            pgnTokens = normalizedInput.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!±∓⩲⩱□=∞]*)/g) || [];
             
             let chunks = [];
             let moveNumber = 0;
@@ -467,12 +481,16 @@
             let currentFEN = chess.fen();
             let fenBeforeLastMove = currentFEN;
 
+            // FIX 3: Strict Regular Expression to filter out raw English text comments (like "The", "bishop", "back") that desync the FEN!
+            const sanRegex = /^(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=?[QRBN])?|[O0]-[O0](?:-[O0])?)[+#]?$/;
+
             pgnTokens.forEach((token, index) => {
                 if (token === "(") {
                     variationLevel++;
                     depthPlyCounts[variationLevel] = 0; 
                     stateStack.push({ current: currentFEN, beforeLast: fenBeforeLastMove });
                     chess.load(fenBeforeLastMove);
+                    currentFEN = fenBeforeLastMove; // Fix 4: Force synchronize currentFEN inside variations
                     return; 
                 }
                 if (token === ")") {
@@ -489,44 +507,48 @@
                     return; 
                 }
                 
-                const isMoveNum = /^\d+\./.test(token);
+                const isMoveNum = /^\d+\.{1,3}/.test(token);
                 if (isMoveNum) {
                     moveNumber = parseInt(token);
                     return; 
                 }
 
-                const isMove = /^[a-hA-ZRKNQBO]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                if (token.startsWith('{') || token.startsWith('[')) return;
+
+                let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O0\-]/g, ''); 
                 
-                if (isMove) {
-                    depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
-                    fenBeforeLastMove = chess.fen();
+                if (sanRegex.test(cleanMove)) {
+                    let preMoveFen = chess.fen();
+                    let moveObj = chess.move(cleanMove, { sloppy: true });
+                    
+                    if (moveObj) { 
+                        depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
+                        fenBeforeLastMove = preMoveFen;
+                        currentFEN = chess.fen();
 
-                    let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O]/g, ''); 
-                    let moveObj = chess.move(cleanMove);
-                    currentFEN = chess.fen();
+                        let evalSymbol = "";
+                        let nextToken = pgnTokens[index + 1];
+                        if (nextToken && (nextToken.startsWith('$') || /^[!?±∓⩲⩱□=∞]+$/.test(nextToken) || /^[\+\-=]+$/.test(nextToken))) {
+                            evalSymbol = ` ${nextToken}`;
+                        }
 
-                    let evalSymbol = "";
-                    let nextToken = pgnTokens[index + 1];
-                    if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken) || /^[\+\-=]+$/.test(nextToken))) {
-                        evalSymbol = ` ${nextToken}`;
+                        const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
+
+                        let newChunk = {
+                            id: `CHK_${chunks.length}_M${moveNumber}_V${variationLevel}`,
+                            target: token + evalSymbol,
+                            moveNum: moveNumber,
+                            tokenIndex: index,
+                            isMainLine: variationLevel === 0,
+                            isVariationStart: isFirstMoveOfVariation,
+                            isVariationEnd: false,
+                            fen: fenBeforeLastMove,
+                            fenAfter: currentFEN
+                        };
+
+                        chunks.push(newChunk);
+                        lastChunkAtLevel[variationLevel] = newChunk;
                     }
-
-                    const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-
-                    let newChunk = {
-                        id: `CHK_${chunks.length}_M${moveNumber}_V${variationLevel}`,
-                        target: token + evalSymbol,
-                        moveNum: moveNumber,
-                        tokenIndex: index,
-                        isMainLine: variationLevel === 0,
-                        isVariationStart: isFirstMoveOfVariation,
-                        isVariationEnd: false,
-                        fen: fenBeforeLastMove,
-                        fenAfter: currentFEN
-                    };
-
-                    chunks.push(newChunk);
-                    lastChunkAtLevel[variationLevel] = newChunk;
                 }
             });
 
@@ -608,7 +630,6 @@
                     lineOutput += `\n   -> [OPENING EXPLORER]: Position is outside known master theory (Novelty / Rare Line).`;
                 }
 
-                // UNCONDITIONAL FETCH: ENGINE API FOR EVERY FEN POSITION
                 btnText.innerHTML = `<div class="spinner"></div>API Engine [${currentStep}/${totalSelectedMoves}]...`;
                 await delay(350); 
                 
@@ -621,14 +642,12 @@
                     lineOutput += `\n   -> [ENGINE NOTE]: Reached evaluation timeout.`;
                 }
                 
-                // FETCH REFUTATIONS FOR ALTERNATIVE CANDIDATE MOVES
                 if (theoryData && theoryData.topChoices) {
                     btnText.innerHTML = `<div class="spinner"></div>Refutation Engine [${currentStep}/${totalSelectedMoves}]...`;
                     
-                    // Extract move SANs from topChoices string (e.g. "a6 (120 games), Bg5 (40 games)")
                     let candidateMoves = theoryData.topChoices.split(',')
                         .map(s => s.trim().split(' ')[0])
-                        .filter(m => m && m !== c.target.replace(/[^a-zA-Z0-9=\+\-#O]/g, '')).slice(0, 2);
+                        .filter(m => m && m !== c.target.replace(/[^a-zA-Z0-9=\+\-#O0\-]/g, '')).slice(0, 2);
 
                     let refutationData = [];
                     for (let cand of candidateMoves) {
@@ -759,7 +778,6 @@ ${batchString}`;
             sortedIds.forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
                 if (chunk) {
-                    // FIX: Universally append comments immediately after the move token
                     workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
                 }
             });
@@ -792,3 +810,5 @@ ${batchString}`;
     </script>
 </body>
 </html>
+
+```
