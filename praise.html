@@ -1,4 +1,5 @@
-
+Here is the complete HTML code with the updated refutation helper function and the enhanced prompt integrated into the structure.
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -419,6 +420,29 @@
             return null;
         }
 
+        // Helper to evaluate alternative candidate moves for refutations
+        async function getCandidateRefutation(baseFen, candidateSan) {
+            try {
+                let tempChess = new Chess(baseFen);
+                let move = tempChess.move(candidateSan, { sloppy: true });
+                if (!move) return null;
+
+                let fenAfterCandidate = tempChess.fen();
+                let engineResult = await getEngineRefutation(fenAfterCandidate);
+                
+                if (engineResult) {
+                    return {
+                        move: candidateSan,
+                        eval: engineResult.eval,
+                        refutationLine: `${engineResult.san} ${engineResult.continuation}`
+                    };
+                }
+            } catch (e) {
+                return null;
+            }
+            return null;
+        }
+
         function switchTab(tab) {
             document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
             document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
@@ -561,9 +585,7 @@
             for (let i = selStart; i <= endIdx; i++) {
                 let currentStep = (i - selStart) + 1;
                 let c = globalChunks[i];
-                
-                // Initialize the strictly formatted string block
-                let lineOutput = `{\n  "node_id": "${c.id}",\n  "fen": "${c.fen}",\n  "move_played": "${c.target}",`;
+                let lineOutput = `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`;
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
@@ -574,25 +596,18 @@
                 await delay(50); 
                 
                 let theoryData = await getOpeningDatabase(c.fen); 
-                let statRule = "";
                 
-                // MATHEMATICAL FREQUENCY RANKING
-                if (theoryData && !theoryData.isError) {
-                    let totalG = theoryData.totalGames;
-                    // Parse "Move (X games)" to calculate percentages dynamically
-                    let frequencyMatrix = theoryData.topChoices.split(', ').map(choice => {
-                        let match = choice.match(/([a-zA-Z0-9\-+=#O]+) \((\d+) games\)/);
-                        if (match) {
-                            let moveName = match[1];
-                            let freq = Math.round((parseInt(match[2]) / totalG) * 100);
-                            return `If ${moveName} is played (${freq}% frequency)`;
-                        }
-                        return null;
-                    }).filter(Boolean).join(". ");
-                    
-                    statRule += `${frequencyMatrix}. `;
+                if (theoryData && theoryData.isError) {
+                    lineOutput += `\n   -> [ERROR!]: Database failed to extract properly. Please check your internet connection and ensure the zip file is uploaded correctly.`;
+                } else if (theoryData) {
+                    lineOutput += `\n   -> [CURRENT FEN (BEFORE MOVE)]: ${c.fen}`;
+                    lineOutput += `\n   -> [OPENING EXPLORER (MASTER DATABASE)]: Total Games: ${theoryData.totalGames}`;
+                    lineOutput += `\n   -> [MOST PLAYED CONTINUATIONS]: ${theoryData.topChoices}`;
+                    lineOutput += `\n   -> [MOST PLAYED THEORETICAL MOVE]: ${theoryData.mostPlayedSan}`;
+                    lineOutput += `\n   -> [NOTABLE MASTERS IN POSITION]: ${theoryData.notablePlayers}`;
                 } else {
-                    statRule += `Position is outside known master theory. `;
+                    lineOutput += `\n   -> [CURRENT FEN (BEFORE MOVE)]: ${c.fen}`;
+                    lineOutput += `\n   -> [OPENING EXPLORER]: Position is outside known master theory (Novelty / Rare Line).`;
                 }
 
                 // UNCONDITIONAL FETCH: ENGINE API FOR EVERY FEN POSITION
@@ -601,36 +616,72 @@
                 
                 let engineData = await getEngineRefutation(c.fenAfter);
                 if (engineData) {
-                    // Lock the AI into the deterministic engine plan
-                    statRule += `When ${c.target} is played, respond with ${engineData.san} (${engineData.eval}). Continuation plan: ${engineData.continuation}.`;
+                    lineOutput += `\n   -> [FEN AFTER MOVE (ENGINE CONTINUATION)]: ${c.fenAfter}`;
+                    lineOutput += `\n   -> [ENGINE EVAL & CONTINUATION (Next 7 Moves)]: Eval: ${engineData.eval} | Best line: ${engineData.san} ${engineData.continuation}`;
                     statsText.innerText = `[${c.moveNum}.${c.target}] Line: ${engineData.san}`;
+                } else {
+                    lineOutput += `\n   -> [ENGINE NOTE]: Reached evaluation timeout.`;
                 }
+                
+                // FETCH REFUTATIONS FOR ALTERNATIVE CANDIDATE MOVES
+                if (theoryData && theoryData.topChoices) {
+                    btnText.innerHTML = `<div class="spinner"></div>Refutation Engine [${currentStep}/${totalSelectedMoves}]...`;
+                    
+                    // Extract move SANs from topChoices string (e.g. "a6 (120 games), Bg5 (40 games)")
+                    let candidateMoves = theoryData.topChoices.split(',')
+                        .map(s => s.trim().split(' ')[0])
+                        .filter(m => m && m !== c.target.replace(/[^a-zA-Z0-9=\+\-#O]/g, '')).slice(0, 2);
 
-                lineOutput += `\n  "stat_rule": "${statRule}"\n}`;
+                    let refutationData = [];
+                    for (let cand of candidateMoves) {
+                        let ref = await getCandidateRefutation(c.fen, cand);
+                        if (ref) {
+                            refutationData.push(`Alternative Move "${ref.move}": Eval ${ref.eval} | Refutation/Continuation: ${ref.refutationLine}`);
+                        }
+                        await delay(200); 
+                    }
+
+                    if (refutationData.length > 0) {
+                        lineOutput += `\n   -> [ALTERNATIVE CANDIDATE REFUTATIONS & TACTICS]:\n      * ${refutationData.join('\n      * ')}`;
+                    }
+                }
+                
                 batchData.push(lineOutput);
             }
 
             progressFill.style.width = '100%';
-            const batchString = batchData.join(",\n");
+            const batchString = batchData.join("\n\n");
             
-            // UPDATED PROMPT: Shift burden purely to stylistic translation
             const fullPrompt = `You are a pragmatic, 2700+ rated human Grandmaster with 68% English skill, publishing an opening course. 
-Below is a deterministic array of JSON objects containing exact conditional plans based on database frequencies and engine analysis.
+I am providing you a batch of moves. For EVERY move, I have included the exact FEN position immediately after the move is played, the Most Played Continuations from a master database, the engine continuation for the next 7 moves, and tactical refutations for alternative candidate moves.
 
 STARTING POSITION FEN: ${startingFen}
 
 === YOUR PERSONA & RULES ===
-1. You act PURELY as a stylist. Translate the mathematical data in "stat_rule" into natural human prose. 
-2. Strict Anti-Repetition Rule: NEVER quote or repeat the move name at the beginning of your comment. Just jump straight into explaining the ideas and conditional plans naturally.
-3. Natural Human Tone (68% English skill): Sound like a seasoned grandmaster writing a masterclass manual. 
+You're a very strong 2700+ HUMAN GM with only 68% English skill writing a course on an opening. 
+1. Strict Anti-Repetition Rule: NEVER quote or repeat the move name at the beginning of your comment (e.g., DO NOT write "5. a5: This move..." or "Nxg6: White eliminates..."). Just jump straight into explaining the ideas, plans, and evaluation naturally.
+2. Visual & Spatial Focus: Speak directly from the position using the FEN.
+3. Natural Human Tone: Sound like a seasoned grandmaster. Avoid overly flowery, robotic, or hyper-polished AI buzzwords. 
 4. Banned Words: NEVER use "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," "tuck," "clamp," "secure," "dynamic," or other uncommon AI jargon. 
-5. No Engine Worship: NEVER say "Stockfish says" or "the engine recommends." State tactical refutations as your own calculations. 
-6. Final Output: Output ONLY a valid JSON object mapping the "node_id" to your styled text comment. Do not use markdown blocks like \`\`\`json. 
+5. No Engine Worship: NEVER say "Stockfish says" or "the engine recommends." State evaluations and tactical lines as your own GM calculations. 
 
-=== CONDITIONAL RULES BATCH ===
-[
-${batchString}
-]`;
+=== ANNOTATION INSTRUCTIONS ===
+1. Most Played Moves & Ideas: Focus heavily on explaining the *ideas* behind the top moves. For example, if a6 is most played, explain that it prepares b5 expansion or controls b5 for Bg4, using the [MOST PLAYED CONTINUATIONS] to deduce the plan.
+2. Humanizing Refutations (CRITICAL): When using [ALTERNATIVE CANDIDATE REFUTATIONS & TACTICS] to explain why a move is bad, ALWAYS use the "Acknowledge then Refute" framework. First, acknowledge the human logic behind the tempting alternative (e.g., "Pinning the knight with Bg5 seems like a very natural developing move..."). Then, explain the concrete tactical refutation (e.g., "...but it loses immediately to Nxe6, trapping the queen").
+3. Your English skill is 68%. Keep grammar pragmatic and slightly imperfect.
+4. Formatting rules:
+   - Change "d4 square" to "d4-square". Change "center" to "centre".
+   - Change "bishop pair" to "pair of bishops".
+   - Replace "Tuck", "drop", or "jump" with "move".
+5. Comment Placement: 
+   - Main Line moves (Main Line: true): comment placed AFTER the move.
+   - Variation Starts (Variation Start: true): comment placed BEFORE the move.
+   
+6. Final Output: Output ONLY a valid JSON object mapping the chunk ID to your comment. Do not use markdown blocks like \`\`\`json. 
+7. At least 50% of the moves must have a comment; especially the important moves.
+
+=== BATCH TO ANALYZE ===
+${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
                 resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
