@@ -1,6 +1,4 @@
 
-Here is the updated code. The structure remains exactly the same, but the triggerEngineMove() function has been modified to incorporate your new AI rules based on the round number, move count (calculated in plies/half-moves), and player category (Under 14 vs Under 10).
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -414,24 +412,20 @@ function setupMatch() {
 function triggerEngineMove() {
     let blunderRate = 0; 
     let targetPieces = ['q', 'r', 'b', 'n', 'p'];
-    let moveThreshold = 0; // Tracks the number of plies (half-moves)
+    let moveThreshold = 0; 
 
-    // AI Settings based on the specified Round rules for Under 14
-    if(currentRound === 1) { blunderRate = 0.85; moveThreshold = 16; } // Blunder after move 8 (16 plies)
-    else if(currentRound === 2) { blunderRate = 0.60; moveThreshold = 24; } // Play strong, blunder after move 12 (24 plies)
-    else if(currentRound === 3) { blunderRate = 0.45; moveThreshold = 24; } // Blunder after move 12 (24 plies)
-    else if(currentRound === 4) { blunderRate = 0.45; moveThreshold = 24; } // Same as round 3
-    else if(currentRound === 5) { blunderRate = 0.40; moveThreshold = 30; } // Blunder after move 15 (30 plies)
-    else if(currentRound === 6) { blunderRate = 0.35; moveThreshold = 30; } // Blunder rate 35% after move 15
+    if(currentRound === 1) { blunderRate = 0.85; moveThreshold = 16; } 
+    else if(currentRound === 2) { blunderRate = 0.60; moveThreshold = 24; } 
+    else if(currentRound === 3) { blunderRate = 0.45; moveThreshold = 24; } 
+    else if(currentRound === 4) { blunderRate = 0.45; moveThreshold = 24; } 
+    else if(currentRound === 5) { blunderRate = 0.40; moveThreshold = 30; } 
+    else if(currentRound === 6) { blunderRate = 0.35; moveThreshold = 30; } 
 
-    // Adjust AI to be slightly weaker for the Under 10 Category 
-    // In this script, categoryTotal == 84 denotes the Under 10 list
     if (categoryTotal === 84) {
-        blunderRate += 0.15; // Increase the likelihood of a blunder
-        moveThreshold = Math.max(0, moveThreshold - 4); // Blunder 2 full moves earlier
+        blunderRate += 0.15; 
+        moveThreshold = Math.max(0, moveThreshold - 4); 
     }
 
-    // Verify if the engine is eligible to blunder based on the current move number
     if(game.history().length >= moveThreshold && Math.random() < blunderRate) {
         let moves = game.moves();
         let blunders = moves.filter(m => { let testGame = new Chess(game.fen()); let moveObj = testGame.move(m); return targetPieces.includes(moveObj.piece); });
@@ -442,7 +436,21 @@ function triggerEngineMove() {
     chessWorker.postMessage("search 1000"); 
 }
 
-function executeMove(moveStr) { game.move(moveStr); oppTime += 3; board.position(game.fen()); moveSound.play(); updateLiveState(); }
+function executeMove(moveStr) { 
+    if (currentRound === 5) {
+        let testG = new Chess(game.fen());
+        testG.move(moveStr);
+        if (testG.in_checkmate()) {
+            let allM = game.moves({verbose: true});
+            let safeM = allM.filter(m => { let temp = new Chess(game.fen()); temp.move(m); return !temp.in_checkmate(); });
+            if (safeM.length > 0) {
+                let alt = safeM[Math.floor(Math.random() * safeM.length)];
+                moveStr = alt.from + alt.to + (alt.promotion ? alt.promotion : '');
+            }
+        }
+    }
+    game.move(moveStr); oppTime += 3; board.position(game.fen()); moveSound.play(); updateLiveState(); 
+}
 
 function updateLiveState() { db.collection("live_matches").doc(selectedRepName).set({ fen: game.fen(), opponent: $('#opp-name').text() }); }
 
@@ -496,12 +504,15 @@ function showInterRoundScreen(pts) {
     
     let position = 0;
     if (isFinal) {
-        position = Math.floor(Math.random() * 6) + (isWin ? 0 : 1);
-        if (position > 6) position = 6;
-        if (totalTeamPoints >= 5.5) position = 0;
+        position = Math.floor(Math.random() * 3) + 3;
     } else {
-        if (isWin) position = 0;
-        else position = Math.floor(Math.random() * 5) + 3;
+        if (currentRound === 1) position = 19;
+        else if (currentRound === 2) position = 16;
+        else if (currentRound === 3) position = 13;
+        else if (currentRound === 4) position = 10;
+        else if (currentRound === 5) position = 7;
+        
+        if (!isWin) position += (pts === 0.5 ? 1 : 2);
     }
     
     playersPool.splice(position, 0, selectedRepName);
@@ -564,7 +575,29 @@ $('#board').on('click', '[class*="square-"]', function() {
 
 chessWorker.onmessage = function(e) {
     if (typeof e.data === 'string' && e.data.length >= 4) {
-        setTimeout(() => { game.move({ from: e.data.substring(0, 2), to: e.data.substring(2, 4), promotion: 'q' }); oppTime += 3; board.position(game.fen()); moveSound.play(); updateLiveState(); }, 600);
+        setTimeout(() => { 
+            let f = e.data.substring(0, 2);
+            let t = e.data.substring(2, 4);
+            let p = 'q';
+            
+            if (currentRound === 5) {
+                let tempG = new Chess(game.fen());
+                tempG.move({from: f, to: t, promotion: p});
+                if (tempG.in_checkmate()) {
+                    let allM = game.moves({verbose: true});
+                    let safeM = allM.filter(m => { let tc = new Chess(game.fen()); tc.move(m); return !tc.in_checkmate(); });
+                    if (safeM.length > 0) {
+                        let alt = safeM[Math.floor(Math.random() * safeM.length)];
+                        f = alt.from; t = alt.to; p = alt.promotion || 'q';
+                    }
+                }
+            }
+            game.move({ from: f, to: t, promotion: p }); 
+            oppTime += 3; 
+            board.position(game.fen()); 
+            moveSound.play(); 
+            updateLiveState(); 
+        }, 600);
     }
 };
 </script>
