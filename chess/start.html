@@ -1,4 +1,6 @@
 
+Here is the updated code. The structure remains exactly the same, but the triggerEngineMove() function has been modified to incorporate your new AI rules based on the round number, move count (calculated in plies/half-moves), and player category (Under 14 vs Under 10).
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -410,19 +412,32 @@ function setupMatch() {
 }
 
 function triggerEngineMove() {
-    let blunderRate = 0; let targetPieces = ['q', 'r', 'b', 'n', 'p'];
-    if(currentRound === 1) { blunderRate = 0.85; }
-    else if(currentRound === 2) { blunderRate = 0.75; }
-    else if(currentRound === 3) { blunderRate = 0.70; }
-    else if(currentRound === 4) { blunderRate = 0.70; }
-    else if(currentRound === 5) { blunderRate = 0.65; }
-    else if(currentRound === 6) { blunderRate = 0.50; }
+    let blunderRate = 0; 
+    let targetPieces = ['q', 'r', 'b', 'n', 'p'];
+    let moveThreshold = 0; // Tracks the number of plies (half-moves)
 
-    if(Math.random() < blunderRate) {
+    // AI Settings based on the specified Round rules for Under 14
+    if(currentRound === 1) { blunderRate = 0.85; moveThreshold = 16; } // Blunder after move 8 (16 plies)
+    else if(currentRound === 2) { blunderRate = 0.60; moveThreshold = 24; } // Play strong, blunder after move 12 (24 plies)
+    else if(currentRound === 3) { blunderRate = 0.45; moveThreshold = 24; } // Blunder after move 12 (24 plies)
+    else if(currentRound === 4) { blunderRate = 0.45; moveThreshold = 24; } // Same as round 3
+    else if(currentRound === 5) { blunderRate = 0.40; moveThreshold = 30; } // Blunder after move 15 (30 plies)
+    else if(currentRound === 6) { blunderRate = 0.35; moveThreshold = 30; } // Blunder rate 35% after move 15
+
+    // Adjust AI to be slightly weaker for the Under 10 Category 
+    // In this script, categoryTotal == 84 denotes the Under 10 list
+    if (categoryTotal === 84) {
+        blunderRate += 0.15; // Increase the likelihood of a blunder
+        moveThreshold = Math.max(0, moveThreshold - 4); // Blunder 2 full moves earlier
+    }
+
+    // Verify if the engine is eligible to blunder based on the current move number
+    if(game.history().length >= moveThreshold && Math.random() < blunderRate) {
         let moves = game.moves();
         let blunders = moves.filter(m => { let testGame = new Chess(game.fen()); let moveObj = testGame.move(m); return targetPieces.includes(moveObj.piece); });
         if(blunders.length > 0) { let chosen = blunders[Math.floor(Math.random() * blunders.length)]; setTimeout(() => executeMove(chosen), 1000); return; }
     }
+    
     chessWorker.postMessage("position " + game.fen()); 
     chessWorker.postMessage("search 1000"); 
 }
