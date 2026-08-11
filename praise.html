@@ -33,7 +33,18 @@
             </div>
         </div>
 
-        <div id="status" class="mt-6 text-sm text-emerald-400 font-mono hidden"></div>
+        <!-- Progress Bar UI -->
+        <div id="progress-container" class="mt-6 hidden">
+            <div class="flex justify-between text-xs text-slate-400 mb-1">
+                <span id="progress-label">Preparing Download...</span>
+                <span id="progress-percent">0%</span>
+            </div>
+            <div class="w-full bg-slate-700 rounded-full h-2.5">
+                <div id="progress-bar" class="bg-emerald-500 h-2.5 rounded-full transition-all duration-200" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div id="status" class="mt-4 text-sm text-yellow-400 font-mono hidden"></div>
     </div>
 
     <script>
@@ -41,6 +52,21 @@
             const el = document.getElementById('status');
             el.classList.remove('hidden');
             el.innerText = msg;
+        };
+
+        const updateProgress = (percent, show = true) => {
+            const container = document.getElementById('progress-container');
+            const bar = document.getElementById('progress-bar');
+            const text = document.getElementById('progress-percent');
+            
+            if (show) {
+                container.classList.remove('hidden');
+            } else {
+                container.classList.add('hidden');
+            }
+
+            bar.style.width = percent + '%';
+            text.innerText = percent + '%';
         };
 
         async function compileDatabase() {
@@ -55,6 +81,7 @@
             const btn = document.getElementById('compile-btn');
             btn.disabled = true;
             btn.classList.add('opacity-50');
+            updateProgress(0, false); // Hide previous progress
 
             try {
                 let pgnContent = "";
@@ -81,24 +108,36 @@
                 setTimeout(async () => {
                     const db = parsePgnData(pgnContent);
                     
-                    // 3. Package into JS string using the variable name your app expects
+                    // 3. Package into JS string
                     updateStatus("Formatting JavaScript object...");
                     const jsContent = `const NAJDORF_G3_MASTER_DB = ${JSON.stringify(db, null, 2)};`;
 
-                    // 4. Zip and Download
-                    updateStatus("Zipping compiled database...");
+                    // 4. Zip and Download with Progress Tracking
+                    updateStatus("Compressing database for download...");
+                    updateProgress(0, true);
+
                     const outputZip = new JSZip();
                     outputZip.file("database.js", jsContent);
-                    const blob = await outputZip.generateAsync({ type: "blob" });
+                    
+                    // JSZip generates the file and reports progress via callback
+                    const blob = await outputZip.generateAsync({ type: "blob", compression: "DEFLATE" }, (metadata) => {
+                        const percent = metadata.percent.toFixed(0);
+                        updateProgress(percent, true);
+                    });
 
+                    // Trigger the actual browser download
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
                     a.download = "Compiled_Opening_DB.zip";
                     a.click();
 
                     updateStatus("Success! Database compiled and downloaded.");
+                    
+                    // Reset UI
                     btn.disabled = false;
                     btn.classList.remove('opacity-50');
+                    setTimeout(() => updateProgress(0, false), 2000); // Hide bar after 2 seconds
+
                 }, 100);
 
             } catch (err) {
@@ -106,10 +145,10 @@
                 console.error(err);
                 btn.disabled = false;
                 btn.classList.remove('opacity-50');
+                updateProgress(0, false);
             }
         }
 
-        // Mirrors the exact parsing logic from your app's web worker
         function parsePgnData(pgnContent) {
             const games = pgnContent.split(/\n\s*\n(?=\[Event)/g);
             const db = {};
