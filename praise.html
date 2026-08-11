@@ -81,7 +81,7 @@
             const btn = document.getElementById('compile-btn');
             btn.disabled = true;
             btn.classList.add('opacity-50');
-            updateProgress(0, false); // Hide previous progress
+            updateProgress(0, false);
 
             try {
                 let pgnContent = "";
@@ -101,44 +101,44 @@
                     throw new Error("Invalid file type.");
                 }
 
-                // 2. Parse games using Web Worker logic
+                // 2. Parse games asynchronously with progress updates
                 updateStatus("Parsing games... This might take a minute for 2000+ games.");
+                document.getElementById('progress-label').innerText = "Parsing Games...";
+                updateProgress(0, true);
                 
-                // Use a slight timeout to allow the UI to update before heavy synchronous calculation
-                setTimeout(async () => {
-                    const db = parsePgnData(pgnContent);
-                    
-                    // 3. Package into JS string
-                    updateStatus("Formatting JavaScript object...");
-                    const jsContent = `const NAJDORF_G3_MASTER_DB = ${JSON.stringify(db, null, 2)};`;
+                const db = await parsePgnData(pgnContent, (percent) => {
+                    updateProgress(percent, true);
+                });
+                
+                // 3. Package into JS string
+                updateStatus("Formatting JavaScript object...");
+                const jsContent = `const NAJDORF_G3_MASTER_DB = ${JSON.stringify(db, null, 2)};`;
 
-                    // 4. Zip and Download with Progress Tracking
-                    updateStatus("Compressing database for download...");
-                    updateProgress(0, true);
+                // 4. Zip and Download with Progress Tracking
+                updateStatus("Compressing database for download...");
+                document.getElementById('progress-label').innerText = "Compressing Zip...";
+                updateProgress(0, true);
 
-                    const outputZip = new JSZip();
-                    outputZip.file("database.js", jsContent);
-                    
-                    // JSZip generates the file and reports progress via callback
-                    const blob = await outputZip.generateAsync({ type: "blob", compression: "DEFLATE" }, (metadata) => {
-                        const percent = metadata.percent.toFixed(0);
-                        updateProgress(percent, true);
-                    });
+                const outputZip = new JSZip();
+                outputZip.file("database.js", jsContent);
+                
+                const blob = await outputZip.generateAsync({ type: "blob", compression: "DEFLATE" }, (metadata) => {
+                    const percent = metadata.percent.toFixed(0);
+                    updateProgress(percent, true);
+                });
 
-                    // Trigger the actual browser download
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(blob);
-                    a.download = "Compiled_Opening_DB.zip";
-                    a.click();
+                // Trigger browser download
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = "Compiled_Opening_DB.zip";
+                a.click();
 
-                    updateStatus("Success! Database compiled and downloaded.");
-                    
-                    // Reset UI
-                    btn.disabled = false;
-                    btn.classList.remove('opacity-50');
-                    setTimeout(() => updateProgress(0, false), 2000); // Hide bar after 2 seconds
-
-                }, 100);
+                updateStatus("Success! Database compiled and downloaded.");
+                
+                // Reset UI
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+                setTimeout(() => updateProgress(0, false), 2000);
 
             } catch (err) {
                 updateStatus("Error: " + err.message);
@@ -149,12 +149,13 @@
             }
         }
 
-        function parsePgnData(pgnContent) {
+        async function parsePgnData(pgnContent, onProgress) {
             const games = pgnContent.split(/\n\s*\n(?=\[Event)/g);
             const db = {};
-            let totalGamesParsed = 0;
+            const totalGames = games.length;
 
-            for (let gamePgn of games) {
+            for (let i = 0; i < totalGames; i++) {
+                let gamePgn = games[i];
                 if (!gamePgn.trim()) continue;
                 
                 let whiteMatch = gamePgn.match(/\[White "(.*?)"\]/);
@@ -165,7 +166,6 @@
                 let chess = new Chess();
                 if (!chess.load_pgn(gamePgn, { sloppy: true })) continue;
 
-                totalGamesParsed++;
                 let history = chess.history({ verbose: true });
                 let simChess = new Chess();
 
@@ -190,6 +190,15 @@
                     }
 
                     simChess.move(move);
+                }
+
+                // Yield execution to browser every 25 games so the UI can update the progress bar
+                if (i % 25 === 0 || i === totalGames - 1) {
+                    if (onProgress) {
+                        const percent = Math.floor(((i + 1) / totalGames) * 100);
+                        onProgress(percent);
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 0));
                 }
             }
 
