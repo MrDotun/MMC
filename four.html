@@ -1,6 +1,3 @@
-Here is the updated code. I have kept all your existing UI, prompts, styling, and functionality fully intact.
-To achieve your exact requirements (especially for nested variations), I implemented a **Variation Stack Tracker** in the processPgn function. When it detects a bracket (, it now saves a reference to the very first move of that variation. When it hits the closing bracket ), it takes the final FEN position of that branch and links it directly back to the first move.
-Then, during the Engine/API fetch, it dynamically pulls the evaluation and position for the end of *that specific nested branch* and embeds it right next to the starting move in the AI prompt, forcing the AI to evaluate the move based on the branch's specific conclusion.
 ```html
 <!DOCTYPE html>
 <html lang="en">
@@ -123,8 +120,9 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
         let board = null;
         let selStart = null;
         let selEnd = null;
-        let globalSfWorker = null; 
+        let globalSfWorker = null; // Engine Instance
 
+        // Delay helper to prevent API rate limiting
         const delay = ms => new Promise(res => setTimeout(res, ms));
 
         window.onload = () => {
@@ -141,6 +139,7 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
             }
         };
 
+        // Initialize Stockfish worker
         async function initEngineWorker() {
             if (globalSfWorker) return globalSfWorker;
             try {
@@ -158,6 +157,7 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
             return globalSfWorker;
         }
 
+        // Fetch Ideas from Chess-API
         async function getTheoryFromFen(fen) {
             try {
                 const response = await fetch("https://chess-api.com/v1", {
@@ -191,7 +191,7 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            initEngineWorker(); 
+            initEngineWorker(); // Pre-boot engine silently
 
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g) || [];
             
@@ -200,7 +200,6 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
             let variationLevel = 0;
             let depthPlyCounts = { 0: 0 }; 
             let lastChunkAtLevel = {};
-            let varStartStack = []; // Tracks the starting chunks of nested variations to dynamically map their endings
 
             let chess = new Chess();
             let stateStack = [];
@@ -212,22 +211,13 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
                     variationLevel++;
                     depthPlyCounts[variationLevel] = 0; 
                     stateStack.push({ current: currentFEN, beforeLast: fenBeforeLastMove });
-                    varStartStack.push(null); // push placeholder for this new variation's start
                     chess.load(fenBeforeLastMove);
                     return; 
                 }
                 if (token === ")") {
-                    let startChunk = varStartStack.pop(); // The starting move of the variation that just ended
-                    let endChunk = lastChunkAtLevel[variationLevel];
-                    
-                    if (endChunk) {
-                        endChunk.isVariationEnd = true;
-                        if (startChunk) {
-                            // Link the FEN of the variation's absolute end to its starting chunk!
-                            startChunk.variationEndFen = endChunk.fenAfter;
-                        }
+                    if (lastChunkAtLevel[variationLevel]) {
+                        lastChunkAtLevel[variationLevel].isVariationEnd = true;
                     }
-                    
                     variationLevel--;
                     let state = stateStack.pop();
                     if(state) {
@@ -248,11 +238,11 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
                 
                 if (isMove) {
                     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
-                    fenBeforeLastMove = chess.fen(); 
+                    fenBeforeLastMove = chess.fen(); // FEN before move
 
                     let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O]/g, ''); 
                     let moveObj = chess.move(cleanMove);
-                    currentFEN = chess.fen(); 
+                    currentFEN = chess.fen(); // FEN after move
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
@@ -270,17 +260,9 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
                         isMainLine: variationLevel === 0,
                         isVariationStart: isFirstMoveOfVariation,
                         isVariationEnd: false,
-                        fen: fenBeforeLastMove,   
-                        fenAfter: currentFEN,
-                        variationEndFen: null // Will be populated when the variation closes
+                        fen: fenBeforeLastMove,   // used for UI / fetch logic
+                        fenAfter: currentFEN      // used for engine refutation logic
                     };
-
-                    // If this is a variation start, register it into the stack to map the final branch end later
-                    if (isFirstMoveOfVariation) {
-                        if (varStartStack.length > 0) {
-                            varStartStack[varStartStack.length - 1] = newChunk;
-                        }
-                    }
 
                     chunks.push(newChunk);
                     lastChunkAtLevel[variationLevel] = newChunk;
@@ -318,6 +300,7 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
             updateUI();
         }
 
+        // Engine fetch function
         function getStockfishPV(fen, depth = 14, onLiveLineUpdate) {
             return new Promise(async (resolve) => {
                 const worker = await initEngineWorker();
@@ -373,6 +356,7 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
             let batchData = [];
             let totalSelectedMoves = (endIdx - selStart) + 1;
 
+            // Run Engine & Theory Loop
             for (let i = selStart; i <= endIdx; i++) {
                 let currentStep = (i - selStart) + 1;
                 let c = globalChunks[i];
@@ -383,27 +367,16 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
                 
                 statsText.innerText = `Analyzing Move: ${c.moveNum}. ${c.target}`;
 
+                // 1. Fetch API Engine Ideas (not strict theory) for ALL moves
                 btnText.innerHTML = `<div class="spinner"></div>Fetching Ideas [${currentStep}/${totalSelectedMoves}]...`;
-                await delay(400); 
-                let theoryData = await getTheoryFromFen(c.fen); 
+                await delay(400); // Polite delay for the API
+                let theoryData = await getTheoryFromFen(c.fen); // fetch ideas BEFORE the move was played
                 if (theoryData) {
                     lineOutput += `\n   -> [CURRENT FEN (BEFORE MOVE)]: ${c.fen}`;
-                    lineOutput += `\n   -> [API ENGINE IDEAS (NOT THEORY)]: ${theoryData.san} (Eval: ${theoryData.eval})\n   -> [SUGGESTED CONTINUATION]: ${theoryData.continuation}`;
+                    lineOutput += `\n   -> [CHESS API ENGINE IDEAS / BEST MOVE]: ${theoryData.san} (Eval: ${theoryData.eval})\n   -> [SUGGESTED CONTINUATION]: ${theoryData.continuation}`;
                 }
 
-                // NEW: IF this is the start of a variation, fetch and append the specific branch END FEN dynamically
-                if (c.isVariationStart && c.variationEndFen) {
-                    btnText.innerHTML = `<div class="spinner"></div>Analyzing Variation Branch End...`;
-                    await delay(400);
-                    let branchEndTheory = await getTheoryFromFen(c.variationEndFen);
-                    lineOutput += `\n\n   >>> [CRITICAL: END OF THIS SPECIFIC VARIATION BRANCH] <<<`;
-                    lineOutput += `\n   -> [FINAL FEN OF THIS BRANCH]: ${c.variationEndFen}`;
-                    if (branchEndTheory) {
-                        lineOutput += `\n   -> [EVAL AT END OF BRANCH]: Eval: ${branchEndTheory.eval} | Best Continuation: ${branchEndTheory.continuation}`;
-                    }
-                    lineOutput += `\n   -> [MANDATORY ACTION]: You MUST include the key "${c.id}_after" in your JSON to comment on if this variation choice is good/bad based on this final evaluation.`;
-                }
-
+                // 2. Fetch Refutations for Variation Ends OR Moves with Signs/Symbols
                 let evalToken = c.target.split(" ")[1] || "";
                 let hasSymbol = /^[?!]+$/.test(evalToken) || /^[\+\-=]+$/.test(evalToken) || evalToken.startsWith('$');
                 let getsEngineAssist = c.isVariationEnd || hasSymbol;
@@ -460,22 +433,13 @@ Then, during the Engine/API fetch, it dynamically pulls the evaluation and posit
                 
                 batchData.push(lineOutput);
             }
-            
-            btnText.innerHTML = `<div class="spinner"></div>Analyzing End Position...`;
-            await delay(400);
-            let endFen = globalChunks[endIdx].fenAfter;
-            let endTheory = await getTheoryFromFen(endFen);
-            let endPositionOutput = `\n=== END POSITION OF THE BATCH ===\n   -> [FEN AFTER FINAL MOVE]: ${endFen}`;
-            if (endTheory) {
-                endPositionOutput += `\n   -> [API IDEAS FOR END POSITION]: ${endTheory.san} (Eval: ${endTheory.eval})\n   -> [SUGGESTED CONTINUATION]: ${endTheory.continuation}`;
-            }
-            batchData.push(endPositionOutput);
 
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a pragmatic, 2700+ rated human Grandmaster with 68% English skill, publishing an opening course. You are not talking to children; your audience consists strictly of advanced titled players (FMs and IMs).
-I am providing you a batch of moves representing a continuous sequence or variation. For EVERY move, I have included the exact FEN position immediately after the move is played. 
+            // Build Deep Prompt Instructions matching user's exact authentic persona and formatting rules
+            const fullPrompt = `You are a pragmatic, 2700+ rated human Grandmaster with 68% English skill, publishing an opening course. 
+I am providing you a batch of moves. For EVERY move, I have included the exact FEN position immediately after the move is played. For variation ends, critical mistakes, and moves bearing evaluation signs, I have also provided the engine continuation.
 
 STARTING POSITION FEN: ${startingFen}
 
@@ -485,22 +449,21 @@ STARTING POSITION FEN: ${startingFen}
 3. Natural Human Tone (68% English skill): Sound like a seasoned grandmaster writing a masterclass manual. Avoid robotic AI buzzwords like "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," "tuck," "clamp," "secure," "dynamic".
 4. Perspective Rules: Use first-person phrasing when evaluating (e.g., "I prefer...", "I play..."), and third-person phrasing for move descriptions (e.g., "Black can...", "White should...", "Black will...").
 5. No Engine Worship: State tactical refutations as your own calculations. Don't say "I calculated"—instead say "White will..." or "It's difficult, for instance, after the knight gets to c5...".
-6. API IDEAS RULE (CRITICAL): The provided "API ENGINE IDEAS" are NOT opening theory. They are simply raw engine suggestions. NEVER use the words "theory", "theoretical choice", or "main line" when referring to these API ideas. Use them silently as inspiration to explain the position like you know chess, but NEVER cite them as a theoretical authority.
+6. Treat the provided Chess API Engine Ideas as alternative playable ideas or engine suggestions, NOT rigid "main theoretical paths". (e.g., Instead of saying "Ba6 is the main theoretical path", say "O-O doesn't achieve much, but also playable was Ba6 with ideas of...").
 
 === ANNOTATION INSTRUCTIONS ===
-1. VARIATION JUDGMENT (MANDATORY & CRITICAL): There MUST be a comment AFTER the first move of any variation (moves marked "Variation Start: true"). For these moves, I have embedded the [CRITICAL: END OF THIS SPECIFIC VARIATION BRANCH] data right after it in the data feed. You MUST use this final FEN and evaluation at the end of that specific branch to explain if that alternative/choice is good or bad, and WHY. Write a short, punchy comment evaluating this choice based entirely on how its specific line ends. This is the most important rule.
-2. Explaining Signs & Symbols: If a move has an evaluation symbol or sign attached (e.g., !, ?, !?, +-, =), actively use the provided API ideas or Stockfish engine continuations to explain the ideas behind the symbol. Show the follow-up moves that justify it.
-3. EXTREME CONCISENESS (CRITICAL): You talk too much. Your comments MUST be very short, punchy, and highly readable. Do not over-explain. Stick to 1-2 brief sentences maximum per move. Avoid long rambling explanations. Get straight to the point.
+1. Look ahead at the final evaluation/FEN at the END of a variation to judge if the starting move of that variation (e.g., 11...O-0) is good or playable. Write a short comment evaluating it based on how the line ends.
+2. Explaining Signs & Symbols: If a move has an evaluation symbol or sign attached (e.g !, ?, !?, +-, =), actively use the provided Chess API ideas or Stockfish engine continuations to explain the ideas behind the symbol. Show the follow-up moves that justify it.
+3. Keep ALL comments short and concise! Especially the comments placed BEFORE the start of a variation.
 4. Explaining Mistakes vs Position Evaluations: If a move is a mistake (?, ??), use the 6-move engine continuation to explain why it fails. If it ends in an evaluation (+-, =, etc.), explain why the final position is better for that side without calling the initial move "bad".
 5. Formatting rules:
    - Change "d4 square" to "d4-square". Change "center" to "centre".
    - Replace "Tuck", "drop", or "jump" with "move".
-   *** comment on only 40% of the moves. (important moves only). BUT you must always comment on variation start moves.
-6. Comment Placement & JSON Keys (MANDATORY): 
-   - Main Line moves (Main Line: true): use the exact chunk ID as the key. The tool will place this AFTER the move.
+6. Comment Placement & JSON Keys: 
+   - Main Line moves (Main Line: true): use the chunk ID as the key. The tool will place this AFTER the move.
    - Variation Starts (Variation Start: true): 
-     * You MUST ALWAYS place a comment AFTER the move evaluating it based on the variation's end. To do this, append "_after" to the chunk ID (e.g., "CHK_1_M11_V1_after"). THIS IS NON-NEGOTIABLE.
-     * (Optional) To place a short comment BEFORE the move (e.g., "If Black decides.."), use the standard chunk ID without "_after" (e.g., "CHK_1_M11_V1").
+     * To place a short comment BEFORE the move (e.g., "If Black decides.."), use the standard chunk ID (e.g., "CHK_1_M11_V1").
+     * To place a comment AFTER the move evaluating it based on the variation's end, append "_after" to the chunk ID (e.g., "CHK_1_M11_V1_after").
    
 7. Final Output: Output ONLY a valid JSON object mapping the keys to your comments. Do not use markdown blocks like \`\`\`json. 
 
