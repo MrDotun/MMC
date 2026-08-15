@@ -197,7 +197,6 @@
             let variationLevel = 0;
             let depthPlyCounts = { 0: 0 }; 
             let lastChunkAtLevel = {};
-            let varStartStack = []; // Tracks the starting chunks of nested variations to dynamically map their endings
 
             let chess = new Chess();
             let stateStack = [];
@@ -209,22 +208,13 @@
                     variationLevel++;
                     depthPlyCounts[variationLevel] = 0; 
                     stateStack.push({ current: currentFEN, beforeLast: fenBeforeLastMove });
-                    varStartStack.push(null); // push placeholder for this new variation's start
                     chess.load(fenBeforeLastMove);
                     return; 
                 }
                 if (token === ")") {
-                    let startChunk = varStartStack.pop(); // The starting move of the variation that just ended
-                    let endChunk = lastChunkAtLevel[variationLevel];
-                    
-                    if (endChunk) {
-                        endChunk.isVariationEnd = true;
-                        if (startChunk) {
-                            // Link the FEN of the variation's absolute end to its starting chunk!
-                            startChunk.variationEndFen = endChunk.fenAfter;
-                        }
+                    if (lastChunkAtLevel[variationLevel]) {
+                        lastChunkAtLevel[variationLevel].isVariationEnd = true;
                     }
-                    
                     variationLevel--;
                     let state = stateStack.pop();
                     if(state) {
@@ -268,16 +258,8 @@
                         isVariationStart: isFirstMoveOfVariation,
                         isVariationEnd: false,
                         fen: fenBeforeLastMove,   
-                        fenAfter: currentFEN,
-                        variationEndFen: null // Will be populated when the variation closes
+                        fenAfter: currentFEN      
                     };
-
-                    // If this is a variation start, register it into the stack to map the final branch end later
-                    if (isFirstMoveOfVariation) {
-                        if (varStartStack.length > 0) {
-                            varStartStack[varStartStack.length - 1] = newChunk;
-                        }
-                    }
 
                     chunks.push(newChunk);
                     lastChunkAtLevel[variationLevel] = newChunk;
@@ -388,19 +370,6 @@
                     lineOutput += `\n   -> [API ENGINE IDEAS (NOT THEORY)]: ${theoryData.san} (Eval: ${theoryData.eval})\n   -> [SUGGESTED CONTINUATION]: ${theoryData.continuation}`;
                 }
 
-                // NEW: IF this is the start of a variation, fetch and append the specific branch END FEN dynamically
-                if (c.isVariationStart && c.variationEndFen) {
-                    btnText.innerHTML = `<div class="spinner"></div>Analyzing Variation Branch End...`;
-                    await delay(400);
-                    let branchEndTheory = await getTheoryFromFen(c.variationEndFen);
-                    lineOutput += `\n\n   >>> [CRITICAL: END OF THIS SPECIFIC VARIATION BRANCH] <<<`;
-                    lineOutput += `\n   -> [FINAL FEN OF THIS BRANCH]: ${c.variationEndFen}`;
-                    if (branchEndTheory) {
-                        lineOutput += `\n   -> [EVAL AT END OF BRANCH]: Eval: ${branchEndTheory.eval} | Best Continuation: ${branchEndTheory.continuation}`;
-                    }
-                    lineOutput += `\n   -> [MANDATORY ACTION]: You MUST include the key "${c.id}_after" in your JSON to comment on if this variation choice is good/bad based on this final evaluation.`;
-                }
-
                 let evalToken = c.target.split(" ")[1] || "";
                 let hasSymbol = /^[?!]+$/.test(evalToken) || /^[\+\-=]+$/.test(evalToken) || evalToken.startsWith('$');
                 let getsEngineAssist = c.isVariationEnd || hasSymbol;
@@ -458,11 +427,12 @@
                 batchData.push(lineOutput);
             }
             
+            // New logic: Fetch End position data for judging the Variation
             btnText.innerHTML = `<div class="spinner"></div>Analyzing End Position...`;
             await delay(400);
             let endFen = globalChunks[endIdx].fenAfter;
             let endTheory = await getTheoryFromFen(endFen);
-            let endPositionOutput = `\n=== END POSITION OF THE BATCH ===\n   -> [FEN AFTER FINAL MOVE]: ${endFen}`;
+            let endPositionOutput = `\n=== END POSITION OF THIS VARIATION ===\n   -> [FEN AFTER FINAL MOVE]: ${endFen}`;
             if (endTheory) {
                 endPositionOutput += `\n   -> [API IDEAS FOR END POSITION]: ${endTheory.san} (Eval: ${endTheory.eval})\n   -> [SUGGESTED CONTINUATION]: ${endTheory.continuation}`;
             }
@@ -482,22 +452,21 @@ STARTING POSITION FEN: ${startingFen}
 3. Natural Human Tone (68% English skill): Sound like a seasoned grandmaster writing a masterclass manual. Avoid robotic AI buzzwords like "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," "tuck," "clamp," "secure," "dynamic".
 4. Perspective Rules: Use first-person phrasing when evaluating (e.g., "I prefer...", "I play..."), and third-person phrasing for move descriptions (e.g., "Black can...", "White should...", "Black will...").
 5. No Engine Worship: State tactical refutations as your own calculations. Don't say "I calculated"—instead say "White will..." or "It's difficult, for instance, after the knight gets to c5...".
-6. API IDEAS RULE (CRITICAL): The provided "API ENGINE IDEAS" are NOT opening theory. They are simply raw engine suggestions. NEVER use the words "theory", "theoretical choice", or "main line" when referring to these API ideas. Use them silently as inspiration to explain the position like you know chess, but NEVER cite them as a theoretical authority.
+6. API IDEAS RULE: Treat the provided Chess API Engine Ideas STRICTLY as ideas and analytical suggestions, NOT as "opening theory". Use them to inspire your evaluation and showcase alternative playable paths, not dictate rigid theoretical paths.
 
 === ANNOTATION INSTRUCTIONS ===
-1. VARIATION JUDGMENT (MANDATORY & CRITICAL): There MUST be a comment AFTER the first move of any variation (moves marked "Variation Start: true"). For these moves, I have embedded the [CRITICAL: END OF THIS SPECIFIC VARIATION BRANCH] data right after it in the data feed. You MUST use this final FEN and evaluation at the end of that specific branch to explain if that alternative/choice is good or bad, and WHY. Write a short, punchy comment evaluating this choice based entirely on how its specific line ends. This is the most important rule.
+1. VARIATION JUDGMENT (CRITICAL): At the end of the batch, I have provided the "END POSITION OF THIS VARIATION" along with its API ideas. You MUST use this final end position to judge the VERY FIRST MOVE of this variation. Explain if that starting move is good or not, and WHY, based entirely on the evaluation and ideas present at the end of the line. Write a short comment evaluating it based on how the line ends.
 2. Explaining Signs & Symbols: If a move has an evaluation symbol or sign attached (e.g., !, ?, !?, +-, =), actively use the provided API ideas or Stockfish engine continuations to explain the ideas behind the symbol. Show the follow-up moves that justify it.
-3. EXTREME CONCISENESS (CRITICAL): You talk too much. Your comments MUST be very short, punchy, and highly readable. Do not over-explain. Stick to 1-2 brief sentences maximum per move. Avoid long rambling explanations. Get straight to the point.
+3. Keep ALL comments short and concise! Especially the comments placed BEFORE the start of a variation.
 4. Explaining Mistakes vs Position Evaluations: If a move is a mistake (?, ??), use the 6-move engine continuation to explain why it fails. If it ends in an evaluation (+-, =, etc.), explain why the final position is better for that side without calling the initial move "bad".
 5. Formatting rules:
    - Change "d4 square" to "d4-square". Change "center" to "centre".
    - Replace "Tuck", "drop", or "jump" with "move".
-   *** comment on only 40% of the moves. (important moves only). BUT you must always comment on variation start moves.
-6. Comment Placement & JSON Keys (MANDATORY): 
-   - Main Line moves (Main Line: true): use the exact chunk ID as the key. The tool will place this AFTER the move.
+6. Comment Placement & JSON Keys: 
+   - Main Line moves (Main Line: true): use the chunk ID as the key. The tool will place this AFTER the move.
    - Variation Starts (Variation Start: true): 
-     * You MUST ALWAYS place a comment AFTER the move evaluating it based on the variation's end. To do this, append "_after" to the chunk ID (e.g., "CHK_1_M11_V1_after"). THIS IS NON-NEGOTIABLE.
-     * (Optional) To place a short comment BEFORE the move (e.g., "If Black decides.."), use the standard chunk ID without "_after" (e.g., "CHK_1_M11_V1").
+     * To place a short comment BEFORE the move (e.g., "If Black decides.."), use the standard chunk ID (e.g., "CHK_1_M11_V1").
+     * To place a comment AFTER the move evaluating it based on the variation's end, append "_after" to the chunk ID (e.g., "CHK_1_M11_V1_after").
    
 7. Final Output: Output ONLY a valid JSON object mapping the keys to your comments. Do not use markdown blocks like \`\`\`json. 
 
