@@ -154,89 +154,66 @@
             return globalSfWorker;
         }
 
-        /* ===== LICHESS OPENING EXPLORER INTEGRATION =====
-           Replaces the old chess-api.com "theory" call. Queries two Lichess
-           Explorer endpoints in parallel:
-             - /lichess  -> huge sample of real games across all rating bands,
-                            used for move popularity + win/draw/loss rates
-             - /masters  -> titled-player database, used to surface which
-                            strong players actually played the position and
-                            in which games
-           NOTE: explorer.lichess.ovh supports CORS for browser fetches, but
-           it can occasionally 429 under bursts, so calls are staggered with
-           the existing delay() calls in copySelectedBatch(). If a request
-           fails or a position isn't in the database (e.g. very deep/obscure
-           lines), the function degrades gracefully and returns whatever it
-           could get, or null if both endpoints failed.
-        */
         async function fetchLichessExplorer(fen, isMasters) {
             const encodedFen = encodeURIComponent(fen);
             const url = isMasters
                 ? `https://explorer.lichess.ovh/masters?fen=${encodedFen}&moves=5&topGames=4`
                 : `https://explorer.lichess.ovh/lichess?variant=standard&fen=${encodedFen}&moves=5&topGames=0&speeds=blitz,rapid,classical&ratings=1600,1800,2000,2200,2500`;
-            try {
-                const response = await fetch(url, { headers: { "Accept": "application/json" } });
-                if (!response.ok) {
-                    console.warn(`Lichess ${isMasters ? 'masters' : 'lichess'} explorer returned ${response.status} for FEN: ${fen}`);
-                    return null;
+
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    const response = await fetch(url, { headers: { "Accept": "application/json" } });
+                    if (response.status === 429) {
+                        if (attempt === 0) {
+                            console.warn(`Lichess ${isMasters ? 'masters' : 'lichess'} explorer rate-limited (429) for FEN ${fen}. Backing off 3s and retrying once...`);
+                            await delay(3000);
+                            continue;
+                        }
+                        return { __error: "429 Too Many Requests (rate limited by Lichess)" };
+                    }
+                    if (!response.ok) {
+                        return { __error: `HTTP ${response.status}` };
+                    }
+                    return await response.json();
+                } catch (e) {
+                    return { __error: e.message || "network error (fetch failed - check connection / CORS)" };
                 }
-                return await response.json();
-            } catch (e) {
-                console.error(`Lichess ${isMasters ? 'masters' : 'lichess'} explorer fetch failed:`, e);
-                return null;
             }
+            return { __error: "429 Too Many Requests (rate limited by Lichess)" };
         }
 
-        async function getTheoryFromFen(fen) {
-            try {
-                const [lichessData, mastersData] = await Promise.all([
-                    fetchLichessExplorer(fen, false),
-                    fetchLichessExplorer(fen, true)
-                ]);
-
-                if (!lichessData && !mastersData) return null;
-
-                // Top moves + win rates from the full Lichess player database
-                let topMovesStr = "No Lichess database stats found for this position.";
-                let bestMoveSan = "";
-                if (lichessData && lichessData.moves && lichessData.moves.length > 0) {
-                    topMovesStr = lichessData.moves.slice(0, 5).map(m => {
-                        const total = m.white + m.draws + m.black;
-                        const whitePct = total > 0 ? ((m.white / total) * 100).toFixed(1) : "0.0";
-                        const drawPct = total > 0 ? ((m.draws / total) * 100).toFixed(1) : "0.0";
-                        const blackPct = total > 0 ? ((m.black / total) * 100).toFixed(1) : "0.0";
-                        return `${m.san} [Games: ${total} | White ${whitePct}% / Draw ${drawPct}% / Black ${blackPct}%]`;
-                    }).join("; ");
-                    bestMoveSan = lichessData.moves[0].san;
-                }
-
-                // Top players / master games that reached this exact position
-                let topPlayersStr = "No master games found for this position.";
-                if (mastersData && mastersData.topGames && mastersData.topGames.length > 0) {
-                    topPlayersStr = mastersData.topGames.slice(0, 4).map(g => {
-                        const whiteName = g.white && g.white.name ? g.white.name : "Unknown";
-                        const blackName = g.black && g.black.name ? g.black.name : "Unknown";
-                        const whiteRating = g.white && g.white.rating ? g.white.rating : "?";
-                        const blackRating = g.black && g.black.rating ? g.black.rating : "?";
-                        return `${whiteName} (${whiteRating}) vs ${blackName} (${blackRating})${g.year ? ' [' + g.year + ']' : ''}`;
-                    }).join("; ");
-                    if (!bestMoveSan && mastersData.moves && mastersData.moves.length > 0) {
-                        bestMoveSan = mastersData.moves[0].san;
-                    }
-                }
-
-                // Keep the same return shape (san / eval / continuation) so the
-                // rest of the app (copySelectedBatch, prompt builder) doesn't
-                // need any structural changes.
-                return {
-                    san: bestMoveSan,
-                    eval: topMovesStr,
-                    continuation: topPlayersStr
-                };
-            } catch (e) {
-                console.error("Lichess theory fetch failed:", e);
-                return null;
+        async function getLichessMoveStats(fen) {
+            const data = await fetchLichessExplorer(fen, false);
+            if (!data || data.__error) {
+                return `[LICHESS FETCH FAILED: ${data ? data.__error : 'unknown error'}]`;
             }
+            if (!data.moves || data.moves.length === 0) {
+                return "No Lichess database stats found for this position.";
+            }
+            return data.moves.slice(0, 5).map(m => {
+                const total = m.white + m.draws + m.black;
+                const whitePct = total > 0 ? ((m.white / total) * 100).toFixed(1) : "0.0";
+                const drawPct = total > 0 ? ((m.draws / total) * 100).toFixed(1) : "0.0";
+                const blackPct = total > 0 ? ((m.black / total) * 100).toFixed(1) : "0.0";
+                return `${m.san} [Games: ${total} | White ${whitePct}% / Draw ${drawPct}% / Black ${blackPct}%]`;
+            }).join("; ");
+        }
+
+        async function getLichessMasterGames(fen) {
+            const data = await fetchLichessExplorer(fen, true);
+            if (!data || data.__error) {
+                return `[LICHESS MASTERS FETCH FAILED: ${data ? data.__error : 'unknown error'}]`;
+            }
+            if (!data.topGames || data.topGames.length === 0) {
+                return "No master games found for this position.";
+            }
+            return data.topGames.slice(0, 4).map(g => {
+                const whiteName = g.white && g.white.name ? g.white.name : "Unknown";
+                const blackName = g.black && g.black.name ? g.black.name : "Unknown";
+                const whiteRating = g.white && g.white.rating ? g.white.rating : "?";
+                const blackRating = g.black && g.black.rating ? g.black.rating : "?";
+                return `${whiteName} (${whiteRating}) vs ${blackName} (${blackRating})${g.year ? ' [' + g.year + ']' : ''}`;
+            }).join("; ");
         }
 
         function switchTab(tab) {
@@ -427,17 +404,23 @@
                 statsText.innerText = `Analyzing Move: ${c.moveNum}. ${c.target}`;
 
                 btnText.innerHTML = `<div class="spinner"></div>Querying Lichess DB [${currentStep}/${totalSelectedMoves}]...`;
-                await delay(400); 
-                let theoryData = await getTheoryFromFen(c.fen); 
-                if (theoryData) {
-                    lineOutput += `\n   -> [CURRENT FEN (BEFORE MOVE)]: ${c.fen}`;
-                    lineOutput += `\n   -> [LICHESS TOP MOVES & WIN RATES]: ${theoryData.eval}\n   -> [LICHESS TOP MASTER GAMES]: ${theoryData.continuation}`;
-                }
+                await delay(700);
+                let moveStats = await getLichessMoveStats(c.fen);
+                lineOutput += `\n   -> [CURRENT FEN (BEFORE MOVE)]: ${c.fen}`;
+                lineOutput += `\n   -> [LICHESS TOP MOVES & WIN RATES]: ${moveStats}`;
 
                 let evalToken = c.target.split(" ")[1] || "";
                 let hasSymbol = /^[?!]+$/.test(evalToken) || /^[\+\-=]+$/.test(evalToken) || evalToken.startsWith('$');
                 let getsEngineAssist = c.isVariationEnd || hasSymbol;
-                
+                let getsMastersLookup = getsEngineAssist || c.isVariationStart;
+
+                if (getsMastersLookup) {
+                    btnText.innerHTML = `<div class="spinner"></div>Checking Master Games [${currentStep}/${totalSelectedMoves}]...`;
+                    await delay(500);
+                    let masterGames = await getLichessMasterGames(c.fen);
+                    lineOutput += `\n   -> [LICHESS TOP MASTER GAMES]: ${masterGames}`;
+                }
+
                 if (getsEngineAssist) {
                     btnText.innerHTML = `<div class="spinner"></div>Engine Assist [${currentStep}/${totalSelectedMoves}]...`;
                     let fenAfterMove = c.fenAfter; 
@@ -491,15 +474,14 @@
                 batchData.push(lineOutput);
             }
             
-            // New logic: Fetch End position data (Lichess DB) for judging the Variation
             btnText.innerHTML = `<div class="spinner"></div>Analyzing End Position...`;
-            await delay(400);
+            await delay(700);
             let endFen = globalChunks[endIdx].fenAfter;
-            let endTheory = await getTheoryFromFen(endFen);
+            let endMoveStats = await getLichessMoveStats(endFen);
+            await delay(500);
+            let endMasterGames = await getLichessMasterGames(endFen);
             let endPositionOutput = `\n=== END POSITION OF THIS VARIATION ===\n   -> [FEN AFTER FINAL MOVE]: ${endFen}`;
-            if (endTheory) {
-                endPositionOutput += `\n   -> [LICHESS TOP MOVES & WIN RATES FROM END POSITION]: ${endTheory.eval}\n   -> [LICHESS TOP MASTER GAMES FROM END POSITION]: ${endTheory.continuation}`;
-            }
+            endPositionOutput += `\n   -> [LICHESS TOP MOVES & WIN RATES FROM END POSITION]: ${endMoveStats}\n   -> [LICHESS TOP MASTER GAMES FROM END POSITION]: ${endMasterGames}`;
             batchData.push(endPositionOutput);
 
             progressFill.style.width = '100%';
@@ -608,6 +590,8 @@ ${batchString}`;
                 }
                 return idxB - idxA;
             });
+
+            sortedIds.export = true; // noop anchor
 
             sortedIds.forEach(id => {
                 const isAfter = id.endsWith("_after");
