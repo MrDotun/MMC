@@ -307,4 +307,284 @@
       const entry = last.close;
       let risk = direction===1 ? entry-sl : sl-entry;
       if (risk<=0) return null;
-      const tp = direction===1 ? entry+rr*risk : entry-rr*risk
+      const tp = direction===1 ? entry+rr*risk : entry-rr*risk;
+      const riskAmt = account*(riskPct/100);
+      let units = ['EURUSD','GBPUSD','AUDUSD','NZDUSD','XAUUSD'].includes(name) ? riskAmt/risk : (riskAmt*entry)/risk;
+      const dec = name==='XAUUSD' ? 2 : 5;
+      return {
+        pair:name, signal, entry:+entry.toFixed(dec), sl:+sl.toFixed(dec), tp:+tp.toFixed(dec),
+        risk$:+riskAmt.toFixed(2), units: name==='XAUUSD' ? +units.toFixed(2) : Math.max(1,Math.floor(units)),
+        direction
+      };
+    }
+    function runBacktestOnBars(bars, name, startEquity, riskPct, rr, maxConcurrent) {
+      bars = onlyClosedBars(bars);
+      if (bars.length < 30) return null;
+      const df = prepare(bars);
+      let equity = startEquity, peak = equity, maxDD = 0;
+      const trades = [];
+      let openTrades = [];
+      const dailyMap = {};
+      function dateStr(ts) {
+        const d = new Date(ts*1000);
+        return d.toISOString().slice(0,10);
+      }
+      for (let i=15; i<df.length; i++) {
+        const bar = df[i], prev = df[i-1];
+        const day = dateStr(bar.time);
+        openTrades = openTrades.filter(t => {
+          let closed=false, pnl=0;
+          if (t.dir===1) {
+            if (bar.low <= t.sl) { pnl = -t.riskAmt; closed=true; }
+            else if (bar.high >= t.tp) { pnl = t.riskAmt*rr; closed=true; }
+          } else {
+            if (bar.high >= t.sl) { pnl = -t.riskAmt; closed=true; }
+            else if (bar.low <= t.tp) { pnl = t.riskAmt*rr; closed=true; }
+          }
+          if (closed) {
+            equity += pnl;
+            trades.push({pair:name, dir:t.dir, pnl, equity, date:day});
+            if (!dailyMap[day]) dailyMap[day] = {pnl:0, trades:0, equityEnd:equity};
+            dailyMap[day].pnl += pnl; dailyMap[day].trades += 1; dailyMap[day].equityEnd = equity;
+            peak = Math.max(peak, equity);
+            maxDD = Math.max(maxDD, (peak-equity)/peak*100);
+            return false;
+          }
+          return true;
+        });
+        if (openTrades.length >= maxConcurrent) continue;
+        let failedBuy=false, failedSell=false;
+        for (let k=1;k<Math.min(8,i);k++) {
+          const row = df[i-k];
+          if (row.raw_bear && bar.close>row.high) { failedBuy=true; break; }
+          if (row.raw_bull && bar.close<row.low) { failedSell=true; break; }
+        }
+        let direction=0, sl=null;
+        if (bar.bull_eng) { direction=1; sl=Math.min(bar.low,prev.low)-SPREADS[name]*PIP[name]*0.5; }
+        else if (bar.bear_eng) { direction=-1; sl=Math.max(bar.high,prev.high)+SPREADS[name]*PIP[name]*0.5; }
+        else if (failedBuy) { direction=1; sl=bar.low-SPREADS[name]*PIP[name]; }
+        else if (failedSell) { direction=-1; sl=bar.high+SPREADS[name]*PIP[name]; }
+        if (direction===0) continue;
+        const entry = bar.close;
+        let riskDist = direction===1 ? entry-sl : sl-entry;
+        if (riskDist<=0) continue;
+        const riskAmt = equity*(riskPct/100);
+        const tp = direction===1 ? entry+rr*riskDist : entry-rr*riskDist;
+        openTrades.push({dir:direction, entry, sl, tp, riskAmt, openIdx:i});
+      }
+      const lastClose = df[df.length-1].close;
+      const lastDay = dateStr(df[df.length-1].time);
+      openTrades.forEach(t => {
+        const riskDist = t.dir===1 ? t.entry-t.sl : t.sl-t.entry;
+        const move = t.dir===1 ? lastClose-t.entry : t.entry-lastClose;
+        const pnl = (move/riskDist)*t.riskAmt;
+        equity += pnl;
+        trades.push({pair:name, dir:t.dir, pnl, equity, date:lastDay});
+        if (!dailyMap[lastDay]) dailyMap[lastDay] = {pnl:0, trades:0, equityEnd:equity};
+        dailyMap[lastDay].pnl += pnl; dailyMap[lastDay].trades += 1; dailyMap[lastDay].equityEnd = equity;
+      });
+      peak = Math.max(peak, equity);
+      maxDD = Math.max(maxDD, (peak-equity)/peak*100);
+      const wins = trades.filter(t=>t.pnl>0).length;
+      const grossWin = trades.filter(t=>t.pnl>0).reduce((s,t)=>s+t.pnl,0);
+      const grossLoss = Math.abs(trades.filter(t=>t.pnl<=0).reduce((s,t)=>s+t.pnl,0));
+      const pf = grossLoss>0 ? grossWin/grossLoss : (grossWin>0?99:0);
+      const daily = Object.keys(dailyMap).sort().map(d => ({
+        date:d, pnl:dailyMap[d].pnl, trades:dailyMap[d].trades, equity:dailyMap[d].equityEnd
+      }));
+      return {
+        pair:name, trades:trades.length, wins,
+        winRate: trades.length ? (wins/trades.length*100) : 0,
+        netProfit: equity-startEquity, finalEquity: equity,
+        maxDD, profitFactor: pf,
+        returnPct: ((equity-startEquity)/startEquity*100),
+        daily
+      };
+    }
+    function setStatus(id, msg, type='') {
+      const el = document.getElementById(id);
+      el.textContent = msg; el.className = 'status '+type;
+    }
+    function showLoading(id) {
+      document.getElementById(id).innerHTML = 'Working <span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span>';
+      document.getElementById(id).className = 'status';
+    }
+    async function copyText(text, btn) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const old = btn.textContent;
+        btn.textContent = '✅ Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = old; btn.classList.remove('copied'); }, 1800);
+      } catch(e) {
+        alert('Could not copy. Select the text manually.');
+      }
+    }
+    document.getElementById('generateBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('generateBtn');
+      const account = parseFloat(document.getElementById('account').value)||10000;
+      const riskPct = parseFloat(document.getElementById('risk').value)||0.75;
+      const rr = parseFloat(document.getElementById('rr').value)||8;
+      btn.disabled = true; showLoading('status');
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('copySignalsBtn').style.display = 'none';
+      lastSignals = [];
+      const signals=[], errors=[];
+      for (const [ticker,name] of Object.entries(PAIRS)) {
+        try {
+          const bars = await fetchDailyBars(ticker,'3mo');
+          const sig = detectLiveSignal(bars,name,account,riskPct,rr);
+          if (sig) signals.push(sig);
+        } catch(e) { errors.push(`${name}`); }
+        await sleep(400);
+      }
+      btn.disabled = false;
+      const now = new Date().toLocaleString();
+      if (errors.length === Object.keys(PAIRS).length) {
+        setStatus('status', `Could not fetch data. Free proxies are busy — wait 1 minute and try again.`, 'error'); return;
+      }
+      setStatus('status', signals.length ? `Signals ready — ${now}` : `No new signals on closed candles — ${now}`, 'success');
+      lastSignals = signals;
+      const box = document.getElementById('results');
+      if (!signals.length) {
+        box.innerHTML = `<div class="empty"><strong>✅ No new signals</strong>Only closed daily candles are used.</div>`;
+        return;
+      }
+      document.getElementById('copySignalsBtn').style.display = 'inline-block';
+      let html = '';
+      signals.forEach(s => {
+        const cls = s.direction===1?'buy':'sell';
+        html += `<div class="signal-card \( {cls}"><h3> \){s.pair} → ${s.signal}</h3>
+          <div class="levels">
+            <div><span>Entry:</span> <b>${s.entry}</b></div>
+            <div><span>SL:</span> <b>${s.sl}</b></div>
+            <div><span>TP:</span> <b>\( {s.tp}</b> <span style="color:var(--muted)">(1: \){rr})</span></div>
+            <div><span>Risk:</span> <b>\[ {s.risk$}</b></div>
+            <div><span>Size ≈</span> <b>${s.units}</b></div>
+          </div></div>`;
+      });
+      html += `<table><thead><tr><th>Pair</th><th>Signal</th><th>Entry</th><th>SL</th><th>TP</th><th>Risk $</th><th>Units</th></tr></thead>
+        <tbody>${signals.map(s=>`<tr>
+          <td>\( {s.pair}</td><td style="color: \){s.direction===1?'var(--green)':'var(--red)'}">${s.signal}</td>
+          <td>\( {s.entry}</td><td> \){s.sl}</td><td>\( {s.tp}</td><td> \]{s.risk \)}</td><td>${s.units}</td>
+        </tr>`).join('')}</tbody></table>`;
+      box.innerHTML = html;
+    });
+    document.getElementById('copySignalsBtn').addEventListener('click', () => {
+      if (!lastSignals.length) return;
+      const rr = document.getElementById('rr').value;
+      const lines = lastSignals.map(s =>
+        `${s.pair} → ${s.signal}\nEntry: ${s.entry} | SL: ${s.sl} | TP: \( {s.tp} (1: \){rr})\nRisk: \[ {s.risk$} | Size ≈ ${s.units}`
+      );
+      const text = `Prop Firm Signals — ${new Date().toLocaleString()}\n\n` + lines.join('\n\n');
+      copyText(text, document.getElementById('copySignalsBtn'));
+    });
+    document.getElementById('backtestBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('backtestBtn');
+      const startEquity = parseFloat(document.getElementById('bt-account').value)||10000;
+      const riskPct = parseFloat(document.getElementById('bt-risk').value)||0.75;
+      const rr = parseFloat(document.getElementById('bt-rr').value)||8;
+      const months = parseInt(document.getElementById('bt-period').value)||6;
+      const maxConcurrent = parseInt(document.getElementById('bt-maxtrades').value)||4;
+      const rangeMap = {1:'1mo',3:'3mo',6:'6mo',12:'1y',24:'2y',36:'5y'};
+      const range = rangeMap[months]||'6mo';
+      const periodLabel = {1:'1 month',3:'3 months',6:'6 months',12:'1 year',24:'2 years',36:'3 years'}[months]||months+' months';
+      btn.disabled = true; showLoading('bt-status');
+      document.getElementById('bt-results').innerHTML = '';
+      document.getElementById('copyBacktestBtn').style.display = 'none';
+      const results = [], errors = [];
+      let allDaily = {};
+      for (const [ticker,name] of Object.entries(PAIRS)) {
+        try {
+          const bars = await fetchDailyBars(ticker, range);
+          const res = runBacktestOnBars(bars, name, startEquity, riskPct, rr, maxConcurrent);
+          if (res) {
+            results.push(res);
+            res.daily.forEach(d => {
+              if (!allDaily[d.date]) allDaily[d.date] = {pnl:0, trades:0};
+              allDaily[d.date].pnl += d.pnl;
+              allDaily[d.date].trades += d.trades;
+            });
+          }
+        } catch(e) { errors.push(name); }
+        await sleep(500);
+      }
+      btn.disabled = false;
+      if (!results.length) {
+        setStatus('bt-status', `Backtest failed. Free data sources are busy — wait 1–2 minutes and try again.`, 'error'); return;
+      }
+      const totalTrades = results.reduce((s,r)=>s+r.trades,0);
+      const totalWins = results.reduce((s,r)=>s+r.wins,0);
+      const totalNet = results.reduce((s,r)=>s+r.netProfit,0);
+      const avgDD = results.reduce((s,r)=>s+r.maxDD,0)/results.length;
+      const avgPF = results.reduce((s,r)=>s+r.profitFactor,0)/results.length;
+      const winRate = totalTrades ? (totalWins/totalTrades*100) : 0;
+      const sortedDays = Object.keys(allDaily).sort();
+      let runEq = startEquity;
+      const dailyRows = sortedDays.map(d => {
+        runEq += allDaily[d].pnl;
+        return {date:d, pnl:allDaily[d].pnl, trades:allDaily[d].trades, equity:runEq};
+      });
+      setStatus('bt-status', `Backtest complete — ${periodLabel}`, 'success');
+      document.getElementById('copyBacktestBtn').style.display = 'inline-block';
+      let copyLines = [
+        `Prop Firm Backtest — ${periodLabel} | Equity \]{startEquity} | Risk \( {riskPct}% | RR 1: \){rr}`,
+        `Net Profit: \[ {totalNet.toFixed(0)} | Trades: ${totalTrades} | Win Rate: ${winRate.toFixed(1)}% | Avg DD: ${avgDD.toFixed(1)}% | Avg PF: ${avgPF.toFixed(2)}`,
+        '',
+        'Per-Pair:'
+      ];
+      results.forEach(r => {
+        copyLines.push(`${r.pair}: ${r.trades} trades | Win ${r.winRate.toFixed(1)}% | Net \]{r.netProfit.toFixed(0)} | DD ${r.maxDD.toFixed(1)}% | PF ${r.profitFactor.toFixed(2)}`);
+      });
+      copyLines.push('', 'Daily Performance (newest first):');
+      dailyRows.slice().reverse().slice(0, 50).forEach(d => {
+        copyLines.push(`${d.date} | Trades: ${d.trades} | P&L: \( {d.pnl>=0?'+':''} \){d.pnl.toFixed(0)} | Equity: \[ {d.equity.toFixed(0)}`);
+      });
+      lastBacktestText = copyLines.join('\n');
+      let html = `
+        <div class="metrics">
+          <div class="metric"><div class="label">Net Profit (sum)</div><div class="value ${totalNet>=0?'pos':'neg'}"> \]{totalNet.toFixed(0)}</div></div>
+          <div class="metric"><div class="label">Total Trades</div><div class="value">${totalTrades}</div></div>
+          <div class="metric"><div class="label">Win Rate</div><div class="value">${winRate.toFixed(1)}%</div></div>
+          <div class="metric"><div class="label">Avg Max DD</div><div class="value">${avgDD.toFixed(1)}%</div></div>
+          <div class="metric"><div class="label">Avg Profit Factor</div><div class="value">${avgPF.toFixed(2)}</div></div>
+        </div>
+        <h3 style="font-size:1rem;margin:16px 0 8px;color:var(--muted)">Per-Pair Results</h3>
+        <table>
+          <thead><tr><th>Pair</th><th>Trades</th><th>Win%</th><th>Net $</th><th>Return%</th><th>Max DD</th><th>PF</th></tr></thead>
+          <tbody>
+            ${results.map(r=>`<tr>
+              <td>\( {r.pair}</td><td> \){r.trades}</td><td>${r.winRate.toFixed(1)}%</td>
+              <td style="color:\( {r.netProfit>=0?'var(--green)':'var(--red)'}"> \){r.netProfit.toFixed(0)}</td>
+              <td style="color:\( {r.returnPct>=0?'var(--green)':'var(--red)'}"> \){r.returnPct.toFixed(1)}%</td>
+              <td>\( {r.maxDD.toFixed(1)}%</td><td> \){r.profitFactor.toFixed(2)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <h3 style="font-size:1rem;margin:20px 0 8px;color:var(--muted)">Daily Performance</h3>
+        <div class="daily-box">
+          <table>
+            <thead><tr><th>Date</th><th>Trades Closed</th><th>Day P&L</th><th>Running Equity</th></tr></thead>
+            <tbody>
+              ${dailyRows.slice().reverse().map(d=>`<tr>
+                <td>${d.date}</td>
+                <td>${d.trades}</td>
+                <td style="color:\( {d.pnl>=0?'var(--green)':'var(--red)'}"> \){d.pnl>=0?'+':''}${d.pnl.toFixed(0)}</td>
+                <td>$${d.equity.toFixed(0)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <p class="note" style="margin-top:12px">
+          Daily rows appear only on days when at least one trade closed.
+          Each pair is tested independently.
+        </p>`;
+      document.getElementById('bt-results').innerHTML = html;
+    });
+    document.getElementById('copyBacktestBtn').addEventListener('click', () => {
+      if (!lastBacktestText) return;
+      copyText(lastBacktestText, document.getElementById('copyBacktestBtn'));
+    });
+  </script>
+</body>
+</html>
