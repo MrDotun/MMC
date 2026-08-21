@@ -1,513 +1,673 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Battle AI | Mind Masters Academy</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-    <style>
-        :root { --bg:#07090f; --panel:#12171f; --gold:#e8c547; }
-        body { font-family:'Plus Jakarta Sans',sans-serif; background:var(--bg); color:#e2e8f0; margin:0; min-height:100vh; overflow-x:hidden; }
-        
-        .stars {
-            position:fixed; inset:0; z-index:0; pointer-events:none; opacity:0.3;
-            background: radial-gradient(1px 1px at 20px 30px,#fff,transparent),
-                        radial-gradient(1px 1px at 80px 120px,rgba(255,255,255,.5),transparent),
-                        radial-gradient(1.5px 1.5px at 150px 60px,#fff,transparent);
-            background-size:200px 200px; animation:twinkle 8s infinite linear;
-        }
-        @keyframes twinkle { 0%,100%{opacity:.2} 50%{opacity:.4} }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Battle AI | Mind Masters Academy</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+<style>
+:root{--bg:#07090f;--gold:#e8c547}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8f0;margin:0;min-height:100vh;overflow-x:hidden}
+.stars{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.25;background:radial-gradient(1px 1px at 20px 30px,#fff,transparent),radial-gradient(1px 1px at 80px 120px,rgba(255,255,255,.5),transparent);background-size:200px 200px}
+.nav-glass{background:rgba(7,9,15,.92);backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.05)}
+.panel{background:linear-gradient(160deg,#161c27,#0e1219);border:1px solid rgba(232,197,71,.12);border-radius:1.25rem}
+.opt-btn{border:2px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);border-radius:1rem;padding:12px 10px;text-align:center;cursor:pointer;transition:all .25s;font-weight:700;font-size:13px}
+.opt-btn:hover{border-color:rgba(232,197,71,.4);background:rgba(232,197,71,.08)}
+.opt-btn.active{border-color:var(--gold);background:rgba(232,197,71,.15);box-shadow:0 0 20px rgba(232,197,71,.2);transform:scale(1.04)}
+#board{width:100%;max-width:480px;margin:0 auto;border-radius:14px;overflow:hidden;box-shadow:0 25px 60px rgba(0,0,0,.55),0 0 0 3px rgba(232,197,71,.3)}
+#board.thinking-glow{animation:boardPulse 1.2s infinite}
+@keyframes boardPulse{0%,100%{box-shadow:0 25px 60px rgba(0,0,0,.55),0 0 0 3px rgba(232,197,71,.4)}50%{box-shadow:0 25px 60px rgba(0,0,0,.55),0 0 0 3px rgba(232,197,71,.75),0 0 40px rgba(232,197,71,.35)}}
+.highlight-from{box-shadow:inset 0 0 0 4px rgba(250,204,21,.85)!important}
+.highlight-to{box-shadow:inset 0 0 0 4px rgba(34,197,94,.85)!important}
+.highlight-select{box-shadow:inset 0 0 0 4px rgba(232,197,71,.9)!important}
+.live-badge{background:#ef4444;color:#fff;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:800;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.thinking-dots span{display:inline-block;width:6px;height:6px;margin:0 2px;background:var(--gold);border-radius:50%;animation:bounce 1.2s infinite}
+.thinking-dots span:nth-child(2){animation-delay:.15s}
+.thinking-dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1.2);opacity:1}}
+.clock{font-variant-numeric:tabular-nums;font-weight:800;font-size:1.4rem}
+.clock.low{color:#ef4444;animation:pulse 1s infinite}
+.wa-float{position:fixed;bottom:24px;right:24px;width:56px;height:56px;background:#25d366;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;z-index:999;box-shadow:0 8px 25px rgba(37,211,102,.45);animation:waBounce 2.5s infinite}
+@keyframes waBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.fade-up{animation:fadeUp .5s ease both}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+input:focus{outline:none;border-color:var(--gold)!important}
 
-        .nav-glass { background:rgba(7,9,15,.9); backdrop-filter:blur(18px); border-bottom:1px solid rgba(255,255,255,.05); position:relative; z-index:50; }
+.settings-btn{position:fixed;bottom:24px;left:24px;width:48px;height:48px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#e2e8f0;font-size:18px;z-index:998;cursor:pointer;transition:all .25s}
+.settings-btn:hover{background:rgba(232,197,71,.2);color:#e8c547;transform:rotate(30deg)}
+.settings-panel{position:fixed;bottom:80px;left:24px;width:280px;background:#12171f;border:1px solid rgba(232,197,71,.2);border-radius:1rem;padding:16px;z-index:998;display:none;box-shadow:0 20px 50px rgba(0,0,0,.5)}
+.settings-panel.open{display:block;animation:fadeUp .3s ease}
+.board-brown .white-1e1d7{background:#f0d9b5!important}
+.board-brown .black-3c85d{background:#b58863!important}
+.board-green .white-1e1d7{background:#eeeed2!important}
+.board-green .black-3c85d{background:#769656!important}
+.board-blue .white-1e1d7{background:#dee3e6!important}
+.board-blue .black-3c85d{background:#8ca2ad!important}
+.board-purple .white-1e1d7{background:#e8e0f0!important}
+.board-purple .black-3c85d{background:#7b6a8a!important}
 
-        .level-btn {
-            transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
-            border: 2px solid transparent;
-            background: rgba(255,255,255,0.04);
-            position: relative;
-            overflow: hidden;
-        }
-        .level-btn::before {
-            content:''; position:absolute; inset:0;
-            background: linear-gradient(135deg, rgba(232,197,71,0.15), transparent);
-            opacity:0; transition:opacity 0.3s;
-        }
-        .level-btn:hover::before { opacity:1; }
-        .level-btn.active {
-            border-color: var(--gold);
-            background: rgba(232,197,71,0.12);
-            transform: scale(1.06);
-            box-shadow: 0 0 25px rgba(232,197,71,0.25);
-        }
-        .level-btn:hover:not(.active) { background:rgba(255,255,255,0.07); transform:translateY(-3px); }
-
-        #board-wrap {
-            position: relative;
-            max-width: 480px;
-            margin: 0 auto;
-        }
-        #board {
-            width: 100%;
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 25px 60px rgba(0,0,0,0.55), 0 0 0 3px rgba(232,197,71,0.25);
-            transition: box-shadow 0.4s;
-        }
-        #board.thinking-glow {
-            box-shadow: 0 25px 60px rgba(0,0,0,0.55), 0 0 0 3px rgba(232,197,71,0.5), 0 0 40px rgba(232,197,71,0.3);
-            animation: boardPulse 1.2s infinite;
-        }
-        @keyframes boardPulse {
-            0%,100% { box-shadow: 0 25px 60px rgba(0,0,0,0.55), 0 0 0 3px rgba(232,197,71,0.4), 0 0 30px rgba(232,197,71,0.2); }
-            50% { box-shadow: 0 25px 60px rgba(0,0,0,0.55), 0 0 0 3px rgba(232,197,71,0.7), 0 0 50px rgba(232,197,71,0.4); }
-        }
-
-        .highlight-square { box-shadow: inset 0 0 0 4px rgba(232,197,71,0.75) !important; }
-
-        .panel {
-            background: linear-gradient(160deg, #161c27 0%, #0e1219 100%);
-            border: 1px solid rgba(232,197,71,0.1);
-            border-radius: 1.5rem;
-            transition: border-color 0.3s;
-        }
-        .panel:hover { border-color: rgba(232,197,71,0.25); }
-
-        .btn-action {
-            transition: all 0.3s;
-            position: relative;
-            overflow: hidden;
-        }
-        .btn-action:hover { transform: translateY(-2px); }
-
-        .live-badge {
-            background: #ef4444; color: white; padding: 2px 8px; border-radius: 4px;
-            font-size: 9px; font-weight: 800; animation: pulse 1.5s infinite;
-        }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
-
-        .thinking-dots span {
-            display: inline-block; width: 6px; height: 6px; margin: 0 2px;
-            background: var(--gold); border-radius: 50%;
-            animation: bounce 1.2s infinite ease-in-out;
-        }
-        .thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
-        .thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
-        @keyframes bounce {
-            0%,80%,100% { transform: scale(0.6); opacity: 0.4; }
-            40% { transform: scale(1.2); opacity: 1; }
-        }
-
-        .status-win { color: #10b981 !important; animation: popIn 0.5s ease; }
-        .status-lose { color: #ef4444 !important; animation: popIn 0.5s ease; }
-        @keyframes popIn {
-            0% { transform: scale(0.8); opacity: 0; }
-            60% { transform: scale(1.08); }
-            100% { transform: scale(1); opacity: 1; }
-        }
-
-        .wa-float {
-            position: fixed; bottom: 24px; right: 24px; width: 58px; height: 58px;
-            background: #25d366; color: white; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 30px; z-index: 999;
-            box-shadow: 0 8px 25px rgba(37,211,102,0.45);
-            animation: wa-bounce 2.5s infinite;
-            transition: transform 0.3s;
-        }
-        .wa-float:hover { transform: scale(1.12); }
-        @keyframes wa-bounce {
-            0%,100% { transform: translateY(0); }
-            50% { transform: translateY(-8px); }
-        }
-
-        .fade-up { animation: fadeUp 0.6s ease both; }
-        @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-    </style>
+</style>
 </head>
 <body>
-    <div class="stars"></div>
+<div class="stars"></div>
+<nav class="fixed w-full z-50 px-5 py-3 flex justify-between items-center nav-glass">
+<a href="index.html" class="flex items-center gap-2">
+<div class="w-9 h-9 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center"><i class="fas fa-chess-knight text-black"></i></div>
+<span class="font-black text-white uppercase tracking-tight text-sm">Mind Masters</span>
+</a>
+<a href="index.html" class="text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-amber-400">← Home</a>
+</nav>
 
-    <nav class="fixed w-full z-50 px-5 py-3 flex justify-between items-center nav-glass">
-        <a href="index.html" class="flex items-center gap-2">
-            <div class="w-9 h-9 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center shadow-lg shadow-amber-500/30">
-                <i class="fas fa-chess-knight text-black"></i>
-            </div>
-            <span class="font-black text-white uppercase tracking-tight text-sm">Mind Masters</span>
-        </a>
-        <a href="index.html" class="text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-amber-400 transition">← Home</a>
-    </nav>
+<div class="relative z-10 pt-20 pb-20 px-4 max-w-5xl mx-auto">
 
-    <div class="relative z-10 pt-20 pb-16 px-4 max-w-5xl mx-auto">
-        <!-- Header -->
-        <div class="text-center mb-8 fade-up">
-            <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[10px] font-black uppercase tracking-widest mb-4">
-                <i class="fas fa-robot"></i> AI Arena
-            </div>
-            <h1 class="text-3xl md:text-5xl font-black italic uppercase text-white tracking-tight">
-                Battle the <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-amber-500">Engine</span>
-            </h1>
-            <p class="text-slate-400 text-sm mt-2">5 levels • Games are live for everyone to watch</p>
-        </div>
+<!-- ========== SETUP SCREEN ========== -->
+<div id="setup-screen" class="fade-up">
+<div class="text-center mb-8">
+<div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-[10px] font-black uppercase tracking-widest mb-4"><i class="fas fa-robot"></i> AI Arena</div>
+<h1 class="text-3xl md:text-5xl font-black italic uppercase text-white tracking-tight">Battle the <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-amber-500">Engine</span></h1>
+<p class="text-slate-400 text-sm mt-2">Enter your name • Choose settings • Play</p>
+</div>
 
-        <!-- Live Feed + Spectator -->
-        <div class="panel p-4 mb-6 fade-up" style="animation-delay:0.1s">
-            <div class="flex items-center gap-2 mb-3">
-                <span class="live-badge">LIVE</span>
-                <span class="text-xs font-bold uppercase tracking-widest text-slate-400">AI Battles — click any game to watch</span>
-            </div>
-            <div id="live-ai-feed" class="space-y-2 text-sm mb-3">
-                <p class="text-slate-600 text-xs">No live AI games at the moment...</p>
-            </div>
-            <!-- Spectator board (hidden until a game is selected) -->
-            <div id="spectate-box" class="hidden mt-4 border-t border-white/10 pt-4">
-                <div class="flex items-center justify-between mb-3">
-                    <div>
-                        <div class="text-xs font-black text-amber-400 uppercase tracking-widest" id="spec-title">Watching...</div>
-                        <div class="text-[10px] text-slate-500" id="spec-sub">Live updates</div>
-                    </div>
-                    <button onclick="stopSpectate()" class="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-white px-3 py-1.5 bg-white/5 rounded-lg">Close</button>
-                </div>
-                <div id="spec-board" style="max-width:320px;margin:0 auto;border-radius:12px;overflow:hidden;border:2px solid rgba(232,197,71,0.3);"></div>
-            </div>
-        </div>
+<div class="max-w-lg mx-auto space-y-5">
+<!-- Name -->
+<div class="panel p-5">
+<label class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2 block">1. Your Name <span class="text-rose-400">*</span></label>
+<input id="player-name" type="text" placeholder="Type your full name" maxlength="40"
+class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-base text-white" autocomplete="name">
+</div>
 
-        <!-- Level Selector -->
-        <div class="grid grid-cols-5 gap-2 md:gap-3 mb-8 max-w-2xl mx-auto fade-up" style="animation-delay:0.15s">
-            <button onclick="setLevel(1)" class="level-btn active p-3 md:p-4 rounded-xl text-center" data-level="1">
-                <div class="text-lg md:text-2xl font-black text-emerald-400">1</div>
-                <div class="text-[9px] md:text-[10px] uppercase tracking-wider text-slate-500 mt-1">Beginner</div>
-                <div class="text-[8px] text-slate-600">~400</div>
-            </button>
-            <button onclick="setLevel(2)" class="level-btn p-3 md:p-4 rounded-xl text-center" data-level="2">
-                <div class="text-lg md:text-2xl font-black text-lime-400">2</div>
-                <div class="text-[9px] md:text-[10px] uppercase tracking-wider text-slate-500 mt-1">Easy</div>
-                <div class="text-[8px] text-slate-600">~700</div>
-            </button>
-            <button onclick="setLevel(3)" class="level-btn p-3 md:p-4 rounded-xl text-center" data-level="3">
-                <div class="text-lg md:text-2xl font-black text-yellow-400">3</div>
-                <div class="text-[9px] md:text-[10px] uppercase tracking-wider text-slate-500 mt-1">Medium</div>
-                <div class="text-[8px] text-slate-600">~1000</div>
-            </button>
-            <button onclick="setLevel(4)" class="level-btn p-3 md:p-4 rounded-xl text-center" data-level="4">
-                <div class="text-lg md:text-2xl font-black text-orange-400">4</div>
-                <div class="text-[9px] md:text-[10px] uppercase tracking-wider text-slate-500 mt-1">Hard</div>
-                <div class="text-[8px] text-slate-600">~1300</div>
-            </button>
-            <button onclick="setLevel(5)" class="level-btn p-3 md:p-4 rounded-xl text-center" data-level="5">
-                <div class="text-lg md:text-2xl font-black text-rose-400">5</div>
-                <div class="text-[9px] md:text-[10px] uppercase tracking-wider text-slate-500 mt-1">Master</div>
-                <div class="text-[8px] text-slate-600">~1550</div>
-            </button>
-        </div>
+<!-- Color -->
+<div class="panel p-5">
+<label class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-3 block">2. Choose Color</label>
+<div class="grid grid-cols-2 gap-3">
+<button type="button" class="opt-btn active" data-group="color" data-val="w" onclick="selectOpt(this)"><i class="fas fa-chess-king mr-1 text-slate-200"></i> White</button>
+<button type="button" class="opt-btn" data-group="color" data-val="b" onclick="selectOpt(this)"><i class="fas fa-chess-king mr-1 text-slate-500"></i> Black</button>
+</div>
+</div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Board -->
-            <div class="lg:col-span-2 fade-up" style="animation-delay:0.2s">
-                <div id="board-wrap">
-                    <div id="board"></div>
-                </div>
-                <div class="mt-5 flex flex-wrap gap-3 justify-center">
-                    <button onclick="newGame()" class="btn-action bg-gradient-to-r from-amber-400 to-amber-600 text-black px-7 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-amber-500/25">
-                        <i class="fas fa-redo mr-1"></i> New Game
-                    </button>
-                    <button onclick="undoMove()" class="btn-action bg-white/10 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-white/15">
-                        <i class="fas fa-undo mr-1"></i> Undo
-                    </button>
-                    <button onclick="flipBoard()" class="btn-action bg-white/10 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-white/15">
-                        <i class="fas fa-exchange-alt mr-1"></i> Flip
-                    </button>
-                </div>
-            </div>
+<!-- Level -->
+<div class="panel p-5">
+<label class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-3 block">3. AI Level</label>
+<div class="grid grid-cols-5 gap-2">
+<button type="button" class="opt-btn active" data-group="level" data-val="1" onclick="selectOpt(this)">1<br><span class="text-[9px] text-slate-500 font-normal">~400</span></button>
+<button type="button" class="opt-btn" data-group="level" data-val="2" onclick="selectOpt(this)">2<br><span class="text-[9px] text-slate-500 font-normal">~700</span></button>
+<button type="button" class="opt-btn" data-group="level" data-val="3" onclick="selectOpt(this)">3<br><span class="text-[9px] text-slate-500 font-normal">~1000</span></button>
+<button type="button" class="opt-btn" data-group="level" data-val="4" onclick="selectOpt(this)">4<br><span class="text-[9px] text-slate-500 font-normal">~1300</span></button>
+<button type="button" class="opt-btn" data-group="level" data-val="5" onclick="selectOpt(this)">5<br><span class="text-[9px] text-slate-500 font-normal">~1550</span></button>
+</div>
+</div>
 
-            <!-- Side panels -->
-            <div class="space-y-4 fade-up" style="animation-delay:0.25s">
-                <div class="panel p-5">
-                    <div class="text-[10px] uppercase tracking-widest text-slate-500 mb-2">Status</div>
-                    <div id="status" class="text-lg font-bold text-amber-400">Your turn (White)</div>
-                    <div id="thinking" class="text-sm text-slate-400 mt-2 hidden">
-                        Engine thinking <span class="thinking-dots"><span></span><span></span><span></span></span>
-                    </div>
-                </div>
+<!-- Time -->
+<div class="panel p-5">
+<label class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-3 block">4. Time Control</label>
+<div class="grid grid-cols-4 gap-2">
+<button type="button" class="opt-btn" data-group="time" data-val="0" onclick="selectOpt(this)">None</button>
+<button type="button" class="opt-btn active" data-group="time" data-val="5" onclick="selectOpt(this)">5 min</button>
+<button type="button" class="opt-btn" data-group="time" data-val="10" onclick="selectOpt(this)">10 min</button>
+<button type="button" class="opt-btn" data-group="time" data-val="15" onclick="selectOpt(this)">15 min</button>
+</div>
+</div>
 
-                <div class="panel p-5">
-                    <div class="text-[10px] uppercase tracking-widest text-slate-500 mb-3">Level Info</div>
-                    <div id="level-info" class="text-sm text-slate-300 leading-relaxed">
-                        <strong class="text-emerald-400">Level 1 – Beginner</strong><br>
-                        Often plays randomly. Perfect for absolute beginners. ~400 Elo.
-                    </div>
-                </div>
+<button onclick="startGame()" class="w-full bg-gradient-to-r from-amber-400 to-amber-600 text-black py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg shadow-amber-500/30 hover:scale-[1.02] transition">
+Enter Arena <i class="fas fa-arrow-right ml-2"></i>
+</button>
+<p id="setup-error" class="text-center text-rose-400 text-sm hidden">Please enter your name first</p>
+</div>
 
-                <div class="panel p-5">
-                    <div class="text-[10px] uppercase tracking-widest text-slate-500 mb-2">Your Name <span class="text-rose-400">*</span></div>
-                    <input id="player-name" type="text" placeholder="Enter your name before playing" 
-                           class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-amber-500 transition" 
-                           value="">
-                    <p class="text-[10px] text-slate-500 mt-2">Required — others will see your name on the live feed</p>
-                </div>
+<!-- Leaderboard + Live on setup -->
+<div class="grid md:grid-cols-2 gap-4 mt-10 max-w-3xl mx-auto">
+<div class="panel p-5">
+<div class="flex items-center gap-2 mb-4"><span class="text-lg">🏆</span><h3 class="font-black text-white text-sm uppercase tracking-tight">AI Win Leaderboard</h3></div>
+<div id="ai-leaderboard" class="space-y-2 text-sm"><p class="text-slate-600 text-xs">Loading...</p></div>
+</div>
+<div class="panel p-5">
+<div class="flex items-center gap-2 mb-4"><span class="live-badge">LIVE</span><h3 class="font-black text-white text-sm uppercase tracking-tight">Watch Live Games</h3></div>
+<div id="live-ai-feed" class="space-y-2 text-sm"><p class="text-slate-600 text-xs">No live games yet</p></div>
+<div id="spectate-box" class="hidden mt-3 border-t border-white/10 pt-3">
+<div class="flex justify-between items-center mb-2">
+<span class="text-xs font-bold text-amber-400" id="spec-title">Watching</span>
+<button onclick="stopSpectate()" class="text-[10px] text-slate-400 uppercase font-bold">Close</button>
+</div>
+<div id="spec-board" style="max-width:280px;margin:0 auto;border-radius:10px;overflow:hidden;border:2px solid rgba(232,197,71,.3)"></div>
+</div>
+</div>
+</div>
+</div>
 
-                <div class="panel p-5">
-                    <div class="text-[10px] uppercase tracking-widest text-slate-500 mb-2">Move History</div>
-                    <div id="history" class="text-xs font-mono text-slate-400 max-h-36 overflow-y-auto space-y-1">Game just started</div>
-                </div>
+<!-- ========== GAME SCREEN ========== -->
+<div id="game-screen" class="hidden">
+<div class="flex items-center justify-between mb-4">
+<button onclick="backToSetup()" class="text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-white">← Setup</button>
+<div class="text-sm font-bold text-amber-400" id="game-header">Playing</div>
+<button onclick="newGameSameSettings()" class="text-xs font-bold uppercase tracking-widest text-amber-400 hover:text-amber-300">New Game</button>
+</div>
 
-                <a href="https://wa.me/2348025028105" target="_blank" 
-                   class="flex items-center justify-center gap-2 bg-[#25d366] text-white py-3.5 rounded-xl font-black text-xs uppercase tracking-widest hover:scale-[1.02] transition shadow-lg">
-                    <i class="fab fa-whatsapp text-lg"></i> Contact Coach
-                </a>
-            </div>
-        </div>
-    </div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div class="lg:col-span-2">
+<!-- Clocks -->
+<div class="flex justify-between mb-3 px-1">
+<div class="panel px-4 py-2 flex items-center gap-3">
+<span class="text-[10px] uppercase text-slate-500 font-bold" id="clock-ai-label">AI</span>
+<span class="clock text-white" id="clock-ai">--:--</span>
+</div>
+<div class="panel px-4 py-2 flex items-center gap-3">
+<span class="clock text-amber-400" id="clock-you">--:--</span>
+<span class="text-[10px] uppercase text-slate-500 font-bold" id="clock-you-label">You</span>
+</div>
+</div>
+<div id="board"></div>
+<div class="mt-4 flex flex-wrap gap-2 justify-center">
+<button onclick="undoMove()" class="bg-white/10 text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white/15"><i class="fas fa-undo mr-1"></i>Undo</button>
+<button onclick="resignGame()" class="bg-rose-500/20 text-rose-400 px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-rose-500/30"><i class="fas fa-flag mr-1"></i>Resign</button>
+</div>
+</div>
+<div class="space-y-4">
+<div class="panel p-5">
+<div class="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Status</div>
+<div id="status" class="text-lg font-bold text-amber-400">Your turn</div>
+<div id="thinking" class="text-sm text-slate-400 mt-2 hidden">AI thinking <span class="thinking-dots"><span></span><span></span><span></span></span></div>
+</div>
+<div class="panel p-5">
+<div class="text-[10px] uppercase tracking-widest text-slate-500 mb-2">Match</div>
+<div class="text-sm text-slate-300" id="match-info">—</div>
+</div>
+<div class="panel p-5">
+<div class="text-[10px] uppercase tracking-widest text-slate-500 mb-2">Moves</div>
+<div id="history" class="text-xs font-mono text-slate-400 max-h-40 overflow-y-auto space-y-0.5">—</div>
+</div>
+<a href="https://wa.me/2348025028105" target="_blank" class="flex items-center justify-center gap-2 bg-[#25d366] text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest">
+<i class="fab fa-whatsapp text-lg"></i> Contact Coach
+</a>
+</div>
+</div>
+</div>
+</div>
 
-    <!-- Floating WhatsApp -->
-    <a href="https://wa.me/2348025028105" target="_blank" class="wa-float" title="Chat with Coach">
-        <i class="fab fa-whatsapp"></i>
-    </a>
+<a href="https://wa.me/2348025028105" target="_blank" class="wa-float"><i class="fab fa-whatsapp"></i></a>
 
 <script>
-const firebaseConfig = {
-    apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
-    authDomain: "assignments-de95a.firebaseapp.com",
-    projectId: "assignments-de95a",
-    storageBucket: "assignments-de95a.firebasestorage.app",
-    messagingSenderId: "1088073398299",
-    appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
-};
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+const firebaseConfig={apiKey:"AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",authDomain:"assignments-de95a.firebaseapp.com",projectId:"assignments-de95a",storageBucket:"assignments-de95a.firebasestorage.app",messagingSenderId:"1088073398299",appId:"1:1088073398299:web:dab1f57ac1d63b10dba0be"};
+if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
+const db=firebase.firestore();
 
-const levelConfig = {
-    1: {time:20,  name:"Beginner", elo:"~400",  randomChance:0.70, desc:"Often plays randomly. Perfect for absolute beginners."},
-    2: {time:50,  name:"Easy",     elo:"~700",  randomChance:0.40, desc:"Mix of random and simple moves. Great for learning."},
-    3: {time:150, name:"Medium",   elo:"~1000", randomChance:0.15, desc:"Basic calculation. Good practice level."},
-    4: {time:400, name:"Hard",     elo:"~1300", randomChance:0.05, desc:"Solid play. Tournament preparation."},
-    5: {time:1200,name:"Master",   elo:"~1550", randomChance:0.00, desc:"Stronger calculation. Aim to beat this!"}
+const levelConfig={
+1:{time:20,name:"Beginner",elo:"~400",randomChance:0.70},
+2:{time:50,name:"Easy",elo:"~700",randomChance:0.40},
+3:{time:150,name:"Medium",elo:"~1000",randomChance:0.15},
+4:{time:400,name:"Hard",elo:"~1300",randomChance:0.05},
+5:{time:1200,name:"Master",elo:"~1550",randomChance:0}
 };
 
-let currentLevel=1, game=new Chess(), board=null, sourceSquare=null, playerColor='w', worker=null, isThinking=false, liveDocId=null;
+let settings={color:'w',level:1,timeMin:5,name:''};
+let game,board,sourceSquare,playerColor,worker,isThinking,liveDocId;
+let lastFrom=null,lastTo=null;
+let clockYou=0,clockAI=0,clockInterval=null,clockActive=null; // 'you' | 'ai'
+
+// Web Audio sounds
+const AudioCtx=window.AudioContext||window.webkitAudioContext;
+let actx=null;
+function ensureAudio(){if(!actx)actx=new AudioCtx();if(actx.state==='suspended')actx.resume();}
+function beep(freq,dur,type,vol){
+  try{
+    ensureAudio();
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.type=type||'sine';o.frequency.value=freq;
+    g.gain.value=vol||0.15;
+    o.connect(g);g.connect(actx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+(dur||0.12));
+    o.stop(actx.currentTime+(dur||0.12)+0.02);
+  }catch(e){}
+}
+function soundMove(){beep(420,0.08,'sine',0.12)}
+function soundCapture(){beep(280,0.1,'triangle',0.18);setTimeout(()=>beep(180,0.12,'triangle',0.12),60)}
+function soundCheck(){beep(600,0.1,'square',0.1);setTimeout(()=>beep(800,0.12,'square',0.1),90)}
+function soundWin(){beep(523,0.12,'sine',0.15);setTimeout(()=>beep(659,0.12,'sine',0.15),120);setTimeout(()=>beep(784,0.2,'sine',0.18),240)}
+function soundLose(){beep(300,0.15,'sawtooth',0.1);setTimeout(()=>beep(200,0.25,'sawtooth',0.1),150)}
+function soundSelect(){beep(500,0.04,'sine',0.06)}
+function soundStart(){beep(440,0.1,'sine',0.12);setTimeout(()=>beep(550,0.12,'sine',0.12),100)}
+
+function selectOpt(btn){
+  const g=btn.dataset.group,v=btn.dataset.val;
+  document.querySelectorAll(`[data-group="${g}"]`).forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  soundSelect();
+  if(g==='color')settings.color=v;
+  if(g==='level')settings.level=parseInt(v);
+  if(g==='time')settings.timeMin=parseInt(v);
+}
+
+function startGame(){
+  const name=document.getElementById('player-name').value.trim();
+  if(!name){
+    document.getElementById('setup-error').classList.remove('hidden');
+    document.getElementById('player-name').focus();
+    return;
+  }
+  document.getElementById('setup-error').classList.add('hidden');
+  settings.name=name;
+  playerColor=settings.color;
+  soundStart();
+  document.getElementById('setup-screen').classList.add('hidden');
+  document.getElementById('game-screen').classList.remove('hidden');
+  document.getElementById('game-header').textContent=name+' vs AI Lv'+settings.level;
+  document.getElementById('match-info').innerHTML=`<strong class="text-white">${name}</strong> (${playerColor==='w'?'White':'Black'}) vs <strong class="text-amber-400">AI Level ${settings.level}</strong> (${levelConfig[settings.level].elo})<br>Time: ${settings.timeMin?settings.timeMin+' min each':'No limit'}`;
+  initWorker();
+  if(!board){
+    board=ChessBoard('board',{position:'start',draggable:false,pieceTheme:pieceThemeUrl(currentPieceTheme)});
+    $('#board').on('click','[class*="square-"]',function(){const sq=$(this).attr('data-square');if(sq)onSquareClick(sq)});
+    applyBoardColor();
+  } else {
+    board.position('start');
+    applyBoardColor();
+  }
+  newGameInternal();
+}
+
+function backToSetup(){
+  stopClock();
+  if(liveDocId){db.collection('ai_live_games').doc(liveDocId).delete().catch(()=>{});liveDocId=null}
+  document.getElementById('game-screen').classList.add('hidden');
+  document.getElementById('setup-screen').classList.remove('hidden');
+}
+
+function newGameSameSettings(){newGameInternal()}
+
+function newGameInternal(){
+  if(liveDocId){db.collection('ai_live_games').doc(liveDocId).delete().catch(()=>{});liveDocId=null}
+  game=new Chess();
+  sourceSquare=null;lastFrom=null;lastTo=null;isThinking=false;
+  board.orientation(playerColor==='w'?'white':'black');
+  board.position('start');
+  clearHighlights();
+  document.getElementById('thinking').classList.add('hidden');
+  document.getElementById('board').classList.remove('thinking-glow');
+  updateStatus();updateHistory();
+  // Clocks
+  if(settings.timeMin>0){
+    clockYou=settings.timeMin*60;clockAI=settings.timeMin*60;
+    updateClockDisplay();
+    clockActive=playerColor==='w'?'you':'ai';
+    startClock();
+  }else{
+    document.getElementById('clock-you').textContent='∞';
+    document.getElementById('clock-ai').textContent='∞';
+    stopClock();
+  }
+  if(playerColor==='b')setTimeout(makeEngineMove,600);
+}
 
 function initWorker(){
-    if(worker) worker.terminate();
-    worker=new Worker('chess-worker.js');
-    worker.onmessage=function(e){
-        const data=e.data;
-        if(typeof data!=='string') return;
-        if(data.startsWith('pv')||data.startsWith('message')||data.startsWith('Ply:')) return;
-        if(data.length>=4 && data.length<=5){
-            const from=data.substring(0,2), to=data.substring(2,4), promo=data.length>4?data[4]:'q';
-            const move=game.move({from,to,promotion:promo});
-            if(move){ board.position(game.fen()); updateStatus(); updateHistory(); broadcastLive(); }
-            stopThinking();
-        }
-    };
-    worker.onerror=function(){ stopThinking(); document.getElementById('status').textContent='Engine error – try New Game'; };
+  if(worker)worker.terminate();
+  worker=new Worker('chess-worker.js');
+  worker.onmessage=function(e){
+    const data=e.data;
+    if(typeof data!=='string')return;
+    if(data.startsWith('pv')||data.startsWith('message')||data.startsWith('Ply:'))return;
+    if(data.length>=4&&data.length<=5){
+      const from=data.substring(0,2),to=data.substring(2,4),promo=data.length>4?data[4]:'q';
+      const move=game.move({from,to,promotion:promo});
+      if(move){
+        lastFrom=from;lastTo=to;
+        board.position(game.fen());
+        showLastMove();
+        playMoveSound(move);
+        updateStatus();updateHistory();broadcastLive();
+        switchClock('you');
+      }
+      stopThinking();
+    }
+  };
+  worker.onerror=function(){stopThinking();document.getElementById('status').textContent='Engine error — try New Game'};
 }
 
 function stopThinking(){
-    isThinking=false;
-    document.getElementById('thinking').classList.add('hidden');
-    document.getElementById('board').classList.remove('thinking-glow');
-}
-
-function setLevel(lvl){
-    currentLevel=lvl;
-    document.querySelectorAll('.level-btn').forEach(b=>b.classList.remove('active'));
-    document.querySelector(`[data-level="${lvl}"]`).classList.add('active');
-    const cfg=levelConfig[lvl];
-    document.getElementById('level-info').innerHTML=`<strong class="text-amber-400">Level ${lvl} – ${cfg.name}</strong><br>${cfg.desc} ${cfg.elo} Elo.`;
+  isThinking=false;
+  document.getElementById('thinking').classList.add('hidden');
+  document.getElementById('board').classList.remove('thinking-glow');
 }
 
 function onSquareClick(sq){
-    if(isThinking||game.game_over()) return;
-    if(game.turn()!==playerColor) return;
-    const pname = document.getElementById('player-name').value.trim();
-    if(!pname){ alert('Please enter your name first so others can see who is playing!'); document.getElementById('player-name').focus(); return; }
-    if(!sourceSquare){
-        const piece=game.get(sq);
-        if(piece&&piece.color===playerColor){ sourceSquare=sq; $(`.square-${sq}`).addClass('highlight-square'); }
-        return;
+  if(isThinking||game.game_over())return;
+  if(game.turn()!==playerColor)return;
+  if(!sourceSquare){
+    const piece=game.get(sq);
+    if(piece&&piece.color===playerColor){
+      sourceSquare=sq;
+      clearHighlights();
+      $(`.square-${sq}`).addClass('highlight-select');
+      soundSelect();
     }
-    const move=game.move({from:sourceSquare,to:sq,promotion:'q'});
-    $('.highlight-square').removeClass('highlight-square'); sourceSquare=null;
-    if(move){
-        board.position(game.fen()); updateStatus(); updateHistory(); broadcastLive();
-        if(!game.game_over()) makeEngineMove();
-    } else {
-        const piece=game.get(sq);
-        if(piece&&piece.color===playerColor){ sourceSquare=sq; $(`.square-${sq}`).addClass('highlight-square'); }
-    }
+    return;
+  }
+  if(sourceSquare===sq){sourceSquare=null;clearHighlights();showLastMove();return}
+  const move=game.move({from:sourceSquare,to:sq,promotion:'q'});
+  sourceSquare=null;
+  if(move){
+    lastFrom=move.from;lastTo=move.to;
+    board.position(game.fen());
+    showLastMove();
+    playMoveSound(move);
+    updateStatus();updateHistory();broadcastLive();
+    switchClock('ai');
+    if(!game.game_over())makeEngineMove();
+  }else{
+    clearHighlights();
+    const piece=game.get(sq);
+    if(piece&&piece.color===playerColor){
+      sourceSquare=sq;
+      $(`.square-${sq}`).addClass('highlight-select');
+    }else showLastMove();
+  }
 }
 
 function makeEngineMove(){
-    if(game.game_over()) return;
-    isThinking=true;
-    document.getElementById('thinking').classList.remove('hidden');
-    document.getElementById('status').textContent='Engine thinking...';
-    document.getElementById('board').classList.add('thinking-glow');
-
-    const cfg = levelConfig[currentLevel];
-    if (cfg.randomChance && Math.random() < cfg.randomChance) {
-        const moves = game.moves({verbose:true});
-        if (moves.length > 0) {
-            const move = moves[Math.floor(Math.random() * moves.length)];
-            setTimeout(() => {
-                game.move(move);
-                board.position(game.fen());
-                updateStatus(); updateHistory(); broadcastLive();
-                stopThinking();
-            }, 400 + Math.random() * 600);
-            return;
-        }
+  if(game.game_over())return;
+  isThinking=true;
+  document.getElementById('thinking').classList.remove('hidden');
+  document.getElementById('status').textContent='AI is thinking...';
+  document.getElementById('board').classList.add('thinking-glow');
+  const cfg=levelConfig[settings.level];
+  if(cfg.randomChance&&Math.random()<cfg.randomChance){
+    const moves=game.moves({verbose:true});
+    if(moves.length){
+      const m=moves[Math.floor(Math.random()*moves.length)];
+      setTimeout(()=>{
+        const move=game.move(m);
+        lastFrom=move.from;lastTo=move.to;
+        board.position(game.fen());
+        showLastMove();
+        playMoveSound(move);
+        updateStatus();updateHistory();broadcastLive();
+        switchClock('you');
+        stopThinking();
+      },350+Math.random()*500);
+      return;
     }
-    worker.postMessage('position ' + game.fen());
-    worker.postMessage('search ' + cfg.time);
+  }
+  worker.postMessage('position '+game.fen());
+  worker.postMessage('search '+cfg.time);
+}
+
+function playMoveSound(move){
+  if(move.flags&&(move.flags.includes('c')||move.flags.includes('e')))soundCapture();
+  else soundMove();
+  if(game.in_check())setTimeout(soundCheck,80);
+}
+
+function clearHighlights(){$('.highlight-from,.highlight-to,.highlight-select').removeClass('highlight-from highlight-to highlight-select')}
+function showLastMove(){
+  clearHighlights();
+  if(lastFrom)$(`.square-${lastFrom}`).addClass('highlight-from');
+  if(lastTo)$(`.square-${lastTo}`).addClass('highlight-to');
 }
 
 function updateStatus(){
-    const el = document.getElementById('status');
-    el.classList.remove('status-win','status-lose');
-    let status='';
-    if(game.in_checkmate()){
-        const youWin = game.turn() !== playerColor;
-        status = youWin ? '🎉 You win by checkmate!' : 'Checkmate — Engine wins';
-        el.classList.add(youWin ? 'status-win' : 'status-lose');
-    } else if(game.in_draw()){
-        status='Game drawn';
-    } else if(game.in_check()){
-        status=(game.turn()==='w'?'White':'Black')+' is in check';
-    } else {
-        status=(game.turn()===playerColor?'Your turn':'Engine to move') + (playerColor==='w'?' (White)':' (Black)');
-    }
-    el.textContent=status;
-    if(game.game_over()) endLiveGame();
+  const el=document.getElementById('status');
+  let status='';
+  if(game.in_checkmate()){
+    const youWin=game.turn()!==playerColor;
+    status=youWin?'🎉 You win by checkmate!':'Checkmate — AI wins';
+    if(youWin){soundWin();recordWin()}else soundLose();
+    stopClock();endLiveGame();
+  }else if(game.in_draw()){
+    status='Game drawn';stopClock();endLiveGame();
+  }else if(game.in_check()){
+    status=(game.turn()==='w'?'White':'Black')+' is in check';
+  }else{
+    status=game.turn()===playerColor?'Your turn — make a move':'AI to move';
+  }
+  el.textContent=status;
 }
 
 function updateHistory(){
-    const hist=game.history({verbose:true});
-    if(hist.length===0){ document.getElementById('history').innerHTML='Game just started'; return; }
-    let html='';
-    for(let i=0;i<hist.length;i+=2){
-        const num=Math.floor(i/2)+1;
-        html+=`<div>${num}. ${hist[i]?hist[i].san:''} ${hist[i+1]?hist[i+1].san:''}</div>`;
-    }
-    document.getElementById('history').innerHTML=html;
-    document.getElementById('history').scrollTop=9999;
+  const hist=game.history({verbose:true});
+  if(!hist.length){document.getElementById('history').innerHTML='Game started';return}
+  let html='';
+  for(let i=0;i<hist.length;i+=2){
+    const n=Math.floor(i/2)+1;
+    html+=`<div>${n}. ${hist[i]?hist[i].san:''} ${hist[i+1]?hist[i+1].san:''}</div>`;
+  }
+  document.getElementById('history').innerHTML=html;
+  document.getElementById('history').scrollTop=9999;
 }
 
-function broadcastLive(){
-    const name=document.getElementById('player-name').value.trim();
-    if(!name) return;
-
-    const data={ player:name, level:currentLevel, fen:game.fen(), pgn:game.pgn(), status:'Playing', updated:firebase.firestore.FieldValue.serverTimestamp() };
-    if(liveDocId){
-        db.collection('ai_live_games').doc(liveDocId).update(data).catch(()=>{});
-    } else {
-        db.collection('ai_live_games').add(data).then(doc=>{ liveDocId=doc.id; }).catch(()=>{});
-    }
+function formatTime(s){
+  if(s<0)s=0;
+  const m=Math.floor(s/60),sec=s%60;
+  return m+':'+String(sec).padStart(2,'0');
+}
+function updateClockDisplay(){
+  const cy=document.getElementById('clock-you'),ca=document.getElementById('clock-ai');
+  cy.textContent=formatTime(clockYou);ca.textContent=formatTime(clockAI);
+  cy.classList.toggle('low',clockYou<=30&&settings.timeMin>0);
+  ca.classList.toggle('low',clockAI<=30&&settings.timeMin>0);
+}
+function startClock(){
+  stopClock();
+  if(settings.timeMin<=0)return;
+  clockInterval=setInterval(()=>{
+    if(clockActive==='you'){clockYou--;if(clockYou<=0){clockYou=0;updateClockDisplay();flagLoss('you');return}}
+    else if(clockActive==='ai'){clockAI--;if(clockAI<=0){clockAI=0;updateClockDisplay();flagLoss('ai');return}}
+    updateClockDisplay();
+  },1000);
+}
+function stopClock(){if(clockInterval){clearInterval(clockInterval);clockInterval=null}}
+function switchClock(who){
+  if(settings.timeMin<=0||game.game_over())return;
+  clockActive=who;startClock();
+}
+function flagLoss(who){
+  stopClock();
+  if(who==='you'){document.getElementById('status').textContent='You lost on time';soundLose();endLiveGame()}
+  else{document.getElementById('status').textContent='🎉 AI lost on time — You win!';soundWin();recordWin();endLiveGame()}
 }
 
-function endLiveGame(){
-    if(liveDocId){
-        db.collection('ai_live_games').doc(liveDocId).update({ status:'Finished', updated:firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{});
-        setTimeout(()=>{ if(liveDocId) db.collection('ai_live_games').doc(liveDocId).delete().catch(()=>{}); liveDocId=null; }, 30000);
-    }
-}
-
-function newGame(){
-    if(liveDocId){ db.collection('ai_live_games').doc(liveDocId).delete().catch(()=>{}); liveDocId=null; }
-    game=new Chess(); board.position('start'); sourceSquare=null; stopThinking();
-    updateStatus(); updateHistory();
-    if(playerColor==='b') setTimeout(makeEngineMove,500);
+function resignGame(){
+  if(game.game_over())return;
+  if(!confirm('Resign this game?'))return;
+  stopClock();
+  document.getElementById('status').textContent='You resigned — AI wins';
+  soundLose();endLiveGame();
 }
 
 function undoMove(){
-    if(isThinking) return;
-    game.undo(); if(game.turn()!==playerColor) game.undo();
-    board.position(game.fen()); updateStatus(); updateHistory(); broadcastLive();
+  if(isThinking||game.game_over())return;
+  game.undo();if(game.turn()!==playerColor)game.undo();
+  lastFrom=null;lastTo=null;
+  board.position(game.fen());clearHighlights();
+  updateStatus();updateHistory();broadcastLive();
 }
 
-function flipBoard(){
-    playerColor=playerColor==='w'?'b':'w';
-    board.orientation(playerColor==='w'?'white':'black');
-    newGame();
+function broadcastLive(){
+  if(!settings.name)return;
+  const data={player:settings.name,level:settings.level,fen:game.fen(),pgn:game.pgn(),status:'Playing',updated:firebase.firestore.FieldValue.serverTimestamp()};
+  if(liveDocId)db.collection('ai_live_games').doc(liveDocId).update(data).catch(()=>{});
+  else db.collection('ai_live_games').add(data).then(doc=>{liveDocId=doc.id}).catch(()=>{});
+}
+function endLiveGame(){
+  if(liveDocId){
+    db.collection('ai_live_games').doc(liveDocId).update({status:'Finished',updated:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
+    setTimeout(()=>{if(liveDocId)db.collection('ai_live_games').doc(liveDocId).delete().catch(()=>{});liveDocId=null},20000);
+  }
 }
 
-let specBoard = null;
-let specUnsub = null;
-
-function loadLiveFeed(){
-    db.collection('ai_live_games').where('status','==','Playing').orderBy('updated','desc').limit(8)
-    .onSnapshot(snap=>{
-        const container=document.getElementById('live-ai-feed');
-        if(snap.empty){ container.innerHTML='<p class="text-slate-600 text-xs">No live AI games at the moment... Be the first to play!</p>'; return; }
-        let html='';
-        snap.forEach(doc=>{
-            const d=doc.data();
-            const isMine = doc.id===liveDocId;
-            html+=`<div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-white/10 transition ${isMine?'border border-amber-500/30':''}" onclick="spectateGame('${doc.id}','${(d.player||'Player').replace(/'/g,"")}','${d.level||'?'}')">
-                <span class="text-white text-xs font-bold">${d.player||'Player'} <span class="text-amber-400">vs AI Lv${d.level||'?'}</span>${isMine?' <span class="text-emerald-400">(you)</span>':''}</span>
-                <span class="live-badge">WATCH</span>
-            </div>`;
-        });
-        container.innerHTML=html;
-    }, ()=>{});
+function recordWin(){
+  db.collection('ai_wins').add({
+    name:settings.name,
+    level:settings.level,
+    color:playerColor,
+    timestamp:firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(()=>{});
 }
 
-function spectateGame(id, playerName, level){
-    // Don't spectate your own active game in the small board - just show message
-    if (id === liveDocId) {
-        alert('This is your own game — it is already on the main board!');
-        return;
-    }
-    document.getElementById('spectate-box').classList.remove('hidden');
-    document.getElementById('spec-title').textContent = playerName + ' vs AI Level ' + level;
-    document.getElementById('spec-sub').textContent = 'Live board — updates automatically';
-
-    if (!specBoard) {
-        specBoard = ChessBoard('spec-board', {
-            position: 'start',
-            draggable: false,
-            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
-        });
-    }
-    if (specUnsub) specUnsub();
-    specUnsub = db.collection('ai_live_games').doc(id).onSnapshot(doc => {
-        if (!doc.exists) {
-            document.getElementById('spec-sub').textContent = 'Game ended';
-            return;
-        }
-        const d = doc.data();
-        if (d.fen) specBoard.position(d.fen);
-        if (d.status === 'Finished') {
-            document.getElementById('spec-sub').textContent = 'Game finished';
-        }
+function loadAILeaderboard(){
+  db.collection('ai_wins').orderBy('timestamp','desc').limit(50).onSnapshot(snap=>{
+    const box=document.getElementById('ai-leaderboard');
+    if(snap.empty){box.innerHTML='<p class="text-slate-600 text-xs">No wins yet — beat the AI!</p>';return}
+    // Count wins per player
+    const counts={};
+    snap.forEach(doc=>{
+      const d=doc.data();
+      const key=d.name||'Player';
+      if(!counts[key])counts[key]={name:key,wins:0,bestLevel:0};
+      counts[key].wins++;
+      if((d.level||0)>counts[key].bestLevel)counts[key].bestLevel=d.level;
     });
-    // Scroll spectator into view on mobile
-    document.getElementById('spectate-box').scrollIntoView({behavior:'smooth', block:'nearest'});
+    const ranked=Object.values(counts).sort((a,b)=>b.wins-a.wins||b.bestLevel-a.bestLevel).slice(0,10);
+    let html='',rank=0;
+    ranked.forEach(r=>{
+      rank++;
+      const medal=rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':'#'+rank;
+      html+=`<div class="flex items-center gap-3 bg-white/5 rounded-xl px-3 py-2.5">
+        <div class="font-black w-7 text-center">${medal}</div>
+        <div class="flex-1 min-w-0"><div class="font-bold text-white text-xs truncate">${r.name}</div>
+        <div class="text-[10px] text-slate-500">Best AI Lv${r.bestLevel}</div></div>
+        <div class="font-black text-amber-400 text-sm">${r.wins} win${r.wins>1?'s':''}</div>
+      </div>`;
+    });
+    box.innerHTML=html;
+  },()=>{document.getElementById('ai-leaderboard').innerHTML='<p class="text-slate-600 text-xs">Leaderboard offline</p>'});
 }
 
-function stopSpectate(){
-    if (specUnsub) { specUnsub(); specUnsub = null; }
-    document.getElementById('spectate-box').classList.add('hidden');
+let specBoard=null,specUnsub=null;
+function loadLiveFeed(){
+  db.collection('ai_live_games').where('status','==','Playing').orderBy('updated','desc').limit(8)
+  .onSnapshot(snap=>{
+    const c=document.getElementById('live-ai-feed');
+    if(snap.empty){c.innerHTML='<p class="text-slate-600 text-xs">No live games — be the first!</p>';return}
+    let html='';
+    snap.forEach(doc=>{
+      const d=doc.data();
+      const mine=doc.id===liveDocId;
+      html+=`<div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 cursor-pointer hover:bg-white/10" onclick="spectateGame('${doc.id}','${(d.player||'Player').replace(/'/g,'')}','${d.level||'?'}')">
+        <span class="text-white text-xs font-bold">${d.player||'Player'} <span class="text-amber-400">vs AI Lv${d.level}</span>${mine?' <span class="text-emerald-400">(you)</span>':''}</span>
+        <span class="live-badge">WATCH</span>
+      </div>`;
+    });
+    c.innerHTML=html;
+  },()=>{});
+}
+function spectateGame(id,name,level){
+  if(id===liveDocId){alert('This is your game — already on the main board!');return}
+  document.getElementById('spectate-box').classList.remove('hidden');
+  document.getElementById('spec-title').textContent=name+' vs AI Lv'+level;
+  if(!specBoard){specBoard=ChessBoard('spec-board',{position:'start',draggable:false,pieceTheme:pieceThemeUrl(currentPieceTheme)});applyBoardColor();}
+  if(specUnsub)specUnsub();
+  specUnsub=db.collection('ai_live_games').doc(id).onSnapshot(doc=>{
+    if(!doc.exists){document.getElementById('spec-title').textContent='Game ended';return}
+    const d=doc.data();
+    if(d.fen)specBoard.position(d.fen);
+  });
+}
+function stopSpectate(){if(specUnsub){specUnsub();specUnsub=null}document.getElementById('spectate-box').classList.add('hidden')}
+
+// Enter key starts game from name field
+document.getElementById('player-name').addEventListener('keydown',e=>{if(e.key==='Enter')startGame()});
+
+
+// —— Settings & Chess.com pieces ——
+const PIECE_THEMES = {
+  neo: 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/{piece}.png',
+  game_room: 'https://images.chesscomfiles.com/chess-themes/pieces/game_room/150/{piece}.png',
+  marble: 'https://images.chesscomfiles.com/chess-themes/pieces/marble/150/{piece}.png',
+  classic: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+};
+// chessboard.js uses wP/bK; chess.com uses wp/bk
+function pieceThemeUrl(themeKey) {
+  const base = PIECE_THEMES[themeKey] || PIECE_THEMES.neo;
+  if (themeKey === 'classic') return base;
+  return function(piece) {
+    // piece e.g. "wP" -> "wp"
+    const code = piece[0].toLowerCase() + piece[1].toLowerCase();
+    return base.replace('{piece}', code);
+  };
 }
 
-$(document).ready(function(){
-    initWorker();
-    board=ChessBoard('board',{ position:'start', draggable:false, pieceTheme:'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png' });
-    $('#board').on('click','[class*="square-"]',function(){ const sq=$(this).attr('data-square'); if(sq) onSquareClick(sq); });
-    updateStatus();
-    loadLiveFeed();
-});
+let soundEnabled = true;
+let currentPieceTheme = localStorage.getItem('mm_pieces') || 'neo';
+let currentBoardTheme = localStorage.getItem('mm_board') || 'green';
+
+function toggleSettings() {
+  document.getElementById('settings-panel').classList.toggle('open');
+}
+function applySettings() {
+  const pieces = document.getElementById('set-pieces').value;
+  const boardT = document.getElementById('set-board').value;
+  soundEnabled = document.getElementById('set-sound').checked;
+  currentPieceTheme = pieces;
+  currentBoardTheme = boardT;
+  localStorage.setItem('mm_pieces', pieces);
+  localStorage.setItem('mm_board', boardT);
+  localStorage.setItem('mm_sound', soundEnabled ? '1' : '0');
+  // Rebuild board with new pieces if game active
+  if (board) {
+    const fen = game ? game.fen() : 'start';
+    const orient = playerColor === 'b' ? 'black' : 'white';
+    board.destroy();
+    board = ChessBoard('board', {
+      position: fen,
+      orientation: orient,
+      draggable: false,
+      pieceTheme: pieceThemeUrl(pieces)
+    });
+    $('#board').off('click').on('click', '[class*="square-"]', function() {
+      const sq = $(this).attr('data-square');
+      if (sq) onSquareClick(sq);
+    });
+    applyBoardColor();
+    showLastMove();
+  }
+  if (specBoard) {
+    // keep spectator simple
+  }
+  applyBoardColor();
+}
+function applyBoardColor() {
+  const el = document.getElementById('board');
+  if (!el) return;
+  el.classList.remove('board-brown', 'board-green', 'board-blue', 'board-purple');
+  el.classList.add('board-' + currentBoardTheme);
+  const spec = document.getElementById('spec-board');
+  if (spec) {
+    spec.classList.remove('board-brown', 'board-green', 'board-blue', 'board-purple');
+    spec.classList.add('board-' + currentBoardTheme);
+  }
+}
+// Init settings UI from storage
+(function initSettingsUI() {
+  const p = localStorage.getItem('mm_pieces') || 'neo';
+  const b = localStorage.getItem('mm_board') || 'green';
+  const s = localStorage.getItem('mm_sound') !== '0';
+  const pe = document.getElementById('set-pieces');
+  const be = document.getElementById('set-board');
+  const se = document.getElementById('set-sound');
+  if (pe) pe.value = p;
+  if (be) be.value = b;
+  if (se) se.checked = s;
+  currentPieceTheme = p;
+  currentBoardTheme = b;
+  soundEnabled = s;
+})();
+
+// Override sound functions to respect toggle
+const _beep = beep;
+beep = function(freq, dur, type, vol) {
+  if (!soundEnabled) return;
+  _beep(freq, dur, type, vol);
+};
+
+loadAILeaderboard();
+loadLiveFeed();
 </script>
 </body>
 </html>
