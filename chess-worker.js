@@ -2508,7 +2508,8 @@ self.onmessage = function (e) {
         }
     } else if (e.data.match("^search") == "search") {
         g_timeout = parseInt(e.data.substr(7, e.data.length - 7));
-        Search(FinishPlyCallback, 99, FinishPlyCallback);
+        // Use FinishMoveLocalTesting so the best move is actually posted back to the page
+        Search(FinishMoveLocalTesting, 99, FinishPlyCallback);
     } else if (e.data.match("^analyze") == "analyze") {
         Search(FinishPlyCallback, 99, null);
     } else {
