@@ -329,21 +329,24 @@ function makeEngineMove(){
   document.getElementById('thinking').classList.remove('hidden');
   document.getElementById('status').textContent='Opponent thinking...';
   const s=STAGES[stageIndex];
-  if(s.randomChance&&Math.random()<s.randomChance){
-    const moves=game.moves({verbose:true});
-    if(moves.length){
-      const m=moves[Math.floor(Math.random()*moves.length)];
-      setTimeout(()=>{
+  // Realistic think pause before any move (longer in later stages)
+  const thinkMs = 900 + stageIndex * 600 + Math.random() * 800;
+  setTimeout(function(){
+    if(game.game_over()){ stopThinking(); return; }
+    if(s.randomChance&&Math.random()<s.randomChance){
+      const moves=game.moves({verbose:true});
+      if(moves.length){
+        const m=moves[Math.floor(Math.random()*moves.length)];
         const move=game.move(m);
         lastFrom=move.from;lastTo=move.to;board.position(game.fen());showLastMove();
         if(move.flags&&(move.flags.includes('c')||move.flags.includes('e')))soundCapture();else soundMove();
         updateStatus();stopThinking();
-      },400+Math.random()*500);
-      return;
+        return;
+      }
     }
-  }
-  worker.postMessage('position '+game.fen());
-  worker.postMessage('search '+s.aiTime);
+    worker.postMessage('position '+game.fen());
+    worker.postMessage('search '+s.aiTime);
+  }, thinkMs);
 }
 
 function clearHighlights(){$('.highlight-from,.highlight-to,.highlight-select').removeClass('highlight-from highlight-to highlight-select')}
