@@ -108,7 +108,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8
 
   <div class="grid lg:grid-cols-5 gap-4">
     <div class="lg:col-span-3 space-y-3">
-      <p id="move-hint" class="text-center text-[11px] text-slate-400">Drag pieces or: tap piece → tap square. Any color (Teach).</p>
+      <p id="move-hint" class="text-center text-[11px] text-slate-400">Tap a piece, then tap a square (no dragging).</p>
       <div id="board-wrap">
         <div id="board"></div>
         <canvas id="draw-canvas"></canvas>
@@ -195,6 +195,7 @@ let markMode=null, sourceSq=null, arrowFrom=null;
 let marks={green:[], red:[], arrows:[]};
 let lightSq='#f0d9b5', darkSq='#b58863';
 let applyingRemote=false;
+let spareSelected=null; // setup: 'wP' etc from spare tray
 const canvas=document.getElementById('draw-canvas');
 const ctx=canvas.getContext('2d');
 
@@ -261,72 +262,30 @@ function pieceTheme(piece){
 }
 
 function initBoard(){
-  var pos='start';
-  try{
-    if(mode==='setup' && board) pos=board.fen();
-    else if(game) pos=game.fen();
-  }catch(e){ pos='start'; }
+  var pos = 'start';
+  try {
+    if (mode === 'setup' && board) pos = board.fen();
+    else if (game) pos = game.fen();
+  } catch (e) { pos = 'start'; }
 
-  var cfg={
+  var cfg = {
     position: pos,
-    draggable: true,
-    dropOffBoard: mode==='setup' ? 'trash' : 'snapback',
-    sparePieces: mode==='setup',
-    pieceTheme: pieceTheme,
-    onDragStart: function(source, piece){
-      if(markMode) return false;
-      if(mode==='setup' || mode==='teach') return true;
-      if(game.game_over()) return false;
-      if((game.turn()==='w' && piece.search(/^b/)!==-1) || (game.turn()==='b' && piece.search(/^w/)!==-1)) return false;
-      return true;
-    },
-    onDrop: function(source, target){
-      if(target==='offboard'){
-        if(mode==='setup'){ setTimeout(pushState, 40); return; }
-        return 'snapback';
-      }
-      if(source===target) return 'snapback';
-
-      if(mode==='setup'){
-        setTimeout(pushState, 40);
-        return;
-      }
-
-      if(mode==='teach'){
-        // Accept any drop; board already updates
-        var mv=null;
-        try{ mv=game.move({from:source, to:target, promotion:'q'}); }catch(e){}
-        if(!mv){
-          setTimeout(function(){
-            try{ game=new Chess(board.fen()+' w - - 0 1'); }catch(e){}
-            updateMoveUI(); pushState();
-          }, 30);
-        } else {
-          updateMoveUI(); pushState();
-        }
-        sourceSq=null; clearSelectHl();
-        return;
-      }
-
-      // legal
-      var move=game.move({from:source, to:target, promotion:'q'});
-      if(move===null) return 'snapback';
-      updateMoveUI(); pushState();
-      sourceSq=null; clearSelectHl();
-    },
-    onSnapEnd: function(){
-      if(mode==='legal' && game) board.position(game.fen());
-    }
+    draggable: false,  // CLICK ONLY — no drag (stops board scrolling on mobile)
+    sparePieces: mode === 'setup',
+    pieceTheme: pieceTheme
   };
 
-  if(board){ try{ board.destroy(); }catch(e){} }
-  board=ChessBoard('board', cfg);
+  if (board) { try { board.destroy(); } catch (e) {} }
+  board = ChessBoard('board', cfg);
   applyBoardColors();
   bindClicks();
-  setTimeout(function(){
-    try{ board.resize(); }catch(e){}
-    resizeCanvas(); redrawMarks();
-  }, 100);
+  spareSelected = null;
+  setTimeout(function () {
+    try { board.resize(); } catch (e) {}
+    resizeCanvas();
+    redrawMarks();
+    bindSpareClicks();
+  }, 120);
 }
 
 function squareFromEventTarget(t){
@@ -343,78 +302,183 @@ function squareFromEventTarget(t){
 }
 
 function bindClicks(){
-  var root=document.getElementById('board');
-  if(!root) return;
+  var root = document.getElementById('board');
+  if (!root) return;
   $(root).off('.mm');
-  $(root).on('click.mm', function(e){
-    var sq=squareFromEventTarget(e.target);
-    if(sq) onSquareClick(sq);
+  // Use pointerup so mobile taps work without drag
+  $(root).on('click.mm', function (e) {
+    var sq = squareFromEventTarget(e.target);
+    if (sq) onSquareClick(sq);
   });
 }
 
-function onSquareClick(sq){
-  if(!sq || !board) return;
+function bindSpareClicks(){
+  // Spare pieces are outside .board-b72b1 — bind on #board container
+  var root = document.getElementById('board');
+  if (!root) return;
+  $(root).find('.spare-pieces-7492f img').off('.mmspare');
+  $(root).find('.spare-pieces-7492f img').on('click.mmspare', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    // chessboardjs sets data-piece on spare imgs like "wP"
+    var piece = $(this).attr('data-piece');
+    if (!piece) {
+      // fallback: parse class or src
+      var src = $(this).attr('src') || '';
+      var m = src.match(/\/([wb][prnbqk])\./i);
+      if (m) piece = m[1][0].toLowerCase() === 'w'
+        ? 'w' + m[1][1].toUpperCase()
+        : 'b' + m[1][1].toUpperCase();
+      // neo theme uses wp.png style
+      m = src.match(/\/([wb][prnbqk])\.png/i);
+      if (!piece && m) {
+        piece = m[1].charAt(0) + m[1].charAt(1).toUpperCase();
+      }
+    }
+    if (!piece) return;
+    spareSelected = piece;
+    sourceSq = null;
+    clearSelectHl();
+    setStatus('Place ' + piece + ' — tap a square (tap again on piece to remove)');
+  });
+}
 
-  if(markMode==='green' || markMode==='red'){ toggleMark(markMode, sq); return; }
-  if(markMode==='arrow'){
-    if(!arrowFrom){
-      arrowFrom=sq; clearSelectHl(); highlightSq(sq,'hl-select');
+function onSquareClick(sq) {
+  if (!sq || !board) return;
+
+  // Marks
+  if (markMode === 'green' || markMode === 'red') {
+    toggleMark(markMode, sq);
+    return;
+  }
+  if (markMode === 'arrow') {
+    if (!arrowFrom) {
+      arrowFrom = sq;
+      clearSelectHl();
+      highlightSq(sq, 'hl-select');
       setStatus('Arrow: tap the end square');
       return;
     }
-    if(arrowFrom===sq){ arrowFrom=null; clearSelectHl(); return; }
-    marks.arrows=marks.arrows.filter(function(a){ return !(a.from===arrowFrom && a.to===sq); });
-    marks.arrows.push({from:arrowFrom, to:sq});
-    arrowFrom=null; clearSelectHl(); pushMarks(); redrawMarks();
+    if (arrowFrom === sq) { arrowFrom = null; clearSelectHl(); return; }
+    marks.arrows = marks.arrows.filter(function (a) { return !(a.from === arrowFrom && a.to === sq); });
+    marks.arrows.push({ from: arrowFrom, to: sq });
+    arrowFrom = null;
+    clearSelectHl();
+    pushMarks();
+    redrawMarks();
     setStatus('Arrow added');
     return;
   }
 
-  if(mode==='setup'){
-    setStatus('Setup: drag pieces from the side trays onto the board');
-    return;
-  }
-
-  // Teach / Legal — click to move
-  if(!sourceSq){
-    var pos=board.position();
-    if(!pos[sq]) return;
-    if(mode==='legal'){
-      var p=game.get(sq);
-      if(!p || p.color!==game.turn()){ setStatus('Wrong side — use Teach for free moves'); return; }
+  // SETUP: place from spare tray or move/remove on board
+  if (mode === 'setup') {
+    var pos = board.position();
+    if (spareSelected) {
+      pos[sq] = spareSelected;
+      board.position(pos, false);
+      spareSelected = null;
+      pushState();
+      setStatus('Placed on ' + sq);
+      return;
     }
-    sourceSq=sq;
+    if (!sourceSq) {
+      if (!pos[sq]) {
+        setStatus('Tap a spare piece first, or tap a piece on the board');
+        return;
+      }
+      sourceSq = sq;
+      clearSelectHl();
+      highlightSq(sq, 'hl-select');
+      setStatus('Tap target square (or same square to remove piece)');
+      return;
+    }
+    if (sourceSq === sq) {
+      // remove piece
+      delete pos[sq];
+      board.position(pos, false);
+      sourceSq = null;
+      clearSelectHl();
+      pushState();
+      setStatus('Removed piece on ' + sq);
+      return;
+    }
+    // move piece
+    var piece = pos[sourceSq];
+    delete pos[sourceSq];
+    pos[sq] = piece;
+    board.position(pos, false);
+    sourceSq = null;
     clearSelectHl();
-    highlightSq(sq,'hl-select');
-    if(mode==='legal'){
-      game.moves({square:sq, verbose:true}).forEach(function(m){ highlightSq(m.to,'hl-legal'); });
+    pushState();
+    setStatus('Moved to ' + sq);
+    return;
+  }
+
+  // TEACH / LEGAL — click to move only
+  if (!sourceSq) {
+    var pos0 = board.position();
+    if (!pos0[sq]) return;
+    if (mode === 'legal') {
+      var p = game.get(sq);
+      if (!p || p.color !== game.turn()) {
+        setStatus('Wrong side — switch to Teach for free moves');
+        return;
+      }
     }
-    setStatus('Selected '+sq+' — tap destination');
+    sourceSq = sq;
+    clearSelectHl();
+    highlightSq(sq, 'hl-select');
+    if (mode === 'legal') {
+      game.moves({ square: sq, verbose: true }).forEach(function (m) {
+        highlightSq(m.to, 'hl-legal');
+      });
+    }
+    setStatus('Selected ' + sq + ' — tap destination');
     return;
   }
 
-  if(sourceSq===sq){ sourceSq=null; clearSelectHl(); applyMarkClasses(); return; }
-
-  if(mode==='teach'){
-    var pos2=board.position();
-    var piece=pos2[sourceSq];
-    if(!piece){ sourceSq=null; clearSelectHl(); return; }
-    delete pos2[sourceSq];
-    pos2[sq]=piece;
-    board.position(pos2, false);
-    try{
-      var mv=game.move({from:sourceSq, to:sq, promotion:'q'});
-      if(!mv){ try{ game=new Chess(board.fen()+' w - - 0 1'); }catch(e){} }
-    }catch(e){}
-    sourceSq=null; clearSelectHl(); updateMoveUI(); pushState();
-    setStatus('Moved to '+sq);
+  if (sourceSq === sq) {
+    sourceSq = null;
+    clearSelectHl();
+    applyMarkClasses();
+    setStatus('Cancelled');
     return;
   }
 
-  var move=game.move({from:sourceSq, to:sq, promotion:'q'});
-  sourceSq=null; clearSelectHl();
-  if(move){ board.position(game.fen()); updateMoveUI(); pushState(); }
-  else applyMarkClasses();
+  if (mode === 'teach') {
+    var posT = board.position();
+    var pc = posT[sourceSq];
+    if (!pc) { sourceSq = null; clearSelectHl(); return; }
+    delete posT[sourceSq];
+    posT[sq] = pc;
+    board.position(posT, false);
+    try {
+      var mv = game.move({ from: sourceSq, to: sq, promotion: 'q' });
+      if (!mv) {
+        try { game = new Chess(board.fen() + ' w - - 0 1'); } catch (e) {}
+      }
+    } catch (e) {}
+    sourceSq = null;
+    clearSelectHl();
+    updateMoveUI();
+    pushState();
+    setStatus('Moved to ' + sq);
+    return;
+  }
+
+  // legal
+  var move = game.move({ from: sourceSq, to: sq, promotion: 'q' });
+  sourceSq = null;
+  clearSelectHl();
+  if (move) {
+    board.position(game.fen());
+    updateMoveUI();
+    pushState();
+    setStatus(move.san);
+  } else {
+    applyMarkClasses();
+    setStatus('Illegal move');
+  }
 }
 
 function highlightSq(sq, cls){
@@ -550,9 +614,9 @@ function setMode(m){
   document.getElementById('btn-red').classList.remove('on');
   document.getElementById('btn-arrow').classList.remove('on');
   document.getElementById('move-hint').textContent=
-    m==='setup' ? 'Setup: drag pieces from the trays onto the board (scroll the page if needed).' :
-    m==='legal' ? 'Legal mode: only legal moves, correct side to move.' :
-    'Teach: drag or tap any piece (white or black) anytime.';
+    m==='setup' ? 'Setup: tap a tray piece type, then tap a square to place it. Tap a board piece then empty square to move. Tap piece twice to remove.' :
+    m==='legal' ? 'Legal mode: tap piece, then legal square.' :
+    'Teach: tap any piece, then tap destination (white or black).';
   if(m==='legal'){
     try{ game.load(board.fen()+' w - - 0 1'); }catch(e){ game=new Chess(); }
   }
@@ -574,13 +638,13 @@ function emptyBoard(){
   document.getElementById('btn-setup').classList.add('on');
   document.getElementById('btn-teach').classList.remove('on');
   document.getElementById('btn-legal').classList.remove('on');
-  document.getElementById('move-hint').textContent='Setup: drag pieces from the trays onto the board.';
+  document.getElementById('move-hint').textContent='Setup: tap spare piece, then tap square.';
   if(board){ try{ board.destroy(); }catch(e){} board=null; }
   game=new Chess('8/8/8/8/8/8/8/8 w - - 0 1');
   initBoard();
   setTimeout(function(){ if(board) board.clear(); pushState(); }, 50);
   marks={green:[],red:[],arrows:[]}; redrawMarks();
-  setStatus('Empty board — drag pieces from trays');
+  setStatus('Empty board — tap a spare piece, then a square');
 }
 
 function setBoardColors(l,d){
