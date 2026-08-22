@@ -124,6 +124,21 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8
         <button class="tool danger" onclick="emptyBoard()">Clear</button>
       </div>
 
+
+      <div class="panel p-3">
+        <div class="text-[10px] font-black uppercase text-slate-500 mb-2">Lesson presets (coach)</div>
+        <select id="lesson-preset" class="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none mb-2" onchange="loadLessonPreset(this.value)">
+          <option value="">— Choose a lesson position —</option>
+          <option value="start">Start position</option>
+          <option value="scholar">Scholar's mate trap</option>
+          <option value="fork">Knight fork practice</option>
+          <option value="backrank">Back rank mate idea</option>
+          <option value="castling">Before castling</option>
+          <option value="promote">Pawn about to promote</option>
+          <option value="enpassant">En passant demo</option>
+        </select>
+      </div>
+
       <div class="panel p-3">
         <div class="text-[10px] font-black uppercase text-slate-500 mb-2">Marks & arrows (synced)</div>
         <div class="flex flex-wrap gap-2">
@@ -240,6 +255,18 @@ function verifyAccess(){
   game=new Chess();
   initBoard();
   listenRoom();
+  try {
+    var p = JSON.parse(localStorage.getItem('mm_progress')||'{}');
+    var d = new Date();
+    var key = d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+    p.practiceByDay = p.practiceByDay || {};
+    if (!sessionStorage.getItem('mm_class_practice')) {
+      sessionStorage.setItem('mm_class_practice','1');
+      p.practiceByDay[key] = (p.practiceByDay[key]||0) + 5;
+      p.practiceTotal = (p.practiceTotal||0) + 5;
+      localStorage.setItem('mm_progress', JSON.stringify(p));
+    }
+  } catch(e) {}
   listenChat();
   window.addEventListener('resize', function(){
     try{ board.resize(); }catch(e){}
@@ -734,6 +761,33 @@ function openVoiceRoom(){
   var name=encodeURIComponent(myName||'Student');
   var url='https://meet.jit.si/'+JITSI_ROOM+'#userInfo.displayName="'+name+'"&config.prejoinPageEnabled=false';
   window.open(url, '_blank', 'noopener');
+}
+
+
+const LESSONS = {
+  start: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR',
+  scholar: 'r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR',
+  fork: '8/8/8/3p4/8/8/2q1N3/4K3',
+  backrank: '6k1/5ppp/8/8/8/8/5PPP/4R1K1',
+  castling: 'r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R',
+  promote: '8/3P4/8/8/8/8/8/4K2k',
+  enpassant: '4k3/8/8/3pP3/8/8/8/4K3'
+};
+function loadLessonPreset(key){
+  if (!key || !board) return;
+  var fen = LESSONS[key];
+  if (!fen) return;
+  captureHistory();
+  board.position(fen, false);
+  try { game = new Chess(fen + ' w - - 0 1'); } catch(e) {}
+  mode = 'teach';
+  document.getElementById('btn-teach').classList.add('on');
+  document.getElementById('btn-legal').classList.remove('on');
+  document.getElementById('btn-setup').classList.remove('on');
+  marks = {green:[], red:[], arrows:[]};
+  redrawMarks();
+  pushState();
+  setStatus('Lesson: ' + key);
 }
 
 function exitClass(){

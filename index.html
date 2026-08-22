@@ -440,9 +440,91 @@ body { -webkit-tap-highlight-color: transparent; }
   .wa-float { display: none; }
 }
 
+
+/* Daily quest of the day */
+.daily-quest {
+  background: linear-gradient(135deg, rgba(250,204,21,0.18), rgba(249,115,22,0.12), rgba(14,18,25,0.95));
+  border: 2px solid rgba(250,204,21,0.45);
+  border-radius: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  animation: questPulse 3s ease-in-out infinite;
+}
+@keyframes questPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(250,204,21,0); }
+  50% { box-shadow: 0 0 28px rgba(250,204,21,0.25); }
+}
+.daily-quest.done {
+  border-color: rgba(52,211,153,0.45);
+  animation: none;
+  background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(14,18,25,0.95));
+}
+#daily-splash {
+  position: fixed; inset: 0; z-index: 9000;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(5,7,13,0.88); backdrop-filter: blur(10px);
+  padding: 1rem;
+}
+#daily-splash.open { display: flex; animation: modalIn 0.35s ease; }
+.splash-card {
+  background: linear-gradient(160deg, #1a2235, #0f1520);
+  border: 2px solid rgba(232,197,71,0.5);
+  border-radius: 1.75rem; padding: 2rem 1.5rem; text-align: center;
+  max-width: 360px; width: 100%;
+  box-shadow: 0 0 50px rgba(232,197,71,0.2);
+}
+
+
+.coach-banner {
+  background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(14,18,25,0.95));
+  border: 1px solid rgba(96,165,250,0.35);
+  border-radius: 1.25rem;
+}
+.puzzle-day {
+  background: linear-gradient(160deg, #161c28, #0e1219);
+  border: 1px solid rgba(232,197,71,0.2);
+  border-radius: 1.25rem;
+}
+.puzzle-opt {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+  transition: 0.2s;
+  text-align: left;
+  width: 100%;
+  color: #e2e8f0;
+}
+.puzzle-opt:hover { border-color: rgba(232,197,71,0.4); }
+.puzzle-opt.correct { border-color: #34d399; background: rgba(16,185,129,0.15); color: #6ee7b7; }
+.puzzle-opt.wrong { border-color: #f87171; background: rgba(248,113,113,0.12); color: #fca5a5; }
+.mute-fab {
+  position: fixed; bottom: 80px; right: 16px; z-index: 60;
+  width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(20,24,32,0.95); border: 1px solid rgba(232,197,71,0.35);
+  color: #e8c547; font-size: 18px; cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+@media(max-width:640px){ .mute-fab { bottom: calc(72px + env(safe-area-inset-bottom,0px)); } }
+
 </style>
 </head>
 <body>
+<button type="button" class="mute-fab" id="mute-fab" onclick="toggleMute()" title="Sound on/off">🔊</button>
+
+<div id="daily-splash">
+  <div class="splash-card">
+    <div class="text-5xl mb-3" id="splash-emoji">⚔️</div>
+    <p class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2">Welcome back, champion</p>
+    <h2 class="text-2xl font-black italic text-white uppercase mb-2" id="splash-title">Season of Champions</h2>
+    <p class="text-sm text-slate-400 mb-5" id="splash-text">Your daily quest is ready. Can you beat it?</p>
+    <button onclick="closeSplash()" class="w-full bg-gradient-to-r from-amber-400 to-yellow-500 text-black py-3.5 rounded-xl font-black text-xs uppercase tracking-widest">Let's go!</button>
+  </div>
+</div>
+
     <div class="stars"></div>
     <div class="nebula"></div>
 
@@ -550,6 +632,8 @@ body { -webkit-tap-highlight-color: transparent; }
                                 <span id="hub-xp-label">0 / 100 XP</span>
                                 <span class="text-slate-600">•</span>
                                 <span class="text-amber-300/90 font-bold" id="hub-title">Pawn Recruit</span>
+                                <span class="text-slate-600">•</span>
+                                <span class="text-sky-300/90 font-bold" id="hub-minutes">0 min trained</span>
                             </div>
                             <div class="xp-bar max-w-xs"><div class="xp-fill" id="hub-xp-bar" style="width:0%"></div></div>
                         </div>
@@ -611,6 +695,54 @@ body { -webkit-tap-highlight-color: transparent; }
             </div>
         </section>
 
+
+
+        <!-- QUEST OF THE DAY -->
+        <section class="max-w-5xl mx-auto mb-6" id="daily-quest-section" data-aos="fade-up">
+          <div class="daily-quest p-5 md:p-6" id="daily-quest-card">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-4 relative z-10">
+              <div class="text-4xl" id="dq-emoji">🎯</div>
+              <div class="flex-1 min-w-0">
+                <div class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-1">Quest of the Day</div>
+                <h3 class="text-lg md:text-xl font-black text-white uppercase italic" id="dq-title">Beat Pip once</h3>
+                <p class="text-sm text-slate-400 mt-1" id="dq-desc">Win one game against Pip to complete today's quest.</p>
+                <p class="text-[11px] text-emerald-400 font-bold mt-2 hidden" id="dq-done-msg">✓ Done today! Come back tomorrow for a new quest.</p>
+              </div>
+              <a id="dq-btn" href="play-ai.html" class="shrink-0 text-center bg-gradient-to-r from-amber-400 to-orange-500 text-black px-6 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-amber-500/30 hover:scale-105 transition">
+                Start Quest
+              </a>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- COACH MESSAGE -->
+        <section class="max-w-5xl mx-auto mb-6" data-aos="fade-up">
+          <div class="coach-banner p-4 md:p-5 flex gap-3 items-start">
+            <div class="text-3xl shrink-0">👨‍🏫</div>
+            <div class="min-w-0 flex-1">
+              <div class="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-1">Coach Dotun says</div>
+              <p class="text-sm text-slate-200 font-semibold" id="coach-msg">Protect your king. Always ask: what is my opponent threatening?</p>
+              <button type="button" onclick="speakCoach()" class="mt-2 text-[11px] font-black uppercase tracking-widest text-amber-400 hover:text-amber-300">🔊 Hear coach</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- PUZZLE OF THE DAY -->
+        <section class="max-w-5xl mx-auto mb-6" data-aos="fade-up">
+          <div class="puzzle-day p-5 md:p-6">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <div class="text-[10px] font-black uppercase tracking-widest text-amber-400">Puzzle of the Day</div>
+                <h3 class="text-lg font-black text-white italic uppercase" id="pod-title">Who moves in an L?</h3>
+              </div>
+              <span class="text-2xl" id="pod-emoji">🧩</span>
+            </div>
+            <p class="text-sm text-slate-400 mb-4" id="pod-q">Which piece jumps in an L-shape?</p>
+            <div class="space-y-2" id="pod-options"></div>
+            <p class="text-sm font-bold mt-3 hidden" id="pod-feedback"></p>
+          </div>
+        </section>
 
         <!-- Rival nudge -->
         <div id="rival-nudge" class="nudge-banner max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3 hidden mb-6" data-aos="fade-up">
@@ -1143,6 +1275,7 @@ body { -webkit-tap-highlight-color: transparent; }
     p.equipHat = id;
     saveProg(p);
     renderCosmetics(p);
+    try{ updateDailyQuest(p); }catch(e){}
     const fb=document.getElementById('freeze-btn');
     if(fb){ fb.style.opacity = p.streakFreeze ? '1' : '0.4'; fb.textContent = p.streakFreeze ? '❄ Streak freeze ready' : (p.freezeActive ? '❄ Freeze armed' : '❄ Earn freeze via daily chest'); }
   };
@@ -1153,6 +1286,7 @@ body { -webkit-tap-highlight-color: transparent; }
     const lv = levelFromXp(p.xp||0);
     updateAvatarFrame(lv);
     renderCosmetics(p);
+    try{ updateDailyQuest(p); }catch(e){}
     const fb=document.getElementById('freeze-btn');
     if(fb){ fb.style.opacity = p.streakFreeze ? '1' : '0.4'; fb.textContent = p.streakFreeze ? '❄ Streak freeze ready' : (p.freezeActive ? '❄ Freeze armed' : '❄ Earn freeze via daily chest'); }
   };
@@ -1296,6 +1430,265 @@ body { -webkit-tap-highlight-color: transparent; }
     });
   };
 
+  
+  const DAILY_QUESTS = [
+    { id:'pip', emoji:'🤖', title:'Beat Pip once', desc:'Win 1 game against Pip (Level 1).', href:'play-ai.html', check:function(p){return !!(p.dailyDone&&p.dailyDone[todayKey()]);} },
+    { id:'quest', emoji:'📜', title:'Finish a Weekly Quest', desc:'Complete any assessment quiz today.', href:'assessments.html', check:function(p){return !!(p.dailyDone&&p.dailyDone[todayKey()]);} },
+    { id:'play', emoji:'🔥', title:'Battle the AI today', desc:'Play at least one game vs the AI.', href:'play-ai.html', check:function(p){return !!(p.dailyDone&&p.dailyDone[todayKey()]);} },
+    { id:'puzzle', emoji:'🧩', title:'Visit Puzzles', desc:'Open the puzzles page and try one.', href:'puzzles.html', check:function(p){return !!(p.dailyDone&&p.dailyDone[todayKey()]);} },
+    { id:'learn', emoji:'♞', title:'Watch a piece move', desc:'Open How Pieces Move and watch an animation.', href:'learn.html', check:function(p){return !!(p.dailyDone&&p.dailyDone[todayKey()]);} },
+    { id:'nia', emoji:'💜', title:'Challenge Nia', desc:'Play against Nia (Level 2).', href:'play-ai.html', check:function(p){return !!(p.dailyDone&&p.dailyDone[todayKey()]);} },
+    { id:'chest', emoji:'🎁', title:'Open the treasure chest', desc:'Claim your daily chest reward.', href:'#mystery-chest', check:function(p){return p.chestClaimed===todayKey();} },
+  ];
+  function questOfDay(){
+    var day = Math.floor(Date.now()/86400000);
+    return DAILY_QUESTS[day % DAILY_QUESTS.length];
+  }
+  function updateDailyQuest(p){
+    var q = questOfDay();
+    var card = document.getElementById('daily-quest-card');
+    if (!card) return;
+    document.getElementById('dq-emoji').textContent = q.emoji;
+    document.getElementById('dq-title').textContent = q.title;
+    document.getElementById('dq-desc').textContent = q.desc;
+    var btn = document.getElementById('dq-btn');
+    btn.href = q.href;
+    var key = todayKey();
+    var done = !!(p.dailyDone && p.dailyDone[key]) || (q.id==='chest' && p.chestClaimed===key);
+    var doneMsg = document.getElementById('dq-done-msg');
+    if (done) {
+      card.classList.add('done');
+      doneMsg.classList.remove('hidden');
+      btn.textContent = 'Done ✓';
+      btn.className = 'shrink-0 text-center bg-emerald-500/80 text-white px-6 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest';
+    } else {
+      card.classList.remove('done');
+      doneMsg.classList.add('hidden');
+      btn.textContent = 'Start Quest';
+      btn.className = 'shrink-0 text-center bg-gradient-to-r from-amber-400 to-orange-500 text-black px-6 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-amber-500/30 hover:scale-105 transition';
+    }
+  }
+  window.completeDailyQuest = function(kind){
+    var p = loadProg();
+    p.dailyDone = p.dailyDone || {};
+    p.dailyDone[todayKey()] = kind || true;
+    p.xp = (p.xp||0) + 8;
+    saveProg(p);
+    try { updateDailyQuest(p); } catch(e) {}
+  };
+  function maybeSplash(){
+    var key = 'mm_splash_'+todayKey();
+    if (sessionStorage.getItem(key)) return;
+    var p = loadProg();
+    var q = questOfDay();
+    var name = p.name || 'Champion';
+    var el;
+    el = document.getElementById('splash-title'); if(el) el.textContent = 'Hey, ' + name + '!';
+    el = document.getElementById('splash-text'); if(el) el.textContent = "Today's quest: " + q.title;
+    el = document.getElementById('splash-emoji'); if(el) el.textContent = q.emoji;
+    el = document.getElementById('daily-splash'); if(el) el.classList.add('open');
+    sessionStorage.setItem(key, '1');
+    try { mmSoundSuccess(); } catch(e) {}
+    setTimeout(function(){
+      try {
+        var q = questOfDay();
+        speakCoach('Welcome back. Today\'s quest: ' + q.title);
+      } catch(e) {}
+    }, 600);
+  }
+  window.closeSplash = function(){
+    var el = document.getElementById('daily-splash');
+    if (el) el.classList.remove('open');
+  };
+
+  
+  // ===== SOUND + COACH VOICE + PUZZLE + PRACTICE =====
+  function soundEnabled(){
+    return localStorage.getItem('mm_sound') !== '0';
+  }
+  function setSoundEnabled(on){
+    localStorage.setItem('mm_sound', on ? '1' : '0');
+    var fab = document.getElementById('mute-fab');
+    if (fab) fab.textContent = on ? '🔊' : '🔇';
+  }
+  window.toggleMute = function(){
+    var on = !soundEnabled();
+    setSoundEnabled(on);
+    if (on) { try { mmBeep(880, 0.08); } catch(e){} }
+  };
+  var _audioCtx = null;
+  function mmBeep(freq, dur, type, vol){
+    if (!soundEnabled()) return;
+    try {
+      _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      var o = _audioCtx.createOscillator();
+      var g = _audioCtx.createGain();
+      o.type = type || 'sine';
+      o.frequency.value = freq;
+      g.gain.value = vol || 0.08;
+      o.connect(g); g.connect(_audioCtx.destination);
+      o.start();
+      g.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + (dur || 0.1));
+      o.stop(_audioCtx.currentTime + (dur || 0.1) + 0.02);
+    } catch(e) {}
+  }
+  function mmSoundClick(){ mmBeep(660, 0.05, 'sine', 0.06); }
+  function mmSoundSuccess(){
+    mmBeep(523, 0.08); setTimeout(function(){ mmBeep(659, 0.08); }, 90); setTimeout(function(){ mmBeep(784, 0.12); }, 180);
+  }
+  function mmSoundChest(){
+    mmBeep(392, 0.1); setTimeout(function(){ mmBeep(523, 0.12); }, 100); setTimeout(function(){ mmBeep(784, 0.15); }, 220);
+  }
+
+  /** Coach voice using Web Speech API */
+  window.speakCoach = function(text){
+    if (!soundEnabled()) return;
+    text = text || (document.getElementById('coach-msg') && document.getElementById('coach-msg').textContent) || '';
+    if (!text || !window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.95;
+      u.pitch = 1.05;
+      u.volume = 0.9;
+      // prefer friendly English voice if available
+      var voices = window.speechSynthesis.getVoices();
+      var prefer = voices.find(function(v){ return /en(-|_)?(GB|US|NG|ZA|IN)?/i.test(v.lang) && /female|samantha|google|zira|uk/i.test(v.name); });
+      if (!prefer) prefer = voices.find(function(v){ return /^en/i.test(v.lang); });
+      if (prefer) u.voice = prefer;
+      window.speechSynthesis.speak(u);
+    } catch(e) {}
+  };
+  // Chrome loads voices async
+  if (window.speechSynthesis) {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = function(){ window.speechSynthesis.getVoices(); };
+  }
+
+  const COACH_LINES = [
+    'Protect your king. Always ask: what is my opponent threatening?',
+    'Develop your knights and bishops before you attack.',
+    'Don\'t move the same piece twice in the opening if you can help it.',
+    'When you capture, ask: is this safe, or a trap?',
+    'Knights love outposts — protected squares in the center.',
+    'Castling keeps your king safe and brings a rook into the game.',
+    'A pawn on the seventh rank is almost a queen — push carefully!',
+    'Look for forks: one piece attacking two things at once.',
+    'Every lesson, try to spot checks, captures, and threats first.',
+    'Practice a little every day. Consistency beats long sessions once a week.',
+    'The queen is powerful — but don\'t bring her out too early.',
+    'Rooks belong on open files. Clear the pawns, then dominate!'
+  ];
+  function updateCoachMessage(){
+    var day = Math.floor(Date.now()/86400000);
+    var line = COACH_LINES[day % COACH_LINES.length];
+    var el = document.getElementById('coach-msg');
+    if (el) el.textContent = line;
+  }
+
+  const POD = [
+    { q:'Which piece jumps in an L-shape?', emoji:'♞', opts:['Bishop','Knight','Rook'], ans:1, ok:'Yes! The knight jumps in an L and can leap over pieces.' },
+    { q:'Which piece only moves diagonally?', emoji:'♝', opts:['Rook','Queen','Bishop'], ans:2, ok:'Correct! Bishops stay on the same colour squares.' },
+    { q:'What happens when a pawn reaches the last rank?', emoji:'👑', opts:['It disappears','It promotes','It becomes a king'], ans:1, ok:'Promotion! Usually you choose a queen.' },
+    { q:'Castling is a special move for which pieces?', emoji:'🏰', opts:['King and rook','Two knights','Queen and bishop'], ans:0, ok:'King slides two squares; rook jumps beside him.' },
+    { q:'How many squares can the king move at a time?', emoji:'♚', opts:['Any number','Only one','Only two'], ans:1, ok:'The king moves only one square — protect him!' },
+    { q:'Which piece is usually worth about 9 points?', emoji:'♛', opts:['Knight','Queen','Pawn'], ans:1, ok:'The queen is the strongest — about 9 points.' },
+    { q:'En passant is a special capture by a…', emoji:'♟', opts:['Knight','Pawn','Bishop'], ans:1, ok:'Only pawns can capture en passant.' }
+  ];
+  function puzzleOfDay(){
+    var day = Math.floor(Date.now()/86400000);
+    return POD[day % POD.length];
+  }
+  function renderPuzzle(){
+    var pod = puzzleOfDay();
+    var title = document.getElementById('pod-title');
+    var q = document.getElementById('pod-q');
+    var em = document.getElementById('pod-emoji');
+    var box = document.getElementById('pod-options');
+    var fb = document.getElementById('pod-feedback');
+    if (!box) return;
+    if (title) title.textContent = 'Puzzle of the Day';
+    if (q) q.textContent = pod.q;
+    if (em) em.textContent = pod.emoji;
+    if (fb) { fb.classList.add('hidden'); fb.textContent = ''; }
+    var key = 'mm_pod_'+todayKey();
+    var solved = localStorage.getItem(key);
+    box.innerHTML = '';
+    pod.opts.forEach(function(opt, i){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'puzzle-opt';
+      b.textContent = (i+1) + '. ' + opt;
+      if (solved === '1') {
+        if (i === pod.ans) b.classList.add('correct');
+        b.disabled = true;
+      } else {
+        b.onclick = function(){ answerPuzzle(i); };
+      }
+      box.appendChild(b);
+    });
+    if (solved === '1' && fb) {
+      fb.classList.remove('hidden');
+      fb.className = 'text-sm font-bold mt-3 text-emerald-400';
+      fb.textContent = '✓ Solved today — ' + pod.ok;
+    }
+  }
+  window.answerPuzzle = function(i){
+    var pod = puzzleOfDay();
+    var box = document.getElementById('pod-options');
+    var fb = document.getElementById('pod-feedback');
+    var btns = box.querySelectorAll('.puzzle-opt');
+    btns.forEach(function(b, idx){
+      b.disabled = true;
+      if (idx === pod.ans) b.classList.add('correct');
+      if (idx === i && i !== pod.ans) b.classList.add('wrong');
+    });
+    fb.classList.remove('hidden');
+    if (i === pod.ans) {
+      fb.className = 'text-sm font-bold mt-3 text-emerald-400';
+      fb.textContent = '✓ ' + pod.ok;
+      mmSoundSuccess();
+      try { speakCoach(pod.ok); } catch(e) {}
+      localStorage.setItem('mm_pod_'+todayKey(), '1');
+      var p = loadProg();
+      p.xp = (p.xp||0) + 5;
+      p.dailyDone = p.dailyDone || {};
+      p.dailyDone[todayKey()] = 'puzzle';
+      saveProg(p);
+      try { renderHub(); } catch(e) {}
+    } else {
+      fb.className = 'text-sm font-bold mt-3 text-rose-400';
+      fb.textContent = 'Not quite — try again tomorrow, or review How Pieces Move!';
+      mmBeep(200, 0.15, 'triangle', 0.08);
+    }
+  };
+
+  function trackPracticeMinutes(){
+    // +1 minute per page visit session (max +3 per day from hub loads)
+    try {
+      var p = loadProg();
+      var key = todayKey();
+      p.practiceByDay = p.practiceByDay || {};
+      var sess = sessionStorage.getItem('mm_practice_sess');
+      if (!sess) {
+        sessionStorage.setItem('mm_practice_sess', '1');
+        var today = p.practiceByDay[key] || 0;
+        if (today < 45) {
+          p.practiceByDay[key] = today + 1;
+          p.practiceTotal = (p.practiceTotal || 0) + 1;
+          saveProg(p);
+        }
+      }
+    } catch(e) {}
+  }
+  function updatePracticeUI(p){
+    var el = document.getElementById('hub-minutes');
+    if (!el) return;
+    var today = (p.practiceByDay && p.practiceByDay[todayKey()]) || 0;
+    var total = p.practiceTotal || 0;
+    el.textContent = today + ' min today · ' + total + ' total';
+  }
+
   function renderHub(){
     let p = loadProg();
     p = ensureStreak(p);
@@ -1347,6 +1740,7 @@ body { -webkit-tap-highlight-color: transparent; }
     updateChallenge(p);
     updateRivalNudge(p);
     renderCosmetics(p);
+    try{ updateDailyQuest(p); }catch(e){}
     const fb=document.getElementById('freeze-btn');
     if(fb){ fb.style.opacity = p.streakFreeze ? '1' : '0.4'; fb.textContent = p.streakFreeze ? '❄ Streak freeze ready' : (p.freezeActive ? '❄ Freeze armed' : '❄ Earn freeze via daily chest'); }
   }
@@ -1384,6 +1778,7 @@ body { -webkit-tap-highlight-color: transparent; }
     const r = rewards[Math.floor(Math.random()*rewards.length)];
     p.xp = (p.xp||0) + r.xp;
     p.chestClaimed = todayKey();
+    try{ mmSoundChest(); speakCoach('Treasure claimed! Great job showing up today.'); }catch(e){}
     p.chestStreak = (p.chestStreak||0) + 1;
     if (p.chestStreak >= 3) { p.streakFreeze = true; p.chestStreak = 0; }
     saveProg(p);
@@ -1407,6 +1802,10 @@ body { -webkit-tap-highlight-color: transparent; }
   }
 
   if (document.getElementById('player-hub')) renderHub();
+  try{ setSoundEnabled(soundEnabled()); }catch(e){}
+  try{ trackPracticeMinutes(); }catch(e){}
+  try{ maybeSplash(); }catch(e){}
+  try{ updateCoachMessage(); renderPuzzle(); }catch(e){}
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(function(){});
   }

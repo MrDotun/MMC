@@ -486,7 +486,7 @@ const levelConfig={
           capture:["I got one!","Oh!","Hehe!"],
           check:["Check? Did I?","Is that check?","Whoa!"],
           win:["I won?! Wow!","Yay!"],
-          lose:["Good game! You're strong!","I'll practice more!"]}},
+          lose:["Good game! You're strong!","I'll practice more!","Wow you are a champion!","Can we play again?","You outsmarted me!"]}},
 2:{time:25, name:"Nia",  elo:"~500", randomChance:0.65, seed:"Nia",  color:"c0aede",
    blurb:"Curious explorer. Thinks out loud.",
    lines:{start:["Ready when you are!","Let's explore the board!"],
@@ -592,6 +592,22 @@ function updateStreakPill(){
   } else {
     pill.classList.remove('show');
   }
+}
+
+
+function markDailyPlayWin(level){
+  try{
+    var p=JSON.parse(localStorage.getItem('mm_progress')||'{}');
+    p.dailyDone=p.dailyDone||{};
+    var d=new Date();
+    var key=d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+    p.dailyDone[key]=true;
+    p.dailyQuestWins=p.dailyQuestWins||{};
+    if(level===1) p.dailyQuestWins.pip=true;
+    if(level===2) p.dailyQuestWins.nia=true;
+    p.dailyQuestWins.play=true;
+    localStorage.setItem('mm_progress',JSON.stringify(p));
+  }catch(e){}
 }
 
 function awardXP(amount){
@@ -958,6 +974,7 @@ function updateStatus(){
       // streak bonus: +5 XP per existing streak (before this win)
       if (streakBefore >= 1) xpGain += Math.min(25, streakBefore * 5);
       const streakNow = awardXP(xpGain);
+      markDailyPlayWin(settings.level);
       const prevUnlocked = maxUnlockedLevel();
       const nu = unlockNext(settings.level);
       refreshCharacterLocks();
@@ -1045,6 +1062,7 @@ function flagLoss(who){
     const streakBefore = (loadMMProgress().aiWinStreak || 0);
     if (streakBefore >= 1) xpGain += Math.min(25, streakBefore * 5);
     const streakNow = awardXP(xpGain);
+      markDailyPlayWin(settings.level);
     const prev = maxUnlockedLevel();
     const nu = unlockNext(settings.level);
     refreshCharacterLocks();
@@ -1353,6 +1371,67 @@ function spawnWinConfetti(){
   }
 }
 
+
+function shareWinCard(data){
+  data = data || {};
+  var canvas = document.createElement('canvas');
+  canvas.width = 600; canvas.height = 340;
+  var ctx = canvas.getContext('2d');
+  var g = ctx.createLinearGradient(0,0,600,340);
+  g.addColorStop(0,'#1a1520'); g.addColorStop(1,'#0f172a');
+  ctx.fillStyle = g; ctx.fillRect(0,0,600,340);
+  ctx.strokeStyle = '#e8c547'; ctx.lineWidth = 6; ctx.strokeRect(12,12,576,316);
+  ctx.fillStyle = '#e8c547'; ctx.font = 'bold 22px sans-serif';
+  ctx.fillText('MIND MASTERS ACADEMY', 40, 55);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 36px sans-serif';
+  ctx.fillText('Victory!', 40, 110);
+  ctx.font = '20px sans-serif'; ctx.fillStyle = '#cbd5e1';
+  var rival = data.rivalName || 'the AI';
+  var name = 'Champion';
+  try {
+    var p = JSON.parse(localStorage.getItem('mm_progress')||'{}');
+    name = p.name || localStorage.getItem('mm_online_name') || 'Champion';
+  } catch(e){}
+  ctx.fillText(name + ' defeated ' + rival + '!', 40, 155);
+  if (data.xp) {
+    ctx.fillStyle = '#fde68a'; ctx.font = 'bold 24px sans-serif';
+    ctx.fillText('+' + data.xp + ' XP', 40, 200);
+  }
+  if (data.streak && data.streak >= 2) {
+    ctx.fillStyle = '#fb923c';
+    ctx.fillText(data.streak + '-win streak!', 40, 240);
+  }
+  ctx.fillStyle = '#64748b'; ctx.font = '14px sans-serif';
+  ctx.fillText('mrdotun.name.ng · Season of Champions', 40, 300);
+  canvas.toBlob(function(blob){
+    if (!blob) return;
+    if (navigator.share && navigator.canShare) {
+      var file = new File([blob], 'mind-masters-win.png', {type:'image/png'});
+      if (navigator.canShare({files:[file]})) {
+        navigator.share({ files:[file], title:'Mind Masters Victory', text: name + ' won at Mind Masters Academy!' }).catch(function(){});
+        return;
+      }
+    }
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'mind-masters-win.png'; a.click();
+    URL.revokeObjectURL(url);
+    alert('Win card saved — share it on WhatsApp Status!');
+  });
+}
+
+
+function mmSpeak(text){
+  try{
+    if(localStorage.getItem('mm_sound')==='0') return;
+    if(!window.speechSynthesis||!text) return;
+    window.speechSynthesis.cancel();
+    var u=new SpeechSynthesisUtterance(text);
+    u.rate=0.95; u.pitch=1.05;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+
 function showResultModal(type, data){
   data = data || {};
   const modal = document.getElementById('result-modal');
@@ -1397,7 +1476,9 @@ function showResultModal(type, data){
     btns += '<button class="btn-rematch" onclick="closeResultAndRematch()">🔄 Play Again</button>';
     btns += '<button class="btn-setup" onclick="closeResultAndSetup()">← Choose Rival</button>';
     btns += '<button class="btn-home" onclick="location.href=\'index.html\'">🏠 Back Home</button>';
+    btns += '<button class="btn-setup" onclick=\'shareWinCard(window._lastWinData||{})\'>📤 Share win card</button>';
     actions.innerHTML = btns;
+    window._lastWinData = data;
   } else if (type === 'lose') {
     resetWinStreak();
     emoji.textContent = '💪';
@@ -1424,7 +1505,14 @@ function showResultModal(type, data){
   }
 
   modal.classList.add('open');
+  if (type === 'win') {
+    try {
+      var nm = (data && data.rivalName) || 'the AI';
+      mmSpeak('Victory! You defeated ' + nm + '!');
+    } catch(e) {}
+  }
 }
+
 
 function closeResultModal(){
   document.getElementById('result-modal').classList.remove('open');
