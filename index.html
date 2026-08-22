@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Mind Masters Academy | Kids Chess Adventure</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#e8c547">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -480,6 +483,8 @@ body { -webkit-tap-highlight-color: transparent; }
                     <li><a href="workbooks.html" class="hover:text-white transition">Workbooks</a></li>
                     <li><a href="puzzles.html" class="hover:text-white transition">Puzzles</a></li>
                     <li><a href="correspondence.html" class="hover:text-white transition">Arena</a></li>
+                    <li><a href="parent.html" class="hover:text-white transition">Parent Dashboard</a></li>
+                    <li><a href="certificate.html" class="hover:text-white transition">Certificate</a></li>
                 </ul>
                 <label for="menu-toggle" class="mt-14 text-slate-500 text-sm uppercase tracking-widest cursor-pointer hover:text-white">Close</label>
             </div>
@@ -548,9 +553,13 @@ body { -webkit-tap-highlight-color: transparent; }
                             <div class="xp-bar max-w-xs"><div class="xp-fill" id="hub-xp-bar" style="width:0%"></div></div>
                         </div>
                     </div>
-                    <div class="flex flex-col sm:flex-row gap-2 md:items-end">
-                        <input id="hub-name-input" type="text" maxlength="20" placeholder="Your hero name" class="bg-black/50 border border-white/12 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-amber-500 w-full sm:w-44">
+                    <div class="flex flex-col gap-2 md:items-end">
+                        <div class="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+                        <input id="hub-name-input" type="text" maxlength="20" placeholder="Your hero name" class="bg-black/50 border border-white/12 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-amber-500 w-full sm:w-40">
+                        <input id="hub-school-code" type="text" maxlength="12" placeholder="School code" class="bg-black/50 border border-white/12 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-amber-500 w-full sm:w-28" title="Optional club/school code">
                         <button onclick="saveHubName()" class="bg-white/10 hover:bg-amber-500/20 hover:text-amber-300 text-white px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition">Save</button>
+                        </div>
+                        <button type="button" onclick="useStreakFreeze()" id="freeze-btn" class="text-[10px] font-bold uppercase tracking-widest text-sky-400 hover:text-sky-300">❄ Use streak freeze</button>
                     </div>
                 </div>
 
@@ -864,6 +873,8 @@ body { -webkit-tap-highlight-color: transparent; }
                 <a href="online.html" class="hover:text-amber-400 transition">Live Arena</a>
                 <a href="workbooks.html" class="hover:text-amber-400 transition">Workbooks</a>
                 <a href="puzzles.html" class="hover:text-amber-400 transition">Puzzles</a>
+                <a href="parent.html" class="hover:text-amber-400 transition">Parents</a>
+                <a href="certificate.html" class="hover:text-amber-400 transition">Certificate</a>
             </div>
             <a href="https://wa.me/2348025028105" target="_blank" class="inline-flex items-center gap-2.5 bg-[#25d366] px-8 py-3.5 rounded-full text-white font-black text-xs uppercase tracking-widest hover:scale-105 transition shadow-lg shadow-green-500/30">
                 <i class="fab fa-whatsapp text-lg"></i> WhatsApp Support
@@ -919,9 +930,19 @@ body { -webkit-tap-highlight-color: transparent; }
     const y = new Date(); y.setDate(y.getDate()-1);
     const yk = y.getFullYear()+'-'+(y.getMonth()+1)+'-'+y.getDate();
     if (p.lastVisit === yk) p.streak = (p.streak||0)+1;
-    else p.streak = 1;
+    else if (p.freezeActive) {
+      p.freezeActive = false;
+      // keep streak
+    } else {
+      p.streak = 1;
+    }
     p.lastVisit = t;
     p.xp = (p.xp||0) + 5;
+    // Earn freeze after 3 chest claims tracked
+    if ((p.chestStreak||0) >= 3 && !p.streakFreeze) {
+      p.streakFreeze = true;
+      p.chestStreak = 0;
+    }
     saveProg(p);
     return p;
   }
@@ -934,8 +955,23 @@ body { -webkit-tap-highlight-color: transparent; }
     if (!n) return;
     const p = loadProg();
     p.name = n;
+    const sc = document.getElementById('hub-school-code');
+    if (sc) p.schoolCode = (sc.value || '').trim().toUpperCase();
     saveProg(p);
     localStorage.setItem('mm_online_name', n);
+    renderHub();
+  };
+  window.useStreakFreeze = function(){
+    const p = loadProg();
+    if (!p.streakFreeze) {
+      alert('No streak freeze left. Earn one by opening the daily chest 3 days in a row, or ask coach.');
+      return;
+    }
+    if (!confirm('Use streak freeze? Your day streak will be protected if you miss tomorrow.')) return;
+    p.streakFreeze = false;
+    p.freezeActive = true;
+    saveProg(p);
+    alert('❄ Streak freeze armed for your next missed day!');
     renderHub();
   };
 
@@ -1090,6 +1126,8 @@ body { -webkit-tap-highlight-color: transparent; }
     p.equipHat = id;
     saveProg(p);
     renderCosmetics(p);
+    const fb=document.getElementById('freeze-btn');
+    if(fb){ fb.style.opacity = p.streakFreeze ? '1' : '0.4'; fb.textContent = p.streakFreeze ? '❄ Streak freeze ready' : (p.freezeActive ? '❄ Freeze armed' : '❄ Earn freeze via daily chest'); }
   };
   window.equipFrame = function(id){
     const p = loadProg();
@@ -1098,6 +1136,8 @@ body { -webkit-tap-highlight-color: transparent; }
     const lv = levelFromXp(p.xp||0);
     updateAvatarFrame(lv);
     renderCosmetics(p);
+    const fb=document.getElementById('freeze-btn');
+    if(fb){ fb.style.opacity = p.streakFreeze ? '1' : '0.4'; fb.textContent = p.streakFreeze ? '❄ Streak freeze ready' : (p.freezeActive ? '❄ Freeze armed' : '❄ Earn freeze via daily chest'); }
   };
 
   function applyCosmetics(p){
@@ -1253,6 +1293,8 @@ body { -webkit-tap-highlight-color: transparent; }
     if (name) {
       document.getElementById('hub-greeting').textContent = 'Welcome back, ' + name + '!';
       document.getElementById('hub-name-input').value = name;
+      const sc=document.getElementById('hub-school-code');
+      if(sc) sc.value = p.schoolCode||'';
       document.getElementById('hub-avatar').src = 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + encodeURIComponent(name) + '&backgroundColor=b6e3f4';
     }
     document.getElementById('hub-level').textContent = 'Lv' + lv;
@@ -1288,6 +1330,8 @@ body { -webkit-tap-highlight-color: transparent; }
     updateChallenge(p);
     updateRivalNudge(p);
     renderCosmetics(p);
+    const fb=document.getElementById('freeze-btn');
+    if(fb){ fb.style.opacity = p.streakFreeze ? '1' : '0.4'; fb.textContent = p.streakFreeze ? '❄ Streak freeze ready' : (p.freezeActive ? '❄ Freeze armed' : '❄ Earn freeze via daily chest'); }
   }
 
   function updateChestUI(p){
@@ -1323,6 +1367,8 @@ body { -webkit-tap-highlight-color: transparent; }
     const r = rewards[Math.floor(Math.random()*rewards.length)];
     p.xp = (p.xp||0) + r.xp;
     p.chestClaimed = todayKey();
+    p.chestStreak = (p.chestStreak||0) + 1;
+    if (p.chestStreak >= 3) { p.streakFreeze = true; p.chestStreak = 0; }
     saveProg(p);
     spawnConfetti();
     alert('🎁 Treasure opened!\n\n' + r.label + '\nKeep the streak going!');
@@ -1344,6 +1390,9 @@ body { -webkit-tap-highlight-color: transparent; }
   }
 
   if (document.getElementById('player-hub')) renderHub();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(function(){});
+  }
   try { loadHallOfFame(); } catch(e) {}
 })();
     </script>

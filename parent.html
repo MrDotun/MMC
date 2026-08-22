@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Parent & Coach Dashboard | Mind Masters Academy</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+<style>
+body{font-family:'Plus Jakarta Sans',sans-serif;background:#05070d;color:#e2e8f0;margin:0;min-height:100vh}
+.nav-glass{background:rgba(5,7,13,.92);backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,.05)}
+.panel{background:linear-gradient(160deg,#161c27,#0e1219);border:1px solid rgba(232,197,71,.14);border-radius:1.25rem}
+.stat{background:rgba(255,255,255,.04);border-radius:1rem;padding:1rem;text-align:center}
+@media(max-width:640px){button{min-height:44px}input{font-size:16px!important}}
+</style>
+</head>
+<body>
+<nav class="fixed w-full z-50 px-5 py-3 flex justify-between items-center nav-glass">
+<a href="index.html" class="flex items-center gap-2">
+<div class="w-9 h-9 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center"><i class="fas fa-chess-knight text-black"></i></div>
+<span class="font-black text-white uppercase tracking-tight text-sm">Mind Masters</span>
+</a>
+<a href="index.html" class="text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-amber-400">← Home</a>
+</nav>
+
+<div class="pt-20 pb-16 px-4 max-w-4xl mx-auto">
+<div class="text-center mb-8">
+<div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-400 text-[10px] font-black uppercase tracking-widest mb-4">Parents · Coaches</div>
+<h1 class="text-3xl md:text-4xl font-black italic uppercase text-white">Progress Dashboard</h1>
+<p class="text-slate-400 text-sm mt-2">See how your child is practicing this week</p>
+</div>
+
+<div class="panel p-5 mb-6">
+<label class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2 block">Child's hero name (as saved on their device)</label>
+<div class="flex flex-col sm:flex-row gap-2">
+<input id="lookup-name" type="text" placeholder="Type the name they use in the academy" class="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-amber-500">
+<button onclick="loadLocalReport()" class="bg-amber-500 text-black px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest">View report</button>
+</div>
+<p class="text-[11px] text-slate-500 mt-2">On the child's phone/tablet, open Home → their saved name appears in the hub. Progress is stored on that device + optional cloud scores.</p>
+</div>
+
+<div id="report" class="hidden space-y-5">
+<div class="panel p-5">
+<div class="flex items-center gap-4 mb-4">
+<img id="rep-avatar" class="w-16 h-16 rounded-2xl border-2 border-amber-400/40" alt="">
+<div>
+<h2 class="text-xl font-black text-white" id="rep-name">—</h2>
+<p class="text-sm text-amber-400 font-bold" id="rep-title">—</p>
+<p class="text-xs text-slate-500" id="rep-school"></p>
+</div>
+</div>
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+<div class="stat"><div class="text-2xl font-black text-amber-400" id="s-level">1</div><div class="text-[10px] uppercase text-slate-500">Level</div></div>
+<div class="stat"><div class="text-2xl font-black text-white" id="s-xp">0</div><div class="text-[10px] uppercase text-slate-500">Total XP</div></div>
+<div class="stat"><div class="text-2xl font-black text-orange-400" id="s-streak">0</div><div class="text-[10px] uppercase text-slate-500">Day streak</div></div>
+<div class="stat"><div class="text-2xl font-black text-emerald-400" id="s-ai">0</div><div class="text-[10px] uppercase text-slate-500">AI wins</div></div>
+</div>
+</div>
+
+<div class="panel p-5">
+<h3 class="font-black text-white text-sm uppercase mb-3">This week at a glance</h3>
+<p class="text-slate-300 text-sm leading-relaxed" id="week-summary">—</p>
+<ul class="mt-4 space-y-2 text-sm text-slate-400" id="week-bullets"></ul>
+</div>
+
+<div class="panel p-5">
+<h3 class="font-black text-white text-sm uppercase mb-3">Learning notes</h3>
+<p class="text-sm text-slate-400" id="learning-notes">Scores support learning — not pressure. Celebrate consistency over perfect results.</p>
+</div>
+
+<div class="flex flex-wrap gap-3">
+<a href="certificate.html" class="bg-white/10 text-white px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest">Print certificate</a>
+<a href="https://wa.me/2348025028105" target="_blank" class="bg-[#25d366] text-white px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest">Message coach</a>
+</div>
+</div>
+
+<div class="panel p-5 mt-8">
+<div class="flex items-center justify-between mb-3">
+<h3 class="font-black text-white text-sm uppercase">Recent academy quest scores (cloud)</h3>
+</div>
+<div id="cloud-scores" class="space-y-2 text-sm"><p class="text-slate-600 text-xs">Loading…</p></div>
+</div>
+
+<div class="panel p-5 mt-4">
+<h3 class="font-black text-white text-sm uppercase mb-2">Coach access</h3>
+<p class="text-xs text-slate-500 mb-3">For coaches monitoring live AI games and quest uploads — same Firebase project as the arena.</p>
+<a href="play-ai.html" class="text-amber-400 text-xs font-bold uppercase">Open AI Arena →</a>
+</div>
+</div>
+
+<script>
+const firebaseConfig={apiKey:"AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",authDomain:"assignments-de95a.firebaseapp.com",projectId:"assignments-de95a",storageBucket:"assignments-de95a.firebasestorage.app",messagingSenderId:"1088073398299",appId:"1:1088073398299:web:dab1f57ac1d63b10dba0be"};
+try{if(!firebase.apps.length)firebase.initializeApp(firebaseConfig)}catch(e){}
+const db=firebase.firestore?firebase.firestore():null;
+
+function loadProg(){try{return JSON.parse(localStorage.getItem('mm_progress')||'{}')}catch(e){return{}}}
+function levelFromXp(xp){return Math.floor((xp||0)/100)+1}
+const TITLES=['Pawn Recruit','Knight Cadet','Bishop Buddy','Rook Rookie','Queen Quest','King of Club','Mind Master'];
+
+function loadLocalReport(){
+  const want=document.getElementById('lookup-name').value.trim().toLowerCase();
+  const p=loadProg();
+  const saved=(p.name||localStorage.getItem('mm_online_name')||'').trim();
+  if(want && saved && want!==saved.toLowerCase()){
+    alert('This device has progress for "'+saved+'". Open the report on the child\'s device, or ask them to save the same hero name.');
+  }
+  const name=saved||document.getElementById('lookup-name').value.trim()||'Hero';
+  document.getElementById('report').classList.remove('hidden');
+  document.getElementById('rep-name').textContent=name;
+  document.getElementById('rep-avatar').src='https://api.dicebear.com/7.x/avataaars/svg?seed='+encodeURIComponent(name)+'&backgroundColor=b6e3f4';
+  const lv=levelFromXp(p.xp);
+  document.getElementById('rep-title').textContent=TITLES[Math.min(lv-1,TITLES.length-1)]+' · Lv'+lv;
+  document.getElementById('rep-school').textContent=p.schoolCode?('School code: '+p.schoolCode):'No school code set';
+  document.getElementById('s-level').textContent=lv;
+  document.getElementById('s-xp').textContent=p.xp||0;
+  document.getElementById('s-streak').textContent=p.streak||0;
+  document.getElementById('s-ai').textContent=p.aiWins||0;
+
+  const bullets=[];
+  bullets.push('Day streak: '+(p.streak||0)+' day(s)');
+  bullets.push('AI wins: '+(p.aiWins||0)+' · current AI win streak: '+(p.aiWinStreak||0));
+  bullets.push('Quest completions: '+(p.questWins||0));
+  bullets.push('Rivals defeated: '+((p.beatenLevels||[]).length)+' / 8');
+  if(p.chestClaimed) bullets.push('Daily chest last claimed: '+p.chestClaimed);
+  if(p.streakFreeze) bullets.push('Streak freeze available: yes');
+  document.getElementById('week-bullets').innerHTML=bullets.map(b=>'<li>• '+b+'</li>').join('');
+  document.getElementById('week-summary').textContent=
+    name+' is level '+lv+' with '+(p.xp||0)+' XP. Focus on steady practice: a short quest or one AI game most days beats long sessions once a week.';
+}
+
+function loadCloud(){
+  const box=document.getElementById('cloud-scores');
+  if(!db){box.innerHTML='<p class="text-slate-600 text-xs">Cloud offline</p>';return}
+  db.collection('quest_scores').orderBy('timestamp','desc').limit(12).onSnapshot(snap=>{
+    if(snap.empty){box.innerHTML='<p class="text-slate-600 text-xs">No quest scores uploaded yet</p>';return}
+    let h='';
+    snap.forEach(doc=>{
+      const d=doc.data();
+      h+='<div class="flex justify-between bg-white/5 rounded-lg px-3 py-2"><div class="min-w-0"><div class="font-bold text-white text-xs truncate">'+(d.name||'?')+'</div><div class="text-[10px] text-slate-500 truncate">'+(d.class||'')+' · '+(d.quizTitle||'')+'</div></div><div class="text-amber-400 font-black text-sm">'+(d.score||0)+'/'+(d.total||10)+'</div></div>';
+    });
+    box.innerHTML=h;
+  },()=>{box.innerHTML='<p class="text-slate-600 text-xs">Could not load scores</p>'});
+}
+loadCloud();
+try{
+  const p=loadProg();
+  const n=p.name||localStorage.getItem('mm_online_name')||'';
+  if(n){document.getElementById('lookup-name').value=n;loadLocalReport()}
+}catch(e){}
+</script>
+</body>
+</html>
