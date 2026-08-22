@@ -265,18 +265,11 @@ function monitorPresence(){
 }
 
 function lockBoardScroll(){
+  // Only block scroll during move on the board — do NOT kill click/tap
   const wrap=document.getElementById('board-wrap');
-  // Prevent page scroll while touching the board
-  ['touchstart','touchmove','touchend'].forEach(ev=>{
-    wrap.addEventListener(ev, function(e){
-      if(e.cancelable) e.preventDefault();
-    }, {passive:false});
-  });
-  // Also on chessboard squares
-  document.addEventListener('touchmove', function(e){
-    if(e.target.closest && e.target.closest('#board-wrap')){
-      if(e.cancelable) e.preventDefault();
-    }
+  if(!wrap) return;
+  wrap.addEventListener('touchmove', function(e){
+    if(e.cancelable) e.preventDefault();
   }, {passive:false});
 }
 
@@ -286,130 +279,242 @@ function pieceTheme(piece){
 }
 
 function initBoard(){
-  // Click-to-move primary: draggable OFF to stop scroll/drag fights on mobile
-  const cfg={
-    position: mode==='setup' ? (board ? board.fen() : 'start') : game.fen(),
-    draggable: mode==='setup', // only drag in setup (spare pieces)
-    dropOffBoard: mode==='setup'?'trash':'snapback',
-    sparePieces: mode==='setup',
+  const posNow = (board && mode==='setup') ? board.fen() : (game ? game.fen() : 'start');
+  const cfg = {
+    position: posNow,
+    // Enable drag in teach + setup so pieces always respond
+    draggable: mode !== 'legal' ? true : true,
+    dropOffBoard: mode === 'setup' ? 'trash' : 'snapback',
+    sparePieces: mode === 'setup',
     pieceTheme: pieceTheme,
-    onDrop: function(source, target){
-      if(mode!=='setup') return 'snapback';
-      setTimeout(()=>pushState(), 50);
+    onDragStart: function(source, piece) {
+      if (markMode) return false;
+      if (mode === 'setup') return true;
+      if (mode === 'teach') return true; // any color
+      // legal: only side to move
+      if (game.game_over()) return false;
+      if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
+          (game.turn() === 'b' && piece.search(/^w/) !== -1)) return false;
+      return true;
+    },
+    onDrop: function(source, target) {
+      if (source === target || target === 'offboard') return 'snapback';
+      if (mode === 'setup') {
+        setTimeout(function(){ pushState(); }, 40);
+        return;
+      }
+      if (mode === 'teach') {
+        // Free placement: chessboard already moved piece visually if we return nothing
+        // But we need to accept any drop — chessboardjs always places if we don't snapback
+        try {
+          const mv = game.move({ from: source, to: target, promotion: 'q' });
+          if (!mv) {
+            // force position from board after drop
+            setTimeout(function(){
+              try { game = new Chess(board.fen() + ' w - - 0 1'); } catch(e) {}
+              updateMoveUI();
+              pushState();
+            }, 30);
+          } else {
+            updateMoveUI();
+            pushState();
+          }
+        } catch(e) {
+          setTimeout(function(){ pushState(); }, 30);
+        }
+        return;
+      }
+      // legal mode
+      const move = game.move({ from: source, to: target, promotion: 'q' });
+      if (move === null) return 'snapback';
+      updateMoveUI();
+      pushState();
+    },
+    onSnapEnd: function() {
+      if (mode === 'legal' && game) board.position(game.fen());
     }
   };
-  if(board){ try{ board.destroy(); }catch(e){} }
-  board=ChessBoard('board', cfg);
+  if (board) { try { board.destroy(); } catch(e) {} }
+  board = ChessBoard('board', cfg);
   applyBoardColors();
-  $('#board').off('click').on('click', '[class*="square-"]', function(e){
-    e.preventDefault(); e.stopPropagation();
-    const sq=$(this).attr('data-square');
-    if(sq) onSquareClick(sq);
-  });
-  // prevent default on pointer down on board
-  const boardEl=document.getElementById('board');
-  if(boardEl){
-    boardEl.addEventListener('touchstart', function(e){ if(e.cancelable) e.preventDefault(); }, {passive:false});
+  bindBoardClicks();
+  setTimeout(function(){ resizeCanvas(); redrawMarks(); try{ board.resize(); }catch(e){} }, 150);
+}
+
+function bindBoardClicks(){
+  const root = document.getElementById('board');
+  if (!root) return;
+  // Remove old listeners by cloning is heavy — use named handler on document delegation
+  $(root).off('.mm');
+  function handle(ev){
+    // Don't steal pure drag ends aggressively
+    const t = ev.target;
+    if (!t) return;
+    // Find square element
+    let el = t;
+    let sq = null;
+    for (let i = 0; i < 6 && el; i++) {
+      if (el.getAttribute && el.getAttribute('data-square')) {
+        sq = el.getAttribute('data-square');
+        break;
+      }
+      // class square-e4
+      if (el.className && typeof el.className === 'string') {
+        const m = el.className.match(/square-([a-h][1-8])/);
+        if (m) { sq = m[1]; break; }
+      }
+      el = el.parentElement;
+    }
+    if (!sq) return;
+    ev.preventDefault();
+    onSquareClick(sq);
   }
-  setTimeout(()=>{ resizeCanvas(); redrawMarks(); }, 200);
+  $(root).on('click.mm', handle);
+  // Mobile: touchend often more reliable than click when drag is enabled
+  let touchSq = null;
+  $(root).on('touchstart.mm', function(ev){
+    const t = ev.originalEvent.touches[0];
+    if (!t) return;
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    touchSq = null;
+    let node = el;
+    for (let i = 0; i < 6 && node; i++) {
+      if (node.getAttribute && node.getAttribute('data-square')) { touchSq = node.getAttribute('data-square'); break; }
+      if (node.className && typeof node.className === 'string') {
+        const m = node.className.match(/square-([a-h][1-8])/);
+        if (m) { touchSq = m[1]; break; }
+      }
+      node = node.parentElement;
+    }
+  });
+  $(root).on('touchend.mm', function(ev){
+    if (!touchSq) return;
+    // If user dragged a piece, chessboard handles it; only use tap if short
+    const sq = touchSq;
+    touchSq = null;
+    // small delay so onDrop can fire first if it was a drag
+    setTimeout(function(){
+      if (markMode || mode === 'teach' || mode === 'legal') {
+        // For teach, click-to-move still useful when drag fails
+        // Only fire if source already selected or mark mode
+        if (markMode || sourceSq) onSquareClick(sq);
+        else onSquareClick(sq);
+      }
+    }, 10);
+  });
 }
 
 function onSquareClick(sq){
+  if (!sq) return;
   // Mark modes first
-  if(markMode==='green' || markMode==='red'){
+  if (markMode === 'green' || markMode === 'red') {
     toggleMark(markMode, sq);
     return;
   }
-  if(markMode==='arrow'){
-    if(!arrowFrom){
-      arrowFrom=sq;
+  if (markMode === 'arrow') {
+    if (!arrowFrom) {
+      arrowFrom = sq;
       clearSelectHl();
-      $(`.square-${sq}`).addClass('hl-select');
-      document.getElementById('status').textContent='Arrow: now tap destination square';
+      highlightSq(sq, 'hl-select');
+      document.getElementById('status').textContent = 'Arrow: now tap destination square';
       return;
     }
-    if(arrowFrom===sq){ arrowFrom=null; clearSelectHl(); return; }
-    marks.arrows=marks.arrows.filter(a=>!(a.from===arrowFrom && a.to===sq));
-    marks.arrows.push({from:arrowFrom, to:sq});
-    arrowFrom=null;
+    if (arrowFrom === sq) { arrowFrom = null; clearSelectHl(); return; }
+    marks.arrows = marks.arrows.filter(function(a){ return !(a.from === arrowFrom && a.to === sq); });
+    marks.arrows.push({ from: arrowFrom, to: sq });
+    arrowFrom = null;
     clearSelectHl();
     pushMarks();
     redrawMarks();
-    document.getElementById('status').textContent='Arrow added';
+    document.getElementById('status').textContent = 'Arrow added';
     return;
   }
 
-  if(mode==='setup') return;
+  if (mode === 'setup') return;
 
-  // TEACH mode: move any piece to any square (no turn rules)
-  if(mode==='teach'){
-    if(!sourceSq){
-      const pos=board.position();
-      if(!pos[sq]) return;
-      sourceSq=sq;
+  if (mode === 'teach') {
+    if (!sourceSq) {
+      const pos = board.position();
+      if (!pos[sq]) return;
+      sourceSq = sq;
       clearSelectHl();
-      $(`.square-${sq}`).addClass('hl-select');
+      highlightSq(sq, 'hl-select');
+      document.getElementById('status').textContent = 'Selected ' + sq + ' — tap target square';
       return;
     }
-    if(sourceSq===sq){ sourceSq=null; clearSelectHl(); return; }
-    // free move on board position object
-    const pos=board.position();
-    const piece=pos[sourceSq];
-    if(!piece){ sourceSq=null; return; }
+    if (sourceSq === sq) { sourceSq = null; clearSelectHl(); return; }
+    const pos = board.position();
+    const piece = pos[sourceSq];
+    if (!piece) { sourceSq = null; clearSelectHl(); return; }
     delete pos[sourceSq];
-    pos[sq]=piece;
+    pos[sq] = piece;
     board.position(pos, false);
-    // try keep game in sync for PGN when move is legal
-    const legal=game.move({from:sourceSq,to:sq,promotion:'q'});
-    if(!legal){
-      // illegal for chess.js — still keep board; rebuild fen loosely
-      try{
-        const fenBoard=board.fen();
-        game=new Chess(fenBoard+' w - - 0 1');
-      }catch(e){}
-    }
-    sourceSq=null;
+    try {
+      const mv = game.move({ from: sourceSq, to: sq, promotion: 'q' });
+      if (!mv) {
+        try { game = new Chess(board.fen() + ' w - - 0 1'); } catch(e) {}
+      }
+    } catch(e) {}
+    sourceSq = null;
     clearSelectHl();
     updateMoveUI();
     pushState();
+    document.getElementById('status').textContent = 'Moved to ' + sq;
     return;
   }
 
-  // LEGAL mode
-  if(!sourceSq){
-    const p=game.get(sq);
-    if(!p) return;
-    sourceSq=sq;
+  // LEGAL mode — click to move
+  if (!sourceSq) {
+    const p = game.get(sq);
+    if (!p) return;
+    if (p.color !== game.turn()) {
+      document.getElementById('status').textContent = 'Not that side to move (or switch to Teach)';
+      return;
+    }
+    sourceSq = sq;
     clearSelectHl();
-    $(`.square-${sq}`).addClass('hl-select');
-    game.moves({square:sq, verbose:true}).forEach(m=>{
-      $(`.square-${m.to}`).addClass('hl-legal');
+    highlightSq(sq, 'hl-select');
+    game.moves({ square: sq, verbose: true }).forEach(function(m){
+      highlightSq(m.to, 'hl-legal');
     });
     return;
   }
-  if(sourceSq===sq){ sourceSq=null; clearSelectHl(); applyMarkClasses(); return; }
-  const move=game.move({from:sourceSq,to:sq,promotion:'q'});
-  sourceSq=null;
+  if (sourceSq === sq) { sourceSq = null; clearSelectHl(); applyMarkClasses(); return; }
+  const move = game.move({ from: sourceSq, to: sq, promotion: 'q' });
+  sourceSq = null;
   clearSelectHl();
-  if(move){
+  if (move) {
     board.position(game.fen());
     updateMoveUI();
     pushState();
   } else {
-    const p=game.get(sq);
-    if(p){
-      sourceSq=sq;
-      $(`.square-${sq}`).addClass('hl-select');
-      game.moves({square:sq, verbose:true}).forEach(m=>{
-        $(`.square-${m.to}`).addClass('hl-legal');
+    const p = game.get(sq);
+    if (p && p.color === game.turn()) {
+      sourceSq = sq;
+      highlightSq(sq, 'hl-select');
+      game.moves({ square: sq, verbose: true }).forEach(function(m){
+        highlightSq(m.to, 'hl-legal');
       });
     }
   }
   applyMarkClasses();
 }
 
+function highlightSq(sq, cls){
+  // Prefer data-square attribute
+  const el = document.querySelector('#board [data-square="'+sq+'"]');
+  if (el) el.classList.add(cls);
+  else {
+    const alt = document.querySelector('#board .square-' + sq);
+    if (alt) alt.classList.add(cls);
+  }
+}
+
 function clearSelectHl(){
-  $('#board .square-55d63').removeClass('hl-select hl-legal');
+  document.querySelectorAll('#board .hl-select, #board .hl-legal').forEach(function(el){
+    el.classList.remove('hl-select','hl-legal');
+  });
+  try { $('#board .square-55d63').removeClass('hl-select hl-legal'); } catch(e) {}
 }
 
 function toggleMark(color, sq){
