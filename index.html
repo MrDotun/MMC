@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Mind Masters Academy | Kids Chess Adventure</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,900&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -293,7 +295,149 @@
         @keyframes shineSweep {
             0%{left:-100%} 40%{left:120%} 100%{left:120%}
         }
-    </style>
+    
+/* Avatar frames by rank */
+.avatar-frame {
+  position: relative; display: inline-block;
+  border-radius: 1.25rem;
+  padding: 3px;
+}
+.avatar-frame.bronze { background: linear-gradient(135deg, #cd7f32, #8b4513); box-shadow: 0 0 16px rgba(205,127,50,0.45); }
+.avatar-frame.silver { background: linear-gradient(135deg, #e2e8f0, #94a3b8); box-shadow: 0 0 16px rgba(148,163,184,0.45); }
+.avatar-frame.gold { background: linear-gradient(135deg, #fde68a, #e8c547, #b45309); box-shadow: 0 0 20px rgba(232,197,71,0.55); animation: goldRing 2s ease-in-out infinite; }
+.avatar-frame.diamond { background: linear-gradient(135deg, #a5f3fc, #67e8f9, #22d3ee); box-shadow: 0 0 22px rgba(34,211,238,0.5); animation: goldRing 1.6s ease-in-out infinite; }
+@keyframes goldRing {
+  0%,100% { filter: brightness(1); }
+  50% { filter: brightness(1.25); }
+}
+.avatar-frame img { display: block; border-radius: 1rem; border: 2px solid #0a0c12; }
+.frame-label {
+  position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
+  font-size: 8px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase;
+  background: #0a0c12; color: #e8c547; padding: 1px 8px; border-radius: 99px;
+  border: 1px solid rgba(232,197,71,0.4); white-space: nowrap;
+}
+.challenge-card {
+  background: linear-gradient(145deg, rgba(124,58,237,0.2), rgba(14,18,25,0.95));
+  border: 1px solid rgba(167,139,250,0.35);
+  border-radius: 1.5rem;
+  position: relative; overflow: hidden;
+}
+.challenge-card::before {
+  content: '';
+  position: absolute; top: -40%; right: -20%;
+  width: 180px; height: 180px;
+  background: radial-gradient(circle, rgba(167,139,250,0.25), transparent 70%);
+  pointer-events: none;
+}
+.nudge-banner {
+  background: linear-gradient(90deg, rgba(232,197,71,0.12), rgba(249,115,22,0.1));
+  border: 1px solid rgba(232,197,71,0.3);
+  border-radius: 1rem;
+  animation: nudgePulse 2.5s ease-in-out infinite;
+}
+@keyframes nudgePulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(232,197,71,0); }
+  50% { box-shadow: 0 0 20px rgba(232,197,71,0.2); }
+}
+
+
+/* Cosmetics picker */
+.cosmetic-chip {
+  width: 48px; height: 48px; border-radius: 12px;
+  border: 2px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem; cursor: pointer; transition: all 0.25s;
+  position: relative;
+}
+.cosmetic-chip:hover { border-color: rgba(232,197,71,0.5); transform: scale(1.08); }
+.cosmetic-chip.selected {
+  border-color: #e8c547;
+  background: rgba(232,197,71,0.15);
+  box-shadow: 0 0 14px rgba(232,197,71,0.35);
+}
+.cosmetic-chip.locked { opacity: 0.35; cursor: not-allowed; filter: grayscale(0.8); }
+.cosmetic-chip .lock-mini {
+  position: absolute; bottom: 2px; right: 2px; font-size: 9px;
+}
+.hat-overlay {
+  position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+  font-size: 1.6rem; z-index: 5; pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+  animation: hatBob 2.5s ease-in-out infinite;
+}
+@keyframes hatBob {
+  0%,100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-3px); }
+}
+.hof-row {
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 12px; padding: 10px 12px;
+  transition: background 0.2s;
+}
+.hof-row:hover { background: rgba(255,255,255,0.07); }
+.hof-rank {
+  width: 28px; text-align: center; font-weight: 900; font-size: 14px;
+}
+
+
+/* ===== MOBILE RESPONSIVE ===== */
+html { -webkit-text-size-adjust: 100%; }
+body { -webkit-tap-highlight-color: transparent; }
+@media (max-width: 640px) {
+  .hero-bg { padding-top: 6.5rem !important; padding-bottom: 5rem !important; }
+  .hero-bg h1 { font-size: 2.35rem !important; line-height: 1.05 !important; }
+  .float-piece { font-size: 1.8rem !important; opacity: 0.08 !important; }
+  .hub-card { padding: 1rem !important; border-radius: 1.25rem !important; }
+  .hub-card h2 { font-size: 1.15rem !important; }
+  .xp-bar { max-width: 100% !important; }
+  .mission-btn { padding: 0.85rem !important; }
+  .quest-card { padding: 1.25rem !important; border-radius: 1.25rem !important; }
+  .quest-card:hover { transform: translateY(-6px) scale(1.01); }
+  .icon-glow { width: 56px; height: 56px; font-size: 1.5rem; border-radius: 1rem; }
+  .path-node { padding: 0.75rem !important; }
+  .path-node .text-3xl { font-size: 1.5rem !important; }
+  .cosmetic-chip { width: 44px; height: 44px; font-size: 1.25rem; }
+  .challenge-card { padding: 1rem !important; }
+  .nudge-banner { flex-direction: column; align-items: flex-start !important; gap: 0.75rem !important; }
+  .nudge-banner a { width: 100%; text-align: center; }
+  .wa-float { width: 52px; height: 52px; bottom: 16px; right: 16px; font-size: 26px; }
+  .rival-card { width: 96px !important; padding: 0.75rem !important; }
+  #mm-toast-stack { top: 64px; right: 10px; left: 10px; max-width: none; }
+  .mm-toast { font-size: 12px; padding: 10px 12px; }
+  .result-card, .levelup-card { margin: 0 8px; }
+  /* Larger touch targets */
+  button, a.mission-btn, .opt-btn, .cosmetic-chip {
+    min-height: 44px;
+  }
+  /* Safe areas (notch / home indicator) */
+  body { padding-bottom: env(safe-area-inset-bottom, 0); }
+  .wa-float { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  nav.nav-glass { padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right)); }
+  /* Prevent horizontal scroll */
+  main, header, footer, section { max-width: 100vw; overflow-x: hidden; }
+  #nav-overlay ul { font-size: 1.75rem !important; space-y: 1.25rem; }
+  .hof-row { padding: 8px 10px; gap: 8px; }
+  .avatar-frame img { width: 72px !important; height: 72px !important; }
+  .hat-overlay { font-size: 1.35rem; top: -12px; }
+}
+@media (max-width: 380px) {
+  .hero-bg h1 { font-size: 2rem !important; }
+  .grid.grid-cols-2 { gap: 0.5rem !important; }
+  .path-node .text-\[11px\] { font-size: 9px !important; }
+}
+@media (min-width: 641px) and (max-width: 900px) {
+  .quest-card:hover { transform: translateY(-10px) scale(1.02); }
+}
+/* Landscape phones */
+@media (max-height: 500px) and (orientation: landscape) {
+  .hero-bg { padding-top: 5rem !important; padding-bottom: 3rem !important; }
+  .wa-float { display: none; }
+}
+
+</style>
 </head>
 <body>
     <div class="stars"></div>
@@ -383,8 +527,12 @@
                 <div class="flex flex-col md:flex-row md:items-center gap-6">
                     <div class="flex items-center gap-4 flex-1">
                         <div class="relative">
-                            <img id="hub-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=Hero&backgroundColor=b6e3f4" class="rounded-2xl border-2 border-amber-400/60 bg-slate-800 shadow-lg shadow-amber-500/20" alt="You" style="width:88px;height:88px">
-                            <span class="absolute -bottom-1.5 -right-1.5 bg-gradient-to-r from-amber-400 to-amber-600 text-black text-[11px] font-black px-2 py-0.5 rounded-lg shadow" id="hub-level">Lv1</span>
+                            <div class="avatar-frame bronze" id="hub-frame">
+                              <span class="hat-overlay" id="hub-hat" style="display:none"></span>
+                              <img id="hub-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=Hero&backgroundColor=b6e3f4" class="bg-slate-800" alt="You" style="width:82px;height:82px">
+                              <span class="frame-label" id="hub-frame-label">Bronze</span>
+                            </div>
+                            <span class="absolute -bottom-1.5 -right-1.5 bg-gradient-to-r from-amber-400 to-amber-600 text-black text-[11px] font-black px-2 py-0.5 rounded-lg shadow z-10" id="hub-level">Lv1</span>
                         </div>
                         <div class="min-w-0 flex-1">
                             <div class="flex flex-wrap items-center gap-2 mb-1.5">
@@ -437,7 +585,60 @@
                 </div>
 
                 <div class="flex flex-wrap gap-2 mt-5" id="hub-badges"></div>
+
+                <!-- Cosmetics locker -->
+                <div class="mt-5 pt-4 border-t border-white/8">
+                  <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-[11px] font-black uppercase tracking-widest text-slate-400">Style Locker</h3>
+                    <span class="text-[10px] text-slate-500" id="cosmetic-hint">Tap to equip</span>
+                  </div>
+                  <p class="text-[10px] text-slate-500 mb-2 uppercase tracking-widest font-bold">Hats</p>
+                  <div class="flex flex-wrap gap-2 mb-4" id="hat-picker"></div>
+                  <p class="text-[10px] text-slate-500 mb-2 uppercase tracking-widest font-bold">Special Frames</p>
+                  <div class="flex flex-wrap gap-2" id="frame-picker"></div>
+                </div>
+
             </div>
+        </section>
+
+
+        <!-- Rival nudge -->
+        <div id="rival-nudge" class="nudge-banner max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3 hidden mb-6" data-aos="fade-up">
+          <div class="flex items-center gap-3">
+            <img id="nudge-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=Pip&backgroundColor=b6e3f4" class="w-10 h-10 rounded-full border-2 border-amber-400/40" alt="">
+            <div>
+              <div class="text-sm font-black text-white" id="nudge-text">Pip is waiting for a rematch!</div>
+              <div class="text-[10px] text-slate-400">Win today to keep your streak alive</div>
+            </div>
+          </div>
+          <a href="play-ai.html" class="bg-amber-500 text-black px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-400 transition">Battle Now</a>
+        </div>
+
+        <!-- Coach Challenge of the Week -->
+        <section class="max-w-5xl mx-auto mb-6" data-aos="fade-up">
+          <div class="challenge-card p-5 md:p-6">
+            <div class="relative z-10 flex flex-col md:flex-row md:items-center gap-4">
+              <div class="flex-1">
+                <div class="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-violet-300 mb-2">
+                  <span class="w-2 h-2 bg-violet-400 rounded-full animate-pulse"></span>
+                  Coach Challenge · This Week
+                </div>
+                <h3 class="text-lg md:text-xl font-black text-white uppercase italic tracking-tight mb-1" id="challenge-title">Beat 3 AI rivals</h3>
+                <p class="text-sm text-slate-400 mb-3" id="challenge-desc">Defeat any 3 different AI levels before Sunday for bonus XP.</p>
+                <div class="flex items-center gap-3">
+                  <div class="flex-1 max-w-xs">
+                    <div class="h-2.5 bg-black/40 rounded-full overflow-hidden">
+                      <div class="h-full bg-gradient-to-r from-violet-400 to-fuchsia-400 rounded-full transition-all duration-500" id="challenge-bar" style="width:0%"></div>
+                    </div>
+                  </div>
+                  <span class="text-xs font-black text-violet-300" id="challenge-progress">0 / 3</span>
+                </div>
+              </div>
+              <a href="play-ai.html" class="shrink-0 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white px-6 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-violet-500/30 hover:scale-105 transition text-center">
+                Accept Challenge
+              </a>
+            </div>
+          </div>
         </section>
 
         <section class="max-w-md mx-auto" data-aos="zoom-in">
@@ -452,6 +653,28 @@
                     </div>
                 </div>
             </div>
+        </section>
+
+
+        <!-- Hall of Fame -->
+        <section class="max-w-5xl mx-auto" data-aos="fade-up">
+          <div class="quest-card p-5 md:p-7">
+            <div class="flex items-center justify-between mb-5">
+              <div>
+                <h3 class="text-lg font-black italic uppercase text-white tracking-tight">🏆 Hall of Fame</h3>
+                <p class="text-[11px] text-slate-500 mt-0.5">Top AI battlers · live from the academy</p>
+              </div>
+              <a href="play-ai.html" class="text-[10px] font-black uppercase tracking-widest text-amber-400 hover:text-amber-300">Battle →</a>
+            </div>
+            <div id="hall-of-fame" class="space-y-2">
+              <p class="text-slate-600 text-xs">Loading champions...</p>
+            </div>
+            <button onclick="publishMyScore()" id="publish-btn"
+              class="mt-4 w-full sm:w-auto bg-white/8 hover:bg-amber-500/20 border border-white/10 hover:border-amber-500/40 text-white px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition">
+              📤 Share my score to Hall of Fame
+            </button>
+            <p id="publish-msg" class="text-[11px] text-slate-500 mt-2 hidden"></p>
+          </div>
         </section>
 
         <div data-aos="fade-up" class="quest-card p-6 md:p-9">
@@ -740,6 +963,282 @@
     if (el) el.textContent = count + ' / 6 unlocked';
   }
 
+  
+  function frameForLevel(lv){
+    if (lv >= 7) return {cls:'diamond', label:'Diamond'};
+    if (lv >= 5) return {cls:'gold', label:'Gold'};
+    if (lv >= 3) return {cls:'silver', label:'Silver'};
+    return {cls:'bronze', label:'Bronze'};
+  }
+  function updateAvatarFrame(lv){
+    const frame = document.getElementById('hub-frame');
+    const label = document.getElementById('hub-frame-label');
+    if (!frame) return;
+    const f = frameForLevel(lv);
+    frame.className = 'avatar-frame ' + f.cls;
+    if (label) label.textContent = f.label;
+  }
+  function weekKey(){
+    const d = new Date();
+    // ISO-ish week number
+    const onejan = new Date(d.getFullYear(),0,1);
+    const week = Math.ceil((((d - onejan) / 86400000) + onejan.getDay()+1)/7);
+    return d.getFullYear() + '-W' + week;
+  }
+  const WEEKLY_CHALLENGES = [
+    {title:'Beat 3 AI rivals', desc:'Defeat any 3 different AI levels this week for bonus glory.', goal:3, type:'beaten'},
+    {title:'Win streak of 3', desc:'Win 3 games in a row against the AI. Protect that fire!', goal:3, type:'streak'},
+    {title:'Earn 50 XP', desc:'Play quests or battle AI to bank 50 XP this week.', goal:50, type:'xp'},
+    {title:'Solve & play', desc:'Finish 1 quest and beat 1 AI this week.', goal:2, type:'mixed'},
+    {title:'Challenge Luna', desc:'Beat Luna (Lv4) at least once this week.', goal:1, type:'luna'},
+    {title:'Five victories', desc:'Win 5 AI games this week — any level counts.', goal:5, type:'wins'},
+    {title:'Streak master', desc:'Reach a 5-win streak at least once.', goal:5, type:'streak5'}
+  ];
+  function updateChallenge(p){
+    const wk = weekKey();
+    const day = new Date().getDay();
+    const ch = WEEKLY_CHALLENGES[day % WEEKLY_CHALLENGES.length];
+    const titleEl = document.getElementById('challenge-title');
+    const descEl = document.getElementById('challenge-desc');
+    const bar = document.getElementById('challenge-bar');
+    const prog = document.getElementById('challenge-progress');
+    if (!titleEl) return;
+    titleEl.textContent = ch.title;
+    descEl.textContent = ch.desc;
+    let current = 0;
+    if (ch.type === 'beaten') current = (p.beatenLevels||[]).length;
+    else if (ch.type === 'streak') current = Math.min(ch.goal, p.aiWinStreak||0);
+    else if (ch.type === 'streak5') current = Math.min(ch.goal, p.aiWinStreak||0);
+    else if (ch.type === 'xp') current = Math.min(ch.goal, (p.xp||0) % 100); // soft approx
+    else if (ch.type === 'wins') current = Math.min(ch.goal, p.aiWins||0);
+    else if (ch.type === 'luna') current = (p.beatenLevels||[]).indexOf(4) >= 0 ? 1 : 0;
+    else if (ch.type === 'mixed') {
+      current = ((p.questWins||0) >= 1 ? 1 : 0) + ((p.aiWins||0) >= 1 ? 1 : 0);
+    }
+    current = Math.min(ch.goal, current);
+    const pct = Math.round((current / ch.goal) * 100);
+    if (bar) bar.style.width = pct + '%';
+    if (prog) prog.textContent = current + ' / ' + ch.goal;
+  }
+  function updateRivalNudge(p){
+    const nudge = document.getElementById('rival-nudge');
+    if (!nudge) return;
+    const rivals = ['Pip','Nia','Rex','Luna','Kai','Zara','Omar','Nova'];
+    const seeds = ['Pip','Nia','Rex','Luna','Kai','Zara','Omar','Nova'];
+    const colors = ['b6e3f4','c0aede','ffd5dc','d1f4d1','ffeaa7','a0c4ff','ffc6ff','fdffb6'];
+    const unlocked = Math.min(8, p.unlockedLevel||1);
+    const idx = Math.max(0, unlocked - 1);
+    const name = rivals[idx];
+    const text = document.getElementById('nudge-text');
+    const av = document.getElementById('nudge-avatar');
+    if (text) {
+      if ((p.aiWinStreak||0) >= 2) text.textContent = name + ' wants to break your streak!';
+      else text.textContent = name + ' is waiting for a battle!';
+    }
+    if (av) av.src = 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + seeds[idx] + '&backgroundColor=' + colors[idx];
+    nudge.classList.remove('hidden');
+  }
+
+  
+  // ===== Cosmetics =====
+  const HATS = [
+    {id:'none', emoji:'', label:'None', unlock:()=>true},
+    {id:'crown', emoji:'👑', label:'Crown', unlock:p=> (p.aiWins||0)>=5 || levelFromXp(p.xp||0)>=5},
+    {id:'wizard', emoji:'🧙', label:'Wizard', unlock:p=> (p.questWins||0)>=3},
+    {id:'fire', emoji:'🔥', label:'Fire', unlock:p=> (p.aiWinStreak||0)>=3 || (p.streak||0)>=7},
+    {id:'star', emoji:'⭐', label:'Star', unlock:p=> levelFromXp(p.xp||0)>=3},
+    {id:'trophy', emoji:'🏆', label:'Trophy', unlock:p=> (p.beatenLevels||[]).length>=5},
+    {id:'dragon', emoji:'🐉', label:'Dragon', unlock:p=> (p.beatenLevels||[]).length>=8},
+    {id:'knight', emoji:'♞', label:'Knight', unlock:p=> (p.aiWins||0)>=1}
+  ];
+  const SPECIAL_FRAMES = [
+    {id:'auto', label:'Auto', cls:null, unlock:()=>true},
+    {id:'ember', label:'Ember', cls:'gold', unlock:p=> (p.aiWinStreak||0)>=5},
+    {id:'frost', label:'Frost', cls:'diamond', unlock:p=> levelFromXp(p.xp||0)>=6},
+    {id:'shadow', label:'Shadow', cls:'bronze', unlock:p=> (p.aiWins||0)>=10},
+    {id:'royal', label:'Royal', cls:'gold', unlock:p=> (p.beatenLevels||[]).length>=6}
+  ];
+
+  function renderCosmetics(p){
+    const hatBox = document.getElementById('hat-picker');
+    const frameBox = document.getElementById('frame-picker');
+    if (!hatBox || !frameBox) return;
+    const eqHat = p.equipHat || 'none';
+    const eqFrame = p.equipFrame || 'auto';
+
+    hatBox.innerHTML = HATS.map(h => {
+      const open = h.unlock(p);
+      const sel = eqHat === h.id ? 'selected' : '';
+      const lock = open ? '' : 'locked';
+      const content = h.emoji || '∅';
+      return '<button type="button" class="cosmetic-chip '+sel+' '+lock+'" title="'+(h.label)+(open?'':' (locked)')+'" data-hat="'+h.id+'" '+(open?'onclick="equipHat(\''+h.id+'\')"':'')+'>'+content+(open?'':'<span class="lock-mini">🔒</span>')+'</button>';
+    }).join('');
+
+    frameBox.innerHTML = SPECIAL_FRAMES.map(f => {
+      const open = f.unlock(p);
+      const sel = eqFrame === f.id ? 'selected' : '';
+      const lock = open ? '' : 'locked';
+      const swatch = f.id==='auto' ? '⚙️' : (f.id==='ember'?'🧡':f.id==='frost'?'❄️':f.id==='shadow'?'🌑':'💜');
+      return '<button type="button" class="cosmetic-chip '+sel+' '+lock+'" title="'+(f.label)+(open?'':' (locked)')+'" data-frame="'+f.id+'" '+(open?'onclick="equipFrame(\''+f.id+'\')"':'')+'>'+swatch+(open?'':'<span class="lock-mini">🔒</span>')+'</button>';
+    }).join('');
+
+    applyCosmetics(p);
+  }
+
+  window.equipHat = function(id){
+    const p = loadProg();
+    p.equipHat = id;
+    saveProg(p);
+    renderCosmetics(p);
+  };
+  window.equipFrame = function(id){
+    const p = loadProg();
+    p.equipFrame = id;
+    saveProg(p);
+    const lv = levelFromXp(p.xp||0);
+    updateAvatarFrame(lv);
+    renderCosmetics(p);
+  };
+
+  function applyCosmetics(p){
+    const hat = document.getElementById('hub-hat');
+    const eq = HATS.find(h => h.id === (p.equipHat||'none'));
+    if (hat) {
+      if (eq && eq.emoji) {
+        hat.textContent = eq.emoji;
+        hat.style.display = 'block';
+      } else {
+        hat.style.display = 'none';
+      }
+    }
+  }
+
+  // Override updateAvatarFrame to respect special frame equip
+  const _updateAvatarFrame = updateAvatarFrame;
+  updateAvatarFrame = function(lv){
+    const p = loadProg();
+    const frame = document.getElementById('hub-frame');
+    const label = document.getElementById('hub-frame-label');
+    if (!frame) return;
+    const special = SPECIAL_FRAMES.find(f => f.id === (p.equipFrame||'auto'));
+    if (special && special.cls && special.id !== 'auto') {
+      frame.className = 'avatar-frame ' + special.cls;
+      if (label) label.textContent = special.label;
+    } else {
+      _updateAvatarFrame(lv);
+    }
+    applyCosmetics(p);
+  };
+
+  // ===== Hall of Fame =====
+  const firebaseConfigHOF = {
+    apiKey:"AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+    authDomain:"assignments-de95a.firebaseapp.com",
+    projectId:"assignments-de95a",
+    storageBucket:"assignments-de95a.firebasestorage.app",
+    messagingSenderId:"1088073398299",
+    appId:"1:1088073398299:web:dab1f57ac1d63b10dba0be"
+  };
+  let hofDb = null;
+  try {
+    if (typeof firebase !== 'undefined') {
+      if (!firebase.apps.length) firebase.initializeApp(firebaseConfigHOF);
+      hofDb = firebase.firestore();
+    }
+  } catch(e) { console.log('Firebase HOF offline', e); }
+
+  function loadHallOfFame(){
+    const box = document.getElementById('hall-of-fame');
+    if (!box || !hofDb) {
+      if (box) box.innerHTML = '<p class="text-slate-600 text-xs">Leaderboard needs connection</p>';
+      return;
+    }
+    hofDb.collection('ai_wins').orderBy('timestamp','desc').limit(80).onSnapshot(snap => {
+      if (snap.empty) {
+        box.innerHTML = '<p class="text-slate-600 text-xs">No champions yet — be the first to beat the AI!</p>';
+        return;
+      }
+      const counts = {};
+      snap.forEach(doc => {
+        const d = doc.data();
+        const key = (d.name||'Player').trim();
+        if (!key) return;
+        if (!counts[key]) counts[key] = {name:key, wins:0, bestLevel:0};
+        counts[key].wins++;
+        if ((d.level||0) > counts[key].bestLevel) counts[key].bestLevel = d.level;
+      });
+      // also merge published academy scores
+      const ranked = Object.values(counts).sort((a,b)=> b.wins-a.wins || b.bestLevel-a.bestLevel).slice(0,10);
+      let html = '';
+      ranked.forEach((r,i) => {
+        const rank = i+1;
+        const medal = rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':'#'+rank;
+        const seed = encodeURIComponent(r.name);
+        html += '<div class="hof-row">'+
+          '<div class="hof-rank">'+(medal)+'</div>'+
+          '<img src="https://api.dicebear.com/7.x/avataaars/svg?seed='+seed+'&backgroundColor=b6e3f4" class="w-9 h-9 rounded-full border border-white/10" alt="">'+
+          '<div class="flex-1 min-w-0"><div class="font-bold text-white text-xs truncate">'+r.name+'</div>'+
+          '<div class="text-[10px] text-slate-500">Best AI Lv'+r.bestLevel+'</div></div>'+
+          '<div class="font-black text-amber-400 text-sm">'+r.wins+' win'+(r.wins>1?'s':'')+'</div></div>';
+      });
+      box.innerHTML = html || '<p class="text-slate-600 text-xs">No data yet</p>';
+    }, err => {
+      box.innerHTML = '<p class="text-slate-600 text-xs">Could not load leaderboard</p>';
+    });
+  }
+
+  window.publishMyScore = function(){
+    const p = loadProg();
+    const name = p.name || localStorage.getItem('mm_online_name') || '';
+    const msg = document.getElementById('publish-msg');
+    const btn = document.getElementById('publish-btn');
+    if (!name) {
+      if (msg) { msg.classList.remove('hidden'); msg.textContent = 'Save your hero name first!'; msg.className = 'text-[11px] text-rose-400 mt-2'; }
+      return;
+    }
+    if (!hofDb) {
+      if (msg) { msg.classList.remove('hidden'); msg.textContent = 'Offline — try again later'; }
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Sharing...';
+    // Publish a summary doc kids can be proud of
+    hofDb.collection('academy_profiles').doc(name.toLowerCase().replace(/\s+/g,'_')).set({
+      name: name,
+      xp: p.xp||0,
+      level: levelFromXp(p.xp||0),
+      aiWins: p.aiWins||0,
+      streak: p.streak||0,
+      aiWinStreak: p.aiWinStreak||0,
+      beaten: (p.beatenLevels||[]).length,
+      hat: p.equipHat||'none',
+      updated: firebase.firestore.FieldValue.serverTimestamp()
+    }, {merge:true}).then(() => {
+      // Also log a symbolic win entry if they have wins so they appear on HOF
+      if ((p.aiWins||0) > 0) {
+        return hofDb.collection('ai_wins').add({
+          name: name,
+          level: Math.max(1, ...(p.beatenLevels||[1])),
+          color: 'w',
+          source: 'hub_share',
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    }).then(() => {
+      msg.classList.remove('hidden');
+      msg.className = 'text-[11px] text-emerald-400 mt-2';
+      msg.textContent = '✅ Shared! Your name can appear in the Hall of Fame.';
+      btn.textContent = 'Shared!';
+      setTimeout(() => { btn.disabled = false; btn.textContent = '📤 Share my score to Hall of Fame'; }, 2000);
+    }).catch(e => {
+      msg.classList.remove('hidden');
+      msg.className = 'text-[11px] text-rose-400 mt-2';
+      msg.textContent = 'Share failed — check connection';
+      btn.disabled = false;
+      btn.textContent = '📤 Share my score to Hall of Fame';
+    });
+  };
+
   function renderHub(){
     let p = loadProg();
     p = ensureStreak(p);
@@ -775,6 +1274,9 @@
     if (lv >= 5) badges.push('👑 Club King');
     if ((p.aiWins||0) >= 1) badges.push('🤖 AI Slayer');
     if ((p.questWins||0) >= 1) badges.push('📜 Quest Done');
+    if ((p.aiWinStreak||0) >= 3) badges.push('🔥 AI Streak ' + p.aiWinStreak);
+    if ((p.beatenLevels||[]).length >= 3) badges.push('⚔️ 3 Rivals Beaten');
+    if ((p.beatenLevels||[]).length >= 8) badges.push('👑 All Rivals Beaten');
     const box = document.getElementById('hub-badges');
     box.innerHTML = badges.length
       ? badges.map(b => '<span class="text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/25 px-2.5 py-1 rounded-full">'+b+'</span>').join('')
@@ -782,6 +1284,10 @@
 
     updatePiecePets(p);
     updateChestUI(p);
+    updateAvatarFrame(lv);
+    updateChallenge(p);
+    updateRivalNudge(p);
+    renderCosmetics(p);
   }
 
   function updateChestUI(p){
@@ -838,6 +1344,7 @@
   }
 
   if (document.getElementById('player-hub')) renderHub();
+  try { loadHallOfFame(); } catch(e) {}
 })();
     </script>
 </body>
