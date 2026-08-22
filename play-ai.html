@@ -271,6 +271,8 @@ function startGame(){
     applyBoardColor();
   }
   newGameInternal();
+  // Publish to live feed immediately so spectators can find the game
+  setTimeout(function(){ broadcastLive(); }, 300);
 }
 
 function backToSetup(){
@@ -515,10 +517,23 @@ function undoMove(){
 }
 
 function broadcastLive(){
-  if(!settings.name)return;
-  const data={player:settings.name,level:settings.level,fen:game.fen(),pgn:game.pgn(),status:'Playing',updated:firebase.firestore.FieldValue.serverTimestamp()};
-  if(liveDocId)db.collection('ai_live_games').doc(liveDocId).update(data).catch(()=>{});
-  else db.collection('ai_live_games').add(data).then(doc=>{liveDocId=doc.id}).catch(()=>{});
+  if(!settings.name||!game)return;
+  const data={
+    player:settings.name,
+    level:settings.level,
+    fen:game.fen(),
+    pgn:game.pgn(),
+    status:'Playing',
+    updated:firebase.firestore.FieldValue.serverTimestamp()
+  };
+  if(liveDocId){
+    db.collection('ai_live_games').doc(liveDocId).set(data,{merge:true}).catch(e=>console.error('Live update failed',e));
+  } else {
+    db.collection('ai_live_games').add(data).then(doc=>{
+      liveDocId=doc.id;
+      console.log('Live game published', doc.id);
+    }).catch(e=>console.error('Live publish failed',e));
+  }
 }
 function endLiveGame(){
   if(liveDocId){
@@ -567,21 +582,56 @@ function loadAILeaderboard(){
 
 let specBoard=null,specUnsub=null;
 function loadLiveFeed(){
-  db.collection('ai_live_games').where('status','==','Playing').orderBy('updated','desc').limit(8)
+  const c=document.getElementById('live-ai-feed');
+  // Avoid composite index: order by updated only, filter Playing on client
+  db.collection('ai_live_games').orderBy('updated','desc').limit(20)
   .onSnapshot(snap=>{
-    const c=document.getElementById('live-ai-feed');
-    if(snap.empty){c.innerHTML='<p class="text-slate-600 text-xs">No live games — be the first!</p>';return}
-    let html='';
+    const games=[];
     snap.forEach(doc=>{
       const d=doc.data();
-      const mine=doc.id===liveDocId;
-      html+=`<div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 cursor-pointer hover:bg-white/10" onclick="spectateGame('${doc.id}','${(d.player||'Player').replace(/'/g,'')}','${d.level||'?'}')">
-        <span class="text-white text-xs font-bold">${d.player||'Player'} <span class="text-amber-400">vs AI Lv${d.level}</span>${mine?' <span class="text-emerald-400">(you)</span>':''}</span>
+      if(d.status==='Playing') games.push({id:doc.id,...d});
+    });
+    if(!games.length){
+      c.innerHTML='<p class="text-slate-600 text-xs">No live games — start one and open this page on another device!</p>';
+      return;
+    }
+    let html='';
+    games.slice(0,8).forEach(d=>{
+      const mine=d.id===liveDocId;
+      const safeName=(d.player||'Player').replace(/'/g,'').replace(/"/g,'');
+      html+=`<div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 cursor-pointer hover:bg-white/10" onclick="spectateGame('${d.id}','${safeName}','${d.level||'?'}')">
+        <span class="text-white text-xs font-bold">${safeName} <span class="text-amber-400">vs AI Lv${d.level||'?'}</span>${mine?' <span class="text-emerald-400">(you)</span>':''}</span>
         <span class="live-badge">WATCH</span>
       </div>`;
     });
     c.innerHTML=html;
-  },()=>{});
+  }, err=>{
+    console.error('Live feed error:', err);
+    // Fallback without orderBy if index missing
+    db.collection('ai_live_games').limit(20).onSnapshot(snap2=>{
+      const games=[];
+      snap2.forEach(doc=>{
+        const d=doc.data();
+        if(d.status==='Playing') games.push({id:doc.id,...d});
+      });
+      if(!games.length){
+        c.innerHTML='<p class="text-slate-600 text-xs">No live games right now</p>';
+        return;
+      }
+      let html='';
+      games.forEach(d=>{
+        const safeName=(d.player||'Player').replace(/'/g,'');
+        html+=`<div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 cursor-pointer hover:bg-white/10" onclick="spectateGame('${d.id}','${safeName}','${d.level||'?'}')">
+          <span class="text-white text-xs font-bold">${safeName} <span class="text-amber-400">vs AI Lv${d.level||'?'}</span></span>
+          <span class="live-badge">WATCH</span>
+        </div>`;
+      });
+      c.innerHTML=html;
+    }, err2=>{
+      c.innerHTML='<p class="text-rose-400 text-xs">Live feed blocked — check Firestore rules allow read on ai_live_games</p>';
+      console.error(err2);
+    });
+  });
 }
 function spectateGame(id,name,level){
   if(id===liveDocId){alert('This is your game — already on the main board!');return}
