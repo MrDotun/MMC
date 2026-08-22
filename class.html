@@ -120,6 +120,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8
         <button class="tool" id="btn-setup" onclick="setMode('setup')">🧩 Setup</button>
         <button class="tool" onclick="flipBoard()">Flip</button>
         <button class="tool" onclick="resetStart()">Start</button>
+        <button class="tool" onclick="undoBoard()" title="Undo last change">↩ Undo</button>
         <button class="tool danger" onclick="emptyBoard()">Clear</button>
       </div>
 
@@ -196,6 +197,8 @@ let marks={green:[], red:[], arrows:[]};
 let lightSq='#f0d9b5', darkSq='#b58863';
 let applyingRemote=false;
 let spareSelected=null; // setup: 'wP' etc from spare tray
+let boardHistory=[]; // FEN snapshots for undo
+const HISTORY_MAX=40;
 const canvas=document.getElementById('draw-canvas');
 const ctx=canvas.getContext('2d');
 
@@ -285,6 +288,8 @@ function initBoard(){
     resizeCanvas();
     redrawMarks();
     bindSpareClicks();
+    // seed history with starting position of this mode
+    boardHistory = [];
   }, 120);
 }
 
@@ -374,11 +379,12 @@ function onSquareClick(sq) {
   if (mode === 'setup') {
     var pos = board.position();
     if (spareSelected) {
+      captureHistory();
       pos[sq] = spareSelected;
       board.position(pos, false);
       spareSelected = null;
       pushState();
-      setStatus('Placed on ' + sq);
+      setStatus('Placed on ' + sq + ' · Undo if wrong');
       return;
     }
     if (!sourceSq) {
@@ -394,15 +400,17 @@ function onSquareClick(sq) {
     }
     if (sourceSq === sq) {
       // remove piece
+      captureHistory();
       delete pos[sq];
       board.position(pos, false);
       sourceSq = null;
       clearSelectHl();
       pushState();
-      setStatus('Removed piece on ' + sq);
+      setStatus('Removed · Undo if wrong');
       return;
     }
     // move piece
+    captureHistory();
     var piece = pos[sourceSq];
     delete pos[sourceSq];
     pos[sq] = piece;
@@ -410,7 +418,7 @@ function onSquareClick(sq) {
     sourceSq = null;
     clearSelectHl();
     pushState();
-    setStatus('Moved to ' + sq);
+    setStatus('Moved to ' + sq + ' · Undo if wrong');
     return;
   }
 
@@ -449,6 +457,7 @@ function onSquareClick(sq) {
     var posT = board.position();
     var pc = posT[sourceSq];
     if (!pc) { sourceSq = null; clearSelectHl(); return; }
+    captureHistory();
     delete posT[sourceSq];
     posT[sq] = pc;
     board.position(posT, false);
@@ -471,10 +480,11 @@ function onSquareClick(sq) {
   sourceSq = null;
   clearSelectHl();
   if (move) {
+    captureHistory();
     board.position(game.fen());
     updateMoveUI();
     pushState();
-    setStatus(move.san);
+    setStatus(move.san + ' · Undo if wrong');
   } else {
     applyMarkClasses();
     setStatus('Illegal move');
@@ -605,6 +615,43 @@ function listenRoom(){
   }, function(){ setStatus('Connection issue'); });
 }
 
+
+function snapshotFen(){
+  try { return board ? board.fen() : ''; } catch(e){ return ''; }
+}
+/** Call BEFORE changing the board so Undo can restore */
+function captureHistory(){
+  if (!board) return;
+  var fen = snapshotFen();
+  if (boardHistory.length && boardHistory[boardHistory.length-1] === fen) return;
+  boardHistory.push(fen);
+  if (boardHistory.length > HISTORY_MAX) boardHistory.shift();
+}
+function pushHistory(){ captureHistory(); }
+function undoBoard(){
+  if (!boardHistory.length) {
+    setStatus('Nothing to undo');
+    return;
+  }
+  var prev = boardHistory.pop();
+  applyingRemote = true;
+  board.position(prev, false);
+  try {
+    if (mode === 'legal') {
+      game.load(prev.indexOf(' ') >= 0 ? prev : prev + ' w - - 0 1');
+    } else {
+      try { game = new Chess(prev + ' w - - 0 1'); } catch(e) {}
+    }
+  } catch(e) {}
+  sourceSq = null;
+  spareSelected = null;
+  clearSelectHl();
+  applyingRemote = false;
+  updateMoveUI();
+  pushState();
+  setStatus('Undone — tap Undo again for earlier position');
+}
+
 function setMode(m){
   mode=m; markMode=null; sourceSq=null; arrowFrom=null;
   document.getElementById('btn-teach').classList.toggle('on', m==='teach');
@@ -626,7 +673,7 @@ function setMode(m){
 
 function flipBoard(){ board.orientation(board.orientation()==='white'?'black':'white'); setTimeout(redrawMarks,80); }
 function resetStart(){
-  game=new Chess(); mode='teach'; marks={green:[],red:[],arrows:[]};
+  game=new Chess(); mode='teach'; marks={green:[],red:[],arrows:[]}; boardHistory=[];
   document.getElementById('btn-teach').classList.add('on');
   document.getElementById('btn-legal').classList.remove('on');
   document.getElementById('btn-setup').classList.remove('on');
@@ -634,6 +681,7 @@ function resetStart(){
   setStatus('Start position');
 }
 function emptyBoard(){
+  boardHistory=[];
   mode='setup';
   document.getElementById('btn-setup').classList.add('on');
   document.getElementById('btn-teach').classList.remove('on');
@@ -644,7 +692,7 @@ function emptyBoard(){
   initBoard();
   setTimeout(function(){ if(board) board.clear(); pushState(); }, 50);
   marks={green:[],red:[],arrows:[]}; redrawMarks();
-  setStatus('Empty board — tap a spare piece, then a square');
+  setStatus('Empty — tap spare piece, then square · Undo available');
 }
 
 function setBoardColors(l,d){
