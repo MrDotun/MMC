@@ -1,216 +1,557 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Mind Masters – Adventure Academy</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    body { font-family: 'Inter', system-ui, sans-serif; background: #0a0a0f; }
-    .glow-orange { box-shadow: 0 0 20px rgba(251, 146, 60, 0.5); }
-    .glow-cyan { box-shadow: 0 0 25px rgba(34, 211, 238, 0.6); }
-    .glow-purple { box-shadow: 0 0 20px rgba(168, 85, 247, 0.5); }
-    .chest { transition: transform 0.2s; }
-    .chest:active { transform: scale(0.92); }
-    .progress-bar { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mind Masters Academy | Kids Chess Adventure</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,900&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-dark: #07090f;
+            --panel: #12171f;
+            --gold: #e8c547;
+        }
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background: var(--bg-dark); 
+            color: #e2e8f0;
+            overflow-x: hidden;
+        }
+        .font-serif { font-family: 'Playfair Display', serif; }
+
+        .stars {
+            position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background: 
+                radial-gradient(1px 1px at 20px 30px, #fff, transparent),
+                radial-gradient(1px 1px at 40px 70px, rgba(255,255,255,0.5), transparent),
+                radial-gradient(1.5px 1.5px at 90px 40px, #fff, transparent),
+                radial-gradient(1px 1px at 130px 80px, rgba(255,255,255,0.3), transparent);
+            background-size: 200px 200px;
+            animation: twinkle 7s infinite linear;
+            opacity: 0.35;
+        }
+        @keyframes twinkle { 0%,100%{opacity:0.25} 50%{opacity:0.5} }
+
+        .float-piece {
+            position: absolute;
+            font-size: clamp(2rem, 5vw, 3.5rem);
+            opacity: 0.07;
+            animation: floaty 18s ease-in-out infinite;
+            pointer-events: none; z-index: 1;
+        }
+        @keyframes floaty {
+            0%,100%{transform:translate(0,0) rotate(0)}
+            25%{transform:translate(25px,-50px) rotate(12deg)}
+            50%{transform:translate(-15px,-90px) rotate(-8deg)}
+            75%{transform:translate(35px,-40px) rotate(15deg)}
+        }
+
+        #loader {
+            position: fixed; inset: 0; background: var(--bg-dark); z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.6s ease;
+        }
+        .knight-bounce {
+            font-size: 4.5rem; color: var(--gold);
+            animation: knightJump 1.1s ease-in-out infinite;
+            filter: drop-shadow(0 0 20px rgba(232,197,71,0.5));
+        }
+        @keyframes knightJump {
+            0%,100%{transform:translateY(0) rotate(-8deg)}
+            50%{transform:translateY(-28px) rotate(8deg)}
+        }
+
+        .quest-card {
+            background: linear-gradient(160deg, #161c27 0%, #0e1219 100%);
+            border: 1px solid rgba(232,197,71,0.12);
+            border-radius: 1.75rem;
+            transition: all 0.45s cubic-bezier(0.4,0,0.2,1);
+            position: relative; overflow: hidden;
+        }
+        .quest-card:hover {
+            transform: translateY(-14px) scale(1.025);
+            border-color: rgba(232,197,71,0.45);
+            box-shadow: 0 30px 60px -15px rgba(232,197,71,0.18);
+        }
+
+        .icon-glow {
+            width: 70px; height: 70px; border-radius: 1.25rem;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.9rem; transition: all 0.4s;
+        }
+        .quest-card:hover .icon-glow {
+            transform: scale(1.12) rotate(-6deg);
+            box-shadow: 0 0 25px currentColor;
+        }
+
+        .hero-bg {
+            background: 
+                linear-gradient(to bottom, rgba(7,9,15,0.78) 0%, var(--bg-dark) 100%),
+                url('https://images.unsplash.com/photo-1586165368502-1bad197a6461?auto=format&fit=crop&q=85&w=1800') center/cover no-repeat;
+        }
+
+        .nav-glass {
+            background: rgba(7,9,15,0.88);
+            backdrop-filter: blur(22px);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        #menu-toggle:checked ~ #nav-overlay { transform: translateX(0); opacity: 1; }
+
+        .live-dot {
+            width: 10px; height: 10px; background: #ef4444; border-radius: 50%;
+            animation: livePulse 1.6s infinite;
+        }
+        @keyframes livePulse {
+            0%{box-shadow:0 0 0 0 rgba(239,68,68,0.7)}
+            70%{box-shadow:0 0 0 12px rgba(239,68,68,0)}
+            100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}
+        }
+
+        .path-line {
+            height: 3px;
+            background: linear-gradient(90deg, #e8c547, #3b82f6, #10b981, #e8c547);
+            background-size: 200% 100%;
+            animation: pathFlow 4s linear infinite;
+            border-radius: 99px;
+        }
+        @keyframes pathFlow { 0%{background-position:0% 50%} 100%{background-position:200% 50%} }
+
+        .badge-xp {
+            background: linear-gradient(135deg, #e8c547, #c9a227);
+            color: #000; font-weight: 800; font-size: 10px;
+            letter-spacing: 0.08em; padding: 3px 10px; border-radius: 99px;
+        }
+    
+        .hub-card{background:linear-gradient(145deg,rgba(22,28,39,.95),rgba(14,18,25,.98));border:1px solid rgba(232,197,71,.18);border-radius:1.5rem}
+        .xp-bar{height:10px;background:#1e293b;border-radius:99px;overflow:hidden}
+        .xp-fill{height:100%;background:linear-gradient(90deg,#e8c547,#f59e0b);border-radius:99px;transition:width .6s ease}
+        .mission-btn{transition:transform .2s,box-shadow .2s}
+        .mission-btn:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(232,197,71,.25)}
+        .streak-fire{animation:flicker 1.5s infinite alternate}
+        @keyframes flicker{from{transform:scale(1)}to{transform:scale(1.15)}}
+
+    </style>
 </head>
-<body class="bg-[#0a0a0f] text-white min-h-screen">
+<body>
+    <div class="stars"></div>
 
-  <!-- Status bar mock -->
-  <div class="flex justify-between items-center px-4 pt-3 pb-1 text-xs text-gray-400">
-    <span>2:14 PM</span>
-    <div class="flex gap-1 items-center">
-      <span>LTE</span>
-      <div class="w-6 h-3 border border-gray-500 rounded-sm relative">
-        <div class="absolute right-0 top-0 bottom-0 w-1 bg-gray-500"></div>
-      </div>
+    <div id="loader">
+        <div class="knight-bounce">♞</div>
+        <p class="mt-7 text-xs font-black uppercase tracking-[0.45em] text-amber-400/80">Mind Masters Academy</p>
+        <p class="mt-2 text-[10px] text-slate-500 uppercase tracking-widest">Your adventure begins...</p>
     </div>
-  </div>
 
-  <!-- Header -->
-  <header class="flex items-center justify-between px-4 py-3">
-    <div class="flex items-center gap-2">
-      <div class="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-xl flex items-center justify-center text-black font-bold text-lg">♞</div>
-      <div>
-        <div class="font-bold text-sm tracking-wide">MIND MASTERS</div>
-        <div class="text-[10px] text-yellow-500/80 tracking-widest">ADVENTURE ACADEMY</div>
-      </div>
-    </div>
-    <button class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-    </button>
-  </header>
-
-  <!-- Hero -->
-  <section class="relative px-4 pt-6 pb-8 text-center overflow-hidden">
-    <div class="absolute inset-0 opacity-20 pointer-events-none">
-      <div class="absolute top-10 left-6 text-6xl">♛</div>
-      <div class="absolute top-20 right-8 text-5xl">♞</div>
-      <div class="absolute bottom-4 left-1/3 text-4xl">♟</div>
-    </div>
-    
-    <div class="text-xs tracking-[0.2em] text-yellow-400/90 mb-2 flex items-center justify-center gap-2">
-      <span class="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>
-      SEASON OF CHAMPIONS 2026
-    </div>
-    
-    <h1 class="text-4xl font-extrabold leading-tight mb-1">
-      BEGIN YOUR<br>
-      <span class="bg-gradient-to-r from-yellow-300 via-yellow-400 to-orange-400 bg-clip-text text-transparent">CHESS QUEST</span>
-    </h1>
-    
-    <p class="text-xs text-gray-400 tracking-widest mt-2 mb-6">
-      TRAIN • BATTLE • LEVEL UP • BECOME A MASTER
-    </p>
-
-    <!-- CTA Buttons -->
-    <div class="flex gap-3 justify-center">
-      <button class="flex-1 max-w-[160px] bg-gradient-to-r from-yellow-400 to-orange-500 text-black font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 glow-orange active:scale-95 transition">
-        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"/></svg>
-        START QUEST
-      </button>
-      
-      <!-- Attractive Battle AI button -->
-      <button class="flex-1 max-w-[160px] bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 glow-cyan active:scale-95 transition relative overflow-hidden">
-        <div class="absolute inset-0 bg-white/10 animate-pulse"></div>
-        <svg class="w-5 h-5 relative z-10" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 110 2h-1v1a7 7 0 01-7 7h-1v1.27c.6.34 1 .99 1 1.73a2 2 0 11-4 0c0-.74.4-1.39 1-1.73V19H9a7 7 0 01-7-7v-1H1a1 1 0 110-2h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2M7.5 13a1.5 1.5 0 100-3 1.5 1.5 0 000 3m9 0a1.5 1.5 0 100-3 1.5 1.5 0 000 3"/></svg>
-        <span class="relative z-10">BATTLE AI</span>
-      </button>
-    </div>
-  </section>
-
-  <!-- Welcome Card -->
-  <section class="mx-4 mb-4 bg-[#16161f] rounded-2xl p-4 border border-white/5 relative">
-    <div class="flex items-start gap-3">
-      <div class="relative">
-        <div class="w-14 h-14 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-2xl">🧑</div>
-        <div class="absolute -bottom-1 -right-1 bg-yellow-400 text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full">Lv1</div>
-      </div>
-      
-      <div class="flex-1">
-        <div class="font-semibold text-lg">Welcome back, Dotun!</div>
-        <div class="flex items-center gap-2 mt-1 text-sm">
-          <span class="text-orange-400">🔥 1 day streak</span>
-          <span class="text-cyan-400 text-xs flex items-center gap-1">
-            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-            Freeze
-          </span>
+    <nav class="fixed w-full z-[100] px-5 py-3.5 flex justify-between items-center nav-glass">
+        <a href="index.html" class="flex items-center gap-2.5 group">
+            <div class="w-10 h-10 bg-gradient-to-br from-amber-300 to-amber-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/25 group-hover:scale-110 transition">
+                <i class="fas fa-chess-knight text-black text-lg"></i>
+            </div>
+            <div>
+                <span class="font-black tracking-tighter text-base text-white uppercase block leading-none">Mind Masters</span>
+                <span class="text-[8px] text-amber-400 font-bold uppercase tracking-[0.2em]">Adventure Academy</span>
+            </div>
+        </a>
+        <div class="relative">
+            <input type="checkbox" id="menu-toggle" class="absolute w-11 h-11 opacity-0 z-[110] cursor-pointer">
+            <div class="relative z-[105] p-2.5 bg-white/5 rounded-xl border border-white/10 space-y-1.5">
+                <div class="w-5 h-0.5 bg-white rounded"></div>
+                <div class="w-5 h-0.5 bg-white rounded"></div>
+                <div class="w-3.5 h-0.5 bg-amber-400 rounded"></div>
+            </div>
+            <div id="nav-overlay" class="fixed top-0 left-0 w-full h-screen bg-[#07090f]/97 translate-x-full opacity-0 transition-all duration-500 flex flex-col items-center justify-center z-[100]">
+                <ul class="text-center space-y-7 text-4xl md:text-5xl font-serif font-black italic text-amber-400">
+                    <li><a href="index.html" class="hover:text-white transition">Home</a></li>
+                    <li><a href="assessments.html" class="hover:text-white transition">Quests & Tests</a></li>
+                    <li><a href="class.html" class="hover:text-white transition">Live Class</a></li>
+                    <li><a href="play-ai.html" class="hover:text-white transition">Battle AI</a></li>
+                    <li><a href="tournament.html" class="hover:text-white transition">Tournament</a></li>
+                    <li><a href="online.html" class="hover:text-white transition">Live Arena</a></li>
+                    <li><a href="workbooks.html" class="hover:text-white transition">Workbooks</a></li>
+                    <li><a href="puzzles.html" class="hover:text-white transition">Puzzles</a></li>
+                    <li><a href="correspondence.html" class="hover:text-white transition">Arena</a></li>
+                </ul>
+                <label for="menu-toggle" class="mt-14 text-slate-500 text-sm uppercase tracking-widest cursor-pointer hover:text-white">Close</label>
+            </div>
         </div>
-        <div class="text-xs text-gray-400 mt-1">5 / 100 XP • Pawn Recruit</div>
+    </nav>
+
+    <header class="relative pt-32 pb-28 px-5 text-center hero-bg overflow-hidden">
+        <div class="float-piece" style="top:15%;left:6%;animation-delay:0s">♔</div>
+        <div class="float-piece" style="top:35%;right:7%;animation-delay:2s">♕</div>
+        <div class="float-piece" style="top:55%;left:12%;animation-delay:5s">♜</div>
+        <div class="float-piece" style="top:22%;right:18%;animation-delay:8s">♞</div>
+        <div class="float-piece" style="top:70%;right:10%;animation-delay:3s">♝</div>
+
+        <div class="relative z-10 max-w-4xl mx-auto">
+            <div data-aos="zoom-in" class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-black uppercase tracking-[0.28em] mb-7">
+                <span class="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
+                Season of Champions 2026
+            </div>
+            <h1 data-aos="fade-up" class="text-5xl sm:text-6xl md:text-8xl font-black mb-3 tracking-tighter uppercase italic text-white leading-none font-serif">
+                BEGIN YOUR<br><span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-amber-600">CHESS QUEST</span>
+            </h1>
+            <p data-aos="fade-up" data-aos-delay="80" class="text-slate-400 font-semibold tracking-[0.25em] text-xs uppercase mt-4">Train • Battle • Level Up • Become a Master</p>
+            <div data-aos="fade-up" data-aos-delay="160" class="mt-10 flex flex-wrap justify-center gap-3">
+                <a href="assessments.html" class="inline-flex items-center gap-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-black px-7 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-amber-500/30 hover:scale-105 transition">
+                    <i class="fas fa-scroll"></i> Start Quest
+                </a>
+                <a href="play-ai.html" class="inline-flex items-center gap-2.5 bg-white/8 border border-white/15 text-white px-7 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-white/12 transition">
+                    <i class="fas fa-robot"></i> Battle AI
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <main class="relative z-10 max-w-6xl mx-auto px-4 pb-24 -mt-14 space-y-10">
         
-        <!-- XP Bar + Near miss -->
-        <div class="mt-2">
-          <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
-            <div class="progress-bar h-full rounded-full" style="width: 5%"></div>
-          </div>
-          <div class="text-[11px] text-yellow-400 mt-1 font-medium">Almost Level 2! Only 95 XP left</div>
+    <!-- PLAYER HUB -->
+    <section class="relative z-10 px-4 -mt-8 mb-10 max-w-5xl mx-auto" id="player-hub">
+        <div class="hub-card p-5 md:p-7" data-aos="fade-up">
+            <div class="flex flex-col md:flex-row md:items-center gap-5">
+                <div class="flex items-center gap-4 flex-1">
+                    <div class="relative">
+                        <img id="hub-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=Hero&backgroundColor=b6e3f4" class="w-16 h-16 md:w-20 md:h-20 rounded-2xl border-2 border-amber-400/50 bg-slate-800" alt="You">
+                        <span class="absolute -bottom-1 -right-1 bg-amber-500 text-black text-[10px] font-black px-1.5 py-0.5 rounded-md" id="hub-level">Lv1</span>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-2 mb-1">
+                            <h2 class="text-lg md:text-xl font-black text-white truncate" id="hub-greeting">Welcome, Hero!</h2>
+                            <span class="streak-fire text-lg" id="hub-streak-icon" title="Day streak">🔥</span>
+                            <span class="text-amber-400 font-black text-sm" id="hub-streak">0 day streak</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs text-slate-400 mb-2">
+                            <span id="hub-xp-label">0 / 100 XP</span>
+                            <span class="text-slate-600">•</span>
+                            <span id="hub-title">Pawn Recruit</span>
+                        </div>
+                        <div class="xp-bar max-w-xs"><div class="xp-fill" id="hub-xp-bar" style="width:0%"></div></div>
+                    </div>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-2 md:items-end">
+                    <input id="hub-name-input" type="text" maxlength="20" placeholder="Your name" class="bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-amber-500 w-full sm:w-40">
+                    <button onclick="saveHubName()" class="bg-white/10 hover:bg-white/15 text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest">Save</button>
+                </div>
+            </div>
+            <div class="grid sm:grid-cols-3 gap-3 mt-6">
+                <a href="#" id="mission-link" class="mission-btn block rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 text-black p-4 text-center">
+                    <div class="text-[10px] font-black uppercase tracking-widest opacity-80 mb-1">Today's Mission</div>
+                    <div class="font-black text-sm" id="mission-text">Play a game</div>
+                </a>
+                <a href="puzzles.html" class="mission-btn block rounded-2xl bg-white/5 border border-white/10 p-4 text-center hover:border-purple-400/40">
+                    <div class="text-[10px] font-black uppercase tracking-widest text-purple-400 mb-1">Daily Puzzle</div>
+                    <div class="font-bold text-sm text-white">Solve on Lichess →</div>
+                </a>
+                <a href="play-ai.html" class="mission-btn block rounded-2xl bg-white/5 border border-white/10 p-4 text-center hover:border-blue-400/40">
+                    <div class="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-1">Next Rival</div>
+                    <div class="font-bold text-sm text-white" id="next-rival">Challenge Pip</div>
+                </a>
+            </div>
+            <div class="flex flex-wrap gap-2 mt-4" id="hub-badges"></div>
         </div>
-      </div>
-      
-      <!-- Customize Avatar -->
-      <button class="flex flex-col items-center gap-1 text-xs text-gray-300">
-        <div class="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+    </section>
+
+
+        <!-- Adventure Path -->
+        <div data-aos="fade-up" class="quest-card p-6 md:p-8">
+            <div class="flex items-center justify-between mb-5">
+                <h3 class="text-lg font-black italic uppercase text-white tracking-tight">Your Adventure Path</h3>
+                <span class="badge-xp">+XP EVERY WEEK</span>
+            </div>
+            <div class="path-line mb-6"></div>
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
+                <div class="bg-white/5 rounded-xl p-4 border border-emerald-500/20">
+                    <div class="text-2xl mb-1">♟</div>
+                    <div class="text-[11px] font-black text-emerald-400">Nursery 2</div>
+                    <div class="text-[9px] text-slate-500">Pieces & Board</div>
+                </div>
+                <div class="bg-white/5 rounded-xl p-4 border border-blue-500/20">
+                    <div class="text-2xl mb-1">♞</div>
+                    <div class="text-[11px] font-black text-blue-400">Grade 1</div>
+                    <div class="text-[9px] text-slate-500">Moves & Check</div>
+                </div>
+                <div class="bg-white/5 rounded-xl p-4 border border-purple-500/20">
+                    <div class="text-2xl mb-1">♝</div>
+                    <div class="text-[11px] font-black text-purple-400">Grade 2</div>
+                    <div class="text-[9px] text-slate-500">Mates & Draws</div>
+                </div>
+                <div class="bg-white/5 rounded-xl p-4 border border-rose-500/20">
+                    <div class="text-2xl mb-1">♜</div>
+                    <div class="text-[11px] font-black text-rose-400">Grade 3-4</div>
+                    <div class="text-[9px] text-slate-500">Strategy</div>
+                </div>
+                <div class="bg-white/5 rounded-xl p-4 border border-amber-500/20">
+                    <div class="text-2xl mb-1">♛</div>
+                    <div class="text-[11px] font-black text-amber-400">Grade 5</div>
+                    <div class="text-[9px] text-slate-500">Master Level</div>
+                </div>
+            </div>
         </div>
-        Customize
-      </button>
-    </div>
+
+        <!-- Quest Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <a href="assessments.html" data-aos="fade-up" class="quest-card p-7 group block">
+                <div class="icon-glow bg-amber-500/15 text-amber-400 mb-5"><i class="fas fa-scroll"></i></div>
+                <div class="flex items-center gap-2 mb-1.5">
+                    <h3 class="text-lg font-black uppercase italic text-white tracking-tight">Weekly Quests</h3>
+                    <span class="badge-xp">NEW</span>
+                </div>
+                <p class="text-sm text-slate-400 leading-relaxed">Term-by-term multiple choice tests. Instant scores, stars & badges. Climb the ranks!</p>
+                <div class="mt-5 text-amber-400 text-xs font-black uppercase tracking-widest flex items-center gap-2 group-hover:gap-3 transition-all">
+                    Take Assessment <i class="fas fa-arrow-right"></i>
+                </div>
+            </a>
+
+            <a href="class.html" data-aos="fade-up" data-aos-delay="40" class="quest-card p-7 group block">
+                <div class="icon-glow bg-rose-500/15 text-rose-400 mb-5"><i class="fas fa-chalkboard-teacher"></i></div>
+                <div class="flex items-center gap-2 mb-1.5">
+                    <h3 class="text-lg font-black uppercase italic text-white tracking-tight">Live Class</h3>
+                    <span class="live-dot"></span>
+                </div>
+                <p class="text-sm text-slate-400 leading-relaxed">One-on-one coaching with your master. Real-time board & personal feedback.</p>
+                <div class="mt-5 text-rose-400 text-xs font-black uppercase tracking-widest flex items-center gap-2 group-hover:gap-3 transition-all">
+                    Enter Classroom <i class="fas fa-arrow-right"></i>
+                </div>
+            </a>
+
+            <a href="play-ai.html" data-aos="fade-up" data-aos-delay="80" class="quest-card p-7 group block">
+                <div class="icon-glow bg-blue-500/15 text-blue-400 mb-5"><i class="fas fa-robot"></i></div>
+                <h3 class="text-lg font-black uppercase italic text-white tracking-tight mb-1.5">Battle the AI</h3>
+                <p class="text-sm text-slate-400 leading-relaxed">5 difficulty levels. Defeat Level 5 (~1700 Elo) to earn the Master badge.</p>
+                <div class="mt-5 text-blue-400 text-xs font-black uppercase tracking-widest flex items-center gap-2 group-hover:gap-3 transition-all">
+                    Choose Opponent <i class="fas fa-arrow-right"></i>
+                </div>
+            </a>
+
+            
+            
+            <a href="online.html" data-aos="fade-up" data-aos-delay="110" class="quest-card p-7 group block">
+                <div class="w-14 h-14 rounded-2xl bg-emerald-500/15 flex items-center justify-center mb-5 text-3xl group-hover:scale-110 transition">⚡</div>
+                <h3 class="text-lg font-black text-white uppercase tracking-tight mb-2 group-hover:text-emerald-400 transition">Live Online Arena</h3>
+                <p class="text-slate-400 text-sm leading-relaxed mb-4">Play real kids live. Enter your name, find an opponent, play rated games.</p>
+                <span class="text-emerald-400 text-xs font-bold uppercase tracking-widest">Find a Game →</span>
+            </a>
+
+            <a href="tournament.html" data-aos="fade-up" data-aos-delay="100" class="quest-card p-7 group block">
+                <div class="w-14 h-14 rounded-2xl bg-purple-500/15 flex items-center justify-center mb-5 text-3xl group-hover:scale-110 transition">👑</div>
+                <h3 class="text-lg font-black text-white uppercase tracking-tight mb-2 group-hover:text-purple-400 transition">Adventure Tournament</h3>
+                <p class="text-slate-400 text-sm leading-relaxed mb-4">5-stage AI quest. Earn titles, rating points, and become Champion of the Path.</p>
+                <span class="text-purple-400 text-xs font-bold uppercase tracking-widest">Enter the Path →</span>
+            </a>
+
+<a href="workbooks.html" data-aos="fade-up" data-aos-delay="120" class="quest-card p-7 group block">
+                <div class="icon-glow bg-emerald-500/15 text-emerald-400 mb-5"><i class="fas fa-book-open"></i></div>
+                <h3 class="text-lg font-black uppercase italic text-white tracking-tight mb-1.5">Workbooks</h3>
+                <p class="text-sm text-slate-400 leading-relaxed">Full syllabus with explanations. Learn the theory before you take the quests.</p>
+                <div class="mt-5 text-emerald-400 text-xs font-black uppercase tracking-widest flex items-center gap-2 group-hover:gap-3 transition-all">
+                    Study Now <i class="fas fa-arrow-right"></i>
+                </div>
+            </a>
+
+            <a href="puzzles.html" data-aos="fade-up" data-aos-delay="160" class="quest-card p-7 group block">
+                <div class="icon-glow bg-purple-500/15 text-purple-400 mb-5"><i class="fas fa-puzzle-piece"></i></div>
+                <h3 class="text-lg font-black uppercase italic text-white tracking-tight mb-1.5">Puzzle Arena</h3>
+                <p class="text-sm text-slate-400 leading-relaxed">Unlimited free puzzles. No login. Train tactics every single day.</p>
+                <div class="mt-5 text-purple-400 text-xs font-black uppercase tracking-widest flex items-center gap-2 group-hover:gap-3 transition-all">
+                    Solve Puzzles <i class="fas fa-arrow-right"></i>
+                </div>
+            </a>
+
+            <a href="correspondence.html" data-aos="fade-up" data-aos-delay="200" class="quest-card p-7 group block">
+                <div class="icon-glow bg-cyan-500/15 text-cyan-400 mb-5"><i class="fas fa-trophy"></i></div>
+                <h3 class="text-lg font-black uppercase italic text-white tracking-tight mb-1.5">Championship Arena</h3>
+                <p class="text-sm text-slate-400 leading-relaxed">Play friends, climb the school leaderboard and become a legend.</p>
+                <div class="mt-5 text-cyan-400 text-xs font-black uppercase tracking-widest flex items-center gap-2 group-hover:gap-3 transition-all">
+                    Enter Arena <i class="fas fa-arrow-right"></i>
+                </div>
+            </a>
+        </div>
+
+        <div data-aos="zoom-in" class="quest-card p-10 md:p-14 text-center relative overflow-hidden">
+            <div class="absolute -right-8 -top-8 text-[11rem] text-amber-500/5 font-serif leading-none">♞</div>
+            <p class="text-2xl md:text-3xl font-serif italic text-white relative z-10 leading-snug">
+                “Every champion was once a beginner who refused to give up.”
+            </p>
+            <p class="mt-4 text-amber-400/80 text-sm font-bold uppercase tracking-widest">Mind Masters Academy</p>
+        </div>
+
+        <a href="ecobank.html" data-aos="fade-up" class="block quest-card p-7 md:p-9 bg-gradient-to-r from-blue-950/50 to-indigo-950/40 border-blue-500/25 group">
+            <div class="flex flex-col md:flex-row items-center justify-between gap-5">
+                <div class="flex items-center gap-4">
+                    <div class="w-14 h-14 bg-blue-500/20 rounded-2xl flex items-center justify-center text-3xl">🏆</div>
+                    <div>
+                        <p class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-0.5">Featured Event</p>
+                        <h3 class="text-xl font-black italic uppercase text-white">Ecobank Pre Tournament 2026</h3>
+                    </div>
+                </div>
+                <div class="bg-blue-500 text-white px-7 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest group-hover:bg-white group-hover:text-blue-600 transition">
+                    Join Event
+                </div>
+            </div>
+        </a>
+    </main>
+
+    <footer class="relative z-10 py-14 bg-black/40 border-t border-white/5 text-center">
+        <div class="max-w-3xl mx-auto px-5">
+            <div class="flex justify-center items-center gap-2.5 mb-5">
+                <div class="w-9 h-9 bg-amber-500 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-chess-knight text-black"></i>
+                </div>
+                <span class="text-xl font-black italic uppercase tracking-tighter text-white">Mind <span class="text-amber-400">Masters</span></span>
+            </div>
+            <p class="text-slate-500 text-sm mb-7">Where young champions are forged through strategy, courage and daily practice.</p>
+            <div class="flex flex-wrap justify-center gap-4 mb-8 text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                <a href="assessments.html" class="hover:text-amber-400 transition">Quests</a>
+                <a href="class.html" class="hover:text-amber-400 transition">Live Class</a>
+                <a href="play-ai.html" class="hover:text-amber-400 transition">Battle AI</a>
+                <a href="tournament.html" class="hover:text-amber-400 transition">Tournament</a>
+                <a href="online.html" class="hover:text-amber-400 transition">Live Arena</a>
+                <a href="workbooks.html" class="hover:text-amber-400 transition">Workbooks</a>
+                <a href="puzzles.html" class="hover:text-amber-400 transition">Puzzles</a>
+            </div>
+            <a href="https://wa.me/2348025028105" target="_blank" class="inline-flex items-center gap-2.5 bg-[#25d366] px-7 py-3 rounded-full text-white font-black text-xs uppercase tracking-widest hover:scale-105 transition shadow-lg">
+                <i class="fab fa-whatsapp text-base"></i> WhatsApp Support
+            </a>
+            <p class="text-[9px] text-slate-600 font-black uppercase tracking-[0.35em] mt-10">
+                © 2026 Mind Masters Academy • www.mrdotun.name.ng
+            </p>
+        </div>
+    </footer>
+
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+    <script>
+        window.addEventListener('load', () => {
+            const loader = document.getElementById('loader');
+            setTimeout(() => {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.style.display = 'none', 600);
+            }, 1000);
+        });
+        AOS.init({ duration: 750, once: true, offset: 30 });
+    </script>
+
+    <!-- Floating WhatsApp -->
+    <a href="https://wa.me/2348025028105" target="_blank" class="wa-float" title="Chat with Coach">
+        <i class="fab fa-whatsapp"></i>
+    </a>
+    <style>
+    .wa-float {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        width: 60px;
+        height: 60px;
+        background: #25d366;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+        box-shadow: 0 8px 25px rgba(37,211,102,0.45);
+        z-index: 999;
+        transition: transform 0.3s, box-shadow 0.3s;
+        animation: wa-bounce 2.5s infinite;
+    }
+    .wa-float:hover { transform: scale(1.12); box-shadow: 0 12px 35px rgba(37,211,102,0.6); }
+    @keyframes wa-bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-8px); }
+    }
     
-    <!-- Name edit (kept from original) -->
-    <div class="mt-4">
-      <input type="text" value="Dotun" class="w-full bg-[#0e0e14] border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-yellow-500/50" />
-      <button class="w-full mt-2 bg-white/5 hover:bg-white/10 text-sm font-medium py-2.5 rounded-xl transition">SAVE</button>
-    </div>
-  </section>
+        .hub-card{background:linear-gradient(145deg,rgba(22,28,39,.95),rgba(14,18,25,.98));border:1px solid rgba(232,197,71,.18);border-radius:1.5rem}
+        .xp-bar{height:10px;background:#1e293b;border-radius:99px;overflow:hidden}
+        .xp-fill{height:100%;background:linear-gradient(90deg,#e8c547,#f59e0b);border-radius:99px;transition:width .6s ease}
+        .mission-btn{transition:transform .2s,box-shadow .2s}
+        .mission-btn:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(232,197,71,.25)}
+        .streak-fire{animation:flicker 1.5s infinite alternate}
+        @keyframes flicker{from{transform:scale(1)}to{transform:scale(1.15)}}
 
-  <!-- Daily Chests -->
-  <section class="mx-4 mb-4">
-    <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-      <div class="chest flex-shrink-0 w-14 h-14 bg-gradient-to-b from-yellow-600 to-yellow-800 rounded-xl flex items-center justify-center text-2xl border border-yellow-400/40">📦</div>
-      <div class="chest flex-shrink-0 w-14 h-14 bg-gradient-to-b from-blue-600 to-blue-800 rounded-xl flex items-center justify-center text-2xl border border-blue-400/40">📦</div>
-      <div class="chest flex-shrink-0 w-14 h-14 bg-gradient-to-b from-orange-600 to-orange-800 rounded-xl flex items-center justify-center text-2xl border border-orange-400/40">📦</div>
-      <div class="chest flex-shrink-0 w-14 h-14 bg-gradient-to-b from-purple-600 to-purple-800 rounded-xl flex items-center justify-center text-2xl border border-purple-400/40">📦</div>
-      <div class="chest flex-shrink-0 w-14 h-14 bg-gradient-to-b from-emerald-600 to-emerald-800 rounded-xl flex items-center justify-center text-2xl border border-emerald-400/40">📦</div>
-    </div>
-    <button class="w-full mt-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold py-3 rounded-2xl glow-cyan flex items-center justify-center gap-2">
-      <span>🎁</span> Open daily chest
-    </button>
-  </section>
+    </style>
 
-  <!-- Story Mode -->
-  <section class="mx-4 mb-4 bg-[#16161f] rounded-2xl p-4 border border-white/5 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <div class="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center text-xl">👑</div>
-      <div>
-        <div class="font-semibold text-sm">Story Mode – Chapter 1</div>
-        <div class="h-1.5 w-32 bg-gray-700 rounded-full mt-1 overflow-hidden">
-          <div class="h-full bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full" style="width: 35%"></div>
-        </div>
-      </div>
-    </div>
-    <button class="bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-xs font-bold px-4 py-2 rounded-xl">Continue Adventure</button>
-  </section>
 
-  <!-- Mini Leaderboard + Friend Challenge -->
-  <section class="mx-4 mb-4 grid grid-cols-5 gap-3">
-    <div class="col-span-3 bg-[#16161f] rounded-2xl p-3 border border-white/5">
-      <div class="text-xs text-gray-400 mb-2 font-medium">TOP FRIENDS</div>
-      <div class="space-y-2 text-sm">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="text-yellow-400">1.</span>
-            <span>Dotun / Jarzer</span>
-          </div>
-          <span class="text-cyan-400 text-xs">12.7k XP</span>
-        </div>
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="text-gray-400">2.</span>
-            <span>RüitayLakee</span>
-          </div>
-          <span class="text-cyan-400 text-xs">12.3k XP</span>
-        </div>
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="text-orange-400">3.</span>
-            <span>Fintrv / Jambay</span>
-          </div>
-          <span class="text-cyan-400 text-xs">11.4k XP</span>
-        </div>
-      </div>
-    </div>
-    
-    <div class="col-span-2 bg-gradient-to-br from-purple-600/30 to-pink-600/20 rounded-2xl p-3 border border-purple-500/30 flex flex-col items-center justify-center text-center">
-      <div class="text-2xl mb-1">⚔️</div>
-      <div class="text-xs font-bold leading-tight">Friend Challenge</div>
-      <div class="text-[10px] text-purple-300 mt-1">Invite now</div>
-    </div>
-  </section>
+<script>
+(function(){
+  const TITLES=['Pawn Recruit','Knight Cadet','Bishop Buddy','Rook Rookie','Queen Quest','King of Club','Mind Master'];
+  const MISSIONS=[
+    {text:'Beat Pip in Battle AI',href:'play-ai.html'},
+    {text:'Solve 3 puzzles',href:'puzzles.html'},
+    {text:'Finish a Weekly Quest',href:'assessments.html'},
+    {text:'Play Live Arena',href:'online.html'},
+    {text:'Try the Tournament',href:'tournament.html'},
+    {text:'Challenge Nia',href:'play-ai.html'},
+    {text:'Study a Workbook page',href:'workbooks.html'}
+  ];
+  function todayKey(){const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()}
+  function loadProg(){
+    try{return JSON.parse(localStorage.getItem('mm_progress')||'{}')}catch(e){return {}}
+  }
+  function saveProg(p){localStorage.setItem('mm_progress',JSON.stringify(p))}
+  function ensureStreak(p){
+    const t=todayKey();
+    if(p.lastVisit===t)return p;
+    const y=new Date();y.setDate(y.getDate()-1);
+    const yk=y.getFullYear()+'-'+(y.getMonth()+1)+'-'+y.getDate();
+    if(p.lastVisit===yk)p.streak=(p.streak||0)+1;
+    else p.streak=1;
+    p.lastVisit=t;
+    p.xp=(p.xp||0)+5; // daily visit XP
+    saveProg(p);
+    return p;
+  }
+  function levelFromXp(xp){return Math.floor((xp||0)/100)+1}
+  function titleFromLevel(lv){return TITLES[Math.min(lv-1,TITLES.length-1)]}
+  window.saveHubName=function(){
+    const n=document.getElementById('hub-name-input').value.trim();
+    if(!n)return;
+    const p=loadProg();p.name=n;saveProg(p);
+    localStorage.setItem('mm_online_name',n);
+    renderHub();
+  };
+  function renderHub(){
+    let p=loadProg();
+    p=ensureStreak(p);
+    const name=p.name||localStorage.getItem('mm_online_name')||'';
+    const xp=p.xp||0;
+    const lv=levelFromXp(xp);
+    const into=xp%100;
+    const unlocked=p.unlockedLevel||1;
+    const rivals=['Pip','Nia','Rex','Luna','Kai','Zara','Omar','Nova'];
+    const next=rivals[Math.min(unlocked,rivals.length)-1]||'Pip';
+    if(name){
+      document.getElementById('hub-greeting').textContent='Welcome back, '+name+'!';
+      document.getElementById('hub-name-input').value=name;
+      document.getElementById('hub-avatar').src='https://api.dicebear.com/7.x/avataaars/svg?seed='+encodeURIComponent(name)+'&backgroundColor=b6e3f4';
+    }
+    document.getElementById('hub-level').textContent='Lv'+lv;
+    document.getElementById('hub-streak').textContent=(p.streak||0)+' day streak';
+    document.getElementById('hub-xp-label').textContent=into+' / 100 XP';
+    document.getElementById('hub-xp-bar').style.width=into+'%';
+    document.getElementById('hub-title').textContent=titleFromLevel(lv);
+    document.getElementById('next-rival').textContent='Challenge '+next;
+    const day=new Date().getDay();
+    const m=MISSIONS[day%MISSIONS.length];
+    document.getElementById('mission-text').textContent=m.text;
+    document.getElementById('mission-link').href=m.href;
+    // badges
+    const badges=[];
+    if((p.streak||0)>=3)badges.push('🔥 Streak 3');
+    if((p.streak||0)>=7)badges.push('🔥 Week Warrior');
+    if(lv>=3)badges.push('⭐ Rising Star');
+    if(lv>=5)badges.push('👑 Club King');
+    if((p.aiWins||0)>=1)badges.push('🤖 AI Slayer');
+    if((p.questWins||0)>=1)badges.push('📜 Quest Done');
+    const box=document.getElementById('hub-badges');
+    box.innerHTML=badges.length?badges.map(b=>'<span class="text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/25 px-2.5 py-1 rounded-full">'+b+'</span>').join(''):'<span class="text-[10px] text-slate-600">Play games & quests to earn badges!</span>';
+  }
+  if(document.getElementById('player-hub'))renderHub();
+})();
+</script>
 
-  <!-- Today's Mission -->
-  <section class="mx-4 mb-8">
-    <button class="w-full bg-gradient-to-r from-yellow-400 to-orange-500 text-black font-bold py-4 rounded-2xl glow-orange text-sm">
-      TODAY’S MISSION<br>
-      <span class="text-base">Study a Workbook page</span>
-    </button>
-  </section>
-
-  <!-- Floating WhatsApp -->
-  <a href="#" class="fixed bottom-6 right-5 w-14 h-14 bg-[#25D366] rounded-full flex items-center justify-center shadow-lg shadow-green-500/30">
-    <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-  </a>
-
-  <script>
-    // Simple interactivity for demo
-    document.querySelectorAll('.chest').forEach(chest => {
-      chest.addEventListener('click', () => {
-        chest.style.transform = 'scale(1.15)';
-        setTimeout(() => chest.style.transform = '', 200);
-        alert('🎁 Chest opened! +25 XP + rare pawn skin unlocked');
-      });
-    });
-  </script>
 </body>
 </html>
