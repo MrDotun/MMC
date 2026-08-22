@@ -277,6 +277,52 @@ const levelConfig={
           win:["A hard-fought win!","Respect!"],
           lose:["You are a true Mind Master!","Incredible!"]}}
 };
+
+// —— Progress & unlocks ——
+function loadMMProgress(){try{return JSON.parse(localStorage.getItem('mm_progress')||'{}')}catch(e){return {}}}
+function saveMMProgress(p){localStorage.setItem('mm_progress',JSON.stringify(p))}
+function maxUnlockedLevel(){
+  const p=loadMMProgress();
+  return Math.min(8, Math.max(1, p.unlockedLevel||1));
+}
+function unlockNext(levelBeaten){
+  const p=loadMMProgress();
+  const cur=p.unlockedLevel||1;
+  if(levelBeaten>=cur && cur<8){
+    p.unlockedLevel=cur+1;
+    saveMMProgress(p);
+    return p.unlockedLevel;
+  }
+  return cur;
+}
+function awardXP(amount){
+  const p=loadMMProgress();
+  p.xp=(p.xp||0)+amount;
+  p.aiWins=(p.aiWins||0)+1;
+  saveMMProgress(p);
+}
+function refreshCharacterLocks(){
+  const max=maxUnlockedLevel();
+  document.querySelectorAll('[data-group="level"]').forEach(btn=>{
+    const lv=parseInt(btn.dataset.val);
+    if(lv>max){
+      btn.classList.add('opacity-40');
+      btn.style.pointerEvents='none';
+      if(!btn.querySelector('.lock-tag')){
+        const t=document.createElement('div');
+        t.className='lock-tag text-[8px] text-rose-400';
+        t.textContent='🔒 Beat Lv'+(lv-1);
+        btn.appendChild(t);
+      }
+    } else {
+      btn.classList.remove('opacity-40');
+      btn.style.pointerEvents='';
+      const t=btn.querySelector('.lock-tag');
+      if(t)t.remove();
+    }
+  });
+}
+
 function pickLine(level, kind){
   const L=levelConfig[level];
   if(!L||!L.lines||!L.lines[kind]||!L.lines[kind].length)return '';
@@ -545,8 +591,15 @@ function updateStatus(){
     const youWin=game.turn()!==playerColor;
     const nm=(levelConfig[settings.level]&&levelConfig[settings.level].name)||'AI';
     status=youWin?'🎉 You win by checkmate!':'Checkmate — '+nm+' wins';
-    if(youWin){soundWin();recordWin();showSpeech(pickLine(settings.level,'lose'))}
-    else{soundLose();showSpeech(pickLine(settings.level,'win'))}
+    if(youWin){
+      soundWin();recordWin();showSpeech(pickLine(settings.level,'lose'));
+      awardXP(15+settings.level*5);
+      const nu=unlockNext(settings.level);
+      setTimeout(function(){
+        alert('Victory! +XP earned.\nCharacters unlocked up to level '+nu+(nu>settings.level?' — new rival available!':''));
+        refreshCharacterLocks();
+      },400);
+    } else {soundLose();showSpeech(pickLine(settings.level,'win'))}
     stopClock();endLiveGame();
   }else if(game.in_draw()){
     status='Game drawn';stopClock();endLiveGame();
@@ -869,6 +922,17 @@ beep = function(freq, dur, type, vol) {
   _beep(freq, dur, type, vol);
 };
 
+
+(function(){
+  try{
+    const p=JSON.parse(localStorage.getItem('mm_progress')||'{}');
+    const n=p.name||localStorage.getItem('mm_online_name')||'';
+    const el=document.getElementById('player-name');
+    if(el&&n)el.value=n;
+  }catch(e){}
+})();
+
+refreshCharacterLocks();
 loadAILeaderboard();
 loadLiveFeed();
 </script>
