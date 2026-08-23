@@ -510,63 +510,11 @@ body { -webkit-tap-highlight-color: transparent; }
 }
 @media(max-width:640px){ .mute-fab { bottom: calc(72px + env(safe-area-inset-bottom,0px)); } }
 
-
-#chest-modal {
-  position: fixed; inset: 0; z-index: 9500;
-  display: none; align-items: center; justify-content: center;
-  background: radial-gradient(circle at 50% 40%, rgba(250,204,21,0.25), rgba(5,7,13,0.92));
-  backdrop-filter: blur(8px); padding: 1rem;
-}
-#chest-modal.open { display: flex; animation: modalIn 0.35s ease; }
-.chest-boom {
-  background: linear-gradient(160deg, #fbbf24 0%, #f59e0b 25%, #ec4899 55%, #8b5cf6 100%);
-  border-radius: 1.75rem; padding: 3px; max-width: 380px; width: 100%;
-  box-shadow: 0 0 80px rgba(251,191,36,0.55), 0 0 120px rgba(236,72,153,0.35);
-  animation: boomPulse 0.8s ease-in-out infinite alternate;
-}
-@keyframes boomPulse {
-  from { transform: scale(1); filter: brightness(1); }
-  to { transform: scale(1.03); filter: brightness(1.12); }
-}
-.chest-boom-inner {
-  background: linear-gradient(165deg, #1e1b4b 0%, #0f172a 40%, #14532d 100%);
-  border-radius: 1.6rem; padding: 2rem 1.5rem; text-align: center; color: #fff;
-}
-.chest-boom-emoji { font-size: 4rem; animation: spinBounce 0.6s ease; }
-@keyframes spinBounce {
-  0% { transform: scale(0.3) rotate(-20deg); opacity: 0; }
-  60% { transform: scale(1.2) rotate(8deg); }
-  100% { transform: scale(1) rotate(0); opacity: 1; }
-}
-.chest-reward {
-  display: inline-block; margin-top: 0.75rem;
-  background: linear-gradient(90deg, #fde68a, #f9a8d4, #a5b4fc);
-  color: #1e1b4b; font-weight: 900; font-size: 1.35rem;
-  padding: 0.5rem 1.25rem; border-radius: 999px;
-  animation: rewardPop 0.5s 0.2s both;
-}
-@keyframes rewardPop {
-  from { transform: scale(0); }
-  to { transform: scale(1); }
-}
-
 </style>
 </head>
 <body>
 <button type="button" class="mute-fab" id="mute-fab" onclick="toggleMute()" title="Sound on/off">🔊</button>
 
-<div id="chest-modal">
-  <div class="chest-boom">
-    <div class="chest-boom-inner">
-      <div class="chest-boom-emoji" id="chest-modal-emoji">🎁💥</div>
-      <p class="text-[10px] font-black uppercase tracking-widest text-amber-300 mb-1">Treasure explosion!</p>
-      <h2 class="text-2xl font-black italic uppercase text-white mb-2" id="chest-modal-title">Chest Opened!</h2>
-      <div class="chest-reward" id="chest-modal-reward">+25 XP</div>
-      <p class="text-sm text-emerald-200 mt-3 font-semibold" id="chest-modal-msg">You showed up today — champions do that!</p>
-      <button type="button" onclick="closeChestModal()" class="mt-5 w-full bg-gradient-to-r from-amber-300 via-pink-400 to-violet-500 text-black font-black text-xs uppercase tracking-widest py-3.5 rounded-xl">Awesome!</button>
-    </div>
-  </div>
-</div>
 <div id="daily-splash">
   <div class="splash-card">
     <div class="text-5xl mb-3" id="splash-emoji">⚔️</div>
@@ -693,9 +641,11 @@ body { -webkit-tap-highlight-color: transparent; }
                     <div class="flex flex-col gap-2 md:items-end">
                         <div class="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
                         <input id="hub-name-input" type="text" maxlength="20" placeholder="Your hero name" class="bg-black/50 border border-white/12 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-amber-500 w-full sm:w-40">
-                        <input id="hub-school-code" type="text" maxlength="12" placeholder="Choose passcode — do not forget it!" class="bg-black/50 border border-white/12 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-amber-500 w-full sm:w-28" title="Choose a school code or passcode for yourself. Do not forget it!">
-                        <button onclick="saveHubName()" class="bg-white/10 hover:bg-amber-500/20 hover:text-amber-300 text-white px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition">Save</button>
+                        <input id="hub-school-code" type="text" maxlength="12" placeholder="School code" class="bg-black/50 border border-white/12 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-amber-500 w-full sm:w-28" title="Optional club/school code">
+                        <input id="hub-pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="PIN" class="bg-black/50 border border-white/12 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-amber-500 w-full sm:w-24" title="Optional 4–6 digit PIN to protect cloud progress">
+                        <button onclick="saveHubName()" id="hub-save-btn" class="bg-white/10 hover:bg-amber-500/20 hover:text-amber-300 text-white px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition">Save</button>
                         </div>
+                        <p id="hub-cloud-status" class="text-[10px] font-bold text-slate-500">☁ Enter name to sync progress across devices</p>
                         <button type="button" onclick="useStreakFreeze()" id="freeze-btn" class="text-[10px] font-bold uppercase tracking-widest text-sky-400 hover:text-sky-300">❄ Use streak freeze</button>
                     </div>
                 </div>
@@ -1123,7 +1073,110 @@ body { -webkit-tap-highlight-color: transparent; }
   function loadProg(){
     try { return JSON.parse(localStorage.getItem('mm_progress')||'{}'); } catch(e){ return {}; }
   }
-  function saveProg(p){ localStorage.setItem('mm_progress', JSON.stringify(p)); }
+  function saveProg(p, opts){
+    localStorage.setItem('mm_progress', JSON.stringify(p));
+    if (!opts || opts.cloud !== false) scheduleHubCloudPush(p);
+  }
+  function normName(n){ return String(n||'').trim().replace(/\s+/g,' ').toLowerCase(); }
+  function niceName(n){ const x=String(n||'').trim().replace(/\s+/g,' '); return x ? x.replace(/\b\w/g,c=>c.toUpperCase()) : 'Player'; }
+  function playerDocId(n){ return normName(n).replace(/[^a-z0-9]+/g,'_').slice(0,64) || 'anon'; }
+  var _hubPushTimer=null;
+  function scheduleHubCloudPush(p){
+    clearTimeout(_hubPushTimer);
+    _hubPushTimer=setTimeout(function(){ pushHubCloud(p); }, 700);
+  }
+  function setHubCloudStatus(state, msg){
+    var el=document.getElementById('hub-cloud-status');
+    if(!el) return;
+    if(state==='synced'){ el.textContent=msg||'☁ Cloud saved — same progress on any device'; el.className='text-[10px] font-bold text-emerald-400'; }
+    else if(state==='loaded'){ el.textContent=msg||'☁ Progress restored from cloud'; el.className='text-[10px] font-bold text-sky-400'; }
+    else if(state==='syncing'){ el.textContent=msg||'☁ Syncing…'; el.className='text-[10px] font-bold text-amber-400'; }
+    else if(state==='pin'){ el.textContent=msg||'🔒 This name needs your PIN'; el.className='text-[10px] font-bold text-rose-400'; }
+    else { el.textContent=msg||'☁ Offline / enter name to sync'; el.className='text-[10px] font-bold text-slate-500'; }
+  }
+  function mergeProgress(local, cloud){
+    if(!cloud) return local||{};
+    if(!local) local={};
+    var out=Object.assign({}, local);
+    out.xp=Math.max(local.xp||0, cloud.xp||0);
+    out.unlockedLevel=Math.max(local.unlockedLevel||1, cloud.unlockedLevel||1, 1);
+    out.aiWins=Math.max(local.aiWins||0, cloud.aiWins||0);
+    out.streak=Math.max(local.streak||0, cloud.streak||0);
+    out.aiWinStreak=Math.max(local.aiWinStreak||0, cloud.aiWinStreak||0);
+    out.questWins=Math.max(local.questWins||0, cloud.questWins||0);
+    out.practiceTotal=Math.max(local.practiceTotal||0, cloud.practiceTotal||0);
+    var set={};
+    (local.beatenLevels||[]).concat(cloud.beatenLevels||[]).forEach(function(lv){ set[lv]=true; });
+    out.beatenLevels=Object.keys(set).map(Number).filter(Boolean).sort(function(a,b){return a-b;});
+    out.equipHat=local.equipHat||cloud.equipHat||'none';
+    out.equipFrame=local.equipFrame||cloud.equipFrame||'auto';
+    out.schoolCode=local.schoolCode||cloud.schoolCode||'';
+    out.name=local.name||cloud.name||'';
+    out.pin=local.pin||cloud.pin||'';
+    out.achievements=Object.assign({}, cloud.achievements||{}, local.achievements||{});
+    out.dailyDone=Object.assign({}, cloud.dailyDone||{}, local.dailyDone||{});
+    out.chestClaimed=local.chestClaimed||cloud.chestClaimed||'';
+    out.streakFreeze=!!(local.streakFreeze||cloud.streakFreeze);
+    return out;
+  }
+  function getHofDb(){
+    try {
+      if (typeof hofDb !== 'undefined' && hofDb) return hofDb;
+      if (typeof firebase !== 'undefined') {
+        if (!firebase.apps.length) {
+          firebase.initializeApp({
+            apiKey:"AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+            authDomain:"assignments-de95a.firebaseapp.com",
+            projectId:"assignments-de95a",
+            storageBucket:"assignments-de95a.firebasestorage.app",
+            messagingSenderId:"1088073398299",
+            appId:"1:1088073398299:web:dab1f57ac1d63b10dba0be"
+          });
+        }
+        return firebase.firestore();
+      }
+    } catch(e) {}
+    return null;
+  }
+  function pushHubCloud(p){
+    p=p||loadProg();
+    var name=p.name||localStorage.getItem('mm_online_name')||'';
+    var dbx=getHofDb();
+    if(!name||!dbx) return;
+    dbx.collection('player_progress').doc(playerDocId(name)).set({
+      name: niceName(name),
+      nameKey: normName(name),
+      xp: p.xp||0,
+      unlockedLevel: p.unlockedLevel||1,
+      beatenLevels: p.beatenLevels||[],
+      aiWins: p.aiWins||0,
+      streak: p.streak||0,
+      aiWinStreak: p.aiWinStreak||0,
+      questWins: p.questWins||0,
+      practiceTotal: p.practiceTotal||0,
+      equipHat: p.equipHat||'none',
+      equipFrame: p.equipFrame||'auto',
+      schoolCode: p.schoolCode||'',
+      pin: p.pin||'',
+      achievements: p.achievements||{},
+      dailyDone: p.dailyDone||{},
+      chestClaimed: p.chestClaimed||'',
+      lastVisit: p.lastVisit||'',
+      streakFreeze: !!p.streakFreeze,
+      updated: firebase.firestore.FieldValue.serverTimestamp()
+    }, {merge:true}).then(function(){
+      setHubCloudStatus('synced');
+    }).catch(function(){ setHubCloudStatus('offline'); });
+  }
+  function pullHubCloud(name){
+    return new Promise(function(resolve){
+      var dbx=getHofDb();
+      if(!name||!dbx){ resolve(null); return; }
+      dbx.collection('player_progress').doc(playerDocId(name)).get().then(function(doc){
+        resolve(doc.exists ? doc.data() : null);
+      }).catch(function(){ resolve(null); });
+    });
+  }
 
   function ensureStreak(p){
     const t = todayKey();
@@ -1151,15 +1204,52 @@ body { -webkit-tap-highlight-color: transparent; }
   function levelFromXp(xp){ return Math.floor((xp||0)/100)+1; }
   function titleFromLevel(lv){ return TITLES[Math.min(lv-1, TITLES.length-1)]; }
 
-  window.saveHubName = function(){
+  window.saveHubName = async function(){
     const n = document.getElementById('hub-name-input').value.trim();
-    if (!n) return;
-    const p = loadProg();
-    p.name = n;
+    if (!n) {
+      setHubCloudStatus('offline', 'Type your hero name first');
+      return;
+    }
+    const pinEl = document.getElementById('hub-pin-input');
+    const pinVal = pinEl ? pinEl.value.trim() : '';
     const sc = document.getElementById('hub-school-code');
-    if (sc) p.schoolCode = (sc.value || '').trim().toUpperCase();
-    saveProg(p);
+    setHubCloudStatus('syncing');
+    const btn = document.getElementById('hub-save-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+    let local = loadProg();
+    local.name = n;
+    if (sc) local.schoolCode = (sc.value || '').trim().toUpperCase();
+    if (pinVal && pinVal.length >= 4) local.pin = pinVal;
+
+    const cloud = await pullHubCloud(n);
+    if (cloud && cloud.pin && String(cloud.pin).length >= 4) {
+      const need = String(cloud.pin);
+      const got = pinVal || local.pin || '';
+      if (got !== need) {
+        setHubCloudStatus('pin', '🔒 Name protected — enter the correct PIN');
+        if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+        if (pinEl) pinEl.focus();
+        return;
+      }
+    }
+    const merged = mergeProgress(local, cloud);
+    merged.name = n;
+    if (pinVal && pinVal.length >= 4) merged.pin = pinVal;
+    if (sc) merged.schoolCode = (sc.value || '').trim().toUpperCase();
+    saveProg(merged, {cloud:true});
     localStorage.setItem('mm_online_name', n);
+    if (cloud) setHubCloudStatus('loaded');
+    else setHubCloudStatus('synced');
+    if (btn) {
+      btn.textContent = 'Saved ✓';
+      btn.classList.add('bg-emerald-500/30','text-emerald-300');
+      setTimeout(function(){
+        btn.textContent = 'Save';
+        btn.classList.remove('bg-emerald-500/30','text-emerald-300');
+        btn.disabled = false;
+      }, 1800);
+    }
     renderHub();
   };
   window.useStreakFreeze = function(){
@@ -1260,10 +1350,10 @@ body { -webkit-tap-highlight-color: transparent; }
   function updateRivalNudge(p){
     const nudge = document.getElementById('rival-nudge');
     if (!nudge) return;
-    const rivals = ['Pip','Nia','Rex','Luna','Kai','Zara','Omar','Nova','Garbo'];
-    const seeds = ['Pip','Nia','Rex','Luna','Kai','Zara','Omar','Nova','Garbo'];
-    const colors = ['b6e3f4','c0aede','ffd5dc','d1f4d1','ffeaa7','a0c4ff','ffc6ff','fdffb6','c7d2fe'];
-    const unlocked = Math.min(9, p.unlockedLevel||1);
+    const rivals = ['Pip','Nia','Rex','Luna','Kai','Zara','Omar','Nova'];
+    const seeds = ['Pip','Nia','Rex','Luna','Kai','Zara','Omar','Nova'];
+    const colors = ['b6e3f4','c0aede','ffd5dc','d1f4d1','ffeaa7','a0c4ff','ffc6ff','fdffb6'];
+    const unlocked = Math.min(8, p.unlockedLevel||1);
     const idx = Math.max(0, unlocked - 1);
     const name = rivals[idx];
     const text = document.getElementById('nudge-text');
@@ -1404,13 +1494,14 @@ body { -webkit-tap-highlight-color: transparent; }
       const counts = {};
       snap.forEach(doc => {
         const d = doc.data();
-        const key = (d.name||'Player').trim();
+        if (d.source === 'hub_share') return;
+        const key = d.nameKey || normName(d.name || 'Player');
         if (!key) return;
-        if (!counts[key]) counts[key] = {name:key, wins:0, bestLevel:0};
+        if (!counts[key]) counts[key] = {name: niceName(d.name || key), wins:0, bestLevel:0};
         counts[key].wins++;
         if ((d.level||0) > counts[key].bestLevel) counts[key].bestLevel = d.level;
+        if (d.name) counts[key].name = niceName(d.name);
       });
-      // also merge published academy scores
       const ranked = Object.values(counts).sort((a,b)=> b.wins-a.wins || b.bestLevel-a.bestLevel).slice(0,10);
       let html = '';
       ranked.forEach((r,i) => {
@@ -1457,20 +1548,11 @@ body { -webkit-tap-highlight-color: transparent; }
       hat: p.equipHat||'none',
       updated: firebase.firestore.FieldValue.serverTimestamp()
     }, {merge:true}).then(() => {
-      // Also log a symbolic win entry if they have wins so they appear on HOF
-      if ((p.aiWins||0) > 0) {
-        return hofDb.collection('ai_wins').add({
-          name: name,
-          level: Math.max(1, ...(p.beatenLevels||[1])),
-          color: 'w',
-          source: 'hub_share',
-          timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        });
-      }
+      return null; // profile only — no fake ai_wins rows
     }).then(() => {
       msg.classList.remove('hidden');
       msg.className = 'text-[11px] text-emerald-400 mt-2';
-      msg.textContent = '✅ Shared! Your name can appear in the Hall of Fame.';
+      msg.textContent = '✅ Shared! Your profile is on the academy cloud.';
       btn.textContent = 'Shared!';
       setTimeout(() => { btn.disabled = false; btn.textContent = '📤 Share my score to Hall of Fame'; }, 2000);
     }).catch(e => {
@@ -1749,7 +1831,7 @@ body { -webkit-tap-highlight-color: transparent; }
     const lv = levelFromXp(xp);
     const into = xp % 100;
     const unlocked = p.unlockedLevel || 1;
-    const rivals = ['Pip','Nia','Rex','Luna','Kai','Zara','Omar','Nova','Garbo'];
+    const rivals = ['Pip','Nia','Rex','Luna','Kai','Zara','Omar','Nova'];
     const next = rivals[Math.min(unlocked, rivals.length)-1] || 'Pip';
 
     if (name) {
@@ -1780,7 +1862,15 @@ body { -webkit-tap-highlight-color: transparent; }
     if ((p.questWins||0) >= 1) badges.push('📜 Quest Done');
     if ((p.aiWinStreak||0) >= 3) badges.push('🔥 AI Streak ' + p.aiWinStreak);
     if ((p.beatenLevels||[]).length >= 3) badges.push('⚔️ 3 Rivals Beaten');
-    if ((p.beatenLevels||[]).length >= 9) badges.push('👑 All Rivals Beaten');
+    if ((p.beatenLevels||[]).length >= 8) badges.push('👑 All Rivals Beaten');
+    if (p.achievements) {
+      if (p.achievements.first_win) badges.push('🏆 First Victory');
+      if (p.achievements.streak5) badges.push('⚡ Unstoppable');
+      if (p.achievements.xp500) badges.push('🧠 Mind Master');
+      if (p.achievements.beat8) badges.push('👑 All Rivals');
+    }
+    var dow = new Date().getDay();
+    if (dow === 0 || dow === 6) badges.push('🎉 Weekend +20% XP');
     const box = document.getElementById('hub-badges');
     box.innerHTML = badges.length
       ? badges.map(b => '<span class="text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/25 px-2.5 py-1 rounded-full">'+b+'</span>').join('')
@@ -1822,46 +1912,21 @@ body { -webkit-tap-highlight-color: transparent; }
     let p = loadProg();
     if (p.chestClaimed === todayKey()) return;
     const rewards = [
-      {xp:15, label:'+15 XP ⭐', voice:'Fifteen experience points! The chest explodes with gold!'},
-      {xp:25, label:'+25 XP 🌟', voice:'Twenty five XP! What a treasure!'},
-      {xp:20, label:'+20 XP ✨', voice:'Twenty XP shower! Keep that streak going!'},
-      {xp:35, label:'+35 XP JACKPOT! 🎉', voice:'Jackpot! Thirty five experience points! You are on fire!'}
+      {xp:15, label:'+15 XP ⭐'},
+      {xp:25, label:'+25 XP 🌟'},
+      {xp:20, label:'+20 XP ✨'},
+      {xp:35, label:'+35 XP JACKPOT! 🎉'}
     ];
     const r = rewards[Math.floor(Math.random()*rewards.length)];
     p.xp = (p.xp||0) + r.xp;
     p.chestClaimed = todayKey();
+    try{ mmSoundChest(); speakCoach('Treasure claimed! Great job showing up today.'); }catch(e){}
     p.chestStreak = (p.chestStreak||0) + 1;
     if (p.chestStreak >= 3) { p.streakFreeze = true; p.chestStreak = 0; }
-    try{ completeDailyQuest('chest'); }catch(e){}
     saveProg(p);
     spawnConfetti();
-    spawnConfetti();
-    try{ mmSoundChest(); splashNoise(); }catch(e){}
-    var em = document.getElementById('chest-modal-emoji');
-    var title = document.getElementById('chest-modal-title');
-    var reward = document.getElementById('chest-modal-reward');
-    var msg = document.getElementById('chest-modal-msg');
-    if (em) em.textContent = r.xp >= 35 ? '💎💥🎉' : '🎁💥✨';
-    if (title) title.textContent = r.xp >= 35 ? 'JACKPOT!' : 'Chest Opened!';
-    if (reward) reward.textContent = r.label;
-    if (msg) msg.textContent = r.xp >= 35 ? 'Legendary haul! Come back tomorrow for more!' : 'You showed up today — champions do that!';
-    var modal = document.getElementById('chest-modal');
-    if (modal) modal.classList.add('open');
-    try{ speakCoach(r.voice); }catch(e){}
+    alert('🎁 Treasure opened!\n\n' + r.label + '\nKeep the streak going!');
     renderHub();
-  };
-  window.closeChestModal = function(){
-    var modal = document.getElementById('chest-modal');
-    if (modal) modal.classList.remove('open');
-  };
-  function splashNoise(){
-    try {
-      mmBeep(180, 0.08, 'square', 0.1);
-      setTimeout(function(){ mmBeep(320, 0.1, 'sawtooth', 0.08); }, 70);
-      setTimeout(function(){ mmBeep(520, 0.12, 'sine', 0.1); }, 150);
-      setTimeout(function(){ mmBeep(780, 0.15, 'triangle', 0.09); }, 240);
-      setTimeout(function(){ mmBeep(1100, 0.2, 'sine', 0.07); }, 350);
-    } catch(e) {}
   };
 
   function spawnConfetti(){
@@ -1887,6 +1952,32 @@ body { -webkit-tap-highlight-color: transparent; }
     navigator.serviceWorker.register('./sw.js').catch(function(){});
   }
   try { loadHallOfFame(); } catch(e) {}
+
+  (async function autoCloudRestore(){
+    try {
+      var p = loadProg();
+      var name = p.name || localStorage.getItem('mm_online_name') || '';
+      if (!name) return;
+      setHubCloudStatus('syncing', '☁ Checking cloud for '+name+'…');
+      var cloud = await pullHubCloud(name);
+      if (!cloud) {
+        pushHubCloud(p);
+        setHubCloudStatus('synced', '☁ Account ready for '+niceName(name));
+        return;
+      }
+      if (cloud.pin && String(cloud.pin).length >= 4 && p.pin !== cloud.pin) {
+        setHubCloudStatus('pin', '🔒 Cloud account found — enter PIN & Save to restore');
+        return;
+      }
+      var merged = mergeProgress(p, cloud);
+      merged.name = name;
+      saveProg(merged, {cloud:true});
+      setHubCloudStatus('loaded', '☁ Progress restored for '+niceName(name));
+      renderHub();
+    } catch(e) {
+      setHubCloudStatus('offline');
+    }
+  })();
 })();
     </script>
 </body>
