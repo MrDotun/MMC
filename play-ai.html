@@ -28,6 +28,19 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8
 .highlight-from{box-shadow:inset 0 0 0 4px rgba(250,204,21,.85)!important}
 .highlight-to{box-shadow:inset 0 0 0 4px rgba(34,197,94,.85)!important}
 .highlight-select{box-shadow:inset 0 0 0 4px rgba(232,197,71,.9)!important}
+.highlight-illegal{box-shadow:inset 0 0 0 4px rgba(239,68,68,.95)!important;animation:illegalFlash .45s ease 2}
+@keyframes illegalFlash{0%,100%{background-color:inherit}50%{background-color:rgba(239,68,68,.45)!important}}
+.highlight-legal{position:relative}
+.highlight-legal::after{
+  content:''; position:absolute; left:50%; top:50%;
+  width:18%; height:18%; min-width:10px; min-height:10px;
+  transform:translate(-50%,-50%); border-radius:50%;
+  background:rgba(34,197,94,.55); pointer-events:none; z-index:2;
+}
+.highlight-legal.highlight-capture::after{
+  width:72%; height:72%; background:transparent;
+  border:3px solid rgba(239,68,68,.75); box-sizing:border-box;
+}
 .live-badge{background:#ef4444;color:#fff;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:800;animation:pulse 1.5s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .thinking-dots span{display:inline-block;width:6px;height:6px;margin:0 2px;background:var(--gold);border-radius:50%;animation:bounce 1.2s infinite}
@@ -79,9 +92,25 @@ input:focus{outline:none;border-color:var(--gold)!important}
   position: relative; overflow: hidden;
 }
 .result-card.win {
-  border-color: rgba(250,204,21,0.6);
-  background: linear-gradient(160deg, #1f2a18 0%, #121a0e 40%, #0f1520 100%);
+  border-color: rgba(250,204,21,0.85);
+  background: linear-gradient(160deg, #1f2a18 0%, #1a1530 35%, #0f1520 100%);
+  box-shadow: 0 0 80px rgba(250,204,21,0.45), 0 0 40px rgba(167,139,250,0.25), 0 30px 60px rgba(0,0,0,0.5);
+  animation: winCardPulse 1.2s ease-in-out infinite alternate;
 }
+@keyframes winCardPulse {
+  from { box-shadow: 0 0 40px rgba(250,204,21,0.35), 0 30px 60px rgba(0,0,0,0.5); }
+  to { box-shadow: 0 0 90px rgba(250,204,21,0.55), 0 0 50px rgba(244,114,182,0.3), 0 30px 60px rgba(0,0,0,0.5); }
+}
+.result-title.win {
+  background: linear-gradient(90deg,#fde68a,#f472b6,#a78bfa,#34d399,#fde68a);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  animation: winTitleShine 2.5s linear infinite;
+  text-shadow: none !important;
+}
+@keyframes winTitleShine { to { background-position: 200% center; } }
 .result-card.lose {
   border-color: rgba(244,63,94,0.4);
   background: linear-gradient(160deg, #2a1520 0%, #150e14 40%, #0f1520 100%);
@@ -486,68 +515,76 @@ const db=firebase.firestore();
 const levelConfig={
 1:{time:15, name:"Pip",  elo:"~350", randomChance:0.80, seed:"Pip",  color:"b6e3f4",
    blurb:"Cheerful beginner. Loves knights!",
-   lines:{start:["Hi! Let's have fun!","Yay chess time!","I'll try my best!"],
-          move:["Hmm...","Is this good?","Oops maybe?"],
-          capture:["I got one!","Oh!","Hehe!"],
-          check:["Check? Did I?","Is that check?","Whoa!"],
-          win:["I won?! Wow!","Yay!"],
-          lose:["Good game! You're strong!","I'll practice more!","Wow you are a champion!","Can we play again?","You outsmarted me!"]}},
+   lines:{start:["Hi! Let's have fun!","Yay chess time!","I'll try my best!","Ready, ready, ready!"],
+          move:["Hmm...","Is this good?","Oops maybe?","Thinking hard!","Maybe the knight?"],
+          capture:["I got one! Woo!","Oh! Mine now!","Hehe, snatch!","Yay I took it!","Surprise capture!"],
+          lose_piece:["Aww my piece!","Oh no you got me!","That was sneaky!","My knight! Nooo!","You're so good!","How did you do that?!"],
+          check:["Check? Did I?","Is that check?","Whoa!","Your king better run!"],
+          win:["I won?! Wow!","Yay I did it!"],
+          lose:["You're a SUPERSTAR!","Wow you are a champion!","You outsmarted me!","You're amazing — rematch?","That was EPIC!"]}},
 2:{time:25, name:"Nia",  elo:"~500", randomChance:0.65, seed:"Nia",  color:"c0aede",
    blurb:"Curious explorer. Thinks out loud.",
-   lines:{start:["Ready when you are!","Let's explore the board!"],
-          move:["Interesting...","Maybe here?","Thinking..."],
-          capture:["Gotcha!","Nice trade!"],
-          check:["Check!","Watch your king!"],
+   lines:{start:["Ready when you are!","Let's explore the board!","Curious minds play chess!"],
+          move:["Interesting...","Maybe here?","Thinking...","Hmm, a discovery!"],
+          capture:["Gotcha!","Nice find for me!","I spotted that!","Capture adventure!","Yes — mine!"],
+          lose_piece:["Whoa, bold take!","You saw that before me!","My explorer piece fell!","Impressive capture!","You're teaching me!"],
+          check:["Check!","Watch your king!","Pressure!"],
           win:["Great game!","I learned a lot!"],
-          lose:["You played so well!","Teach me that move!"]}},
+          lose:["You played like a genius!","Teach me that move!","Brilliant adventure!","You're the real explorer!"]}},
 3:{time:40, name:"Rex",  elo:"~650", randomChance:0.50, seed:"Rex",  color:"ffd5dc",
    blurb:"Brave knight. Bold but still learning.",
-   lines:{start:["Challenge accepted!","For honour!"],
-          move:["Attack!","Onward!","Hmm."],
-          capture:["Ha!","Taken!"],
-          check:["Check!","Feel the pressure!"],
+   lines:{start:["Challenge accepted!","For honour!","Charge!"],
+          move:["Attack!","Onward!","Hmm.","To battle!"],
+          capture:["Ha! Taken in battle!","Victory swipe!","My sword claims it!","Bold strike!","For the realm!"],
+          lose_piece:["A worthy strike against me!","You fought bravely!","My soldier falls!","Respect — that hurt!","What a blow!"],
+          check:["Check!","Feel the pressure!","Your king trembles!"],
           win:["Victory!","Well fought!"],
-          lose:["You bested me!","Respect!"]}},
+          lose:["You bested a knight!","Respect, champion!","You fought like a legend!","Honour to you!"]}},
 4:{time:55, name:"Luna", elo:"~750", randomChance:0.40, seed:"Luna", color:"d1f4d1",
    blurb:"Calm strategist. Quiet and kind.",
-   lines:{start:["Peace and good moves.","Shall we begin?"],
-          move:["...","A quiet move.","Careful..."],
-          capture:["As planned.","Taken."],
-          check:["Check.","Your king..."],
+   lines:{start:["Peace and good moves.","Shall we begin?","Soft focus..."],
+          move:["...","A quiet move.","Careful...","Gently..."],
+          capture:["As planned.","Softly taken.","A quiet capture.","Balance shifts.","Necessary."],
+          lose_piece:["Beautifully taken...","You saw deeper than me.","A graceful capture.","Well spotted.","I'm impressed."],
+          check:["Check.","Your king...","Careful now."],
           win:["Well played.","A fine game."],
-          lose:["Beautifully done.","I enjoyed that."]}},
+          lose:["Beautifully done.","You play with wisdom.","A true Mind Master.","I enjoyed every move."]}},
 5:{time:70, name:"Kai",  elo:"~850", randomChance:0.32, seed:"Kai",  color:"ffeaa7",
    blurb:"Speedy thinker. Talks a lot!",
-   lines:{start:["Let's gooo!","Fast and fun!"],
-          move:["Zip!","Quick one!","There!"],
-          capture:["Boom!","Yes!"],
-          check:["Check check!","Uh oh for you!"],
+   lines:{start:["Let's gooo!","Fast and fun!","Zoom time!"],
+          move:["Zip!","Quick one!","There!","Speed move!"],
+          capture:["BOOM! Taken!","Yes! Lightning grab!","Zip — mine!","Speed capture!","Did you see that?!"],
+          lose_piece:["Whoa you are FAST!","My piece — gone!","Turbo take by you!","That was electric!","You zoomed past me!"],
+          check:["Check check!","Uh oh for you!","King alert!"],
           win:["Woohoo!","That was fun!"],
-          lose:["You're amazing!","Rematch someday!"]}},
+          lose:["You're AMAZING!","Rematch someday!","Speed king!","You lit up the board!"]}},
 6:{time:90, name:"Zara", elo:"~950", randomChance:0.22, seed:"Zara", color:"a0c4ff",
    blurb:"Puzzle lover. Tricky ideas.",
-   lines:{start:["Solve me if you can!","A new puzzle!"],
-          move:["Curious...","A little trap?"],
-          capture:["Part of the plan.","Got it!"],
-          check:["Check!","Do you see it?"],
-          win:["Puzzle solved!","Nice try!"],
-          lose:["You cracked it!","Brilliant!"]}},
+   lines:{start:["Solve me if you can!","A new puzzle!","Let's twist the board!"],
+          move:["Curious...","A little trap?","Hmm..."],
+          capture:["Part of the plan!","Puzzle piece claimed!","Got it!","Trap sprung!","Clever take!"],
+          lose_piece:["You cracked my idea!","That solve was sharp!","My puzzle broke!","Brilliant capture!","You saw the key!"],
+          check:["Check!","Do you see it?","Pressure puzzle!"],
+          win:["Puzzle solved — by me!","Nice try!"],
+          lose:["You cracked the whole puzzle!","Brilliant mind!","You're the puzzle master!","Incredible solve!"]}},
 7:{time:120,name:"Omar", elo:"~1050",randomChance:0.12, seed:"Omar", color:"ffc6ff",
    blurb:"Coach's student. Solid habits.",
-   lines:{start:["Good luck!","Play your best!"],
-          move:["Developing...","Solid."],
-          capture:["Fair trade.","Alright."],
-          check:["Check.","Careful now."],
+   lines:{start:["Good luck!","Play your best!","Solid game ahead."],
+          move:["Developing...","Solid.","Building..."],
+          capture:["Fair trade.","Clean capture.","Solid take.","Alright — claimed.","Textbook!"],
+          lose_piece:["Excellent technique!","You earned that piece.","Coach would love that.","Clean capture by you.","Very solid play."],
+          check:["Check.","Careful now.","King under fire."],
           win:["Good game!","Keep practising!"],
-          lose:["Excellent play!","You've improved!"]}},
+          lose:["Excellent play!","You've improved so much!","Champion habits!","True student of the game!"]}},
 8:{time:180,name:"Nova", elo:"~1150",randomChance:0.06, seed:"Nova", color:"fdffb6",
    blurb:"Star pupil. Toughest on the list.",
-   lines:{start:["Show me what you've got.","Let's make this epic!"],
-          move:["Calculated.","Interesting choice."],
-          capture:["Necessary.","Taken."],
-          check:["Check!","Pressure on!"],
+   lines:{start:["Show me what you've got.","Let's make this epic!","Star vs star."],
+          move:["Calculated.","Interesting choice.","Precision."],
+          capture:["Necessary.","Calculated take.","Precision strike.","As expected.","Claimed."],
+          lose_piece:["That was elite!","You out-calculated me.","Star-level capture!","I felt that.","World-class take!"],
+          check:["Check!","Pressure on!","Your king is watched."],
           win:["A hard-fought win!","Respect!"],
-          lose:["You are a true Mind Master!","Incredible!"]}}
+          lose:["You are a true Mind Master!","Incredible!","A star is born!","Legendary performance!"]}}
 };
 
 // —— Progress & unlocks (+ Firebase cloud sync) ——
@@ -883,10 +920,17 @@ function soundMove(){beep(420,0.08,'sine',0.12)}
 function soundCapture(){beep(280,0.1,'triangle',0.18);setTimeout(()=>beep(180,0.12,'triangle',0.12),60)}
 function soundCheck(){beep(600,0.1,'square',0.1);setTimeout(()=>beep(800,0.12,'square',0.1),90)}
 function soundWin(){
-  // Celebratory ascending fanfare
-  const notes = [523,659,784,1047];
-  notes.forEach((f,i)=>setTimeout(()=>beep(f,0.14,'sine',0.16), i*110));
-  setTimeout(()=>beep(1319,0.28,'triangle',0.12), 480);
+  // Big celebratory fanfare for kids
+  const fanfare = [523,659,784,1047,1319,1568];
+  fanfare.forEach((f,i)=>setTimeout(()=>beep(f,0.16,'sine',0.18), i*95));
+  setTimeout(()=>beep(2093,0.35,'triangle',0.14), 620);
+  setTimeout(()=>beep(1568,0.2,'square',0.08), 780);
+  setTimeout(()=>beep(2093,0.4,'sine',0.12), 900);
+}
+function soundCapturePop(){
+  beep(660,0.06,'square',0.1);
+  setTimeout(()=>beep(880,0.08,'sine',0.12),50);
+  setTimeout(()=>beep(1100,0.1,'triangle',0.1),110);
 }
 function soundStreak(){
   beep(880,0.08,'square',0.1);
@@ -898,6 +942,10 @@ function soundLevelUp(){
 }
 function soundLose(){beep(300,0.15,'sawtooth',0.1);setTimeout(()=>beep(200,0.25,'sawtooth',0.1),150)}
 function soundSelect(){beep(500,0.04,'sine',0.06)}
+function soundIllegal(){
+  beep(180,0.12,'sawtooth',0.12);
+  setTimeout(()=>beep(140,0.18,'sawtooth',0.1),100);
+}
 function soundStart(){beep(440,0.1,'sine',0.12);setTimeout(()=>beep(550,0.12,'sine',0.12),100)}
 
 function selectOpt(btn){
@@ -996,6 +1044,7 @@ function newGameInternal(){
   if(liveDocId){db.collection('ai_live_games').doc(liveDocId).delete().catch(()=>{});liveDocId=null}
   game=new Chess();
   sourceSquare=null;lastFrom=null;lastTo=null;isThinking=false;
+  window._tippedPieces={};
   board.orientation(playerColor==='w'?'white':'black');
   board.position('start');
   clearHighlights();
@@ -1034,8 +1083,10 @@ function initWorker(){
         playMoveSound(move);
         updateStatus();updateHistory();broadcastLive();
         switchClock('you');
-        if(move.flags&&(move.flags.includes('c')||move.flags.includes('e'))) showSpeech(pickLine(settings.level,'capture'));
-        else if(game.in_check()) showSpeech(pickLine(settings.level,'check'));
+        if(move.flags&&(move.flags.includes('c')||move.flags.includes('e'))){
+          showSpeech(pickLine(settings.level,'capture'));
+          spawnCaptureBurst(move.to, false);
+        } else if(game.in_check()) showSpeech(pickLine(settings.level,'check'));
         else showSpeech(pickLine(settings.level,'move'));
       }
       stopThinking();
@@ -1050,6 +1101,83 @@ function stopThinking(){
   document.getElementById('board').classList.remove('thinking-glow');
 }
 
+
+const PIECE_MOVE_TIPS = {
+  p: 'Pawns move forward one square. On the first move they may go two. They capture diagonally one square.',
+  n: 'Knights move in an L shape: two squares one way and then one square sideways. They can jump over pieces.',
+  b: 'Bishops move any number of squares diagonally. They stay on the same colour squares.',
+  r: 'Rooks move any number of squares horizontally or vertically — along ranks and files.',
+  q: 'Queens move any number of squares in any direction: forward, back, sideways, or diagonally.',
+  k: 'Kings move only one square in any direction. Keep your king safe!'
+};
+
+function pieceMoveTip(piece){
+  if(!piece) return 'That is not a legal move. Try another square.';
+  return PIECE_MOVE_TIPS[piece.type] || 'That is not a legal move for this piece.';
+}
+
+function speakCoachTip(text){
+  try{
+    if(localStorage.getItem('mm_sound')==='0') return;
+    if(!window.speechSynthesis||!text) return;
+    window.speechSynthesis.cancel();
+    var u=new SpeechSynthesisUtterance(text);
+    u.rate=0.95; u.pitch=1.05; u.volume=0.95;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+function showLegalMoves(fromSq){
+  clearLegalHints();
+  if(!fromSq||!game) return;
+  var moves=game.moves({square:fromSq, verbose:true});
+  moves.forEach(function(m){
+    var el=document.querySelector('.square-'+m.to);
+    if(!el) return;
+    el.classList.add('highlight-legal');
+    if(m.flags && (m.flags.indexOf('c')>=0 || m.flags.indexOf('e')>=0)){
+      el.classList.add('highlight-capture');
+    }
+  });
+}
+
+function clearLegalHints(){
+  document.querySelectorAll('.highlight-legal,.highlight-capture,.highlight-illegal').forEach(function(el){
+    el.classList.remove('highlight-legal','highlight-capture','highlight-illegal');
+  });
+}
+
+function flashIllegal(fromSq, toSq, piece){
+  soundIllegal();
+  clearLegalHints();
+  var tip = pieceMoveTip(piece);
+  showToast('⛔ Illegal move — '+tip.split('.')[0], 'unlock');
+  speakCoachTip('Illegal move. '+tip);
+  var statusEl=document.getElementById('status');
+  if(statusEl){
+    statusEl.textContent='Illegal move! '+tip.split('.')[0]+'.';
+    statusEl.style.color='#fca5a5';
+    setTimeout(function(){
+      statusEl.style.color='';
+      if(!game.game_over()) updateStatus();
+    }, 3200);
+  }
+  [fromSq, toSq].forEach(function(sq){
+    if(!sq) return;
+    var el=document.querySelector('.square-'+sq);
+    if(el){
+      el.classList.add('highlight-illegal');
+      setTimeout(function(){ el.classList.remove('highlight-illegal'); }, 900);
+    }
+  });
+  // Keep selected piece and re-show legal targets so kids can try again
+  if(fromSq){
+    sourceSquare=fromSq;
+    $(`.square-${fromSq}`).addClass('highlight-select');
+    showLegalMoves(fromSq);
+  }
+}
+
 function onSquareClick(sq){
   if(isThinking||game.game_over())return;
   if(game.turn()!==playerColor)return;
@@ -1058,29 +1186,71 @@ function onSquareClick(sq){
     if(piece&&piece.color===playerColor){
       sourceSquare=sq;
       clearHighlights();
+      clearLegalHints();
       $(`.square-${sq}`).addClass('highlight-select');
+      showLegalMoves(sq);
       soundSelect();
+      // Audio tip: how this piece moves (once per piece type per game)
+      if(localStorage.getItem('mm_sound')!=='0'){
+        window._tippedPieces = window._tippedPieces || {};
+        if(!window._tippedPieces[piece.type]){
+          window._tippedPieces[piece.type] = true;
+          var shortTips = {
+            p:'Pawn: moves forward, captures diagonally.',
+            n:'Knight: moves in an L shape and can jump.',
+            b:'Bishop: slides diagonally.',
+            r:'Rook: slides in straight lines.',
+            q:'Queen: slides any direction.',
+            k:'King: one square any direction.'
+          };
+          speakCoachTip(shortTips[piece.type] || pieceMoveTip(piece));
+        }
+      }
     }
     return;
   }
-  if(sourceSquare===sq){sourceSquare=null;clearHighlights();showLastMove();return}
-  const move=game.move({from:sourceSquare,to:sq,promotion:'q'});
-  sourceSquare=null;
+  if(sourceSquare===sq){
+    sourceSquare=null;
+    clearHighlights();
+    clearLegalHints();
+    showLastMove();
+    return;
+  }
+  // Clicking another own piece switches selection
+  const clickPiece=game.get(sq);
+  if(clickPiece && clickPiece.color===playerColor){
+    sourceSquare=sq;
+    clearHighlights();
+    clearLegalHints();
+    $(`.square-${sq}`).addClass('highlight-select');
+    showLegalMoves(sq);
+    soundSelect();
+    return;
+  }
+  const from=sourceSquare;
+  const movingPiece=game.get(from);
+  const move=game.move({from:from,to:sq,promotion:'q'});
   if(move){
+    sourceSquare=null;
+    clearLegalHints();
     lastFrom=move.from;lastTo=move.to;
     board.position(game.fen());
     showLastMove();
     playMoveSound(move);
+    // Explosive AI reaction when YOU capture their piece
+    if(move.flags && (move.flags.indexOf('c')>=0 || move.flags.indexOf('e')>=0)){
+      showSpeech(pickLine(settings.level,'lose_piece'));
+      try{ mmSpeak(pickLine(settings.level,'lose_piece')); }catch(e){}
+      spawnCaptureBurst(move.to, true);
+    } else if(game.in_check()){
+      showSpeech(pickLine(settings.level,'check'));
+    }
     updateStatus();updateHistory();broadcastLive();
     switchClock('ai');
     if(!game.game_over())makeEngineMove();
   }else{
-    clearHighlights();
-    const piece=game.get(sq);
-    if(piece&&piece.color===playerColor){
-      sourceSquare=sq;
-      $(`.square-${sq}`).addClass('highlight-select');
-    }else showLastMove();
+    // Illegal move — correct with highlight + audio lesson
+    flashIllegal(from, sq, movingPiece);
   }
 }
 
@@ -1120,8 +1290,10 @@ function makeEngineMove(){
         playMoveSound(move);
         updateStatus();updateHistory();broadcastLive();
         switchClock('you');
-        if(move.flags&&(move.flags.includes('c')||move.flags.includes('e'))) showSpeech(pickLine(settings.level,'capture'));
-        else if(game.in_check()) showSpeech(pickLine(settings.level,'check'));
+        if(move.flags&&(move.flags.includes('c')||move.flags.includes('e'))){
+          showSpeech(pickLine(settings.level,'capture'));
+          spawnCaptureBurst(move.to, false);
+        } else if(game.in_check()) showSpeech(pickLine(settings.level,'check'));
         else showSpeech(pickLine(settings.level,'move'));
         stopThinking();
         return;
@@ -1139,7 +1311,10 @@ function playMoveSound(move){
   if(game.in_check())setTimeout(soundCheck,80);
 }
 
-function clearHighlights(){$('.highlight-from,.highlight-to,.highlight-select').removeClass('highlight-from highlight-to highlight-select')}
+function clearHighlights(){
+  $('.highlight-from,.highlight-to,.highlight-select').removeClass('highlight-from highlight-to highlight-select');
+  clearLegalHints();
+}
 function showLastMove(){
   clearHighlights();
   if(lastFrom)$(`.square-${lastFrom}`).addClass('highlight-from');
@@ -1566,19 +1741,45 @@ beep = function(freq, dur, type, vol) {
 })();
 
 
+
+function spawnCaptureBurst(square, youCaptured){
+  try{
+    soundCapturePop();
+    var el = document.querySelector('.square-'+square);
+    if(!el) return;
+    var rect = el.getBoundingClientRect();
+    var colors = youCaptured
+      ? ['#34d399','#fde68a','#60a5fa','#f472b6','#a78bfa','#fb923c']
+      : ['#f87171','#fbbf24','#c084fc','#38bdf8'];
+    for(var i=0;i<14;i++){
+      var d=document.createElement('div');
+      d.style.cssText='position:fixed;width:8px;height:8px;border-radius:50%;pointer-events:none;z-index:5002;left:'+(rect.left+rect.width/2)+'px;top:'+(rect.top+rect.height/2)+'px;background:'+colors[i%colors.length];
+      var ang=Math.random()*Math.PI*2, dist=30+Math.random()*50;
+      d.animate([
+        {transform:'translate(0,0) scale(1)',opacity:1},
+        {transform:'translate('+(Math.cos(ang)*dist)+'px,'+(Math.sin(ang)*dist)+'px) scale(0)',opacity:0}
+      ],{duration:500+Math.random()*300,easing:'ease-out'});
+      document.body.appendChild(d);
+      setTimeout(function(n){return function(){n.remove();};}(d),900);
+    }
+  }catch(e){}
+}
+
 function spawnWinConfetti(){
-  const colors = ['#e8c547','#f59e0b','#34d399','#60a5fa','#f472b6','#a78bfa','#fde68a'];
-  for (let i = 0; i < 48; i++) {
+  const colors = ['#e8c547','#f59e0b','#34d399','#22c55e','#60a5fa','#3b82f6','#f472b6','#ec4899','#a78bfa','#8b5cf6','#fde68a','#fb923c','#2dd4bf','#f43f5e'];
+  for (let i = 0; i < 90; i++) {
     const c = document.createElement('div');
     c.className = 'confetti-piece';
     c.style.left = Math.random() * 100 + 'vw';
     c.style.background = colors[Math.floor(Math.random() * colors.length)];
-    c.style.animationDelay = (Math.random() * 0.7) + 's';
-    c.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
-    c.style.width = (6 + Math.random() * 8) + 'px';
-    c.style.height = c.style.width;
+    c.style.animationDelay = (Math.random() * 1.1) + 's';
+    c.style.borderRadius = Math.random() > 0.4 ? '50%' : (Math.random()>0.5?'2px':'0');
+    const sz = 6 + Math.random() * 12;
+    c.style.width = sz + 'px';
+    c.style.height = (Math.random()>0.5 ? sz : sz*0.4) + 'px';
+    c.style.boxShadow = '0 0 6px '+colors[Math.floor(Math.random()*colors.length)];
     document.body.appendChild(c);
-    setTimeout(() => c.remove(), 3200);
+    setTimeout(() => c.remove(), 4000);
   }
 }
 
@@ -1659,12 +1860,28 @@ function showResultModal(type, data){
   title.className = 'result-title ' + type;
 
   if (type === 'win') {
-    emoji.textContent = '🏆';
-    title.textContent = 'Victory!';
-    let subTxt = 'You defeated ' + (data.rivalName || 'the AI') + '!';
-    if (data.streak && data.streak >= 2) subTxt += ' 🔥 ' + data.streak + '-win streak!';
+    const praises = [
+      'You are a CHESS SUPERSTAR!',
+      'That was LEGENDARY play!',
+      'Your brain is on FIRE!',
+      'Champion energy — wow!',
+      'You outsmarted the engine!',
+      'Mind Master in the making!',
+      'Brilliant, brave, and bold!',
+      'The board belongs to YOU!'
+    ];
+    const praise = praises[Math.floor(Math.random()*praises.length)];
+    emoji.textContent = ['🏆','🌟','🎉','👑','⚡','🔥'][Math.floor(Math.random()*6)];
+    title.textContent = 'YOU WIN!';
+    let subTxt = praise + ' You defeated ' + (data.rivalName || 'the AI') + '!';
+    if (data.streak && data.streak >= 2) subTxt += ' 🔥 ' + data.streak + '-win streak — unstoppable!';
     sub.textContent = subTxt;
+    sub.style.color = '#fde68a';
+    sub.style.fontWeight = '700';
     xpEl.style.display = 'inline-flex';
+    soundWin();
+    try { mmSpeak(praise + ' You defeated ' + (data.rivalName || 'the AI') + '! Amazing job!'); } catch(e) {}
+
     xpEl.textContent = '+' + (data.xp || 20) + ' XP';
     if (data.newlyUnlocked && data.unlocked) {
       const nextCfg = levelConfig[data.unlocked];
