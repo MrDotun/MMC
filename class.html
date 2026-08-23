@@ -49,6 +49,28 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8
   button,.tool{min-height:44px}
   input{font-size:16px!important}
 }
+
+/* Click-only setup: kill native image drag */
+#board img, #board .piece-417db {
+  -webkit-user-drag: none !important;
+  user-drag: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+#board .spare-pieces-7492f img {
+  cursor: pointer;
+  transition: transform 0.15s, filter 0.15s;
+}
+#board .spare-pieces-7492f img.spare-on {
+  transform: scale(1.25);
+  filter: drop-shadow(0 0 8px #fbbf24);
+  outline: 2px solid #fbbf24;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
 </style>
 </head>
 <body>
@@ -314,10 +336,20 @@ function initBoard(){
     try { board.resize(); } catch (e) {}
     resizeCanvas();
     redrawMarks();
+    // Force no-drag on every piece image (setup trays + board)
+    var root = document.getElementById('board');
+    if (root) {
+      root.querySelectorAll('img').forEach(function(img){
+        img.setAttribute('draggable', 'false');
+        img.addEventListener('dragstart', function(e){ e.preventDefault(); });
+      });
+    }
     bindSpareClicks();
-    // seed history with starting position of this mode
     boardHistory = [];
   }, 120);
+  // spare pieces sometimes render late
+  setTimeout(bindSpareClicks, 350);
+  setTimeout(bindSpareClicks, 700);
 }
 
 function squareFromEventTarget(t){
@@ -337,41 +369,58 @@ function bindClicks(){
   var root = document.getElementById('board');
   if (!root) return;
   $(root).off('.mm');
-  // Use pointerup so mobile taps work without drag
+  // Prevent any drag starting on pieces
+  $(root).on('dragstart.mm', 'img', function(e){ e.preventDefault(); return false; });
+  $(root).on('mousedown.mm touchstart.mm', 'img', function(e){
+    // stop chessboardjs internal drag if any
+  });
   $(root).on('click.mm', function (e) {
-    var sq = squareFromEventTarget(e.target);
+    var t = e.target;
+    // spare piece click handled separately
+    if ($(t).closest('.spare-pieces-7492f').length) return;
+    var sq = squareFromEventTarget(t);
     if (sq) onSquareClick(sq);
   });
 }
 
 function bindSpareClicks(){
-  // Spare pieces are outside .board-b72b1 — bind on #board container
   var root = document.getElementById('board');
   if (!root) return;
-  $(root).find('.spare-pieces-7492f img').off('.mmspare');
-  $(root).find('.spare-pieces-7492f img').on('click.mmspare', function (e) {
+  var $imgs = $(root).find('.spare-pieces-7492f img');
+  $imgs.off('.mmspare');
+  $imgs.attr('draggable', 'false');
+  $imgs.on('dragstart.mmspare', function(e){ e.preventDefault(); return false; });
+  $imgs.on('click.mmspare touchend.mmspare', function (e) {
     e.preventDefault();
     e.stopPropagation();
-    // chessboardjs sets data-piece on spare imgs like "wP"
-    var piece = $(this).attr('data-piece');
+    var $img = $(this);
+    var piece = $img.attr('data-piece') || $img.data('piece');
     if (!piece) {
-      // fallback: parse class or src
-      var src = $(this).attr('src') || '';
-      var m = src.match(/\/([wb][prnbqk])\./i);
-      if (m) piece = m[1][0].toLowerCase() === 'w'
-        ? 'w' + m[1][1].toUpperCase()
-        : 'b' + m[1][1].toUpperCase();
-      // neo theme uses wp.png style
-      m = src.match(/\/([wb][prnbqk])\.png/i);
-      if (!piece && m) {
-        piece = m[1].charAt(0) + m[1].charAt(1).toUpperCase();
+      var src = $img.attr('src') || '';
+      var m = src.match(/\/([wb])([prnbqk])\./i) || src.match(/([wb])([prnbqk])\.png/i);
+      if (m) piece = m[1].toLowerCase() + m[2].toUpperCase();
+    }
+    if (!piece) {
+      // chessboardjs class piece-wp etc
+      var cls = ($img.attr('class') || '') + ' ' + ($img.parent().attr('class') || '');
+      var m2 = cls.match(/([wb][PRNBQKprnbqk])/);
+      if (m2) {
+        var s = m2[1];
+        piece = s.charAt(0).toLowerCase() + s.charAt(1).toUpperCase();
       }
     }
-    if (!piece) return;
+    if (!piece) {
+      setStatus('Could not read piece — try again');
+      return;
+    }
+    // normalize: wP style
+    piece = piece.charAt(0).toLowerCase() + piece.charAt(1).toUpperCase();
     spareSelected = piece;
     sourceSq = null;
     clearSelectHl();
-    setStatus('Place ' + piece + ' — tap a square (tap again on piece to remove)');
+    $imgs.removeClass('spare-on');
+    $img.addClass('spare-on');
+    setStatus('Selected ' + piece + ' — tap a square to place (tap piece on board twice to remove)');
   });
 }
 
