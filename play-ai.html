@@ -28,6 +28,19 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8
 .highlight-from{box-shadow:inset 0 0 0 4px rgba(250,204,21,.85)!important}
 .highlight-to{box-shadow:inset 0 0 0 4px rgba(34,197,94,.85)!important}
 .highlight-select{box-shadow:inset 0 0 0 4px rgba(232,197,71,.9)!important}
+.highlight-illegal{box-shadow:inset 0 0 0 4px rgba(239,68,68,.95)!important;animation:illegalFlash .45s ease 2}
+@keyframes illegalFlash{0%,100%{background-color:inherit}50%{background-color:rgba(239,68,68,.45)!important}}
+.highlight-legal{position:relative}
+.highlight-legal::after{
+  content:''; position:absolute; left:50%; top:50%;
+  width:18%; height:18%; min-width:10px; min-height:10px;
+  transform:translate(-50%,-50%); border-radius:50%;
+  background:rgba(34,197,94,.55); pointer-events:none; z-index:2;
+}
+.highlight-legal.highlight-capture::after{
+  width:72%; height:72%; background:transparent;
+  border:3px solid rgba(239,68,68,.75); box-sizing:border-box;
+}
 .live-badge{background:#ef4444;color:#fff;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:800;animation:pulse 1.5s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .thinking-dots span{display:inline-block;width:6px;height:6px;margin:0 2px;background:var(--gold);border-radius:50%;animation:bounce 1.2s infinite}
@@ -79,9 +92,25 @@ input:focus{outline:none;border-color:var(--gold)!important}
   position: relative; overflow: hidden;
 }
 .result-card.win {
-  border-color: rgba(250,204,21,0.6);
-  background: linear-gradient(160deg, #1f2a18 0%, #121a0e 40%, #0f1520 100%);
+  border-color: rgba(250,204,21,0.85);
+  background: linear-gradient(160deg, #1f2a18 0%, #1a1530 35%, #0f1520 100%);
+  box-shadow: 0 0 80px rgba(250,204,21,0.45), 0 0 40px rgba(167,139,250,0.25), 0 30px 60px rgba(0,0,0,0.5);
+  animation: winCardPulse 1.2s ease-in-out infinite alternate;
 }
+@keyframes winCardPulse {
+  from { box-shadow: 0 0 40px rgba(250,204,21,0.35), 0 30px 60px rgba(0,0,0,0.5); }
+  to { box-shadow: 0 0 90px rgba(250,204,21,0.55), 0 0 50px rgba(244,114,182,0.3), 0 30px 60px rgba(0,0,0,0.5); }
+}
+.result-title.win {
+  background: linear-gradient(90deg,#fde68a,#f472b6,#a78bfa,#34d399,#fde68a);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  animation: winTitleShine 2.5s linear infinite;
+  text-shadow: none !important;
+}
+@keyframes winTitleShine { to { background-position: 200% center; } }
 .result-card.lose {
   border-color: rgba(244,63,94,0.4);
   background: linear-gradient(160deg, #2a1520 0%, #150e14 40%, #0f1520 100%);
@@ -287,6 +316,49 @@ body { -webkit-tap-highlight-color: transparent; padding-bottom: env(safe-area-i
   transform: scale(0.97);
 }
 
+
+#ai-speech {
+  transition: opacity .3s, transform .2s cubic-bezier(0.34,1.56,0.64,1) !important;
+  box-shadow: 0 0 20px rgba(232,197,71,0.15);
+}
+#ai-speech.opacity-100 {
+  box-shadow: 0 0 28px rgba(232,197,71,0.35);
+}
+.rival-live-pulse {
+  animation: rivalPulse 1.5s ease-in-out infinite;
+}
+@keyframes rivalPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(232,197,71,0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(232,197,71,0); }
+}
+
+#board-wrap { position: relative; width: 100%; max-width: 480px; margin: 0 auto; }
+#board-loading {
+  position: absolute; inset: 0; z-index: 20;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(7,9,15,0.88); backdrop-filter: blur(6px);
+  border-radius: 14px; text-align: center; padding: 1.5rem;
+  transition: opacity 0.4s ease, visibility 0.4s;
+}
+#board-loading.hide { opacity: 0; visibility: hidden; pointer-events: none; }
+#board-loading .piece-spin {
+  font-size: 2.75rem; color: #e8c547;
+  animation: pieceSpin 1.1s ease-in-out infinite;
+  filter: drop-shadow(0 0 16px rgba(232,197,71,0.55));
+}
+@keyframes pieceSpin {
+  0%,100% { transform: rotate(-12deg) translateY(0); }
+  50% { transform: rotate(12deg) translateY(-10px); }
+}
+#board-loading p {
+  margin-top: 12px; font-weight: 800; font-size: 13px;
+  text-transform: uppercase; letter-spacing: 0.12em; color: #fde68a;
+}
+#board-loading .sub {
+  margin-top: 6px; font-size: 11px; color: #94a3b8; font-weight: 600;
+  text-transform: none; letter-spacing: 0;
+}
+
 </style>
 </head>
 <body>
@@ -312,11 +384,16 @@ body { -webkit-tap-highlight-color: transparent; padding-bottom: env(safe-area-i
 </div>
 
 <div class="max-w-lg mx-auto space-y-5">
-<!-- Name -->
+<!-- Name + cloud account -->
 <div class="panel p-5">
 <label class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2 block">1. Your Name <span class="text-rose-400">*</span></label>
 <input id="player-name" type="text" placeholder="Type your full name" maxlength="40"
 class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-base text-white" autocomplete="name">
+<label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mt-3 mb-2 block">Optional PIN (protects your cloud progress)</label>
+<input id="player-pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="4–6 digit PIN (optional)"
+class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-base text-white" autocomplete="off">
+<p class="text-[10px] text-slate-500 mt-2">Same name on any phone = same XP &amp; unlocked rivals. Set a PIN so only you can load it.</p>
+<p id="cloud-status" class="text-[10px] font-bold text-slate-500 mt-1">☁ Ready to sync</p>
 </div>
 
 <!-- Color -->
@@ -364,7 +441,7 @@ Enter Arena <i class="fas fa-arrow-right ml-2"></i>
 <!-- Leaderboard + Live on setup -->
 <div class="grid md:grid-cols-2 gap-4 mt-10 max-w-3xl mx-auto">
 <div class="panel p-5">
-<div class="flex items-center gap-2 mb-4"><span class="text-lg">🏆</span><h3 class="font-black text-white text-sm uppercase tracking-tight">AI Win Leaderboard</h3></div>
+<div class="flex items-center gap-2 mb-4"><span class="text-lg">🏆</span><h3 class="font-black text-white text-sm uppercase tracking-tight">AI Win Leaderboard · Top 10</h3></div>
 <div id="ai-leaderboard" class="space-y-2 text-sm"><p class="text-slate-600 text-xs">Loading...</p></div>
 </div>
 <div class="panel p-5">
@@ -405,13 +482,13 @@ Enter Arena <i class="fas fa-arrow-right ml-2"></i>
 <span class="text-[10px] uppercase text-slate-500 font-bold" id="clock-you-label">You</span>
 </div>
 </div>
-<div id="board-wrap" style="position:relative;width:100%;max-width:480px;margin:0 auto">
-  <div id="board"></div>
-  <div id="board-loading" style="display:none;position:absolute;inset:0;z-index:20;background:rgba(7,9,15,0.82);backdrop-filter:blur(4px);border-radius:14px;align-items:center;justify-content:center;flex-direction:column;gap:10px">
-    <div style="font-size:2rem">♟️</div>
-    <div style="font-weight:900;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#e8c547">Setting up pieces…</div>
-    <div style="font-size:11px;color:#94a3b8">Please wait — images loading</div>
-  </div>
+<div id="board-wrap">
+<div id="board-loading">
+  <div class="piece-spin">♞</div>
+  <p>Setting up the pieces…</p>
+  <div class="sub">Getting the board ready for battle</div>
+</div>
+<div id="board"></div>
 </div>
 <div class="mt-4 flex flex-wrap gap-2 justify-center">
 <button onclick="undoMove()" class="bg-white/10 text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white/15"><i class="fas fa-undo mr-1"></i>Undo</button>
@@ -478,6 +555,45 @@ Enter Arena <i class="fas fa-arrow-right ml-2"></i>
   </div>
 </div>
 
+
+<button type="button" class="settings-btn" onclick="toggleSettings()" title="Settings" aria-label="Settings">
+  <i class="fas fa-cog"></i>
+</button>
+<div id="settings-panel" class="settings-panel">
+  <div class="text-[11px] font-black uppercase tracking-widest text-amber-400 mb-3">⚙️ Settings</div>
+  <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Board colour</label>
+  <select id="set-board" class="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white mb-3">
+    <option value="green">Green</option>
+    <option value="brown">Brown</option>
+    <option value="blue">Blue</option>
+    <option value="purple">Purple</option>
+  </select>
+  <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Piece style</label>
+  <select id="set-pieces" class="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white mb-3">
+    <option value="neo">Neo</option>
+    <option value="game_room">Game Room</option>
+    <option value="marble">Marble</option>
+    <option value="classic">Classic</option>
+  </select>
+  <label class="flex items-center gap-2 text-sm text-slate-200 mb-2 cursor-pointer">
+    <input type="checkbox" id="set-sound" checked class="rounded"> Sound effects
+  </label>
+  <label class="flex items-center gap-2 text-sm text-slate-200 mb-2 cursor-pointer">
+    <input type="checkbox" id="set-voice" checked class="rounded"> AI voice (talk)
+  </label>
+  <label class="flex items-center gap-2 text-sm text-slate-200 mb-2 cursor-pointer">
+    <input type="checkbox" id="set-legal" checked class="rounded"> Show legal move dots
+  </label>
+  <label class="flex items-center gap-2 text-sm text-slate-200 mb-2 cursor-pointer">
+    <input type="checkbox" id="set-illegal" checked class="rounded"> Illegal move flash + tip
+  </label>
+  <label class="flex items-center gap-2 text-sm text-slate-200 mb-3 cursor-pointer">
+    <input type="checkbox" id="set-piece-tips" class="rounded"> Speak piece tips on select
+  </label>
+  <p class="text-[10px] text-slate-500 mb-3">AI only talks on captures and when the game ends.</p>
+  <button type="button" onclick="applySettings()" class="w-full bg-gradient-to-r from-amber-400 to-amber-600 text-black py-2.5 rounded-xl text-xs font-black uppercase tracking-widest">Apply</button>
+</div>
+
 <a href="https://wa.me/2348025028105" target="_blank" class="wa-float"><i class="fab fa-whatsapp"></i></a>
 
 <script>
@@ -486,91 +602,90 @@ if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
 const db=firebase.firestore();
 
 const levelConfig={
-1:{time:15, name:"Pip",  elo:"~350", randomChance:0.80, seed:"Pip",  color:"b6e3f4",
+1:{time:15, name:"Pip", gender:"boy",  elo:"~350", randomChance:0.80, seed:"Pip",  color:"b6e3f4",
    blurb:"Cheerful beginner. Loves knights!",
-   lines:{start:["Hi! Let's have fun!","Yay chess time!","I'll try my best!"],
-          move:["Hmm...","Is this good?","Oops maybe?"],
-          capture:["I got one!","Oh!","Hehe!"],
-          check:["Check? Did I?","Is that check?","Whoa!"],
-          inCheck:["My king is in check!","I'm in check!","Oh no — check!"],
-          illegal:["That move isn't allowed!","Hmm, illegal move!","Try a different square!"],
-          win:["I won?! Wow!","Yay!"],
-          lose:["Good game! You're strong!","I'll practice more!","Wow you are a champion!","Can we play again?","You outsmarted me!"]}},
-2:{time:25, name:"Nia",  elo:"~500", randomChance:0.65, seed:"Nia",  color:"c0aede",
+   lines:{start:["Hi! Let's have fun!","Yay chess time!","I'll try my best!","Ready, ready, ready!"],
+          move:["Hmm...","Is this good?","Oops maybe?","Thinking hard!","Maybe the knight?"],
+          capture:["I got one! Woo!","Oh! Mine now!","Hehe, snatch!","Yay I took it!","Surprise capture!"],
+          lose_piece:["Aww my piece!","Oh no you got me!","That was sneaky!","My knight! Nooo!","You're so good!","How did you do that?!"],
+          check:["Check? Did I?","Is that check?","Whoa!","Your king better run!"],
+          win:["I won?! Wow!","Yay I did it!"],
+          lose:["You're a SUPERSTAR!","Wow you are a champion!","You outsmarted me!","You're amazing — rematch?","That was EPIC!"]}},
+2:{time:25, name:"Nia", gender:"girl",  elo:"~500", randomChance:0.65, seed:"Nia",  color:"c0aede",
    blurb:"Curious explorer. Thinks out loud.",
-   lines:{start:["Ready when you are!","Let's explore the board!"],
-          move:["Interesting...","Maybe here?","Thinking..."],
-          capture:["Gotcha!","Nice trade!"],
-          check:["Check!","Watch your king!"],
-          inCheck:["My king is in check!","I'm in check!","You put me in check!"],
-          illegal:["That isn't legal.","Illegal move — try again!","Hmm, that square won't work."],
+   lines:{start:["Ready when you are!","Let's explore the board!","Curious minds play chess!"],
+          move:["Interesting...","Maybe here?","Thinking...","Hmm, a discovery!"],
+          capture:["Gotcha!","Nice find for me!","I spotted that!","Capture adventure!","Yes — mine!"],
+          lose_piece:["Whoa, bold take!","You saw that before me!","My explorer piece fell!","Impressive capture!","You're teaching me!"],
+          check:["Check!","Watch your king!","Pressure!"],
           win:["Great game!","I learned a lot!"],
-          lose:["You played so well!","Teach me that move!"]}},
-3:{time:40, name:"Rex",  elo:"~650", randomChance:0.50, seed:"Rex",  color:"ffd5dc",
+          lose:["You played like a genius!","Teach me that move!","Brilliant adventure!","You're the real explorer!"]}},
+3:{time:40, name:"Rex", gender:"male",  elo:"~650", randomChance:0.50, seed:"Rex",  color:"ffd5dc",
    blurb:"Brave knight. Bold but still learning.",
-   lines:{start:["Challenge accepted!","For honour!"],
-          move:["Attack!","Onward!","Hmm."],
-          capture:["Ha!","Taken!"],
-          check:["Check!","Feel the pressure!"],
-          inCheck:["My king is in check!","I'm in check!","Check on me!"],
-          illegal:["Illegal move, warrior!","That move isn't allowed.","Pick a legal square!"],
+   lines:{start:["Challenge accepted!","For honour!","Charge!"],
+          move:["Attack!","Onward!","Hmm.","To battle!"],
+          capture:["Ha! Taken in battle!","Victory swipe!","My sword claims it!","Bold strike!","For the realm!"],
+          lose_piece:["A worthy strike against me!","You fought bravely!","My soldier falls!","Respect — that hurt!","What a blow!"],
+          check:["Check!","Feel the pressure!","Your king trembles!"],
           win:["Victory!","Well fought!"],
-          lose:["You bested me!","Respect!"]}},
-4:{time:55, name:"Luna", elo:"~750", randomChance:0.40, seed:"Luna", color:"d1f4d1",
+          lose:["You bested a knight!","Respect, champion!","You fought like a legend!","Honour to you!"]}},
+4:{time:55, name:"Luna", gender:"female", elo:"~750", randomChance:0.40, seed:"Luna", color:"d1f4d1",
    blurb:"Calm strategist. Quiet and kind.",
-   lines:{start:["Peace and good moves.","Shall we begin?"],
-          move:["...","A quiet move.","Careful..."],
-          capture:["As planned.","Taken."],
-          check:["Check.","Your king..."],
-          inCheck:["My king is in check.","I'm in check.","Check… noted."],
-          illegal:["That move is not legal.","Illegal — try again.","A different square, please."],
+   lines:{start:["Peace and good moves.","Shall we begin?","Soft focus..."],
+          move:["...","A quiet move.","Careful...","Gently..."],
+          capture:["As planned.","Softly taken.","A quiet capture.","Balance shifts.","Necessary."],
+          lose_piece:["Beautifully taken...","You saw deeper than me.","A graceful capture.","Well spotted.","I'm impressed."],
+          check:["Check.","Your king...","Careful now."],
           win:["Well played.","A fine game."],
-          lose:["Beautifully done.","I enjoyed that."]}},
-5:{time:70, name:"Kai",  elo:"~850", randomChance:0.32, seed:"Kai",  color:"ffeaa7",
+          lose:["Beautifully done.","You play with wisdom.","A true Mind Master.","I enjoyed every move."]}},
+5:{time:70, name:"Kai", gender:"male",  elo:"~850", randomChance:0.32, seed:"Kai",  color:"ffeaa7",
    blurb:"Speedy thinker. Talks a lot!",
-   lines:{start:["Let's gooo!","Fast and fun!"],
-          move:["Zip!","Quick one!","There!"],
-          capture:["Boom!","Yes!"],
-          check:["Check check!","Uh oh for you!"],
-          inCheck:["My king is in check!","I'm in check!","Whoa, check on me!"],
-          illegal:["Nope, illegal!","That move isn't allowed!","Try another square!"],
+   lines:{start:["Let's gooo!","Fast and fun!","Zoom time!"],
+          move:["Zip!","Quick one!","There!","Speed move!"],
+          capture:["BOOM! Taken!","Yes! Lightning grab!","Zip — mine!","Speed capture!","Did you see that?!"],
+          lose_piece:["Whoa you are FAST!","My piece — gone!","Turbo take by you!","That was electric!","You zoomed past me!"],
+          check:["Check check!","Uh oh for you!","King alert!"],
           win:["Woohoo!","That was fun!"],
-          lose:["You're amazing!","Rematch someday!"]}},
-6:{time:90, name:"Zara", elo:"~950", randomChance:0.22, seed:"Zara", color:"a0c4ff",
+          lose:["You're AMAZING!","Rematch someday!","Speed king!","You lit up the board!"]}},
+6:{time:90, name:"Zara", gender:"female", elo:"~950", randomChance:0.22, seed:"Zara", color:"a0c4ff",
    blurb:"Puzzle lover. Tricky ideas.",
-   lines:{start:["Solve me if you can!","A new puzzle!"],
-          move:["Curious...","A little trap?"],
-          capture:["Part of the plan.","Got it!"],
-          check:["Check!","Do you see it?"],
-          inCheck:["My king is in check!","I'm in check!","You found the check!"],
-          illegal:["Illegal move.","That isn't legal.","Hmm, not that square."],
-          win:["Puzzle solved!","Nice try!"],
-          lose:["You cracked it!","Brilliant!"]}},
-7:{time:120,name:"Omar", elo:"~1050",randomChance:0.12, seed:"Omar", color:"ffc6ff",
+   lines:{start:["Solve me if you can!","A new puzzle!","Let's twist the board!"],
+          move:["Curious...","A little trap?","Hmm..."],
+          capture:["Part of the plan!","Puzzle piece claimed!","Got it!","Trap sprung!","Clever take!"],
+          lose_piece:["You cracked my idea!","That solve was sharp!","My puzzle broke!","Brilliant capture!","You saw the key!"],
+          check:["Check!","Do you see it?","Pressure puzzle!"],
+          win:["Puzzle solved — by me!","Nice try!"],
+          lose:["You cracked the whole puzzle!","Brilliant mind!","You're the puzzle master!","Incredible solve!"]}},
+7:{time:120,name:"Omar", gender:"male", elo:"~1050",randomChance:0.12, seed:"Omar", color:"ffc6ff",
    blurb:"Coach's student. Solid habits.",
-   lines:{start:["Good luck!","Play your best!"],
-          move:["Developing...","Solid."],
-          capture:["Fair trade.","Alright."],
-          check:["Check.","Careful now."],
-          inCheck:["My king is in check.","I'm in check.","Check — I must respond."],
-          illegal:["That move isn't legal.","Illegal move — try again.","Choose a legal square."],
+   lines:{start:["Good luck!","Play your best!","Solid game ahead."],
+          move:["Developing...","Solid.","Building..."],
+          capture:["Fair trade.","Clean capture.","Solid take.","Alright — claimed.","Textbook!"],
+          lose_piece:["Excellent technique!","You earned that piece.","Coach would love that.","Clean capture by you.","Very solid play."],
+          check:["Check.","Careful now.","King under fire."],
           win:["Good game!","Keep practising!"],
-          lose:["Excellent play!","You've improved!"]}},
-8:{time:180,name:"Nova", elo:"~1150",randomChance:0.06, seed:"Nova", color:"fdffb6",
+          lose:["Excellent play!","You've improved so much!","Champion habits!","True student of the game!"]}},
+8:{time:180,name:"Nova", gender:"female", elo:"~1150",randomChance:0.06, seed:"Nova", color:"fdffb6",
    blurb:"Star pupil. Toughest on the list.",
-   lines:{start:["Show me what you've got.","Let's make this epic!"],
-          move:["Calculated.","Interesting choice."],
-          capture:["Necessary.","Taken."],
-          check:["Check!","Pressure on!"],
-          inCheck:["My king is in check.","I'm in check.","Check — well spotted."],
-          illegal:["Illegal move.","That isn't allowed.","A legal square, please."],
+   lines:{start:["Show me what you've got.","Let's make this epic!","Star vs star."],
+          move:["Calculated.","Interesting choice.","Precision."],
+          capture:["Necessary.","Calculated take.","Precision strike.","As expected.","Claimed."],
+          lose_piece:["That was elite!","You out-calculated me.","Star-level capture!","I felt that.","World-class take!"],
+          check:["Check!","Pressure on!","Your king is watched."],
           win:["A hard-fought win!","Respect!"],
-          lose:["You are a true Mind Master!","Incredible!"]}}
+          lose:["You are a true Mind Master!","Incredible!","A star is born!","Legendary performance!"]}}
 };
 
-// —— Progress & unlocks ——
+// —— Progress & unlocks (+ Firebase cloud sync) ——
+function normalizePlayerName(n){ return String(n||'').trim().replace(/\s+/g,' ').toLowerCase(); }
+function displayPlayerName(n){ const t=String(n||'').trim().replace(/\s+/g,' '); return t?t.replace(/\b\w/g,c=>c.toUpperCase()):'Player'; }
+function playerDocId(n){ return normalizePlayerName(n).replace(/[^a-z0-9]+/g,'_').slice(0,64) || 'anon'; }
+
 function loadMMProgress(){try{return JSON.parse(localStorage.getItem('mm_progress')||'{}')}catch(e){return {}}}
-function saveMMProgress(p){localStorage.setItem('mm_progress',JSON.stringify(p))}
+function saveMMProgress(p, opts){
+  localStorage.setItem('mm_progress',JSON.stringify(p));
+  if(!opts||opts.cloud!==false) scheduleCloudPush(p);
+}
 function maxUnlockedLevel(){
   const p=loadMMProgress();
   return Math.min(8, Math.max(1, p.unlockedLevel||1));
@@ -617,10 +732,139 @@ function updateStreakPill(){
   }
 }
 
+var _cloudPushTimer=null;
+function scheduleCloudPush(p){
+  clearTimeout(_cloudPushTimer);
+  _cloudPushTimer=setTimeout(function(){ pushCloudProgress(p); }, 600);
+}
+function mergeProgress(local, cloud){
+  if(!cloud) return local||{};
+  if(!local) local={};
+  var out=Object.assign({}, local);
+  out.xp=Math.max(local.xp||0, cloud.xp||0);
+  out.unlockedLevel=Math.max(local.unlockedLevel||1, cloud.unlockedLevel||1, 1);
+  out.aiWins=Math.max(local.aiWins||0, cloud.aiWins||0);
+  out.streak=Math.max(local.streak||0, cloud.streak||0);
+  out.aiWinStreak=Math.max(local.aiWinStreak||0, cloud.aiWinStreak||0);
+  out.questWins=Math.max(local.questWins||0, cloud.questWins||0);
+  out.practiceTotal=Math.max(local.practiceTotal||0, cloud.practiceTotal||0);
+  out.chestStreak=Math.max(local.chestStreak||0, cloud.chestStreak||0);
+  var set={};
+  (local.beatenLevels||[]).concat(cloud.beatenLevels||[]).forEach(function(lv){ set[lv]=true; });
+  out.beatenLevels=Object.keys(set).map(Number).filter(Boolean).sort(function(a,b){return a-b;});
+  out.equipHat=local.equipHat||cloud.equipHat||'none';
+  out.equipFrame=local.equipFrame||cloud.equipFrame||'auto';
+  out.schoolCode=local.schoolCode||cloud.schoolCode||'';
+  out.name=local.name||cloud.name||'';
+  out.pin=local.pin||cloud.pin||'';
+  out.achievements=Object.assign({}, cloud.achievements||{}, local.achievements||{});
+  out.dailyDone=Object.assign({}, cloud.dailyDone||{}, local.dailyDone||{});
+  out.chestClaimed=local.chestClaimed||cloud.chestClaimed||'';
+  out.lastVisit=local.lastVisit||cloud.lastVisit||'';
+  out.streakFreeze=!!(local.streakFreeze||cloud.streakFreeze);
+  out.freezeActive=!!(local.freezeActive||cloud.freezeActive);
+  out.cloudSyncedAt=Date.now();
+  return out;
+}
+function pushCloudProgress(p){
+  p=p||loadMMProgress();
+  var name=p.name||localStorage.getItem('mm_online_name')||'';
+  if(!name||!db) return;
+  var id=playerDocId(name);
+  db.collection('player_progress').doc(id).set({
+    name: displayPlayerName(name),
+    nameKey: normalizePlayerName(name),
+    xp: p.xp||0,
+    unlockedLevel: p.unlockedLevel||1,
+    beatenLevels: p.beatenLevels||[],
+    aiWins: p.aiWins||0,
+    streak: p.streak||0,
+    aiWinStreak: p.aiWinStreak||0,
+    questWins: p.questWins||0,
+    practiceTotal: p.practiceTotal||0,
+    equipHat: p.equipHat||'none',
+    equipFrame: p.equipFrame||'auto',
+    schoolCode: p.schoolCode||'',
+    pin: p.pin||'',
+    achievements: p.achievements||{},
+    dailyDone: p.dailyDone||{},
+    chestClaimed: p.chestClaimed||'',
+    lastVisit: p.lastVisit||'',
+    streakFreeze: !!p.streakFreeze,
+    updated: firebase.firestore.FieldValue.serverTimestamp()
+  },{merge:true}).then(function(){ setCloudStatus('synced'); })
+  .catch(function(e){ console.warn('Cloud push failed', e); setCloudStatus('offline'); });
+}
+function pullCloudProgress(name){
+  return new Promise(function(resolve){
+    if(!name||!db){ resolve(null); return; }
+    db.collection('player_progress').doc(playerDocId(name)).get().then(function(doc){
+      resolve(doc.exists ? doc.data() : null);
+    }).catch(function(){ resolve(null); });
+  });
+}
+function setCloudStatus(state){
+  var el=document.getElementById('cloud-status');
+  if(!el) return;
+  if(state==='synced'){ el.textContent='☁ Cloud saved'; el.className='text-[10px] font-bold text-emerald-400 mt-1'; }
+  else if(state==='syncing'){ el.textContent='☁ Syncing…'; el.className='text-[10px] font-bold text-amber-400 mt-1'; }
+  else if(state==='loaded'){ el.textContent='☁ Progress restored'; el.className='text-[10px] font-bold text-sky-400 mt-1'; }
+  else { el.textContent='☁ Offline'; el.className='text-[10px] font-bold text-slate-500 mt-1'; }
+}
+async function syncProgressForName(name, pinAttempt){
+  if(!name) return loadMMProgress();
+  setCloudStatus('syncing');
+  var local=loadMMProgress();
+  local.name=name;
+  var cloud=await pullCloudProgress(name);
+  if(cloud && cloud.pin && String(cloud.pin).length>=4){
+    var need=String(cloud.pin);
+    var got=pinAttempt!=null ? String(pinAttempt) : (local.pin||'');
+    if(got!==need){
+      setCloudStatus('offline');
+      return { needsPin:true, cloud:cloud, local:local };
+    }
+  }
+  var merged=mergeProgress(local, cloud);
+  merged.name=name;
+  if(pinAttempt) merged.pin=String(pinAttempt);
+  saveMMProgress(merged, {cloud:true});
+  setCloudStatus(cloud ? 'loaded' : 'synced');
+  if(cloud) showToast('☁ Progress loaded from cloud','unlock');
+  return { needsPin:false, progress:merged };
+}
+
+var ACHIEVEMENTS=[
+  {id:'first_win', name:'First Victory', icon:'🏆', check:function(p){return (p.aiWins||0)>=1;}},
+  {id:'streak3', name:'On Fire', icon:'🔥', check:function(p){return (p.aiWinStreak||0)>=3;}},
+  {id:'streak5', name:'Unstoppable', icon:'⚡', check:function(p){return (p.aiWinStreak||0)>=5;}},
+  {id:'beat3', name:'Triple Threat', icon:'⚔️', check:function(p){return (p.beatenLevels||[]).length>=3;}},
+  {id:'beat8', name:'All Rivals', icon:'👑', check:function(p){return (p.beatenLevels||[]).length>=8;}},
+  {id:'xp200', name:'Rising Star', icon:'⭐', check:function(p){return (p.xp||0)>=200;}},
+  {id:'xp500', name:'Mind Master', icon:'🧠', check:function(p){return (p.xp||0)>=500;}},
+  {id:'day3', name:'3-Day Hero', icon:'📅', check:function(p){return (p.streak||0)>=3;}}
+];
+function checkAchievements(p){
+  p.achievements=p.achievements||{};
+  var newly=[];
+  ACHIEVEMENTS.forEach(function(a){
+    if(!p.achievements[a.id] && a.check(p)){
+      p.achievements[a.id]={at:Date.now()};
+      newly.push(a);
+    }
+  });
+  if(newly.length){
+    saveMMProgress(p);
+    newly.forEach(function(a,i){
+      setTimeout(function(){ showToast(a.icon+' Achievement: '+a.name,'levelup'); }, 400+i*700);
+    });
+  }
+  return newly;
+}
 
 function markDailyPlayWin(level){
   try{
-    var p=JSON.parse(localStorage.getItem('mm_progress')||'{}');
+    var p=loadMMProgress();
     p.dailyDone=p.dailyDone||{};
     var d=new Date();
     var key=d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
@@ -629,7 +873,11 @@ function markDailyPlayWin(level){
     if(level===1) p.dailyQuestWins.pip=true;
     if(level===2) p.dailyQuestWins.nia=true;
     p.dailyQuestWins.play=true;
-    localStorage.setItem('mm_progress',JSON.stringify(p));
+    if(!p.firstWinDay || p.firstWinDay!==key){
+      p.firstWinDay=key;
+      p._firstWinBonus=true;
+    }
+    saveMMProgress(p);
   }catch(e){}
 }
 
@@ -637,11 +885,13 @@ function awardXP(amount){
   const p = loadMMProgress();
   const oldXp = p.xp || 0;
   const oldLevel = Math.floor(oldXp / 100) + 1;
+  var day=new Date().getDay();
+  if(day===0||day===6){ amount=Math.round(amount*1.2); }
+  if(p._firstWinBonus){ amount+=10; p._firstWinBonus=false; showToast('🌅 First win of the day +10 XP','xp'); }
+  if(p._comebackReady){ amount+=8; p._comebackReady=false; showToast('💪 Comeback bonus +8 XP','streak'); }
   p.xp = oldXp + amount;
   p.aiWins = (p.aiWins || 0) + 1;
-  // Win streak
   p.aiWinStreak = (p.aiWinStreak || 0) + 1;
-  // Track which AI levels beaten
   if (!p.beatenLevels) p.beatenLevels = [];
   if (settings && settings.level && p.beatenLevels.indexOf(settings.level) === -1) {
     p.beatenLevels.push(settings.level);
@@ -661,6 +911,7 @@ function awardXP(amount){
       showToast('⬆️ Level ' + newLevel + '!', 'levelup');
     }, 900);
   }
+  checkAchievements(p);
   updateStreakPill();
   return p.aiWinStreak;
 }
@@ -668,6 +919,7 @@ function awardXP(amount){
 function resetWinStreak(){
   const p = loadMMProgress();
   p.aiWinStreak = 0;
+  p._comebackReady = true;
   saveMMProgress(p);
   updateStreakPill();
 }
@@ -675,25 +927,28 @@ function refreshCharacterLocks(){
   const max = maxUnlockedLevel();
   const p = loadMMProgress();
   const beaten = p.beatenLevels || [];
+  if (typeof settings !== 'undefined' && settings.level > max) settings.level = max;
   document.querySelectorAll('[data-group="level"]').forEach(btn => {
-    const lv = parseInt(btn.dataset.val);
-    // locks
+    const lv = parseInt(btn.dataset.val, 10);
     if (lv > max) {
       btn.classList.add('opacity-40');
+      btn.classList.remove('active');
       btn.style.pointerEvents = 'none';
+      btn.setAttribute('aria-disabled','true');
       if (!btn.querySelector('.lock-tag')) {
-        const t = document.createElement('div');
-        t.className = 'lock-tag text-[8px] text-rose-400';
-        t.textContent = '🔒 Beat Lv' + (lv - 1);
-        btn.appendChild(t);
+        const tg = document.createElement('div');
+        tg.className = 'lock-tag text-[8px] text-rose-400';
+        tg.textContent = '🔒 Beat Lv' + (lv - 1);
+        btn.appendChild(tg);
       }
     } else {
       btn.classList.remove('opacity-40');
       btn.style.pointerEvents = '';
-      const t = btn.querySelector('.lock-tag');
-      if (t) t.remove();
+      btn.removeAttribute('aria-disabled');
+      const tg = btn.querySelector('.lock-tag');
+      if (tg) tg.remove();
+      if (typeof settings !== 'undefined') btn.classList.toggle('active', lv === settings.level);
     }
-    // defeated stamp
     let stamp = btn.querySelector('.defeated-stamp');
     if (beaten.indexOf(lv) !== -1) {
       if (!stamp) {
@@ -707,6 +962,9 @@ function refreshCharacterLocks(){
       stamp.remove();
     }
   });
+  const c = levelConfig[typeof settings!=='undefined'?settings.level:1];
+  const bl = document.getElementById('char-blurb');
+  if (bl && c) bl.textContent = c.name + ' — ' + c.blurb + ' (' + c.elo + ')';
 }
 
 function pickLine(level, kind){
@@ -715,71 +973,24 @@ function pickLine(level, kind){
   const arr=L.lines[kind];
   return arr[Math.floor(Math.random()*arr.length)];
 }
-/** Speak less often: quiet moves ~22%; always for capture/check/inCheck/illegal/start/win/lose */
-function maybeShowSpeech(kind){
-  if(kind==='move' && Math.random()>0.22) return;
-  showSpeech(pickLine(settings.level, kind));
-}
-function showSpeech(text){
+function showSpeech(text, opts){
   const el=document.getElementById('ai-speech');
   if(!el||!text)return;
   el.textContent=text;
   el.classList.remove('opacity-0');
   el.classList.add('opacity-100');
+  // Pop animation for excitement
+  el.style.transform = 'scale(1.04)';
+  setTimeout(function(){ el.style.transform = 'scale(1)'; }, 180);
+  var av = document.getElementById('ai-avatar');
+  if (av) { av.classList.add('rival-live-pulse'); setTimeout(function(){ av.classList.remove('rival-live-pulse'); }, 2000); }
   clearTimeout(window._speechTimer);
-  window._speechTimer=setTimeout(()=>{el.classList.add('opacity-0');el.classList.remove('opacity-100')},2800);
-}
-function softIllegalBeep(){
-  try{ beep(220,0.08,'triangle',0.08); setTimeout(()=>beep(180,0.1,'triangle',0.06),70); }catch(e){}
-}
-
-/* —— Mr Dotun recorded voice (your clips) —— */
-const DOTUN_AUDIO = {
-  win: [
-    'audio/well-done.mp3',
-    'audio/well-done-chap.mp3',
-    'audio/great-job.mp3',
-    'audio/excellent.mp3',
-    'audio/that-was-a-strong-game.mp3'
-  ],
-  welcome: ['audio/welcome-back.mp3'],
-  coach: ['audio/protect.mp3']
-};
-let _dotunPlayer = null;
-function resolveAudioUrl(src){
-  if(!src) return src;
-  if(/^https?:\/\//i.test(src) || src.charAt(0)==='/') return src;
-  try { return new URL(src, window.location.href).href; } catch(e){ return src; }
-}
-function playDotunClip(list){
-  try{
-    if(localStorage.getItem('mm_sound')==='0'){
-      console.warn('[Mind Masters] Sound muted');
-      return;
-    }
-    if(!list || !list.length) return;
-    if(_dotunPlayer){ try{ _dotunPlayer.pause(); }catch(e){} }
-    const src = list[Math.floor(Math.random()*list.length)];
-    const url = resolveAudioUrl(src);
-    console.log('[Mind Masters] Playing', url);
-    _dotunPlayer = new Audio(url);
-    _dotunPlayer.preload = 'auto';
-    _dotunPlayer.volume = 1;
-    _dotunPlayer.onerror = function(){
-      console.error('[Mind Masters] Audio failed:', url, '— upload audio/ folder next to play-ai.html');
-    };
-    _dotunPlayer.play().catch(function(err){
-      console.warn('[Mind Masters] Play blocked until user taps', err);
-    });
-  }catch(e){ console.error(e); }
-}
-// Unlock audio after first tap
-document.addEventListener('click', function(){
-  try { var a=new Audio(); a.volume=0; a.play().catch(function(){}); } catch(e){}
-}, {passive:true});
-
-function speakDotunWin(){
-  playDotunClip(DOTUN_AUDIO.win);
+  window._speechTimer=setTimeout(()=>{el.classList.add('opacity-0');el.classList.remove('opacity-100')},3800);
+  // Speak in this rival's voice (only if voice enabled in settings)
+  var voiceOn = localStorage.getItem('mm_voice') !== '0';
+  if (voiceOn && (!opts || opts.speak !== false)) {
+    speakAsAI(text, settings && settings.level);
+  }
 }
 
 
@@ -808,10 +1019,17 @@ function soundMove(){beep(420,0.08,'sine',0.12)}
 function soundCapture(){beep(280,0.1,'triangle',0.18);setTimeout(()=>beep(180,0.12,'triangle',0.12),60)}
 function soundCheck(){beep(600,0.1,'square',0.1);setTimeout(()=>beep(800,0.12,'square',0.1),90)}
 function soundWin(){
-  // Celebratory ascending fanfare
-  const notes = [523,659,784,1047];
-  notes.forEach((f,i)=>setTimeout(()=>beep(f,0.14,'sine',0.16), i*110));
-  setTimeout(()=>beep(1319,0.28,'triangle',0.12), 480);
+  // Big celebratory fanfare for kids
+  const fanfare = [523,659,784,1047,1319,1568];
+  fanfare.forEach((f,i)=>setTimeout(()=>beep(f,0.16,'sine',0.18), i*95));
+  setTimeout(()=>beep(2093,0.35,'triangle',0.14), 620);
+  setTimeout(()=>beep(1568,0.2,'square',0.08), 780);
+  setTimeout(()=>beep(2093,0.4,'sine',0.12), 900);
+}
+function soundCapturePop(){
+  beep(660,0.06,'square',0.1);
+  setTimeout(()=>beep(880,0.08,'sine',0.12),50);
+  setTimeout(()=>beep(1100,0.1,'triangle',0.1),110);
 }
 function soundStreak(){
   beep(880,0.08,'square',0.1);
@@ -823,24 +1041,78 @@ function soundLevelUp(){
 }
 function soundLose(){beep(300,0.15,'sawtooth',0.1);setTimeout(()=>beep(200,0.25,'sawtooth',0.1),150)}
 function soundSelect(){beep(500,0.04,'sine',0.06)}
+function soundIllegal(){
+  beep(180,0.12,'sawtooth',0.12);
+  setTimeout(()=>beep(140,0.18,'sawtooth',0.1),100);
+}
 function soundStart(){beep(440,0.1,'sine',0.12);setTimeout(()=>beep(550,0.12,'sine',0.12),100)}
 
 function selectOpt(btn){
   const g=btn.dataset.group,v=btn.dataset.val;
+  if(g==='level'){
+    const lv=parseInt(v,10);
+    if(lv>maxUnlockedLevel()){
+      showToast('🔒 Beat Level '+(lv-1)+' first to unlock this rival','unlock');
+      return;
+    }
+  }
   document.querySelectorAll(`[data-group="${g}"]`).forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   soundSelect();
   if(g==='color')settings.color=v;
   if(g==='level'){
-    settings.level=parseInt(v);
+    settings.level=parseInt(v,10);
     const c=levelConfig[settings.level];
     const bl=document.getElementById('char-blurb');
     if(bl&&c) bl.textContent=c.name+' — '+c.blurb+' ('+c.elo+')';
   }
-  if(g==='time')settings.timeMin=parseInt(v);
+  if(g==='time')settings.timeMin=parseInt(v,10);
 }
 
-function startGame(){
+
+function showBoardLoading(msg){
+  var el = document.getElementById('board-loading');
+  if (!el) return;
+  el.classList.remove('hide');
+  var p = el.querySelector('p');
+  if (p && msg) p.textContent = msg;
+}
+function hideBoardLoading(){
+  var el = document.getElementById('board-loading');
+  if (!el) return;
+  el.classList.add('hide');
+}
+function waitForBoardPieces(timeoutMs){
+  timeoutMs = timeoutMs || 8000;
+  return new Promise(function(resolve){
+    showBoardLoading('Setting up the pieces…');
+    var start = Date.now();
+    function check(){
+      var imgs = document.querySelectorAll('#board img');
+      if (imgs.length >= 16) {
+        var pending = 0, done = 0;
+        imgs.forEach(function(img){
+          if (img.complete && img.naturalWidth > 0) { done++; return; }
+          pending++;
+          var onDone = function(){ pending--; if (pending <= 0) finish(); };
+          img.addEventListener('load', onDone, {once:true});
+          img.addEventListener('error', onDone, {once:true});
+        });
+        if (pending <= 0) { finish(); return; }
+        return;
+      }
+      if (Date.now() - start > timeoutMs) { finish(); return; }
+      setTimeout(check, 120);
+    }
+    function finish(){
+      // small beat so kids see the message
+      setTimeout(function(){ hideBoardLoading(); resolve(); }, 280);
+    }
+    check();
+  });
+}
+
+async function startGame(){
   const name=document.getElementById('player-name').value.trim();
   if(!name){
     document.getElementById('setup-error').classList.remove('hidden');
@@ -848,7 +1120,32 @@ function startGame(){
     return;
   }
   document.getElementById('setup-error').classList.add('hidden');
+  var pinEl=document.getElementById('player-pin');
+  var pinVal=pinEl?pinEl.value.trim():'';
+  setCloudStatus('syncing');
+  var result=await syncProgressForName(name, pinVal||undefined);
+  if(result && result.needsPin){
+    document.getElementById('setup-error').textContent='This name is PIN-protected. Enter the 4-digit PIN.';
+    document.getElementById('setup-error').classList.remove('hidden');
+    if(pinEl) pinEl.focus();
+    return;
+  }
+  if(pinVal && pinVal.length>=4){
+    var pp=loadMMProgress();
+    pp.pin=pinVal;
+    pp.name=name;
+    saveMMProgress(pp);
+  }
+  if(settings.level>maxUnlockedLevel()){
+    settings.level=maxUnlockedLevel();
+    document.querySelectorAll('[data-group="level"]').forEach(b=>{
+      b.classList.toggle('active', parseInt(b.dataset.val,10)===settings.level);
+    });
+    showToast('Playing unlocked rival only (Lv'+settings.level+')','unlock');
+  }
+  refreshCharacterLocks();
   settings.name=name;
+  localStorage.setItem('mm_online_name', name);
   playerColor=settings.color;
   soundStart();
   document.getElementById('setup-screen').classList.add('hidden');
@@ -860,24 +1157,23 @@ function startGame(){
   if(av) av.src=`https://api.dicebear.com/7.x/avataaars/svg?seed=${char.seed}&backgroundColor=${char.color}`;
   const an=document.getElementById('ai-name'); if(an) an.textContent=char.name;
   const ae=document.getElementById('ai-elo'); if(ae) ae.textContent=char.elo+' · '+char.blurb;
-  showSpeech(pickLine(settings.level,'start'));
+  // Quiet start — AI only talks on captures / game end
+  // showSpeech(pickLine(settings.level,'start'));
   document.getElementById('game-header').textContent=name+' vs '+char.name;
 
   initWorker();
-  showBoardLoading(true);
-  // Wait for piece images (CDN / slow memory devices) before starting play
-  preloadPieceImages().then(function(){
-    if(!board){
-      board=ChessBoard('board',{position:'start',draggable:false,pieceTheme:pieceThemeUrl(currentPieceTheme)});
-      $('#board').on('click','[class*="square-"]',function(){const sq=$(this).attr('data-square');if(sq)onSquareClick(sq)});
-      applyBoardColor();
-    } else {
-      board.position('start');
-      applyBoardColor();
-    }
-    showBoardLoading(false);
-    newGameInternal();
-    setTimeout(function(){ broadcastLive(); }, 300);
+  showBoardLoading('Setting up the pieces…');
+  if(!board){
+    board=ChessBoard('board',{position:'start',draggable:false,pieceTheme:pieceThemeUrl(currentPieceTheme)});
+    $('#board').on('click','[class*="square-"]',function(){const sq=$(this).attr('data-square');if(sq)onSquareClick(sq)});
+    applyBoardColor();
+  } else {
+    board.position('start');
+    applyBoardColor();
+  }
+  newGameInternal();
+  waitForBoardPieces(9000).then(function(){
+    setTimeout(function(){ broadcastLive(); }, 200);
   });
 }
 
@@ -888,21 +1184,18 @@ function backToSetup(){
   document.getElementById('setup-screen').classList.remove('hidden');
 }
 
-function newGameSameSettings(){
-  showBoardLoading(true);
-  preloadPieceImages().then(function(){
-    showBoardLoading(false);
-    newGameInternal();
-  });
-}
+function newGameSameSettings(){newGameInternal()}
 
 function newGameInternal(){
   if(liveDocId){db.collection('ai_live_games').doc(liveDocId).delete().catch(()=>{});liveDocId=null}
   game=new Chess();
   sourceSquare=null;lastFrom=null;lastTo=null;isThinking=false;
+  window._tippedPieces={};
+  showBoardLoading('Setting up the pieces…');
   board.orientation(playerColor==='w'?'white':'black');
   board.position('start');
   clearHighlights();
+  waitForBoardPieces(7000);
   document.getElementById('thinking').classList.add('hidden');
   document.getElementById('board').classList.remove('thinking-glow');
   updateStatus();updateHistory();
@@ -938,9 +1231,13 @@ function initWorker(){
         playMoveSound(move);
         updateStatus();updateHistory();broadcastLive();
         switchClock('you');
-        if(move.flags&&(move.flags.includes('c')||move.flags.includes('e'))) maybeShowSpeech('capture');
-        else if(game.in_check()) maybeShowSpeech('check');
-        else maybeShowSpeech('move');
+        // AI talks only on capture (or game-end handled in updateStatus)
+        if(move.flags&&(move.flags.includes('c')||move.flags.includes('e'))){
+          showSpeech(pickLine(settings.level,'capture'));
+          spawnCaptureBurst(move.to, false);
+        } else if(game.in_check() && !game.in_checkmate()){
+          showSpeech(pickLine(settings.level,'check'));
+        }
       }
       stopThinking();
     }
@@ -954,47 +1251,165 @@ function stopThinking(){
   document.getElementById('board').classList.remove('thinking-glow');
 }
 
+
+const PIECE_MOVE_TIPS = {
+  p: 'Pawns move forward one square. On the first move they may go two. They capture diagonally one square.',
+  n: 'Knights move in an L shape: two squares one way and then one square sideways. They can jump over pieces.',
+  b: 'Bishops move any number of squares diagonally. They stay on the same colour squares.',
+  r: 'Rooks move any number of squares horizontally or vertically — along ranks and files.',
+  q: 'Queens move any number of squares in any direction: forward, back, sideways, or diagonally.',
+  k: 'Kings move only one square in any direction. Keep your king safe!'
+};
+
+function pieceMoveTip(piece){
+  if(!piece) return 'That is not a legal move. Try another square.';
+  return PIECE_MOVE_TIPS[piece.type] || 'That is not a legal move for this piece.';
+}
+
+function speakCoachTip(text){
+  try{
+    if(localStorage.getItem('mm_sound')==='0') return;
+    if(!window.speechSynthesis||!text) return;
+    window.speechSynthesis.cancel();
+    var u=new SpeechSynthesisUtterance(text);
+    u.rate=0.95; u.pitch=1.05; u.volume=0.95;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+function showLegalMoves(fromSq){
+  clearLegalHints();
+  if(!fromSq||!game) return;
+  if(localStorage.getItem('mm_legal')==='0') return;
+  var moves=game.moves({square:fromSq, verbose:true});
+  moves.forEach(function(m){
+    var el=document.querySelector('.square-'+m.to);
+    if(!el) return;
+    el.classList.add('highlight-legal');
+    if(m.flags && (m.flags.indexOf('c')>=0 || m.flags.indexOf('e')>=0)){
+      el.classList.add('highlight-capture');
+    }
+  });
+}
+
+function clearLegalHints(){
+  document.querySelectorAll('.highlight-legal,.highlight-capture,.highlight-illegal').forEach(function(el){
+    el.classList.remove('highlight-legal','highlight-capture','highlight-illegal');
+  });
+}
+
+function flashIllegal(fromSq, toSq, piece){
+  if(localStorage.getItem('mm_illegal')==='0'){
+    // Still reject the move quietly
+    if(fromSq){
+      sourceSquare=fromSq;
+      $(`.square-${fromSq}`).addClass('highlight-select');
+      showLegalMoves(fromSq);
+    }
+    return;
+  }
+  soundIllegal();
+  clearLegalHints();
+  var tip = pieceMoveTip(piece);
+  showToast('⛔ Illegal move — '+tip.split('.')[0], 'unlock');
+  speakCoachTip('Illegal move. '+tip);
+  var statusEl=document.getElementById('status');
+  if(statusEl){
+    statusEl.textContent='Illegal move! '+tip.split('.')[0]+'.';
+    statusEl.style.color='#fca5a5';
+    setTimeout(function(){
+      statusEl.style.color='';
+      if(!game.game_over()) updateStatus();
+    }, 3200);
+  }
+  [fromSq, toSq].forEach(function(sq){
+    if(!sq) return;
+    var el=document.querySelector('.square-'+sq);
+    if(el){
+      el.classList.add('highlight-illegal');
+      setTimeout(function(){ el.classList.remove('highlight-illegal'); }, 900);
+    }
+  });
+  // Keep selected piece and re-show legal targets so kids can try again
+  if(fromSq){
+    sourceSquare=fromSq;
+    $(`.square-${fromSq}`).addClass('highlight-select');
+    showLegalMoves(fromSq);
+  }
+}
+
 function onSquareClick(sq){
-  if(!piecesReady || isThinking||!game||game.game_over())return;
+  if(isThinking||game.game_over())return;
   if(game.turn()!==playerColor)return;
   if(!sourceSquare){
     const piece=game.get(sq);
     if(piece&&piece.color===playerColor){
       sourceSquare=sq;
       clearHighlights();
+      clearLegalHints();
       $(`.square-${sq}`).addClass('highlight-select');
+      showLegalMoves(sq);
       soundSelect();
+      // Audio tip: how this piece moves (once per piece type per game)
+      if(localStorage.getItem('mm_piece_tips')==='1' && localStorage.getItem('mm_sound')!=='0'){
+        window._tippedPieces = window._tippedPieces || {};
+        if(!window._tippedPieces[piece.type]){
+          window._tippedPieces[piece.type] = true;
+          var shortTips = {
+            p:'Pawn: moves forward, captures diagonally.',
+            n:'Knight: moves in an L shape and can jump.',
+            b:'Bishop: slides diagonally.',
+            r:'Rook: slides in straight lines.',
+            q:'Queen: slides any direction.',
+            k:'King: one square any direction.'
+          };
+          speakCoachTip(shortTips[piece.type] || pieceMoveTip(piece));
+        }
+      }
     }
     return;
   }
-  if(sourceSquare===sq){sourceSquare=null;clearHighlights();showLastMove();return}
-  const move=game.move({from:sourceSquare,to:sq,promotion:'q'});
-  sourceSquare=null;
+  if(sourceSquare===sq){
+    sourceSquare=null;
+    clearHighlights();
+    clearLegalHints();
+    showLastMove();
+    return;
+  }
+  // Clicking another own piece switches selection
+  const clickPiece=game.get(sq);
+  if(clickPiece && clickPiece.color===playerColor){
+    sourceSquare=sq;
+    clearHighlights();
+    clearLegalHints();
+    $(`.square-${sq}`).addClass('highlight-select');
+    showLegalMoves(sq);
+    soundSelect();
+    return;
+  }
+  const from=sourceSquare;
+  const movingPiece=game.get(from);
+  const move=game.move({from:from,to:sq,promotion:'q'});
   if(move){
+    sourceSquare=null;
+    clearLegalHints();
     lastFrom=move.from;lastTo=move.to;
     board.position(game.fen());
     showLastMove();
     playMoveSound(move);
+    // Explosive AI reaction when YOU capture their piece
+    if(move.flags && (move.flags.indexOf('c')>=0 || move.flags.indexOf('e')>=0)){
+      showSpeech(pickLine(settings.level,'lose_piece')); // AI reacts on captures
+      spawnCaptureBurst(move.to, true);
+    } else if(game.in_check() && !game.in_checkmate()){
+      showSpeech(pickLine(settings.level,'check')); // You put AI in check
+    }
     updateStatus();updateHistory();broadcastLive();
     switchClock('ai');
-    if(!game.game_over() && game.in_check()){
-      showSpeech(pickLine(settings.level,'inCheck'));
-    }
     if(!game.game_over())makeEngineMove();
   }else{
-    softIllegalBeep();
-    showSpeech(pickLine(settings.level,'illegal'));
-    const statusEl=document.getElementById('status');
-    if(statusEl){
-      statusEl.textContent='Illegal move — try another square';
-      setTimeout(function(){ if(statusEl.textContent.indexOf('Illegal')===0) updateStatus(); }, 1800);
-    }
-    clearHighlights();
-    const piece=game.get(sq);
-    if(piece&&piece.color===playerColor){
-      sourceSquare=sq;
-      $(`.square-${sq}`).addClass('highlight-select');
-    }else showLastMove();
+    // Illegal move — correct with highlight + audio lesson
+    flashIllegal(from, sq, movingPiece);
   }
 }
 
@@ -1034,9 +1449,12 @@ function makeEngineMove(){
         playMoveSound(move);
         updateStatus();updateHistory();broadcastLive();
         switchClock('you');
-        if(move.flags&&(move.flags.includes('c')||move.flags.includes('e'))) maybeShowSpeech('capture');
-        else if(game.in_check()) maybeShowSpeech('check');
-        else maybeShowSpeech('move');
+        if(move.flags&&(move.flags.includes('c')||move.flags.includes('e'))){
+          showSpeech(pickLine(settings.level,'capture'));
+          spawnCaptureBurst(move.to, false);
+        } else if(game.in_check() && !game.in_checkmate()){
+          showSpeech(pickLine(settings.level,'check'));
+        }
         stopThinking();
         return;
       }
@@ -1053,7 +1471,10 @@ function playMoveSound(move){
   if(game.in_check())setTimeout(soundCheck,80);
 }
 
-function clearHighlights(){$('.highlight-from,.highlight-to,.highlight-select').removeClass('highlight-from highlight-to highlight-select')}
+function clearHighlights(){
+  $('.highlight-from,.highlight-to,.highlight-select').removeClass('highlight-from highlight-to highlight-select');
+  clearLegalHints();
+}
 function showLastMove(){
   clearHighlights();
   if(lastFrom)$(`.square-${lastFrom}`).addClass('highlight-from');
@@ -1242,26 +1663,31 @@ function cleanupStaleLiveGames(){
 }
 
 function recordWin(){
+  const raw=settings.name||'Player';
   db.collection('ai_wins').add({
-    name:settings.name,
+    name:displayPlayerName(raw),
+    nameKey:normalizePlayerName(raw),
     level:settings.level,
     color:playerColor,
     timestamp:firebase.firestore.FieldValue.serverTimestamp()
   }).catch(()=>{});
+  pushCloudProgress(loadMMProgress());
 }
 
 function loadAILeaderboard(){
-  db.collection('ai_wins').orderBy('timestamp','desc').limit(50).onSnapshot(snap=>{
+  db.collection('ai_wins').orderBy('timestamp','desc').limit(80).onSnapshot(snap=>{
     const box=document.getElementById('ai-leaderboard');
     if(snap.empty){box.innerHTML='<p class="text-slate-600 text-xs">No wins yet — beat the AI!</p>';return}
-    // Count wins per player
     const counts={};
     snap.forEach(doc=>{
       const d=doc.data();
-      const key=d.name||'Player';
-      if(!counts[key])counts[key]={name:key,wins:0,bestLevel:0};
+      if(d.source==='hub_share') return;
+      const key=d.nameKey||normalizePlayerName(d.name||'Player');
+      if(!key) return;
+      if(!counts[key]) counts[key]={name:displayPlayerName(d.name||key),wins:0,bestLevel:0};
       counts[key].wins++;
-      if((d.level||0)>counts[key].bestLevel)counts[key].bestLevel=d.level;
+      if((d.level||0)>counts[key].bestLevel) counts[key].bestLevel=d.level;
+      if(d.name) counts[key].name=displayPlayerName(d.name);
     });
     const ranked=Object.values(counts).sort((a,b)=>b.wins-a.wins||b.bestLevel-a.bestLevel).slice(0,10);
     let html='',rank=0;
@@ -1275,7 +1701,7 @@ function loadAILeaderboard(){
         <div class="font-black text-amber-400 text-sm">${r.wins} win${r.wins>1?'s':''}</div>
       </div>`;
     });
-    box.innerHTML=html;
+    box.innerHTML=html||'<p class="text-slate-600 text-xs">No wins yet — beat the AI!</p>';
   },()=>{document.getElementById('ai-leaderboard').innerHTML='<p class="text-slate-600 text-xs">Leaderboard offline</p>'});
 }
 
@@ -1371,44 +1797,6 @@ function pieceThemeUrl(themeKey) {
   };
 }
 
-/** Preload piece images so the board is not empty / half-loaded on slow devices */
-let piecesReady = false;
-let piecesLoading = null;
-function pieceImageUrl(pieceCode) {
-  // pieceCode chess.js style: wP, bK
-  const theme = pieceThemeUrl(currentPieceTheme);
-  if (typeof theme === 'function') return theme(pieceCode);
-  return String(theme).replace('{piece}', pieceCode);
-}
-function showBoardLoading(on) {
-  const el = document.getElementById('board-loading');
-  if (!el) return;
-  el.style.display = on ? 'flex' : 'none';
-}
-function preloadPieceImages() {
-  if (piecesLoading) return piecesLoading;
-  const codes = ['wP','wR','wN','wB','wQ','wK','bP','bR','bN','bB','bQ','bK'];
-  const urls = codes.map(pieceImageUrl);
-  showBoardLoading(true);
-  piecesReady = false;
-  piecesLoading = Promise.all(urls.map(function(url) {
-    return new Promise(function(resolve) {
-      const img = new Image();
-      img.onload = function(){ resolve(true); };
-      img.onerror = function(){ resolve(false); }; // don't block forever
-      img.src = url;
-      // safety timeout per image
-      setTimeout(function(){ resolve(false); }, 8000);
-    });
-  })).then(function() {
-    piecesReady = true;
-    piecesLoading = null;
-    showBoardLoading(false);
-    try { if (board && board.resize) board.resize(); } catch(e) {}
-  });
-  return piecesLoading;
-}
-
 let soundEnabled = true;
 let currentPieceTheme = localStorage.getItem('mm_pieces') || 'neo';
 let currentBoardTheme = localStorage.getItem('mm_board') || 'green';
@@ -1417,38 +1805,47 @@ function toggleSettings() {
   document.getElementById('settings-panel').classList.toggle('open');
 }
 function applySettings() {
-  const pieces = document.getElementById('set-pieces').value;
-  const boardT = document.getElementById('set-board').value;
-  soundEnabled = document.getElementById('set-sound').checked;
+  const piecesEl = document.getElementById('set-pieces');
+  const boardEl = document.getElementById('set-board');
+  const soundEl = document.getElementById('set-sound');
+  const voiceEl = document.getElementById('set-voice');
+  const legalEl = document.getElementById('set-legal');
+  const illegalEl = document.getElementById('set-illegal');
+  const tipsEl = document.getElementById('set-piece-tips');
+  const pieces = piecesEl ? piecesEl.value : (localStorage.getItem('mm_pieces')||'neo');
+  const boardT = boardEl ? boardEl.value : (localStorage.getItem('mm_board')||'green');
+  soundEnabled = soundEl ? soundEl.checked : true;
   currentPieceTheme = pieces;
   currentBoardTheme = boardT;
   localStorage.setItem('mm_pieces', pieces);
   localStorage.setItem('mm_board', boardT);
   localStorage.setItem('mm_sound', soundEnabled ? '1' : '0');
-  // Theme change → re-preload images (slow networks / low memory)
-  piecesReady = false;
-  piecesLoading = null;
-  showBoardLoading(true);
-  preloadPieceImages().then(function(){
-    if (board) {
-      const fen = game ? game.fen() : 'start';
-      const orient = playerColor === 'b' ? 'black' : 'white';
-      board.destroy();
-      board = ChessBoard('board', {
-        position: fen,
-        orientation: orient,
-        draggable: false,
-        pieceTheme: pieceThemeUrl(pieces)
-      });
-      $('#board').off('click').on('click', '[class*="square-"]', function() {
-        const sq = $(this).attr('data-square');
-        if (sq) onSquareClick(sq);
-      });
-      applyBoardColor();
-      showLastMove();
-    }
-    showBoardLoading(false);
-  });
+  localStorage.setItem('mm_voice', (voiceEl && voiceEl.checked) ? '1' : '0');
+  localStorage.setItem('mm_legal', (legalEl && legalEl.checked) ? '1' : '0');
+  localStorage.setItem('mm_illegal', (illegalEl && illegalEl.checked) ? '1' : '0');
+  localStorage.setItem('mm_piece_tips', (tipsEl && tipsEl.checked) ? '1' : '0');
+  if (!soundEnabled) { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch(e){} }
+  showToast('Settings saved', 'xp');
+
+  // Rebuild board with new pieces if game active
+  if (board) {
+    const fen = game ? game.fen() : 'start';
+    const orient = playerColor === 'b' ? 'black' : 'white';
+    board.destroy();
+    board = ChessBoard('board', {
+      position: fen,
+      orientation: orient,
+      draggable: false,
+      pieceTheme: pieceThemeUrl(pieces)
+    });
+    $('#board').off('click').on('click', '[class*="square-"]', function() {
+      const sq = $(this).attr('data-square');
+      if (sq) onSquareClick(sq);
+    });
+    applyBoardColor();
+    showLastMove();
+    waitForBoardPieces(6000);
+  }
   if (specBoard) {
     // keep spectator simple
   }
@@ -1473,12 +1870,21 @@ function applyBoardColor() {
   const pe = document.getElementById('set-pieces');
   const be = document.getElementById('set-board');
   const se = document.getElementById('set-sound');
+  const ve = document.getElementById('set-voice');
+  const le = document.getElementById('set-legal');
+  const ie = document.getElementById('set-illegal');
+  const te = document.getElementById('set-piece-tips');
   if (pe) pe.value = p;
   if (be) be.value = b;
   if (se) se.checked = s;
+  if (ve) ve.checked = localStorage.getItem('mm_voice') !== '0';
+  if (le) le.checked = localStorage.getItem('mm_legal') !== '0';
+  if (ie) ie.checked = localStorage.getItem('mm_illegal') !== '0';
+  if (te) te.checked = localStorage.getItem('mm_piece_tips') === '1';
   currentPieceTheme = p;
   currentBoardTheme = b;
   soundEnabled = s;
+  applyBoardColor();
 })();
 
 // Override sound functions to respect toggle
@@ -1489,29 +1895,75 @@ beep = function(freq, dur, type, vol) {
 };
 
 
-(function(){
+(async function(){
   try{
-    const p=JSON.parse(localStorage.getItem('mm_progress')||'{}');
+    const p=loadMMProgress();
     const n=p.name||localStorage.getItem('mm_online_name')||'';
     const el=document.getElementById('player-name');
-    if(el&&n)el.value=n;
+    if(el&&n) el.value=n;
+    if(n){
+      setCloudStatus('syncing');
+      const cloud=await pullCloudProgress(n);
+      if(cloud){
+        if(!cloud.pin || !String(cloud.pin).length || cloud.pin===(p.pin||'')){
+          const merged=mergeProgress(p, cloud);
+          merged.name=n;
+          saveMMProgress(merged, {cloud:true});
+          setCloudStatus('loaded');
+          refreshCharacterLocks();
+        } else {
+          setCloudStatus('offline');
+          const cs=document.getElementById('cloud-status');
+          if(cs){ cs.textContent='🔒 Enter PIN then start game to restore cloud progress'; cs.className='text-[10px] font-bold text-rose-400 mt-1'; }
+        }
+      } else {
+        pushCloudProgress(p);
+        setCloudStatus('synced');
+      }
+    }
   }catch(e){}
 })();
 
 
+
+function spawnCaptureBurst(square, youCaptured){
+  try{
+    soundCapturePop();
+    var el = document.querySelector('.square-'+square);
+    if(!el) return;
+    var rect = el.getBoundingClientRect();
+    var colors = youCaptured
+      ? ['#34d399','#fde68a','#60a5fa','#f472b6','#a78bfa','#fb923c']
+      : ['#f87171','#fbbf24','#c084fc','#38bdf8'];
+    for(var i=0;i<14;i++){
+      var d=document.createElement('div');
+      d.style.cssText='position:fixed;width:8px;height:8px;border-radius:50%;pointer-events:none;z-index:5002;left:'+(rect.left+rect.width/2)+'px;top:'+(rect.top+rect.height/2)+'px;background:'+colors[i%colors.length];
+      var ang=Math.random()*Math.PI*2, dist=30+Math.random()*50;
+      d.animate([
+        {transform:'translate(0,0) scale(1)',opacity:1},
+        {transform:'translate('+(Math.cos(ang)*dist)+'px,'+(Math.sin(ang)*dist)+'px) scale(0)',opacity:0}
+      ],{duration:500+Math.random()*300,easing:'ease-out'});
+      document.body.appendChild(d);
+      setTimeout(function(n){return function(){n.remove();};}(d),900);
+    }
+  }catch(e){}
+}
+
 function spawnWinConfetti(){
-  const colors = ['#e8c547','#f59e0b','#34d399','#60a5fa','#f472b6','#a78bfa','#fde68a'];
-  for (let i = 0; i < 48; i++) {
+  const colors = ['#e8c547','#f59e0b','#34d399','#22c55e','#60a5fa','#3b82f6','#f472b6','#ec4899','#a78bfa','#8b5cf6','#fde68a','#fb923c','#2dd4bf','#f43f5e'];
+  for (let i = 0; i < 90; i++) {
     const c = document.createElement('div');
     c.className = 'confetti-piece';
     c.style.left = Math.random() * 100 + 'vw';
     c.style.background = colors[Math.floor(Math.random() * colors.length)];
-    c.style.animationDelay = (Math.random() * 0.7) + 's';
-    c.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
-    c.style.width = (6 + Math.random() * 8) + 'px';
-    c.style.height = c.style.width;
+    c.style.animationDelay = (Math.random() * 1.1) + 's';
+    c.style.borderRadius = Math.random() > 0.4 ? '50%' : (Math.random()>0.5?'2px':'0');
+    const sz = 6 + Math.random() * 12;
+    c.style.width = sz + 'px';
+    c.style.height = (Math.random()>0.5 ? sz : sz*0.4) + 'px';
+    c.style.boxShadow = '0 0 6px '+colors[Math.floor(Math.random()*colors.length)];
     document.body.appendChild(c);
-    setTimeout(() => c.remove(), 3200);
+    setTimeout(() => c.remove(), 4000);
   }
 }
 
@@ -1565,16 +2017,89 @@ function shareWinCard(data){
 }
 
 
+// —— Distinct AI voices (masculine / feminine / kid) ——
+var _voiceCache = null;
+function loadVoiceList(){
+  try {
+    _voiceCache = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+  } catch(e) { _voiceCache = []; }
+  return _voiceCache || [];
+}
+if (typeof speechSynthesis !== 'undefined') {
+  speechSynthesis.getVoices();
+  speechSynthesis.onvoiceschanged = function(){ loadVoiceList(); };
+}
+
+function pickVoiceForGender(gender){
+  var voices = loadVoiceList();
+  if (!voices.length) return null;
+  gender = (gender || 'neutral').toLowerCase();
+  var en = voices.filter(function(v){ return /^en/i.test(v.lang); });
+  if (!en.length) en = voices;
+
+  function score(v, wantMale){
+    var n = (v.name || '').toLowerCase();
+    var s = 0;
+    // Strong gender cues in voice names
+    if (wantMale) {
+      if (/male|man|david|daniel|james|mark|george|thomas|fred|arthur|ryan|brian|guy|ravi|microsoft david|microsoft mark|google uk english male|english male/i.test(n)) s += 10;
+      if (/female|woman|samantha|zira|karen|moira|tessa|fiona|victoria|susan|hazel|google uk english female|female/i.test(n)) s -= 8;
+    } else {
+      if (/female|woman|samantha|zira|karen|moira|tessa|fiona|victoria|susan|hazel|google uk english female|siri|anna/i.test(n)) s += 10;
+      if (/male|man|david|daniel|james|mark|george|thomas|fred|arthur|ryan|brian|guy|ravi|microsoft david/i.test(n)) s -= 8;
+    }
+    if (/en-GB|en_GB|en-US|en_US|en-AU|en_NG|en-NG/i.test(v.lang)) s += 2;
+    if (/natural|neural|premium|enhanced/i.test(n)) s += 1;
+    return s;
+  }
+
+  var wantMale = (gender === 'male' || gender === 'boy');
+  var ranked = en.slice().sort(function(a,b){ return score(b, wantMale) - score(a, wantMale); });
+  return ranked[0] || en[0] || null;
+}
+
+function voiceStyleFor(gender){
+  // pitch/rate tuned per persona — males intentionally deep
+  gender = (gender || 'neutral').toLowerCase();
+  if (gender === 'boy') return { pitch: 1.32, rate: 1.05 };       // Pip - bright kid
+  if (gender === 'male') return { pitch: 0.55, rate: 0.88 };      // Rex, Kai, Omar - deep masculine
+  if (gender === 'girl') return { pitch: 1.28, rate: 1.02 };      // Nia
+  if (gender === 'female') return { pitch: 1.15, rate: 0.98 };    // Luna, Zara, Nova
+  return { pitch: 1.0, rate: 1.0 };
+}
+
+function speakAsAI(text, level){
+  try{
+    if(localStorage.getItem('mm_sound')==='0') return;
+    if(!window.speechSynthesis || !text) return;
+    var cfg = levelConfig[level || (settings && settings.level) || 1] || {};
+    var gender = cfg.gender || 'neutral';
+    var style = voiceStyleFor(gender);
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text);
+    u.rate = style.rate;
+    u.pitch = style.pitch;
+    u.volume = 1;
+    var voice = pickVoiceForGender(gender);
+    if (voice) u.voice = voice;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+
 function mmSpeak(text){
+  // Generic praise / system voice — warm mid pitch
   try{
     if(localStorage.getItem('mm_sound')==='0') return;
     if(!window.speechSynthesis||!text) return;
     window.speechSynthesis.cancel();
     var u=new SpeechSynthesisUtterance(text);
-    u.rate=0.95; u.pitch=1.05;
+    u.rate=0.98; u.pitch=1.08; u.volume=1;
+    var v = pickVoiceForGender('female'); // celebratory coach-like
+    if (v) u.voice = v;
     window.speechSynthesis.speak(u);
   }catch(e){}
 }
+
 
 function showResultModal(type, data){
   data = data || {};
@@ -1592,12 +2117,28 @@ function showResultModal(type, data){
   title.className = 'result-title ' + type;
 
   if (type === 'win') {
-    emoji.textContent = '🏆';
-    title.textContent = 'Victory!';
-    let subTxt = 'You defeated ' + (data.rivalName || 'the AI') + '!';
-    if (data.streak && data.streak >= 2) subTxt += ' 🔥 ' + data.streak + '-win streak!';
+    const praises = [
+      'You are a CHESS SUPERSTAR!',
+      'That was LEGENDARY play!',
+      'Your brain is on FIRE!',
+      'Champion energy — wow!',
+      'You outsmarted the engine!',
+      'Mind Master in the making!',
+      'Brilliant, brave, and bold!',
+      'The board belongs to YOU!'
+    ];
+    const praise = praises[Math.floor(Math.random()*praises.length)];
+    emoji.textContent = ['🏆','🌟','🎉','👑','⚡','🔥'][Math.floor(Math.random()*6)];
+    title.textContent = 'YOU WIN!';
+    let subTxt = praise + ' You defeated ' + (data.rivalName || 'the AI') + '!';
+    if (data.streak && data.streak >= 2) subTxt += ' 🔥 ' + data.streak + '-win streak — unstoppable!';
     sub.textContent = subTxt;
+    sub.style.color = '#fde68a';
+    sub.style.fontWeight = '700';
     xpEl.style.display = 'inline-flex';
+    soundWin();
+    try { mmSpeak(praise + ' You defeated ' + (data.rivalName || 'the AI') + '! Amazing job!'); } catch(e) {}
+
     xpEl.textContent = '+' + (data.xp || 20) + ' XP';
     if (data.newlyUnlocked && data.unlocked) {
       const nextCfg = levelConfig[data.unlocked];
@@ -1650,7 +2191,10 @@ function showResultModal(type, data){
 
   modal.classList.add('open');
   if (type === 'win') {
-    try { speakDotunWin(); } catch(e) {}
+    try {
+      var nm = (data && data.rivalName) || 'the AI';
+      mmSpeak('Victory! You defeated ' + nm + '!');
+    } catch(e) {}
   }
 }
 
@@ -1686,7 +2230,7 @@ function playNextLevel(){
     document.getElementById('game-header').textContent = settings.name + ' vs ' + cfg.name;
     const mi = document.getElementById('match-info');
     if (mi) mi.textContent = settings.name + ' (' + (playerColor==='w'?'White':'Black') + ') vs ' + cfg.name + ' · Lv' + next;
-    showSpeech(pickLine(next, 'start'));
+    // quiet start
   }
 }
 
