@@ -405,7 +405,14 @@ Enter Arena <i class="fas fa-arrow-right ml-2"></i>
 <span class="text-[10px] uppercase text-slate-500 font-bold" id="clock-you-label">You</span>
 </div>
 </div>
-<div id="board"></div>
+<div id="board-wrap" style="position:relative;width:100%;max-width:480px;margin:0 auto">
+  <div id="board"></div>
+  <div id="board-loading" style="display:none;position:absolute;inset:0;z-index:20;background:rgba(7,9,15,0.82);backdrop-filter:blur(4px);border-radius:14px;align-items:center;justify-content:center;flex-direction:column;gap:10px">
+    <div style="font-size:2rem">♟️</div>
+    <div style="font-weight:900;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#e8c547">Setting up pieces…</div>
+    <div style="font-size:11px;color:#94a3b8">Please wait — images loading</div>
+  </div>
+</div>
 <div class="mt-4 flex flex-wrap gap-2 justify-center">
 <button onclick="undoMove()" class="bg-white/10 text-white px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white/15"><i class="fas fa-undo mr-1"></i>Undo</button>
 <button onclick="resignGame()" class="bg-rose-500/20 text-rose-400 px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-rose-500/30"><i class="fas fa-flag mr-1"></i>Resign</button>
@@ -836,17 +843,21 @@ function startGame(){
   document.getElementById('game-header').textContent=name+' vs '+char.name;
 
   initWorker();
-  if(!board){
-    board=ChessBoard('board',{position:'start',draggable:false,pieceTheme:pieceThemeUrl(currentPieceTheme)});
-    $('#board').on('click','[class*="square-"]',function(){const sq=$(this).attr('data-square');if(sq)onSquareClick(sq)});
-    applyBoardColor();
-  } else {
-    board.position('start');
-    applyBoardColor();
-  }
-  newGameInternal();
-  // Publish to live feed immediately so spectators can find the game
-  setTimeout(function(){ broadcastLive(); }, 300);
+  showBoardLoading(true);
+  // Wait for piece images (CDN / slow memory devices) before starting play
+  preloadPieceImages().then(function(){
+    if(!board){
+      board=ChessBoard('board',{position:'start',draggable:false,pieceTheme:pieceThemeUrl(currentPieceTheme)});
+      $('#board').on('click','[class*="square-"]',function(){const sq=$(this).attr('data-square');if(sq)onSquareClick(sq)});
+      applyBoardColor();
+    } else {
+      board.position('start');
+      applyBoardColor();
+    }
+    showBoardLoading(false);
+    newGameInternal();
+    setTimeout(function(){ broadcastLive(); }, 300);
+  });
 }
 
 function backToSetup(){
@@ -856,7 +867,13 @@ function backToSetup(){
   document.getElementById('setup-screen').classList.remove('hidden');
 }
 
-function newGameSameSettings(){newGameInternal()}
+function newGameSameSettings(){
+  showBoardLoading(true);
+  preloadPieceImages().then(function(){
+    showBoardLoading(false);
+    newGameInternal();
+  });
+}
 
 function newGameInternal(){
   if(liveDocId){db.collection('ai_live_games').doc(liveDocId).delete().catch(()=>{});liveDocId=null}
@@ -917,7 +934,7 @@ function stopThinking(){
 }
 
 function onSquareClick(sq){
-  if(isThinking||game.game_over())return;
+  if(!piecesReady || isThinking||!game||game.game_over())return;
   if(game.turn()!==playerColor)return;
   if(!sourceSquare){
     const piece=game.get(sq);
@@ -1333,6 +1350,44 @@ function pieceThemeUrl(themeKey) {
   };
 }
 
+/** Preload piece images so the board is not empty / half-loaded on slow devices */
+let piecesReady = false;
+let piecesLoading = null;
+function pieceImageUrl(pieceCode) {
+  // pieceCode chess.js style: wP, bK
+  const theme = pieceThemeUrl(currentPieceTheme);
+  if (typeof theme === 'function') return theme(pieceCode);
+  return String(theme).replace('{piece}', pieceCode);
+}
+function showBoardLoading(on) {
+  const el = document.getElementById('board-loading');
+  if (!el) return;
+  el.style.display = on ? 'flex' : 'none';
+}
+function preloadPieceImages() {
+  if (piecesLoading) return piecesLoading;
+  const codes = ['wP','wR','wN','wB','wQ','wK','bP','bR','bN','bB','bQ','bK'];
+  const urls = codes.map(pieceImageUrl);
+  showBoardLoading(true);
+  piecesReady = false;
+  piecesLoading = Promise.all(urls.map(function(url) {
+    return new Promise(function(resolve) {
+      const img = new Image();
+      img.onload = function(){ resolve(true); };
+      img.onerror = function(){ resolve(false); }; // don't block forever
+      img.src = url;
+      // safety timeout per image
+      setTimeout(function(){ resolve(false); }, 8000);
+    });
+  })).then(function() {
+    piecesReady = true;
+    piecesLoading = null;
+    showBoardLoading(false);
+    try { if (board && board.resize) board.resize(); } catch(e) {}
+  });
+  return piecesLoading;
+}
+
 let soundEnabled = true;
 let currentPieceTheme = localStorage.getItem('mm_pieces') || 'neo';
 let currentBoardTheme = localStorage.getItem('mm_board') || 'green';
@@ -1349,24 +1404,30 @@ function applySettings() {
   localStorage.setItem('mm_pieces', pieces);
   localStorage.setItem('mm_board', boardT);
   localStorage.setItem('mm_sound', soundEnabled ? '1' : '0');
-  // Rebuild board with new pieces if game active
-  if (board) {
-    const fen = game ? game.fen() : 'start';
-    const orient = playerColor === 'b' ? 'black' : 'white';
-    board.destroy();
-    board = ChessBoard('board', {
-      position: fen,
-      orientation: orient,
-      draggable: false,
-      pieceTheme: pieceThemeUrl(pieces)
-    });
-    $('#board').off('click').on('click', '[class*="square-"]', function() {
-      const sq = $(this).attr('data-square');
-      if (sq) onSquareClick(sq);
-    });
-    applyBoardColor();
-    showLastMove();
-  }
+  // Theme change → re-preload images (slow networks / low memory)
+  piecesReady = false;
+  piecesLoading = null;
+  showBoardLoading(true);
+  preloadPieceImages().then(function(){
+    if (board) {
+      const fen = game ? game.fen() : 'start';
+      const orient = playerColor === 'b' ? 'black' : 'white';
+      board.destroy();
+      board = ChessBoard('board', {
+        position: fen,
+        orientation: orient,
+        draggable: false,
+        pieceTheme: pieceThemeUrl(pieces)
+      });
+      $('#board').off('click').on('click', '[class*="square-"]', function() {
+        const sq = $(this).attr('data-square');
+        if (sq) onSquareClick(sq);
+      });
+      applyBoardColor();
+      showLastMove();
+    }
+    showBoardLoading(false);
+  });
   if (specBoard) {
     // keep spectator simple
   }

@@ -653,6 +653,13 @@ body { -webkit-tap-highlight-color: transparent; }
                         </div>
                     </div>
                     <div class="flex flex-col gap-2 md:items-end">
+                        <!-- Collapsed summary when profile is saved -->
+                        <div id="hub-profile-done" class="hidden text-right space-y-1.5">
+                          <p class="text-[11px] text-slate-400"><span id="hub-profile-summary">Profile saved</span></p>
+                          <button type="button" onclick="openHubEdit()" class="text-[10px] font-black uppercase tracking-widest text-amber-400 hover:text-amber-300">✏️ Edit profile</button>
+                        </div>
+                        <!-- Edit form -->
+                        <div id="hub-edit-panel" class="flex flex-col gap-2 w-full md:w-auto items-stretch md:items-end">
                         <div class="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
                         <input id="hub-name-input" type="text" maxlength="20" placeholder="Your hero name" class="bg-black/50 border border-white/12 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-amber-500 w-full sm:w-40">
                         <input id="hub-school-code" type="text" maxlength="12" placeholder="School code" class="bg-black/50 border border-white/12 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-amber-500 w-full sm:w-28" title="Optional club/school code">
@@ -664,6 +671,7 @@ body { -webkit-tap-highlight-color: transparent; }
                             <button type="button" data-gender="boy" onclick="setHubGender('boy')" class="gender-chip px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest border border-white/12 bg-white/5 text-slate-300 hover:border-sky-400/50">👦 Boy</button>
                             <button type="button" data-gender="girl" onclick="setHubGender('girl')" class="gender-chip px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest border border-white/12 bg-white/5 text-slate-300 hover:border-pink-400/50">👧 Girl</button>
                           </div>
+                        </div>
                         </div>
                         <button type="button" onclick="useStreakFreeze()" id="freeze-btn" class="text-[10px] font-bold uppercase tracking-widest text-sky-400 hover:text-sky-300">❄ Use streak freeze</button>
                     </div>
@@ -1147,6 +1155,19 @@ body { -webkit-tap-highlight-color: transparent; }
     var av = document.getElementById('hub-avatar');
     if (av) av.src = heroAvatarUrl(name, g);
   };
+  function setHubEditOpen(open){
+    var edit = document.getElementById('hub-edit-panel');
+    var done = document.getElementById('hub-profile-done');
+    if (!edit || !done) return;
+    if (open) {
+      edit.classList.remove('hidden');
+      done.classList.add('hidden');
+    } else {
+      edit.classList.add('hidden');
+      done.classList.remove('hidden');
+    }
+  }
+  window.openHubEdit = function(){ setHubEditOpen(true); };
   window.saveHubName = function(){
     const n = document.getElementById('hub-name-input').value.trim();
     if (!n) return;
@@ -1157,10 +1178,15 @@ body { -webkit-tap-highlight-color: transparent; }
     var active = document.querySelector('#hub-gender-group .gender-chip.active');
     if (active) p.gender = active.getAttribute('data-gender');
     else if (!p.gender) p.gender = localStorage.getItem('mm_gender') || '';
+    if (!p.gender) {
+      alert('Please choose Boy or Girl so your avatar matches you.');
+      return;
+    }
     saveProg(p);
     localStorage.setItem('mm_online_name', n);
-    if (p.gender) localStorage.setItem('mm_gender', p.gender);
+    localStorage.setItem('mm_gender', p.gender);
     renderHub();
+    setHubEditOpen(false);
   };
   window.useStreakFreeze = function(){
     const p = loadProg();
@@ -1543,8 +1569,9 @@ body { -webkit-tap-highlight-color: transparent; }
     try { mmSoundSuccess(); } catch(e) {}
     setTimeout(function(){
       try {
-        if (typeof speakDotunWelcome === 'function') speakDotunWelcome();
-        else if (typeof speakCoach === 'function') speakCoach('Welcome back to Mind Masters.');
+        var questTitle = (q && q.title) ? q.title : '';
+        if (typeof speakDotunWelcome === 'function') speakDotunWelcome(questTitle);
+        else if (typeof speakCoach === 'function') speakCoach('Welcome back to Mind Masters. Today\'s quest: ' + questTitle);
       } catch(e) {}
     }, 600);
   }
@@ -1596,10 +1623,25 @@ body { -webkit-tap-highlight-color: transparent; }
   var DOTUN_AUDIO = {
     win: ['audio/well-done.mp3','audio/well-done-chap.mp3','audio/great-job.mp3','audio/excellent.mp3','audio/that-was-a-strong-game.mp3'],
     welcome: ['audio/welcome-back.mp3'],
-    coach: ['audio/protect.mp3']
+    coach: ['audio/coach-01-protect.mp3']
+  };
+  /** Map each daily coach tip → your recorded MP3 */
+  var COACH_AUDIO_BY_LINE = {
+    'Protect your king. Always ask: what is my opponent threatening?': 'audio/coach-01-protect.mp3',
+    'Develop your knights and bishops before you attack.': 'audio/coach-02-develop.mp3',
+    "Don't move the same piece twice in the opening if you can help it.": 'audio/coach-03-opening.mp3',
+    'When you capture, ask: is this safe, or a trap?': 'audio/coach-04-capture.mp3',
+    'Knights love outposts — protected squares in the center.': 'audio/coach-05-knights.mp3',
+    'Castling keeps your king safe and brings a rook into the game.': 'audio/coach-06-castling.mp3',
+    'A pawn on the seventh rank is almost a queen — push carefully!': 'audio/coach-07-pawn.mp3',
+    'Look for forks: one piece attacking two things at once.': 'audio/coach-08-forks.mp3',
+    'Every lesson, try to spot checks, captures, and threats first.': 'audio/coach-09-checks.mp3',
+    'Practice a little every day. Consistency beats long sessions once a week.': 'audio/coach-10-practice.mp3',
+    'The queen is powerful — but don\'t bring her out too early.': 'audio/coach-11-queen.mp3',
+    'Rooks belong on open files. Clear the pawns, then dominate!': 'audio/coach-12-rooks.mp3'
   };
   var _dotunPlayer = null;
-  function playDotunClip(list){
+  function playDotunClip(list, onEnded){
     try{
       if (!soundEnabled()) return;
       if (!list || !list.length) return;
@@ -1607,11 +1649,36 @@ body { -webkit-tap-highlight-color: transparent; }
       var src = list[Math.floor(Math.random()*list.length)];
       _dotunPlayer = new Audio(src);
       _dotunPlayer.volume = 0.95;
-      _dotunPlayer.play().catch(function(){});
-    }catch(e){}
+      if (typeof onEnded === 'function') {
+        _dotunPlayer.onended = function(){ try { onEnded(); } catch(e){} };
+      }
+      _dotunPlayer.play().catch(function(){
+        if (typeof onEnded === 'function') onEnded();
+      });
+    }catch(e){
+      if (typeof onEnded === 'function') onEnded();
+    }
   }
   window.speakDotunWin = function(){ playDotunClip(DOTUN_AUDIO.win); };
-  window.speakDotunWelcome = function(){ playDotunClip(DOTUN_AUDIO.welcome); };
+  /** Your welcome clip, then announce today's quest (quest changes daily — TTS for that part) */
+  window.speakDotunWelcome = function(questTitle){
+    playDotunClip(DOTUN_AUDIO.welcome, function(){
+      if (!questTitle) return;
+      if (!window.speechSynthesis) return;
+      try {
+        window.speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance("Today's quest: " + questTitle);
+        u.rate = 0.92; u.pitch = 0.95; u.volume = 0.95;
+        var voices = window.speechSynthesis.getVoices() || [];
+        var prefer = voices.find(function(v){
+          return /en(-|_)?(GB|US|NG|ZA|AU|IN)?/i.test(v.lang) && /male|daniel|david|mark|google uk english male|microsoft david|fred|alex/i.test(v.name);
+        });
+        if (!prefer) prefer = voices.find(function(v){ return /^en/i.test(v.lang); });
+        if (prefer) u.voice = prefer;
+        window.speechSynthesis.speak(u);
+      } catch(e) {}
+    });
+  };
   window.speakDotunCoach = function(){ playDotunClip(DOTUN_AUDIO.coach); };
 
   /** Coach: play your Protect clip when tip matches; else TTS */
@@ -1619,9 +1686,20 @@ body { -webkit-tap-highlight-color: transparent; }
     if (!soundEnabled()) return;
     text = text || (document.getElementById('coach-msg') && document.getElementById('coach-msg').textContent) || '';
     if (!text) return;
-    // Prefer real voice for the Protect tip
-    if (/protect your king/i.test(text)) {
-      playDotunClip(DOTUN_AUDIO.coach);
+    // Prefer your recorded coach clips for every tip
+    var clip = COACH_AUDIO_BY_LINE[text];
+    if (!clip) {
+      // fuzzy match first 20 chars
+      var keys = Object.keys(COACH_AUDIO_BY_LINE);
+      for (var i = 0; i < keys.length; i++) {
+        if (text.indexOf(keys[i].slice(0, 24)) === 0 || keys[i].indexOf(text.slice(0, 24)) === 0) {
+          clip = COACH_AUDIO_BY_LINE[keys[i]];
+          break;
+        }
+      }
+    }
+    if (clip) {
+      playDotunClip([clip]);
       return;
     }
     if (!window.speechSynthesis) return;
@@ -1791,6 +1869,15 @@ body { -webkit-tap-highlight-color: transparent; }
     } else {
       var av0 = document.getElementById('hub-avatar');
       if (av0) av0.src = heroAvatarUrl('Hero', gender);
+    }
+    // Neat profile: hide name/gender form once both are set
+    var sum = document.getElementById('hub-profile-summary');
+    if (name && gender) {
+      if (sum) sum.textContent = name + ' · ' + (gender === 'boy' ? 'Boy' : 'Girl') + (p.schoolCode ? ' · ' + p.schoolCode : '');
+      setHubEditOpen(false);
+    } else {
+      setHubEditOpen(true);
+      if (sum) sum.textContent = 'Profile saved';
     }
     document.getElementById('hub-level').textContent = 'Lv' + lv;
     document.getElementById('hub-streak').textContent = (p.streak||0) + ' day streak';
