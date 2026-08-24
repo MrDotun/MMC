@@ -746,17 +746,38 @@ const DOTUN_AUDIO = {
   coach: ['audio/protect.mp3']
 };
 let _dotunPlayer = null;
+function resolveAudioUrl(src){
+  if(!src) return src;
+  if(/^https?:\/\//i.test(src) || src.charAt(0)==='/') return src;
+  try { return new URL(src, window.location.href).href; } catch(e){ return src; }
+}
 function playDotunClip(list){
   try{
-    if(localStorage.getItem('mm_sound')==='0') return;
+    if(localStorage.getItem('mm_sound')==='0'){
+      console.warn('[Mind Masters] Sound muted');
+      return;
+    }
     if(!list || !list.length) return;
     if(_dotunPlayer){ try{ _dotunPlayer.pause(); }catch(e){} }
     const src = list[Math.floor(Math.random()*list.length)];
-    _dotunPlayer = new Audio(src);
-    _dotunPlayer.volume = 0.95;
-    _dotunPlayer.play().catch(function(){});
-  }catch(e){}
+    const url = resolveAudioUrl(src);
+    console.log('[Mind Masters] Playing', url);
+    _dotunPlayer = new Audio(url);
+    _dotunPlayer.preload = 'auto';
+    _dotunPlayer.volume = 1;
+    _dotunPlayer.onerror = function(){
+      console.error('[Mind Masters] Audio failed:', url, '— upload audio/ folder next to play-ai.html');
+    };
+    _dotunPlayer.play().catch(function(err){
+      console.warn('[Mind Masters] Play blocked until user taps', err);
+    });
+  }catch(e){ console.error(e); }
 }
+// Unlock audio after first tap
+document.addEventListener('click', function(){
+  try { var a=new Audio(); a.volume=0; a.play().catch(function(){}); } catch(e){}
+}, {passive:true});
+
 function speakDotunWin(){
   playDotunClip(DOTUN_AUDIO.win);
 }

@@ -1641,21 +1641,52 @@ body { -webkit-tap-highlight-color: transparent; }
     'Rooks belong on open files. Clear the pawns, then dominate!': 'audio/coach-12-rooks.mp3'
   };
   var _dotunPlayer = null;
+  function resolveAudioUrl(src){
+    if (!src) return src;
+    if (/^https?:\/\//i.test(src) || src.charAt(0) === '/') return src;
+    // Try relative to current page directory
+    try {
+      return new URL(src, window.location.href).href;
+    } catch(e) {
+      return src;
+    }
+  }
   function playDotunClip(list, onEnded){
     try{
-      if (!soundEnabled()) return;
+      if (!soundEnabled()) {
+        console.warn('[Mind Masters] Sound is muted — tap the 🔊 button');
+        return;
+      }
       if (!list || !list.length) return;
       if (_dotunPlayer) { try { _dotunPlayer.pause(); } catch(e){} }
       var src = list[Math.floor(Math.random()*list.length)];
-      _dotunPlayer = new Audio(src);
-      _dotunPlayer.volume = 0.95;
+      var url = resolveAudioUrl(src);
+      console.log('[Mind Masters] Playing', url);
+      _dotunPlayer = new Audio(url);
+      _dotunPlayer.preload = 'auto';
+      _dotunPlayer.volume = 1;
       if (typeof onEnded === 'function') {
         _dotunPlayer.onended = function(){ try { onEnded(); } catch(e){} };
       }
-      _dotunPlayer.play().catch(function(){
+      _dotunPlayer.onerror = function(){
+        console.error('[Mind Masters] Audio failed to load:', url, '— check that the audio/ folder is next to index.html');
+        // Fallback: try without path resolution
+        if (url !== src) {
+          var a2 = new Audio(src);
+          a2.volume = 1;
+          a2.play().catch(function(){});
+        }
         if (typeof onEnded === 'function') onEnded();
-      });
+      };
+      var playPromise = _dotunPlayer.play();
+      if (playPromise && playPromise.catch) {
+        playPromise.catch(function(err){
+          console.warn('[Mind Masters] Autoplay blocked — tap Hear coach once', err);
+          if (typeof onEnded === 'function') onEnded();
+        });
+      }
     }catch(e){
+      console.error('[Mind Masters] playDotunClip error', e);
       if (typeof onEnded === 'function') onEnded();
     }
   }
@@ -1978,7 +2009,24 @@ body { -webkit-tap-highlight-color: transparent; }
   }
 
   if (document.getElementById('player-hub')) renderHub();
-  try{ setSoundEnabled(soundEnabled()); }catch(e){}
+
+  // Unlock audio on first user tap (browsers block autoplay)
+  (function(){
+    var unlocked = false;
+    function unlockAudio(){
+      if (unlocked) return;
+      unlocked = true;
+      try {
+        var a = new Audio();
+        a.volume = 0;
+        a.play().catch(function(){});
+      } catch(e) {}
+    }
+    document.addEventListener('click', unlockAudio, {once:false, passive:true});
+    document.addEventListener('touchstart', unlockAudio, {once:false, passive:true});
+  })();
+
+    try{ setSoundEnabled(soundEnabled()); }catch(e){}
   try{ trackPracticeMinutes(); }catch(e){}
   try{ maybeSplash(); }catch(e){}
   try{ updateCoachMessage(); renderPuzzle(); }catch(e){}
