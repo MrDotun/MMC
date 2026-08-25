@@ -47,17 +47,29 @@
             <div class="glass p-6 rounded-2xl">
                 <div class="flex justify-between items-center mb-4">
                     <label class="text-xs font-bold uppercase text-slate-500">Master PGN Input</label>
-                    <div class="text-right">
+                    <div class="text-right flex items-center gap-2">
+                        <!-- Loading spinner added here -->
+                        <div id="db-spinner" class="spinner hidden"></div>
                         <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Ready</div>
-                        <div class="w-48 h-1 bg-slate-800 mt-1 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
                     </div>
                 </div>
+                <!-- Progress bar moved below -->
+                <div class="w-full h-1 bg-slate-800 mb-4 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
+                
                 <textarea id="pgn-input" rows="4" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
                 
                 <div class="flex flex-wrap items-center gap-3">
-                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Engine</button>
+                    <button onclick="processPgn()" class="px-6 py-3 bg-white text-black font-bold rounded-xl hover:bg-slate-200 uppercase text-xs">Initialize Data</button>
+
+                    <!-- Database uploader kept but hidden — theory is no longer used in the prompt -->
+                    <label class="hidden px-6 py-3 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-600 uppercase text-xs cursor-pointer flex items-center gap-2">
+                        <span>Upload Database</span>
+                        <input type="file" id="db-file-input" accept=".zip,.pgn" class="hidden" onchange="handleFileUpload(event)">
+                    </label>
+
                     <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy Selected Batch</span></button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
+                    <button onclick="downloadTool()" class="px-6 py-3 bg-indigo-800 text-indigo-100 rounded-xl font-bold uppercase text-xs hover:bg-indigo-700">Download This Tool</button>
                 </div>
             </div>
 
@@ -80,7 +92,7 @@
 
                 <div class="lg:w-2/3 glass p-4 rounded-xl">
                     <div class="mb-3 text-xs text-slate-400 italic">
-                        <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>.
+                        <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>. Engine is only called on variation ends / critical marks. Comments stay sparse and plan-focused.
                     </div>
                     <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
                 </div>
@@ -109,9 +121,12 @@
         </div>
     </div>
 
+    <!-- Core Libraries -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <!-- JSZip Library added for unzipping files on the fly -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <script>
         let globalChunks = [];
@@ -119,15 +134,224 @@
         let board = null;
         let selStart = null;
         let selEnd = null;
-        let globalSfWorker = null; 
+        let isDbLoaded = false;
+        let dynamicMasterDb = {};
 
         const delay = ms => new Promise(res => setTimeout(res, ms));
+
+        // Create Web Worker for parsing PGN files in the background without UI blocking
+        function createPgnParserWorker() {
+            const workerCode = `
+                importScripts('https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js');
+
+                self.onmessage = function(e) {
+                    const pgnContent = e.data;
+                    const games = pgnContent.split(/\\n\\s*\\n(?=\\[Event)/g);
+                    const db = {};
+                    let totalGamesParsed = 0;
+
+                    for (let gamePgn of games) {
+                        if (!gamePgn.trim()) continue;
+                        
+                        // Extract Player Names
+                        let whiteMatch = gamePgn.match(/\\[White "(.*?)"\\]/);
+                        let blackMatch = gamePgn.match(/\\[Black "(.*?)"\\]/);
+                        let pWhite = whiteMatch ? whiteMatch[1] : "Unknown";
+                        let pBlack = blackMatch ? blackMatch[1] : "Unknown";
+
+                        let chess = new Chess();
+                        if (!chess.load_pgn(gamePgn, { sloppy: true })) continue;
+
+                        totalGamesParsed++;
+                        let history = chess.history({ verbose: true });
+                        let simChess = new Chess();
+
+                        for (let move of history) {
+                            let fen = simChess.fen();
+                            let parts = fen.split(' ');
+                            let key = parts.slice(0, 4).join(' ');
+
+                            if (!db[key]) {
+                                db[key] = { totalGames: 0, moves: {}, topPlayers: {} };
+                            }
+
+                            db[key].totalGames++;
+                            
+                            // Track Move Frequencies
+                            if (!db[key].moves[move.san]) {
+                                db[key].moves[move.san] = 0;
+                            }
+                            db[key].moves[move.san]++;
+
+                            // Track Players who reached this exact position
+                            let currentPlayer = simChess.turn() === 'w' ? pWhite : pBlack;
+                            if (currentPlayer !== "Unknown") {
+                                if (!db[key].topPlayers[currentPlayer]) {
+                                    db[key].topPlayers[currentPlayer] = 0;
+                                }
+                                db[key].topPlayers[currentPlayer]++;
+                            }
+
+                            simChess.move(move);
+                        }
+
+                        if (totalGamesParsed % 50 === 0) {
+                            self.postMessage({ type: 'progress', count: totalGamesParsed });
+                        }
+                    }
+
+                    // Format database entries into standard format
+                    const formattedDb = {};
+                    for (let key in db) {
+                        let entry = db[key];
+                        
+                        // Sort Moves
+                        let sortedMoves = Object.keys(entry.moves).sort((a, b) => entry.moves[b] - entry.moves[a]);
+                        let topSan = sortedMoves[0] || "";
+                        let choicesStr = sortedMoves.slice(0, 5).map(m => \`\${m} (\${entry.moves[m]} games)\`).join(', ');
+
+                        // Sort Top Players for this position
+                        let sortedPlayers = Object.keys(entry.topPlayers).sort((a, b) => entry.topPlayers[b] - entry.topPlayers[a]);
+                        let notablePlayers = sortedPlayers.slice(0, 3).map(p => \`\${p} (\${entry.topPlayers[p]} times)\`).join(', ');
+
+                        formattedDb[key] = {
+                            totalGames: entry.totalGames,
+                            mostPlayedSan: topSan,
+                            topChoices: choicesStr,
+                            notablePlayers: notablePlayers || "None recorded"
+                        };
+                    }
+
+                    self.postMessage({ type: 'complete', db: formattedDb, count: totalGamesParsed });
+                };
+            `;
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            return new Worker(URL.createObjectURL(blob));
+        }
+
+        // Handler when the user selects a zipped database or raw PGN file
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statsEl = document.getElementById('stats');
+            const spinnerEl = document.getElementById('db-spinner');
+
+            try {
+                statsEl.innerText = "PROCESSING FILE...";
+                spinnerEl.classList.remove('hidden');
+
+                let pgnContent = "";
+
+                if (file.name.endsWith('.zip')) {
+                    const zip = new JSZip();
+                    const unzipped = await zip.loadAsync(file);
+
+                    const jsFilename = Object.keys(unzipped.files).find(name => name.endsWith('.js'));
+                    const pgnFilename = Object.keys(unzipped.files).find(name => name.endsWith('.pgn'));
+
+                    if (jsFilename) {
+                        const jsContent = await unzipped.file(jsFilename).async("string");
+                        const scriptElement = document.createElement('script');
+                        scriptElement.textContent = jsContent;
+                        document.body.appendChild(scriptElement);
+                        isDbLoaded = true;
+                        statsEl.innerText = "DATABASE READY";
+                        alert("Pre-compiled database loaded successfully!");
+                        return;
+                    } else if (pgnFilename) {
+                        pgnContent = await unzipped.file(pgnFilename).async("string");
+                    } else {
+                        statsEl.innerText = "NO PGN/JS IN ZIP";
+                        alert("No .pgn or .js database file was found in the ZIP.");
+                        return;
+                    }
+                } else if (file.name.endsWith('.pgn')) {
+                    pgnContent = await file.text();
+                }
+
+                if (pgnContent) {
+                    statsEl.innerText = "PARSING PGN IN WORKER...";
+                    const worker = createPgnParserWorker();
+
+                    worker.onmessage = function(e) {
+                        if (e.data.type === 'progress') {
+                            statsEl.innerText = `PARSED ${e.data.count} GAMES...`;
+                        } else if (e.data.type === 'complete') {
+                            dynamicMasterDb = e.data.db;
+                            isDbLoaded = true;
+                            statsEl.innerText = `DB READY (${e.data.count} GAMES)`;
+                            alert(`Successfully processed ${e.data.count} games into the database!`);
+                            spinnerEl.classList.add('hidden');
+                        }
+                    };
+
+                    worker.postMessage(pgnContent);
+                }
+            } catch (e) {
+                console.error("File loading failed:", e);
+                statsEl.innerText = "DB LOAD ERROR";
+                alert("Failed to read database file.");
+                spinnerEl.classList.add('hidden');
+            }
+        }
+
+        // Background loader for auto-fetching Sicilian.zip if hosted locally
+        async function loadZippedDatabase() {
+            if (isDbLoaded) return;
+            try {
+                const statsEl = document.getElementById('stats');
+                const spinnerEl = document.getElementById('db-spinner');
+                
+                statsEl.innerText = "EXTRACTING DATABASE...";
+                spinnerEl.classList.remove('hidden');
+
+                const response = await fetch('Sicilian.zip');
+                if (!response.ok) throw new Error("Zip file not found locally. Use the Upload button.");
+                
+                const blob = await response.blob();
+                const zip = new JSZip();
+                const unzipped = await zip.loadAsync(blob);
+
+                const jsFilename = Object.keys(unzipped.files).find(name => name.endsWith('.js'));
+                const pgnFilename = Object.keys(unzipped.files).find(name => name.endsWith('.pgn'));
+                
+                if (jsFilename) {
+                    const jsContent = await unzipped.file(jsFilename).async("string");
+                    const scriptElement = document.createElement('script');
+                    scriptElement.textContent = jsContent;
+                    document.body.appendChild(scriptElement);
+                    isDbLoaded = true;
+                    statsEl.innerText = "DATABASE READY";
+                } else if (pgnFilename) {
+                    const pgnContent = await unzipped.file(pgnFilename).async("string");
+                    const worker = createPgnParserWorker();
+                    worker.onmessage = function(e) {
+                        if (e.data.type === 'complete') {
+                            dynamicMasterDb = e.data.db;
+                            isDbLoaded = true;
+                            statsEl.innerText = "DATABASE READY";
+                            spinnerEl.classList.add('hidden');
+                        }
+                    };
+                    worker.postMessage(pgnContent);
+                } else {
+                    statsEl.innerText = "NO DEFAULT DB (UPLOAD ZIP)";
+                }
+            } catch (e) {
+                document.getElementById('stats').innerText = "READY (UPLOAD DB)";
+            } finally {
+                document.getElementById('db-spinner').classList.add('hidden');
+            }
+        }
 
         window.onload = () => {
             board = Chessboard('board', {
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 position: 'start'
             });
+
+            loadZippedDatabase();
 
             const saved = localStorage.getItem('gm_master_state');
             if (saved) {
@@ -137,83 +361,104 @@
             }
         };
 
-        async function initEngineWorker() {
-            if (globalSfWorker) return globalSfWorker;
+        async function getOpeningDatabase(fen) {
             try {
-                const resp = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');
-                const jsCode = await resp.text();
-                const blob = new Blob([jsCode], { type: 'application/javascript' });
-                globalSfWorker = new Worker(URL.createObjectURL(blob));
-            } catch(err) {
-                console.warn("Fetch failed, using fallback", err);
-                const sfCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');`;
-                const blob = new Blob([sfCode], { type: 'application/javascript' });
-                globalSfWorker = new Worker(URL.createObjectURL(blob));
+                const parts = fen.split(' ');
+                if (parts.length < 4) return null;
+
+                const board = parts[0];
+                const turn = parts[1];
+                const castling = parts[2];
+                const ep = parts[3];
+
+                const formatsToTry = [
+                    fen,
+                    `${board} ${turn} ${castling} ${ep}`,
+                    `${board} ${turn} ${castling} -`,
+                    `${board} ${turn} ${castling}`
+                ];
+
+                // 1. Check dynamically parsed PGN worker database
+                for (let f of formatsToTry) {
+                    if (dynamicMasterDb[f]) {
+                        return dynamicMasterDb[f];
+                    }
+                }
+
+                // 2. Fallback to global pre-compiled JS database if exists
+                if (typeof NAJDORF_G3_MASTER_DB !== 'undefined') {
+                    for (let f of formatsToTry) {
+                        if (NAJDORF_G3_MASTER_DB[f]) {
+                            return NAJDORF_G3_MASTER_DB[f];
+                        }
+                    }
+                }
+
+                return null;
+            } catch (e) {
+                console.error("Local database fetch failed:", e);
+                return null;
             }
-            globalSfWorker.postMessage('uci');
-            return globalSfWorker;
         }
 
-        async function fetchLichessExplorer(fen, isMasters) {
-            const encodedFen = encodeURIComponent(fen);
-            const url = isMasters
-                ? `https://explorer.lichess.ovh/masters?fen=${encodedFen}&moves=5&topGames=4`
-                : `https://explorer.lichess.ovh/lichess?variant=standard&fen=${encodedFen}&moves=5&topGames=0&speeds=blitz,rapid,classical&ratings=1600,1800,2000,2200,2500`;
+        function isValidFen(fen) {
+            if (!fen || typeof fen !== "string") return false;
+            const parts = fen.trim().split(/\s+/);
+            if (parts.length < 4) return false;
+            try {
+                const c = new Chess();
+                return c.load(fen);
+            } catch (e) {
+                return false;
+            }
+        }
 
-            for (let attempt = 0; attempt < 2; attempt++) {
+        async function getEngineRefutation(fen, retries = 2) {
+            if (!isValidFen(fen)) {
+                return { eval: null, san: "", continuation: "", text: "INVALID FEN - skip engine", invalid: true };
+            }
+            for (let attempt = 0; attempt <= retries; attempt++) {
                 try {
-                    const response = await fetch(url, { headers: { "Accept": "application/json" } });
+                    const response = await fetch("https://chess-api.com/v1", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ fen: fen, depth: 16, maxThinkingTime: 60 })
+                    });
+                    
                     if (response.status === 429) {
-                        if (attempt === 0) {
-                            console.warn(`Lichess ${isMasters ? 'masters' : 'lichess'} explorer rate-limited (429) for FEN ${fen}. Backing off 3s and retrying once...`);
-                            await delay(3000);
-                            continue;
-                        }
-                        return { __error: "429 Too Many Requests (rate limited by Lichess)" };
+                        await delay(1400 * (attempt + 1));
+                        continue;
                     }
-                    if (!response.ok) {
-                        return { __error: `HTTP ${response.status}` };
+
+                    if (!response.ok) return null;
+                    const data = await response.json();
+
+                    // Reject obvious API errors
+                    if (data.error || (data.text && /wrong FEN|Cannot evaluate/i.test(data.text))) {
+                        return { eval: null, san: "", continuation: "", text: data.text || "Engine rejected FEN", invalid: true };
                     }
-                    return await response.json();
+
+                    let cont = "";
+                    if (data.continuationArr && data.continuationArr.length) {
+                        cont = data.continuationArr.slice(0, 7).join(" ");
+                    } else if (data.continuation) {
+                        cont = String(data.continuation).split(" ").slice(0, 7).join(" ");
+                    }
+
+                    // Prefer SAN-style continuation if API gives only UCI-ish tokens mixed with SAN
+                    return {
+                        eval: data.eval,
+                        san: data.san || data.move || "",
+                        continuation: cont,
+                        text: data.text || "",
+                        invalid: false
+                    };
                 } catch (e) {
-                    return { __error: e.message || "network error (fetch failed - check connection / CORS)" };
+                    if (attempt === retries) return null;
+                    await delay(1000);
                 }
             }
-            return { __error: "429 Too Many Requests (rate limited by Lichess)" };
-        }
-
-        async function getLichessMoveStats(fen) {
-            const data = await fetchLichessExplorer(fen, false);
-            if (!data || data.__error) {
-                return `[LICHESS FETCH FAILED: ${data ? data.__error : 'unknown error'}]`;
-            }
-            if (!data.moves || data.moves.length === 0) {
-                return "No Lichess database stats found for this position.";
-            }
-            return data.moves.slice(0, 5).map(m => {
-                const total = m.white + m.draws + m.black;
-                const whitePct = total > 0 ? ((m.white / total) * 100).toFixed(1) : "0.0";
-                const drawPct = total > 0 ? ((m.draws / total) * 100).toFixed(1) : "0.0";
-                const blackPct = total > 0 ? ((m.black / total) * 100).toFixed(1) : "0.0";
-                return `${m.san} [Games: ${total} | White ${whitePct}% / Draw ${drawPct}% / Black ${blackPct}%]`;
-            }).join("; ");
-        }
-
-        async function getLichessMasterGames(fen) {
-            const data = await fetchLichessExplorer(fen, true);
-            if (!data || data.__error) {
-                return `[LICHESS MASTERS FETCH FAILED: ${data ? data.__error : 'unknown error'}]`;
-            }
-            if (!data.topGames || data.topGames.length === 0) {
-                return "No master games found for this position.";
-            }
-            return data.topGames.slice(0, 4).map(g => {
-                const whiteName = g.white && g.white.name ? g.white.name : "Unknown";
-                const blackName = g.black && g.black.name ? g.black.name : "Unknown";
-                const whiteRating = g.white && g.white.rating ? g.white.rating : "?";
-                const blackRating = g.black && g.black.rating ? g.black.rating : "?";
-                return `${whiteName} (${whiteRating}) vs ${blackName} (${blackRating})${g.year ? ' [' + g.year + ']' : ''}`;
-            }).join("; ");
+            return null;
         }
 
         function switchTab(tab) {
@@ -228,8 +473,6 @@
         function processPgn(isLoad = false) {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
-
-            initEngineWorker(); 
 
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g) || [];
             
@@ -276,11 +519,42 @@
                 
                 if (isMove) {
                     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
-                    fenBeforeLastMove = chess.fen(); 
+                    fenBeforeLastMove = chess.fen();
 
                     let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O]/g, ''); 
-                    let moveObj = chess.move(cleanMove);
-                    currentFEN = chess.fen(); 
+                    let moveObj = chess.move(cleanMove, { sloppy: true });
+                    if (!moveObj) {
+                        // try without check/mate symbols
+                        cleanMove = cleanMove.replace(/[+#]/g, '');
+                        moveObj = chess.move(cleanMove, { sloppy: true });
+                    }
+                    if (!moveObj) {
+                        // last resort: try original token with only trailing annotations stripped
+                        const alt = token.replace(/[!?]+$/g, '').replace(/\$\d+$/g, '').trim();
+                        if (alt && alt !== cleanMove) {
+                            moveObj = chess.move(alt, { sloppy: true });
+                        }
+                    }
+                    let parsedOk = !!moveObj;
+                    if (moveObj) {
+                        currentFEN = chess.fen();
+                    } else {
+                        // keep previous FEN so we never send garbage to the engine
+                        currentFEN = fenBeforeLastMove;
+                        console.warn("Move failed to parse:", token, "at", fenBeforeLastMove);
+                    }
+
+                    // Normalize FENs: always produce a loadable 6-field FEN when possible
+                    const normalizeFen = (f) => {
+                        if (!f || typeof f !== "string") return f;
+                        try {
+                            const tmp = new Chess();
+                            if (tmp.load(f)) return tmp.fen();
+                        } catch (e) {}
+                        return f;
+                    };
+                    fenBeforeLastMove = normalizeFen(fenBeforeLastMove);
+                    currentFEN = normalizeFen(currentFEN);
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
@@ -298,8 +572,9 @@
                         isMainLine: variationLevel === 0,
                         isVariationStart: isFirstMoveOfVariation,
                         isVariationEnd: false,
-                        fen: fenBeforeLastMove,   
-                        fenAfter: currentFEN      
+                        fen: fenBeforeLastMove,
+                        fenAfter: currentFEN,
+                        moveParsed: parsedOk
                     };
 
                     chunks.push(newChunk);
@@ -338,42 +613,6 @@
             updateUI();
         }
 
-        function getStockfishPV(fen, depth = 14, onLiveLineUpdate) {
-            return new Promise(async (resolve) => {
-                const worker = await initEngineWorker();
-                let uciMoves = [];
-                let searchStarted = false; 
-                
-                let timeoutId = setTimeout(() => {
-                    worker.onmessage = null;
-                    resolve(uciMoves);
-                }, 5000);
-
-                worker.onmessage = function (e) {
-                    const line = e.data;
-                    if (typeof line === 'string') {
-                        if (line.includes('info ')) searchStarted = true;
-
-                        if (line.includes(' pv ')) {
-                            const parts = line.split(' pv ');
-                            uciMoves = parts[1].trim().split(' ').slice(0, 6);
-                            if (onLiveLineUpdate) onLiveLineUpdate(uciMoves);
-                        }
-                        
-                        if (searchStarted && line.includes('bestmove')) {
-                            clearTimeout(timeoutId);
-                            worker.onmessage = null;
-                            resolve(uciMoves);
-                        }
-                    }
-                };
-
-                worker.postMessage('stop');
-                worker.postMessage(`position fen ${fen}`);
-                worker.postMessage(`go depth ${depth}`);
-            });
-        }
-
         async function copySelectedBatch() {
             if (selStart === null) {
                 alert("Please click on a starting move and an ending move first!");
@@ -396,125 +635,180 @@
             for (let i = selStart; i <= endIdx; i++) {
                 let currentStep = (i - selStart) + 1;
                 let c = globalChunks[i];
-                let lineOutput = `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Main Line: ${c.isMainLine} | Variation Start: ${c.isVariationStart}`;
+
+                // Determine who just played and who is to move after — only trust when moveParsed
+                const fenPartsBefore = (c.fen || "").split(" ");
+                const sideJustPlayed = fenPartsBefore[1] === "w" ? "White" : (fenPartsBefore[1] === "b" ? "Black" : "?");
+                const fenPartsAfter = (c.fenAfter || "").split(" ");
+                const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
+                const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
+
+                let lineOutput = `[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Played by: ${sideJustPlayed} | Side to move AFTER: ${sideToMoveAfter} | FEN OK: ${fenOk} | Main: ${c.isMainLine} | VarStart: ${c.isVariationStart} | VarEnd: ${c.isVariationEnd}`;
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
                 
                 statsText.innerText = `Analyzing Move: ${c.moveNum}. ${c.target}`;
 
-                btnText.innerHTML = `<div class="spinner"></div>Querying Lichess DB [${currentStep}/${totalSelectedMoves}]...`;
-                await delay(700);
-                let moveStats = await getLichessMoveStats(c.fen);
-                lineOutput += `\n   -> [CURRENT FEN (BEFORE MOVE)]: ${c.fen}`;
-                lineOutput += `\n   -> [LICHESS TOP MOVES & WIN RATES]: ${moveStats}`;
-
-                let evalToken = c.target.split(" ")[1] || "";
-                let hasSymbol = /^[?!]+$/.test(evalToken) || /^[\+\-=]+$/.test(evalToken) || evalToken.startsWith('$');
-                let getsEngineAssist = c.isVariationEnd || hasSymbol;
-                let getsMastersLookup = getsEngineAssist || c.isVariationStart;
-
-                if (getsMastersLookup) {
-                    btnText.innerHTML = `<div class="spinner"></div>Checking Master Games [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(500);
-                    let masterGames = await getLichessMasterGames(c.fen);
-                    lineOutput += `\n   -> [LICHESS TOP MASTER GAMES]: ${masterGames}`;
-                }
-
-                if (getsEngineAssist) {
-                    btnText.innerHTML = `<div class="spinner"></div>Engine Assist [${currentStep}/${totalSelectedMoves}]...`;
-                    let fenAfterMove = c.fenAfter; 
+                // Only call engine on variation ends or critical marks, and only if FEN is valid
+                const needsEngine = fenOk && (c.isVariationEnd || /[?!$]/.test(c.target));
+                
+                if (needsEngine) {
+                    btnText.innerHTML = `<div class="spinner"></div>Engine line [${currentStep}/${totalSelectedMoves}]...`;
+                    await delay(350); 
                     
-                    try {
-                        let pvUci = await getStockfishPV(fenAfterMove, 14, (currentUciList) => {
-                            let tempVisualChess = new Chess(fenAfterMove);
-                            let visualSan = [];
-                            for(let uci of currentUciList) {
-                                try {
-                                    let mObj = { from: uci.substring(0, 2), to: uci.substring(2, 4) };
-                                    if (uci.length > 4) mObj.promotion = uci.substring(4, 5);
-                                    let vMove = tempVisualChess.move(mObj);
-                                    if (!vMove) vMove = tempVisualChess.move(uci, {sloppy: true});
-                                    if(vMove) visualSan.push(vMove.san); else break;
-                                } catch(err){ break; }
-                            }
-                            statsText.innerText = `[${c.moveNum}.${c.target}] Lines: ${visualSan.join(" ")}`;
-                        });
-                        
-                        let pvSan = [];
-                        let tempChess = new Chess(fenAfterMove);
-                        
-                        for (let uci of pvUci) {
-                            try {
-                                let moveObj = {
-                                    from: uci.substring(0, 2),
-                                    to: uci.substring(2, 4)
-                                };
-                                if (uci.length > 4) moveObj.promotion = uci.substring(4, 5);
+                    let engineData = await getEngineRefutation(c.fenAfter);
+                    if (engineData && engineData.invalid) {
+                        lineOutput += `\n   -> [FEN AFTER MOVE]: ${c.fenAfter}`;
+                        lineOutput += `\n   -> [ENGINE]: FEN rejected. Write a short positional plan only if variation end. Respect side to move.`;
+                    } else if (engineData) {
+                        lineOutput += `\n   -> [FEN AFTER MOVE]: ${c.fenAfter}`;
+                        const bestLine = `${engineData.san || ""} ${engineData.continuation || ""}`.trim();
+                        lineOutput += `\n   -> [SHORT BEST LINE]: ${bestLine}`;
+                        lineOutput += `\n   -> [EVAL]: ${engineData.eval}`;
 
-                                let move = tempChess.move(moveObj);
-                                if (!move) move = tempChess.move(uci, {sloppy: true}); 
+                        const cont = bestLine;
+                        const evalNum = parseFloat(engineData.eval);
+                        const isMate = /mate|#/i.test(String(engineData.eval)) || /#/.test(cont);
+                        const hasForce = /[x+#]/.test(cont);
+                        const bigSwing = !isNaN(evalNum) && Math.abs(evalNum) >= 1.2;
 
-                                if (move) {
-                                    pvSan.push(move.san);
-                                } else break;
-                            } catch (e) { break; }
+                        if (isMate || (hasForce && bigSwing) || bigSwing) {
+                            lineOutput += `\n   -> [TACTICAL FLAG]: Explain the concrete sequence in plain English. Use only moves from the short best line. Respect who is to move.`;
                         }
 
-                        if (pvSan.length > 0) {
-                            lineOutput += `\n   -> [FEN AFTER MOVE (ENGINE CONTINUATION)]: ${fenAfterMove}\n   -> [STOCKFISH ENGINE NEXT 6 MOVES]: ${pvSan.join(" ")}`;
-                        } else {
-                            lineOutput += `\n   -> [ENGINE NOTE]: Reached evaluation timeout or empty lines.`;
+                        if (c.isVariationEnd) {
+                            lineOutput += `\n   -> [VARIATION END FLAG]: Last move of this branch. Give a clear 1-2 sentence plan or idea. Attribute plans only to the correct side.`;
                         }
-                    } catch (e) {
-                        console.error("Engine failed for move:", e);
+                        statsText.innerText = `[${c.moveNum}.${c.target}] Line: ${engineData.san || "?"}`;
+                    } else {
+                        lineOutput += `\n   -> [FEN AFTER MOVE]: ${c.fenAfter}`;
+                        lineOutput += `\n   -> [ENGINE]: No data.`;
+                        if (c.isVariationEnd) {
+                            lineOutput += `\n   -> [VARIATION END FLAG]: Last move of a branch. Write a short positional plan. Respect side to move.`;
+                        }
                     }
+                } else {
+                    // Always include FEN when valid so the AI sees the board correctly
+                    if (fenOk) {
+                        lineOutput += `\n   -> [FEN AFTER MOVE]: ${c.fenAfter}`;
+                    } else {
+                        lineOutput += `\n   -> [FEN AFTER MOVE]: UNRELIABLE (move did not parse cleanly — do not invent a position)`;
+                    }
+                    if (c.isVariationEnd) {
+                        lineOutput += `\n   -> [VARIATION END FLAG]: Last move of a branch. Write a short positional plan. Respect side to move.`;
+                    }
+                    await delay(30);
                 }
                 
                 batchData.push(lineOutput);
             }
-            
-            btnText.innerHTML = `<div class="spinner"></div>Analyzing End Position...`;
-            await delay(700);
-            let endFen = globalChunks[endIdx].fenAfter;
-            let endMoveStats = await getLichessMoveStats(endFen);
-            await delay(500);
-            let endMasterGames = await getLichessMasterGames(endFen);
-            let endPositionOutput = `\n=== END POSITION OF THIS VARIATION ===\n   -> [FEN AFTER FINAL MOVE]: ${endFen}`;
-            endPositionOutput += `\n   -> [LICHESS TOP MOVES & WIN RATES FROM END POSITION]: ${endMoveStats}\n   -> [LICHESS TOP MASTER GAMES FROM END POSITION]: ${endMasterGames}`;
-            batchData.push(endPositionOutput);
 
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a pragmatic, 2700+ rated human Grandmaster with 68% English skill, publishing an opening course. You are not talking to children; your audience consists strictly of advanced titled players (FMs and IMs).
-I am providing you a batch of moves representing a continuous sequence or variation. For EVERY move, I have included the exact FEN position immediately after the move is played. 
+            const fullPrompt = `You are a strong human coach writing sparse opening notes in the exact style of a modern repertoire book. English natural, about 70%.
 
-STARTING POSITION FEN: ${startingFen}
+STARTING FEN: ${startingFen}
 
-=== YOUR PERSONA & RULES ===
-1. Strict Anti-Repetition Rule: NEVER quote or repeat the move name at the beginning of your comment (e.g., DO NOT write "5. a5: This move..." or "Nxg6: White eliminates..."). Just jump straight into explaining the ideas.
-2. Visual & Spatial Focus: Speak directly from the position. Don't mention "jpg screenshot" or files.
-3. Natural Human Tone (68% English skill): Sound like a seasoned grandmaster writing a masterclass manual. Avoid robotic AI buzzwords like "delve," "crucial," "fascinating," "testament," "symphony," "orchestrate," "tuck," "clamp," "secure," "dynamic".
-4. Perspective Rules: Use first-person phrasing when evaluating (e.g., "I prefer...", "I play..."), and third-person phrasing for move descriptions (e.g., "Black can...", "White should...", "Black will...").
-5. No Engine Worship: State tactical refutations as your own calculations. Don't say "I calculated"—instead say "White will..." or "It's difficult, for instance, after the knight gets to c5...".
-6. LICHESS DATABASE RULE: Treat the provided Lichess database statistics (top moves, win rates, and master games) as real-world practical data, NOT as pure engine theory. Use the win rate percentages to judge how strong or risky a move has proven in practice, and reference the calibre of players who have played it (masters game data) to strengthen your evaluation. Do not simply recite the raw percentages back — weave them naturally into your explanation.
+=== HARD RULES ===
+1. Comments ONLY AFTER the move. Never before.
+2. Most moves get NO comment. Stay very sparse.
+3. You MUST comment every move with [VARIATION END FLAG].
+4. You MUST comment every move with [TACTICAL FLAG] or marked ?, ??, $2, $4.
+5. You may add a short idea on a few key moves before a variation ends if it helps the reader. Otherwise silence.
+6. Never start a comment by naming the move just played.
+7. Never mention engine, Stockfish, database, eval numbers, or "I calculated".
+8. Banned: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, initiative (overuse), pressure (overuse).
+9. Spelling: centre, d4-square, pair of bishops.
+10. 1-2 short sentences max. Prefer one clear idea.
 
-=== ANNOTATION INSTRUCTIONS ===
-1. VARIATION JUDGMENT (CRITICAL): At the end of the batch, I have provided the "END POSITION OF THIS VARIATION" along with its Lichess database data. You MUST use this final end position to judge the VERY FIRST MOVE of this variation. Explain if that starting move is good or not, and WHY, based entirely on the win rates and master games present at the end of the line. Write a short comment evaluating it based on how the line ends.
-2. Explaining Signs & Symbols: If a move has an evaluation symbol or sign attached (e.g., !, ?, !?, +-, =), actively use the provided Lichess win rates, master games, or Stockfish engine continuations to explain the ideas behind the symbol. Show the follow-up moves that justify it.
-3. Keep ALL comments short and concise! Especially the comments placed BEFORE the start of a variation.
-4. Explaining Mistakes vs Position Evaluations: If a move is a mistake (?, ??), use the 6-move engine continuation to explain why it fails. If it ends in an evaluation (+-, =, etc.), explain why the final position is better for that side without calling the initial move "bad".
-5. Formatting rules:
-   - Change "d4 square" to "d4-square". Change "center" to "centre".
-   - Replace "Tuck", "drop", or "jump" with "move".
-6. Comment Placement & JSON Keys: 
-   - Main Line moves (Main Line: true): use the chunk ID as the key. The tool will place this AFTER the move.
-   - Variation Starts (Variation Start: true): 
-     * To place a short comment BEFORE the move (e.g., "If Black decides.."), use the standard chunk ID (e.g., "CHK_1_M11_V1").
-     * To place a comment AFTER the move evaluating it based on the variation's end, append "_after" to the chunk ID (e.g., "CHK_1_M11_V1_after").
-   
-7. Final Output: Output ONLY a valid JSON object mapping the keys to your comments. Do not use markdown blocks like \`\`\`json. 
+=== SIDE TO MOVE / COLOUR / FEN (CRITICAL — NEVER GET THIS WRONG) ===
+Every chunk tells you:
+  Played by: White|Black
+  Side to move AFTER: White|Black
+  FEN OK: true|false
+  [FEN AFTER MOVE]: ...
+
+- Trust the FEN only when FEN OK is true. If FEN is marked UNRELIABLE, do not invent a board position.
+- Attribute every plan, idea, threat, or "will continue with" ONLY to the correct colour.
+- If it is White to move after the move, do not write plans as if Black is about to play.
+- If the move was played by Black, do not say "White is preparing..." for that same move.
+- "We" is allowed only when the repertoire is clearly written for that side; otherwise use "White" or "Black" correctly.
+- When describing a short best line, the first move of that line is played by the side to move AFTER the current move.
+- Double-check the FEN turn indicator (w/b) before writing. Zero colour mistakes. Zero wrong-side plans.
+
+=== TENSE AND VOICE (copy exactly) ===
+Use the same tenses as these examples:
+
+Present for what the move does or the current idea:
+- "Black is fighting for space, it makes sense to exchange a few pieces."
+- "Black goes for the usual central break."
+- "Black is preparing to expand with b5."
+- "Stops Ne4 as c4 would be hanging after Bxe4."
+- "is losing time"
+- "Nb3 is the threat..."
+
+Future / plan language for what comes next:
+- "Black will continue with …b6–Bb7, taking control of the d5 outpost."
+- "Black will actively look to land Ne4 once prepared."
+- "Black will continue with Qb7-Rad8 and is very comfortable thereafter."
+- "Next, we play Bd7, activate our Rooks, and prepare b5."
+- "Next, we plan to play Rad8 and exchange the rooks..."
+- "with the idea of Bb7"
+- "With the idea of b5, which can't be stopped, we gain valuable space on the queenside."
+
+"We" when speaking as the side the repertoire is written for:
+- "We put pressure on the f4-Bishop and aim to exchange pieces as we need space now."
+- "We equalize comfortably out of the opening."
+- "our idea is to exchange Queens on e4 or b3, and then activate the Rooks with Rfd8 and Rac8."
+
+Conditional for tactics:
+- "If Black takes the bishop, Bxf7+ Ke7 Nd5 is mate."
+
+Do NOT write long past-tense recaps of the moves that just happened. Do NOT list forced sequences move-by-move. Turn any short best line into a plan in the present/future voice above.
+
+=== STYLE SAMPLES (match this voice) ===
+"as White commits the bishop, Black can simply capture the c4 pawn."
+"Black is fighting for space, it makes sense to exchange a few pieces."
+"Black goes for the usual central break."
+"Black continues with …b6–Bb7, taking control of the d5 outpost; if White plays a3, the knight can always return to d5 otherwise it stays on b4."
+"Black will continue with Bf5-Bf8. Black has a strong knight in the center and thus will solidify it."
+"Black gains space on the queenside."
+"Black will actively look to land Ne4 once prepared."
+"Stops Ne4 as c4 would be hanging after Bxe4."
+"is losing time"
+"Black is preparing to expand with b5"
+"White stops b5 but has given away the b4 square in the process."
+"Black has no problems here and would simply land the evident ...c5 here to dismantle White in the centre."
+"Black immediately hits with c5 and would make the best use of dark squares."
+"with the idea of Bb7"
+"Nb3 is the threat..."
+"Black will continue with Qb7-Rad8 and is very comfortable thereafter."
+"We put pressure on the f4-Bishop and aim to exchange pieces as we need space now."
+"Black simply gets an extra pawn but is lacking development here."
+"Next, we play Bd7, activate our Rooks, and prepare b5."
+"White is using the best of his strength to open up the position, as that's what you do when the opponent is lacking in development."
+"Although the position is unclear, Bf5 and Rad8 gives Black a clear and active piece play."
+"We equalize comfortably out of the opening."
+"An interesting novelty from Black to offer an exchange."
+"Black centralizes the Queen and our idea is to exchange Queens on e4 or b3, and then activate the Rooks with Rfd8 and Rac8."
+"Black is to play Bb7 and double the Rooks on the d-file."
+"Next, we plan to play Rad8 and exchange the rooks and go into the queenside majority endgame which is usually better for the side with majority."
+"With the idea of b5, which can't be stopped, we gain valuable space on the queenside."
+
+=== BAD (never write like this) ===
+"White is better."
+"White keeps the initiative."
+"The queen check on f3 forces the king further into the open where it has no good squares."
+"g6 is met by Bxd5+ and after Ke8 the queen drops back to f3, winning the c6-knight..."
+(Any long move-by-move retelling of what is already in the PGN.)
+(Any comment that mixes up White and Black or assigns a plan to the side that is not to move.)
+
+=== OUTPUT ===
+Return ONLY a pure JSON object. Keys = chunk IDs. Values = comment text.
+Omit keys with no comment.
+No markdown, no thought process, no extra text.
 
 === BATCH TO ANALYZE ===
 ${batchString}`;
@@ -571,46 +865,35 @@ ${batchString}`;
         function rebuildPgn() {
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
-            const matches = raw.match(/\{[\s\S]*?\}/g);
-            if (matches) {
-                matches.forEach(m => {
-                    try { Object.assign(aiData, JSON.parse(m)); } catch(e){}
-                });
+            
+            try {
+                const firstBrace = raw.indexOf('{');
+                const lastBrace = raw.lastIndexOf('}');
+                
+                if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                    const jsonStr = raw.substring(firstBrace, lastBrace + 1);
+                    aiData = JSON.parse(jsonStr);
+                } else {
+                    aiData = JSON.parse(raw);
+                }
+            } catch (e) {
+                alert("Failed to parse the JSON. Please ensure the AI provided a valid JSON object mapping chunk IDs to comments.");
+                console.error("JSON Parse Error:", e);
+                return;
             }
             
             let workingTokens = [...pgnTokens];
             const sortedIds = Object.keys(aiData).sort((a,b) => {
-                const baseA = a.replace("_after", "");
-                const baseB = b.replace("_after", "");
-                const idxA = globalChunks.find(c => c.id === baseA)?.tokenIndex || 0;
-                const idxB = globalChunks.find(c => c.id === baseB)?.tokenIndex || 0;
-                
-                if (idxA === idxB) {
-                    return a.endsWith("_after") ? 1 : -1; 
-                }
+                const idxA = globalChunks.find(c => c.id === a)?.tokenIndex || 0;
+                const idxB = globalChunks.find(c => c.id === b)?.tokenIndex || 0;
                 return idxB - idxA;
             });
 
-            sortedIds.export = true; // noop anchor
-
+            // Always place comments AFTER the move (never before)
             sortedIds.forEach(id => {
-                const isAfter = id.endsWith("_after");
-                const baseId = isAfter ? id.replace("_after", "") : id;
-                const chunk = globalChunks.find(c => c.id === baseId);
-                
+                const chunk = globalChunks.find(c => c.id === id);
                 if (chunk) {
-                    if (isAfter) {
-                        workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
-                    } else if (chunk.isVariationStart) {
-                        let prevToken = workingTokens[chunk.tokenIndex - 1];
-                        if (prevToken && /^\d+\.{1,3}$/.test(prevToken)) {
-                            workingTokens[chunk.tokenIndex - 1] = `{ ${aiData[id]} } ` + prevToken;
-                        } else {
-                            workingTokens[chunk.tokenIndex] = `{ ${aiData[id]} } ` + workingTokens[chunk.tokenIndex];
-                        }
-                    } else {
-                        workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
-                    }
+                    workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
                 }
             });
 
@@ -638,6 +921,24 @@ ${batchString}`;
             a.href = URL.createObjectURL(blob);
             a.download = "GM_Variation_Analysis.pgn";
             a.click();
+        }
+
+        // Download the current tool itself
+        function downloadTool() {
+            try {
+                // Serialize the entire current document (works offline / file://)
+                const html = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+                const blob = new Blob([html], {type: 'text/html'});
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = "pro.html";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
+            } catch (e) {
+                alert("Download failed. Right-click the page → Save As… instead.");
+            }
         }
     </script>
 </body>
