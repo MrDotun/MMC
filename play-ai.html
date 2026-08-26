@@ -555,6 +555,19 @@ Enter Arena <i class="fas fa-arrow-right ml-2"></i>
   </div>
 </div>
 
+<!-- AI draw offer -->
+<div id="draw-offer-modal" style="display:none;position:fixed;inset:0;z-index:5200;align-items:center;justify-content:center;background:rgba(5,7,13,0.82);backdrop-filter:blur(10px);padding:20px">
+  <div class="result-card" style="border-color:rgba(96,165,250,0.55);max-width:380px">
+    <div class="result-emoji" id="draw-offer-emoji" style="font-size:3rem">🤝</div>
+    <h2 class="result-title draw" id="draw-offer-title" style="font-size:1.35rem">Draw offer</h2>
+    <p class="text-slate-300 text-sm mt-2 mb-4" id="draw-offer-text">The rival offers a draw.</p>
+    <div class="result-actions">
+      <button type="button" class="btn-next" onclick="acceptDrawOffer()" style="background:linear-gradient(135deg,#60a5fa,#3b82f6);color:#fff">Accept draw 🤝</button>
+      <button type="button" class="btn-rematch" onclick="declineDrawOffer()">Keep playing</button>
+    </div>
+  </div>
+</div>
+
 
 <button type="button" class="settings-btn" onclick="toggleSettings()" title="Settings" aria-label="Settings">
   <i class="fas fa-cog"></i>
@@ -877,6 +890,30 @@ function markDailyPlayWin(level){
       p.firstWinDay=key;
       p._firstWinBonus=true;
     }
+    // Story saga: complete mission if launched from Campaign Ops
+    var missionId = null;
+    try { missionId = sessionStorage.getItem('mm_active_mission'); } catch(e){}
+    if (!missionId) {
+      try {
+        var q = new URLSearchParams(window.location.search);
+        missionId = q.get('mission');
+      } catch(e){}
+    }
+    if (missionId) {
+      p.storyDone = p.storyDone || {};
+      p.artifacts = p.artifacts || {};
+      if (!p.storyDone[missionId]) {
+        p.storyDone[missionId] = true;
+        p.storyXpGranted = p.storyXpGranted || {};
+        var artMap = {
+          a1m6:'crystal_spark', a2m8:'crystal_shadow', a3m7:'crystal_crown',
+          a4m7:'crystal_trial', a4m8:'crystal_throne'
+        };
+        if (artMap[missionId]) p.artifacts[artMap[missionId]] = true;
+        showToast('📜 Story mission complete!', 'unlock');
+      }
+      try { sessionStorage.removeItem('mm_active_mission'); } catch(e){}
+    }
     saveMMProgress(p);
   }catch(e){}
 }
@@ -968,6 +1005,13 @@ function refreshCharacterLocks(){
 }
 
 function pickLine(level, kind){
+  // Prefer unique story-rival lines when on a Campaign mission
+  if (storyRival && storyRival.name && STORY_RIVAL_LINES[storyRival.name]) {
+    var SR = STORY_RIVAL_LINES[storyRival.name];
+    if (SR[kind] && SR[kind].length) {
+      return SR[kind][Math.floor(Math.random()*SR[kind].length)];
+    }
+  }
   const L=levelConfig[level];
   if(!L||!L.lines||!L.lines[kind]||!L.lines[kind].length)return '';
   const arr=L.lines[kind];
@@ -991,6 +1035,27 @@ function showSpeech(text, opts){
   if (voiceOn && (!opts || opts.speak !== false)) {
     speakAsAI(text, settings && settings.level);
   }
+}
+
+function applyStoryRivalUI(){
+  if (!storyRival || !storyRival.name) return;
+  var name = storyRival.name;
+  var seed = storyRival.seed || name;
+  var color = storyRival.color || 'b6e3f4';
+  var an = document.getElementById('ai-name');
+  if (an) an.textContent = name;
+  var av = document.getElementById('ai-avatar');
+  if (av) av.src = 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + encodeURIComponent(seed) + '&backgroundColor=' + encodeURIComponent(color);
+  var ae = document.getElementById('ai-elo');
+  if (ae && levelConfig[settings.level]) ae.textContent = (levelConfig[settings.level].elo || '') + ' · Story';
+  var gh = document.getElementById('game-header');
+  if (gh && settings.name) gh.textContent = settings.name + ' vs ' + name;
+  var mi = document.getElementById('match-info');
+  if (mi && settings.name) {
+    mi.textContent = settings.name + ' vs ' + name + ' · Story mission' + (storyRival.title ? ' · ' + storyRival.title : '');
+  }
+  var cl = document.getElementById('clock-ai-label');
+  if (cl) cl.textContent = name;
 }
 
 
@@ -1157,12 +1222,12 @@ async function startGame(){
   if(av) av.src=`https://api.dicebear.com/7.x/avataaars/svg?seed=${char.seed}&backgroundColor=${char.color}`;
   const an=document.getElementById('ai-name'); if(an) an.textContent=char.name;
   const ae=document.getElementById('ai-elo'); if(ae) ae.textContent=char.elo+' · '+char.blurb;
-  // Quiet start — AI only talks on captures / game end
-  // showSpeech(pickLine(settings.level,'start'));
   document.getElementById('game-header').textContent=name+' vs '+char.name;
+  // Override with story rival (Vex, Mira, Shade…) when launched from Campaign
+  try { applyStoryRivalUI(); } catch(e){}
 
   initWorker();
-  showBoardLoading('Setting up the pieces…');
+  showBoardLoading(storyRival ? ('Facing ' + storyRival.name + '…') : 'Setting up the pieces…');
   if(!board){
     board=ChessBoard('board',{position:'start',draggable:false,pieceTheme:pieceThemeUrl(currentPieceTheme)});
     $('#board').on('click','[class*="square-"]',function(){const sq=$(this).attr('data-square');if(sq)onSquareClick(sq)});
@@ -1174,6 +1239,15 @@ async function startGame(){
   newGameInternal();
   waitForBoardPieces(9000).then(function(){
     setTimeout(function(){ broadcastLive(); }, 200);
+    // Story rivals introduce themselves after board is ready (voices need a beat)
+    if (storyRival) {
+      setTimeout(function(){
+        try {
+          var line = pickLine(settings.level, 'start');
+          if (line) showSpeech(line);
+        } catch(e){}
+      }, 700);
+    }
   });
 }
 
@@ -1190,6 +1264,12 @@ function newGameInternal(){
   if(liveDocId){db.collection('ai_live_games').doc(liveDocId).delete().catch(()=>{});liveDocId=null}
   game=new Chess();
   sourceSquare=null;lastFrom=null;lastTo=null;isThinking=false;
+  drawOfferedThisGame=false;
+  drawOfferPending=false;
+  try {
+    var dm=document.getElementById('draw-offer-modal');
+    if(dm) dm.style.display='none';
+  } catch(e){}
   window._tippedPieces={};
   showBoardLoading('Setting up the pieces…');
   board.orientation(playerColor==='w'?'white':'black');
@@ -1238,6 +1318,10 @@ function initWorker(){
         } else if(game.in_check() && !game.in_checkmate()){
           showSpeech(pickLine(settings.level,'check'));
         }
+        // Occasional draw offer when AI is losing
+        if (!game.game_over()) {
+          setTimeout(function(){ maybeOfferDraw(); }, 650);
+        }
       }
       stopThinking();
     }
@@ -1250,6 +1334,113 @@ function stopThinking(){
   document.getElementById('thinking').classList.add('hidden');
   document.getElementById('board').classList.remove('thinking-glow');
 }
+
+// —— AI draw offers when losing (once in a while, max once per game) ——
+var drawOfferedThisGame = false;
+var drawOfferPending = false;
+
+function materialScoreForColor(color){
+  // Simple material: P1 N3 B3 R5 Q9 — ignore king
+  var vals = { p:1, n:3, b:3, r:5, q:9, k:0 };
+  var score = 0;
+  try {
+    var boardState = game.board();
+    for (var r = 0; r < 8; r++) {
+      for (var c = 0; c < 8; c++) {
+        var p = boardState[r][c];
+        if (p && p.color === color) score += (vals[p.type] || 0);
+      }
+    }
+  } catch(e){}
+  return score;
+}
+
+function aiIsLosingMaterial(){
+  if (!game || game.game_over()) return false;
+  var aiColor = playerColor === 'w' ? 'b' : 'w';
+  var you = materialScoreForColor(playerColor);
+  var ai = materialScoreForColor(aiColor);
+  // Down by at least a minor piece (3), and not the opening
+  var fullMoves = Math.floor(game.history().length / 2);
+  return fullMoves >= 8 && (you - ai) >= 3;
+}
+
+function pickDrawOfferLine(){
+  var name = (storyRival && storyRival.name) || (levelConfig[settings.level] && levelConfig[settings.level].name) || 'AI';
+  var lines = {
+    Vex:   ['Hehe… shall we call it even?', 'A draw, light-bringer?', 'My traps failed… draw?'],
+    Mira:  ['The wall is cracked. Draw?', 'Honourable draw?', 'Shall we share the point?'],
+    Blaze: ['Fire’s dying… draw?', 'Rematch energy later — draw now?', 'Draw? I still have heat…'],
+    Echo:  ['Mirror broken… draw?', 'Shall we stop the echo here?', 'A quiet draw?'],
+    Thorn: ['The path is hard. Draw?', 'Slow game… draw?', 'Share the result?'],
+    Kira:  ['Tactics failed me. Draw?', 'Glass cut me — draw?', 'Calculate a draw?'],
+    Ash:   ['Endgame slips away. Draw?', 'Precision fails… draw?', 'A technical draw?'],
+    Shade: ['The gate softens. Draw?', 'Shadows offer peace…', 'Draw, champion-to-be?'],
+    Pip:   ['Aww… draw?', 'Can we call it a draw?', 'Pretty please — draw?'],
+    Nia:   ['Draw?', 'Shall we share this one?', 'A fair draw?'],
+    Rex:   ['Honourable draw?', 'Draw, warrior?', 'I offer a draw!'],
+    Luna:  ['A peaceful draw?', 'Shall we rest here?', 'Draw, if you wish.'],
+    Kai:   ['Whew — draw?', 'Speed draw?', 'Call it even?'],
+    Zara:  ['Puzzle unfinished… draw?', 'Draw this riddle?', 'Share the point?'],
+    Omar:  ['Solid offer: draw?', 'A fair draw?', 'Discipline says draw is fine.'],
+    Nova:  ['Draw?', 'A hard-fought draw?', 'I offer a draw.']
+  };
+  var arr = lines[name] || ['How about a draw?', 'Shall we call it a draw?', 'I offer a draw.'];
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function maybeOfferDraw(){
+  try {
+    if (drawOfferedThisGame || drawOfferPending) return;
+    if (!game || game.game_over() || isThinking) return;
+    if (!aiIsLosingMaterial()) return;
+    // Once in a while — ~22% when conditions met (after AI move)
+    if (Math.random() > 0.22) return;
+    drawOfferedThisGame = true;
+    drawOfferPending = true;
+    var line = pickDrawOfferLine();
+    var name = (storyRival && storyRival.name) || (levelConfig[settings.level] && levelConfig[settings.level].name) || 'AI';
+    showSpeech(line);
+    var modal = document.getElementById('draw-offer-modal');
+    var text = document.getElementById('draw-offer-text');
+    var title = document.getElementById('draw-offer-title');
+    if (title) title.textContent = name + ' offers a draw';
+    if (text) text.textContent = '“' + line + '” — Accept for a peaceful half-point, or keep playing to win!';
+    if (modal) {
+      modal.style.display = 'flex';
+      modal.style.animation = 'modalIn 0.35s ease';
+    }
+    try { mmVibrate([30, 40, 30]); } catch(e){}
+  } catch(e){}
+}
+
+window.acceptDrawOffer = function(){
+  drawOfferPending = false;
+  var modal = document.getElementById('draw-offer-modal');
+  if (modal) modal.style.display = 'none';
+  stopClock();
+  endLiveGame();
+  try {
+    document.getElementById('status').textContent = 'Draw agreed';
+    showSpeech('Draw. Good game.');
+  } catch(e){}
+  setTimeout(function(){
+    showResultModal('draw', {
+      rivalName: (storyRival && storyRival.name) || (levelConfig[settings.level] && levelConfig[settings.level].name) || 'AI'
+    });
+  }, 350);
+};
+
+window.declineDrawOffer = function(){
+  drawOfferPending = false;
+  var modal = document.getElementById('draw-offer-modal');
+  if (modal) modal.style.display = 'none';
+  try {
+    showSpeech('Okay… we play on!');
+    showToast('You declined the draw — go for the win!', 'xp');
+  } catch(e){}
+  try { mmSoundClick(); } catch(e){}
+};
 
 
 const PIECE_MOVE_TIPS = {
@@ -1456,6 +1647,9 @@ function makeEngineMove(){
           showSpeech(pickLine(settings.level,'check'));
         }
         stopThinking();
+        if (!game.game_over()) {
+          setTimeout(function(){ maybeOfferDraw(); }, 650);
+        }
         return;
       }
     }
@@ -1486,7 +1680,7 @@ function updateStatus(){
   let status='';
   if(game.in_checkmate()){
     const youWin=game.turn()!==playerColor;
-    const nm=(levelConfig[settings.level]&&levelConfig[settings.level].name)||'AI';
+    const nm=(storyRival&&storyRival.name)||(levelConfig[settings.level]&&levelConfig[settings.level].name)||'AI';
     status=youWin?'🎉 You win by checkmate!':'Checkmate — '+nm+' wins';
     if(youWin){
       soundWin();recordWin();showSpeech(pickLine(settings.level,'lose'));
@@ -1575,7 +1769,7 @@ function flagLoss(who){
   if(who==='you'){
     document.getElementById('status').textContent='You lost on time';
     soundLose();endLiveGame();
-    setTimeout(function(){ showResultModal('lose', { rivalName: (levelConfig[settings.level]||{}).name || 'AI' }); }, 300);
+    setTimeout(function(){ showResultModal('lose', { rivalName: (storyRival&&storyRival.name)||(levelConfig[settings.level]||{}).name || 'AI' }); }, 300);
   } else {
     document.getElementById('status').textContent='🎉 AI lost on time — You win!';
     soundWin();recordWin();
@@ -1593,7 +1787,7 @@ function flagLoss(who){
         xp: xpGain,
         unlocked: nu,
         newlyUnlocked: nu > prev,
-        rivalName: (levelConfig[settings.level]||{}).name || 'AI',
+        rivalName: (storyRival&&storyRival.name)||(levelConfig[settings.level]||{}).name || 'AI',
         streak: streakNow
       });
     }, 300);
@@ -1607,7 +1801,7 @@ function resignGame(){
   document.getElementById('status').textContent='You resigned — AI wins';
   soundLose();endLiveGame();
   setTimeout(function(){
-    showResultModal('lose', { rivalName: (levelConfig[settings.level]||{}).name || 'AI' });
+    showResultModal('lose', { rivalName: (storyRival&&storyRival.name)||(levelConfig[settings.level]||{}).name || 'AI' });
   }, 250);
 }
 
@@ -2058,23 +2252,48 @@ function pickVoiceForGender(gender){
   return ranked[0] || en[0] || null;
 }
 
-function voiceStyleFor(gender){
-  // pitch/rate tuned per persona — males intentionally deep
+function voiceStyleFor(gender, persona){
+  // pitch/rate tuned per persona — adult males intentionally deep
   gender = (gender || 'neutral').toLowerCase();
-  if (gender === 'boy') return { pitch: 1.32, rate: 1.05 };       // Pip - bright kid
-  if (gender === 'male') return { pitch: 0.55, rate: 0.88 };      // Rex, Kai, Omar - deep masculine
-  if (gender === 'girl') return { pitch: 1.28, rate: 1.02 };      // Nia
-  if (gender === 'female') return { pitch: 1.15, rate: 0.98 };    // Luna, Zara, Nova
+  persona = (persona || '').toLowerCase();
+  // Per-rival fine tuning (story + base)
+  var styles = {
+    vex:   { pitch: 0.62, rate: 0.95 },   // sly fox — deep-ish, quick
+    blaze: { pitch: 0.48, rate: 0.92 },   // fiery — very deep, bold
+    thorn: { pitch: 0.50, rate: 0.82 },   // slow grinder — deep & deliberate
+    ash:   { pitch: 0.45, rate: 0.85 },   // endgame ghost — deepest quiet
+    shade: { pitch: 0.42, rate: 0.80 },   // boss shadow — darkest voice
+    rex:   { pitch: 0.50, rate: 0.88 },
+    kai:   { pitch: 0.58, rate: 1.02 },
+    omar:  { pitch: 0.52, rate: 0.90 },
+    mira:  { pitch: 1.12, rate: 0.94 },
+    echo:  { pitch: 1.18, rate: 0.96 },
+    kira:  { pitch: 1.22, rate: 1.00 },
+    nia:   { pitch: 1.22, rate: 1.00 },
+    luna:  { pitch: 1.10, rate: 0.94 },
+    zara:  { pitch: 1.16, rate: 0.98 },
+    nova:  { pitch: 1.12, rate: 0.96 },
+    pip:   { pitch: 1.30, rate: 1.05 }
+  };
+  if (persona && styles[persona]) return styles[persona];
+  if (gender === 'boy') return { pitch: 1.32, rate: 1.05 };
+  if (gender === 'male') return { pitch: 0.48, rate: 0.86 };   // default deep male
+  if (gender === 'girl') return { pitch: 1.28, rate: 1.02 };
+  if (gender === 'female') return { pitch: 1.14, rate: 0.97 };
   return { pitch: 1.0, rate: 1.0 };
 }
+
+// Active story rival override (from Campaign Ops URL)
+var storyRival = null;
 
 function speakAsAI(text, level){
   try{
     if(localStorage.getItem('mm_sound')==='0') return;
     if(!window.speechSynthesis || !text) return;
     var cfg = levelConfig[level || (settings && settings.level) || 1] || {};
-    var gender = cfg.gender || 'neutral';
-    var style = voiceStyleFor(gender);
+    var gender = (storyRival && storyRival.gender) || cfg.gender || 'neutral';
+    var persona = (storyRival && storyRival.name) ? storyRival.name : (cfg.name || '');
+    var style = voiceStyleFor(gender, persona);
     window.speechSynthesis.cancel();
     var u = new SpeechSynthesisUtterance(text);
     u.rate = style.rate;
@@ -2085,6 +2304,90 @@ function speakAsAI(text, level){
     window.speechSynthesis.speak(u);
   }catch(e){}
 }
+
+/** Unique story-rival voice lines (Act 2 newcomers + shared) */
+var STORY_RIVAL_LINES = {
+  Vex: {
+    gender:'male',
+    start:['Hehe… free piece? Are you sure?','The shadows are watching.','I set traps for fun.','Come closer…'],
+    move:['Interesting…','Maybe a fork here?','Sneaky…','Hmm.'],
+    capture:['Gotcha!','That was the bait!','Mine now!','Trap sprung!'],
+    lose_piece:['Oh! You saw that?','Not bad…','Hmm, clever.','You broke my toy.'],
+    check:['Check — careful now.','Your king is nervous.','Hehe, pressure!'],
+    win:['The shadows win today.','Nice try, light-bringer.'],
+    lose:['You out-foxed the fox… respect.','Sharp eyes. Come back anytime.']
+  },
+  Mira: {
+    gender:'female',
+    start:['My wall is ready.','Break this if you can.','Solid first. Always.'],
+    move:['Steady…','No holes.','Improving…','Calm.'],
+    capture:['Necessary.','Clean take.','Structure holds.'],
+    lose_piece:['A crack… I will seal it.','Well earned.','You found a gap.'],
+    check:['Check. Stay focused.','King under watch.'],
+    win:['The wall stood.','Discipline wins.'],
+    lose:['You broke the iron garden. Impressive.','True strength. Well played.']
+  },
+  Blaze: {
+    gender:'male',
+    start:['Burn the centre!','Attack! No fear!','Let’s go loud!'],
+    move:['Forward!','Charge!','Fire!','Again!'],
+    capture:['Boom!','Taken in flames!','Yes!'],
+    lose_piece:['You hit hard!','Fire meets fire!','That stung!'],
+    check:['Check! Feel the heat!','King in the fire!'],
+    win:['Blaze wins!','Too hot today!'],
+    lose:['You put out the fire… champion.','Respect. That was fierce.']
+  },
+  Echo: {
+    gender:'female',
+    start:['I learn from you.','Mirror ready.','Your moves… interesting.'],
+    move:['Copying… no, adapting.','Hmm.','Soft echo…'],
+    capture:['As you might have.','Reflected.','Taken.'],
+    lose_piece:['You changed the pattern.','Unpredictable… good.','I did not expect that.'],
+    check:['Check. Echo.','Your king hears me.'],
+    win:['The mirror held.','I learned enough.'],
+    lose:['You broke the mirror. Beautiful.','I will remember that style.']
+  },
+  Thorn: {
+    gender:'male',
+    start:['Slow is strong.','We improve every piece.','No rush.'],
+    move:['Squeeze…','A little better…','Quiet.','Patient.'],
+    capture:['Small edge.','Collected.','Natural.'],
+    lose_piece:['Hmm. Recalculate.','You cut a thorn.','Fair.'],
+    check:['Check. The vine tightens.','Pressure grows.'],
+    win:['The path closed on you.','Patience rewarded.'],
+    lose:['You walked the thorn path and won. Rare.','Deep play. I tip my king.']
+  },
+  Kira: {
+    gender:'female',
+    start:['Tactics only. Calculate.','Glass can cut.','See the combination?'],
+    move:['Looking…','There?','Sharp line…'],
+    capture:['Pin broken — mine!','Tactic landed!','Yes!'],
+    lose_piece:['You calculated deeper!','Clean!','Ow — fair.'],
+    check:['Check! Do you see it?','King is hanging…'],
+    win:['Glass cuts both ways — I cut first.','Tactics win.'],
+    lose:['You solved the glass. Brilliant mind.','That combination was beautiful.']
+  },
+  Ash: {
+    gender:'male',
+    start:['Endgame is truth.','King and pawns. Precision.','No tricks. Only technique.'],
+    move:['King closer…','Passed pawn dreams…','Exact.'],
+    capture:['Necessary trade.','Endgame edge.','Clean.'],
+    lose_piece:['You know the endings.','Accurate.','Hmm.'],
+    check:['Check. Technique.','King must move.'],
+    win:['The ending was mine.','Precision.'],
+    lose:['You mastered the last pawns. Champion technique.','I yield. That was pure.']
+  },
+  Shade: {
+    gender:'male',
+    start:['I am the gate.','Every style you met… lives in me.','Step into the dark.'],
+    move:['…','Calculated.','Shadow move.','Hmm.'],
+    capture:['Claimed from the dark.','As planned.','Mine.'],
+    lose_piece:['You pierce shadows.','Strong.','Continue.'],
+    check:['Check. The gate trembles.','Your king is seen.'],
+    win:['The gate holds. Return stronger.','Shadows remain.'],
+    lose:['The gate opens. Tournament of Crowns awaits you.','You kept your light. Go.']
+  }
+};
 
 function mmSpeak(text){
   // Generic praise / system voice — warm mid pitch
@@ -2237,7 +2540,7 @@ function playNextLevel(){
 
 refreshCharacterLocks();
 
-// Story Mode / Campaign deep-link: play-ai.html?level=3&mission=1
+// Story Mode / Campaign deep-link: play-ai.html?level=3&mission=a2m1&rival=Vex&...
 (function applyMissionParams(){
   try {
     var q = new URLSearchParams(window.location.search);
@@ -2247,21 +2550,53 @@ refreshCharacterLocks();
         b.classList.toggle('active', parseInt(b.dataset.val, 10) === lv);
       });
       if (typeof settings !== 'undefined') settings.level = lv;
-      // soft unlock notice if locked
-      setTimeout(function(){
-        try {
-          if (lv > maxUnlockedLevel()) {
-            showToast('Story mission rival — beat previous levels to unlock fully', 'unlock');
-          } else {
-            var cfg = levelConfig[lv];
-            if (cfg) showToast('Mission target: ' + cfg.name, 'xp');
-          }
-        } catch(e){}
-      }, 400);
     }
     var mission = q.get('mission');
     if (mission) {
       try { sessionStorage.setItem('mm_active_mission', mission); } catch(e){}
+    }
+    var rival = q.get('rival');
+    if (rival) {
+      storyRival = {
+        name: rival,
+        seed: q.get('seed') || rival,
+        color: q.get('color') || 'b6e3f4',
+        gender: q.get('gender') || (STORY_RIVAL_LINES[rival] && STORY_RIVAL_LINES[rival].gender) || 'neutral',
+        title: q.get('title') || '',
+        mission: mission || ''
+      };
+      // Give browser a moment for fonts/voices/images before UI swap
+      setTimeout(function(){
+        try { applyStoryRivalUI(); } catch(e){}
+        try {
+          showToast('📜 Mission target: ' + rival + (storyRival.title ? ' — ' + storyRival.title : ''), 'xp');
+        } catch(e){}
+      }, 450);
+      // Preload avatar
+      try {
+        var img = new Image();
+        img.src = 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + encodeURIComponent(storyRival.seed) + '&backgroundColor=' + encodeURIComponent(storyRival.color);
+      } catch(e){}
+      // Warm up speech voices (needed on some browsers)
+      try {
+        if (window.speechSynthesis) {
+          window.speechSynthesis.getVoices();
+          setTimeout(function(){ try { window.speechSynthesis.getVoices(); } catch(e){} }, 600);
+        }
+      } catch(e){}
+    } else {
+      setTimeout(function(){
+        try {
+          if (lv >= 1 && lv <= 8) {
+            if (lv > maxUnlockedLevel()) {
+              showToast('Story mission rival — beat previous levels to unlock fully', 'unlock');
+            } else {
+              var cfg = levelConfig[lv];
+              if (cfg) showToast('Mission target: ' + cfg.name, 'xp');
+            }
+          }
+        } catch(e){}
+      }, 400);
     }
   } catch(e){}
 })();
