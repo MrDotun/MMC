@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Friend Battle | Mind Masters Academy</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+<style>
+:root{--bg:#07090f;--gold:#e8c547}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8f0;margin:0;min-height:100vh}
+.panel{background:linear-gradient(160deg,#161c27,#0e1219);border:1px solid rgba(232,197,71,.15);border-radius:1.25rem}
+#board{width:100%;max-width:480px;margin:0 auto;border-radius:14px;overflow:hidden;box-shadow:0 25px 60px rgba(0,0,0,.55),0 0 0 3px rgba(232,197,71,.3)}
+.highlight-from{box-shadow:inset 0 0 0 4px rgba(250,204,21,.85)!important}
+.highlight-to{box-shadow:inset 0 0 0 4px rgba(34,197,94,.85)!important}
+.highlight-select{box-shadow:inset 0 0 0 4px rgba(232,197,71,.9)!important}
+.highlight-legal{position:relative}
+.highlight-legal::after{content:'';position:absolute;left:50%;top:50%;width:18%;height:18%;min-width:10px;min-height:10px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(34,197,94,.55);pointer-events:none;z-index:2}
+.highlight-legal.highlight-capture::after{width:72%;height:72%;background:transparent;border:3px solid rgba(239,68,68,.75);box-sizing:border-box}
+.side-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:10px;font-size:12px;font-weight:800}
+.side-white{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#f8fafc}
+.side-black{background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.12);color:#e2e8f0}
+.code-box{font-size:2rem;letter-spacing:.35em;font-weight:900;color:#fde68a}
+.btn-gold{background:linear-gradient(135deg,#fbbf24,#eab308);color:#000;font-weight:900;border-radius:12px;padding:14px 18px;text-transform:uppercase;letter-spacing:.08em;font-size:12px}
+.btn-soft{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#e2e8f0;font-weight:800;border-radius:12px;padding:12px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.modal-bg{display:none;position:fixed;inset:0;z-index:5000;align-items:center;justify-content:center;background:rgba(5,7,13,.88);backdrop-filter:blur(12px);padding:20px}
+.modal-card{background:linear-gradient(160deg,#1a1520,#0f172a);border:1px solid rgba(232,197,71,.35);border-radius:20px;padding:28px 24px;max-width:380px;width:100%;text-align:center}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.95);border:1px solid rgba(232,197,71,.4);color:#fde68a;padding:10px 18px;border-radius:999px;font-size:12px;font-weight:800;z-index:6000;opacity:0;transition:opacity .25s}
+.toast.show{opacity:1}
+</style>
+</head>
+<body class="min-h-screen">
+<nav class="sticky top-0 z-40 border-b border-white/5 bg-[#07090f]/95 backdrop-blur-xl px-4 py-3 flex items-center justify-between">
+  <a href="index.html" class="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-white">← Academy</a>
+  <div class="text-sm font-black text-amber-400">⚔️ Friend Battle</div>
+  <a href="play-ai.html" class="text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-amber-400">AI</a>
+</nav>
+
+<div class="max-w-lg mx-auto px-4 py-6">
+  <!-- LOBBY -->
+  <div id="lobby" class="space-y-4">
+    <div class="panel p-6 text-center">
+      <div class="text-4xl mb-2">🤝</div>
+      <h1 class="text-xl font-black italic uppercase text-white mb-1">Challenge a Friend</h1>
+      <p class="text-sm text-slate-400 mb-5">Create a room code and share it — or join one.</p>
+      <label class="block text-left text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Your name</label>
+      <input id="player-name" maxlength="20" placeholder="Champion name" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white mb-4 outline-none focus:border-amber-400/50">
+      <button type="button" class="btn-gold w-full mb-3" onclick="createRoom()">Create room code</button>
+      <div class="flex items-center gap-3 my-4 text-[10px] text-slate-600 font-bold uppercase tracking-widest"><span class="flex-1 h-px bg-white/10"></span>or join<span class="flex-1 h-px bg-white/10"></span></div>
+      <input id="join-code" maxlength="4" placeholder="ABCD" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-center text-white text-xl font-black tracking-[0.35em] uppercase mb-3 outline-none focus:border-amber-400/50">
+      <button type="button" class="btn-soft w-full" onclick="joinRoom()">Join room</button>
+    </div>
+    <p class="text-center text-[11px] text-slate-600">Both players need internet. Host is <strong class="text-slate-400">White</strong>, guest is <strong class="text-slate-400">Black</strong>.</p>
+  </div>
+
+  <!-- WAITING -->
+  <div id="waiting" class="hidden space-y-4">
+    <div class="panel p-6 text-center">
+      <p class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2">Share this code</p>
+      <div class="code-box mb-2" id="room-code-display">····</div>
+      <p class="text-sm text-slate-400 mb-4" id="wait-text">Waiting for friend to join…</p>
+      <button type="button" class="btn-soft w-full mb-2" onclick="copyCode()">Copy code</button>
+      <button type="button" class="btn-soft w-full text-rose-300" onclick="cancelRoom()">Cancel room</button>
+    </div>
+  </div>
+
+  <!-- GAME -->
+  <div id="game-screen" class="hidden">
+    <div class="flex items-center justify-between mb-3 gap-2">
+      <div class="side-pill side-white" id="label-white">⬜ White</div>
+      <div class="text-[11px] font-black uppercase tracking-wider text-amber-400" id="turn-label">White to move</div>
+      <div class="side-pill side-black" id="label-black">⬛ Black</div>
+    </div>
+    <div class="panel p-3 mb-3">
+      <div id="board"></div>
+    </div>
+    <p class="text-center text-sm font-bold text-slate-300 mb-3" id="status">Your turn</p>
+    <div class="grid grid-cols-2 gap-2 mb-3">
+      <button type="button" class="btn-soft" onclick="offerDraw()">🤝 Draw</button>
+      <button type="button" class="btn-soft text-rose-300" onclick="resignGame()">🏳️ Resign</button>
+    </div>
+    <button type="button" class="btn-soft w-full" onclick="leaveGame()">← Leave</button>
+  </div>
+</div>
+
+<div id="result-modal" class="modal-bg">
+  <div class="modal-card">
+    <div class="text-5xl mb-2" id="result-emoji">🏆</div>
+    <h2 class="text-xl font-black text-white uppercase" id="result-title">Victory!</h2>
+    <p class="text-sm text-slate-300 mt-2 mb-4" id="result-sub"></p>
+    <div class="text-amber-300 font-black mb-4" id="result-xp"></div>
+    <button type="button" class="btn-gold w-full mb-2" onclick="location.href='play-live.html'">Play again</button>
+    <button type="button" class="btn-soft w-full" onclick="location.href='index.html'">Back home</button>
+  </div>
+</div>
+
+<div id="draw-modal" class="modal-bg">
+  <div class="modal-card">
+    <div class="text-4xl mb-2">🤝</div>
+    <h2 class="text-lg font-black text-white">Draw offered</h2>
+    <p class="text-sm text-slate-300 mt-2 mb-4" id="draw-modal-text">Your friend offers a draw.</p>
+    <button type="button" class="btn-gold w-full mb-2" onclick="acceptDraw()">Accept draw</button>
+    <button type="button" class="btn-soft w-full" onclick="declineDraw()">Keep playing</button>
+  </div>
+</div>
+
+<div id="resign-modal" class="modal-bg">
+  <div class="modal-card" style="border-color:rgba(244,63,94,0.45)">
+    <div class="text-4xl mb-2">🏳️</div>
+    <h2 class="text-lg font-black text-white">Resign?</h2>
+    <p class="text-sm text-slate-300 mt-2 mb-4">Your friend will win this game.</p>
+    <button type="button" class="btn-gold w-full mb-2" style="background:linear-gradient(135deg,#f43f5e,#e11d48);color:#fff" onclick="confirmResign()">Yes, resign</button>
+    <button type="button" class="btn-soft w-full" onclick="closeResignModal()">Keep playing</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const firebaseConfig={apiKey:"AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",authDomain:"assignments-de95a.firebaseapp.com",projectId:"assignments-de95a",storageBucket:"assignments-de95a.firebasestorage.app",messagingSenderId:"1088073398299",appId:"1:1088073398299:web:dab1f57ac1d63b10dba0be"};
+if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
+const db=firebase.firestore();
+
+const pieceTheme='https://images.chesscomfiles.com/chess-themes/pieces/neo/150/{piece}.png';
+function pieceThemeUrl(){return function(piece){const m={wP:'wp',wR:'wr',wN:'wn',wB:'wb',wQ:'wq',wK:'wk',bP:'bp',bR:'br',bN:'bn',bB:'bb',bQ:'bq',bK:'bk'};return pieceTheme.replace('{piece}',m[piece]||piece.toLowerCase());};}
+
+let roomId=null, roomCode=null, myUid=null, myColor=null, myName='', isHost=false;
+let game=null, board=null, unsub=null, sourceSquare=null, applyingRemote=false;
+
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2600);
+}
+function loadProg(){try{return JSON.parse(localStorage.getItem('mm_progress')||'{}');}catch(e){return {};}}
+function saveProg(p){localStorage.setItem('mm_progress',JSON.stringify(p));}
+function uid(){
+  let id=localStorage.getItem('mm_pvp_uid');
+  if(!id){ id='u_'+Math.random().toString(36).slice(2,10)+Date.now().toString(36); localStorage.setItem('mm_pvp_uid',id); }
+  return id;
+}
+function makeCode(){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c='';
+  for(let i=0;i<4;i++) c+=chars[Math.floor(Math.random()*chars.length)];
+  return c;
+}
+function getName(){
+  const n=(document.getElementById('player-name').value||'').trim()||loadProg().name||localStorage.getItem('mm_online_name')||'Player';
+  localStorage.setItem('mm_online_name',n);
+  return n.slice(0,20);
+}
+
+// Prefill name
+(function(){
+  const p=loadProg();
+  const el=document.getElementById('player-name');
+  if(el) el.value=p.name||localStorage.getItem('mm_online_name')||'';
+})();
+
+async function createRoom(){
+  myName=getName();
+  myUid=uid();
+  isHost=true;
+  myColor='w';
+  roomCode=makeCode();
+  const fen=new Chess().fen();
+  try{
+    const ref=await db.collection('pvp_rooms').add({
+      code: roomCode,
+      hostUid: myUid,
+      hostName: myName,
+      guestUid: null,
+      guestName: null,
+      fen: fen,
+      lastMove: null,
+      turn: 'w',
+      status: 'waiting',
+      drawOfferFrom: null,
+      result: null,
+      updated: firebase.firestore.FieldValue.serverTimestamp(),
+      created: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    roomId=ref.id;
+    document.getElementById('lobby').classList.add('hidden');
+    document.getElementById('waiting').classList.remove('hidden');
+    document.getElementById('room-code-display').textContent=roomCode;
+    listenRoom();
+    toast('Room created — share '+roomCode);
+  }catch(e){
+    console.error(e);
+    toast('Could not create room — check connection');
+  }
+}
+
+async function joinRoom(){
+  myName=getName();
+  myUid=uid();
+  isHost=false;
+  myColor='b';
+  const code=(document.getElementById('join-code').value||'').trim().toUpperCase();
+  if(code.length<4){ toast('Enter the 4-letter code'); return; }
+  try{
+    const snap=await db.collection('pvp_rooms').where('code','==',code).where('status','==','waiting').limit(1).get();
+    if(snap.empty){
+      // maybe already playing — try any with code
+      const snap2=await db.collection('pvp_rooms').where('code','==',code).limit(3).get();
+      let found=null;
+      snap2.forEach(d=>{ const x=d.data(); if(x.status==='waiting'||(x.status==='playing'&&x.guestUid===myUid)) found={id:d.id,data:x}; });
+      if(!found){ toast('Room not found or already full'); return; }
+      roomId=found.id; roomCode=code;
+      if(found.data.status==='waiting'){
+        await db.collection('pvp_rooms').doc(roomId).update({
+          guestUid: myUid, guestName: myName, status: 'playing',
+          updated: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    } else {
+      const doc=snap.docs[0];
+      roomId=doc.id; roomCode=code;
+      await db.collection('pvp_rooms').doc(roomId).update({
+        guestUid: myUid, guestName: myName, status: 'playing',
+        updated: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+    document.getElementById('lobby').classList.add('hidden');
+    document.getElementById('waiting').classList.add('hidden');
+    startGameUI();
+    listenRoom();
+  }catch(e){
+    console.error(e);
+    toast('Join failed — check code & connection');
+  }
+}
+
+function copyCode(){
+  if(!roomCode) return;
+  navigator.clipboard.writeText(roomCode).then(()=>toast('Code copied!')).catch(()=>toast(roomCode));
+}
+
+async function cancelRoom(){
+  if(roomId) await db.collection('pvp_rooms').doc(roomId).delete().catch(()=>{});
+  cleanup();
+  location.reload();
+}
+
+function listenRoom(){
+  if(unsub) unsub();
+  unsub=db.collection('pvp_rooms').doc(roomId).onSnapshot(doc=>{
+    if(!doc.exists){ toast('Room closed'); setTimeout(()=>location.reload(),800); return; }
+    const d=doc.data();
+    if(d.status==='waiting'){
+      document.getElementById('wait-text').textContent='Waiting for friend to join…';
+      return;
+    }
+    if(d.status==='playing' || d.status==='ended'){
+      document.getElementById('lobby').classList.add('hidden');
+      document.getElementById('waiting').classList.add('hidden');
+      if(!board) startGameUI();
+      applyRemoteState(d);
+    }
+  }, err=>{ console.error(err); toast('Connection issue'); });
+}
+
+function startGameUI(){
+  document.getElementById('game-screen').classList.remove('hidden');
+  game=new Chess();
+  const orient=myColor==='b'?'black':'white';
+  if(!board){
+    board=ChessBoard('board',{
+      position:'start',
+      orientation:orient,
+      draggable:false,
+      pieceTheme:pieceThemeUrl()
+    });
+    $('#board').on('click','[class*="square-"]',function(){
+      const sq=$(this).attr('data-square');
+      if(sq) onSquareClick(sq);
+    });
+  } else {
+    board.orientation(orient);
+    board.position('start');
+  }
+}
+
+function applyRemoteState(d){
+  if(!game||!board) return;
+  // Labels — always clear who is white/black
+  const whiteName=d.hostName||'Host';
+  const blackName=d.guestName||'Guest';
+  document.getElementById('label-white').innerHTML='⬜ White · '+whiteName+(myColor==='w'?' (you)':'');
+  document.getElementById('label-black').innerHTML='⬛ Black · '+blackName+(myColor==='b'?' (you)':'');
+
+  if(d.fen && d.fen!==game.fen()){
+    applyingRemote=true;
+    game.load(d.fen);
+    board.position(d.fen,false);
+    applyingRemote=false;
+  }
+  const turn=d.turn||game.turn();
+  document.getElementById('turn-label').textContent=(turn==='w'?'White':'Black')+' to move';
+  updateStatusLocal(d);
+
+  if(d.drawOfferFrom && d.drawOfferFrom!==myUid && d.status==='playing'){
+    document.getElementById('draw-modal').style.display='flex';
+    document.getElementById('draw-modal-text').textContent=(d.drawOfferFrom===d.hostUid?d.hostName:d.guestName)+' offers a draw.';
+  } else {
+    document.getElementById('draw-modal').style.display='none';
+  }
+
+  if(d.status==='ended' && d.result){
+    showResult(d);
+  }
+}
+
+function updateStatusLocal(d){
+  if(d.status==='ended'){ document.getElementById('status').textContent='Game over'; return; }
+  if(game.in_checkmate()){ document.getElementById('status').textContent='Checkmate!'; return; }
+  if(game.in_draw()){ document.getElementById('status').textContent='Draw'; return; }
+  const myTurn=game.turn()===myColor;
+  let t=myTurn?'Your turn — make a move':'Waiting for opponent…';
+  if(game.in_check()) t=(myTurn?'You are in check!':'Opponent in check')+' · '+t;
+  document.getElementById('status').textContent=t;
+}
+
+function clearHighlights(){
+  $('#board .square-55d63').removeClass('highlight-from highlight-to highlight-select highlight-legal highlight-capture');
+}
+function showLegal(sq){
+  clearHighlights();
+  $('#board .square-'+sq).addClass('highlight-select');
+  game.moves({square:sq,verbose:true}).forEach(m=>{
+    const el=$('#board .square-'+m.to);
+    el.addClass('highlight-legal');
+    if(m.flags&&(m.flags.includes('c')||m.flags.includes('e'))) el.addClass('highlight-capture');
+  });
+}
+
+function onSquareClick(sq){
+  if(!game||game.game_over()||applyingRemote) return;
+  if(game.turn()!==myColor){ toast('Wait for your turn'); return; }
+  const piece=game.get(sq);
+  if(sourceSquare){
+    if(sourceSquare===sq){ sourceSquare=null; clearHighlights(); return; }
+    const moves=game.moves({square:sourceSquare,verbose:true});
+    const legal=moves.find(m=>m.to===sq);
+    if(legal){
+      const promo=legal.flags.includes('p')?'q':undefined;
+      const move=game.move({from:sourceSquare,to:sq,promotion:promo});
+      sourceSquare=null; clearHighlights();
+      if(move){
+        board.position(game.fen());
+        pushMove(move);
+      }
+      return;
+    }
+    if(piece&&piece.color===myColor){ sourceSquare=sq; showLegal(sq); return; }
+    sourceSquare=null; clearHighlights();
+    return;
+  }
+  if(piece&&piece.color===myColor){ sourceSquare=sq; showLegal(sq); }
+}
+
+async function pushMove(move){
+  if(!roomId) return;
+  const over=game.game_over();
+  let status='playing', result=null;
+  if(game.in_checkmate()){
+    status='ended';
+    result={ type:'checkmate', winner: myColor };
+  } else if(game.in_draw()){
+    status='ended';
+    result={ type:'draw' };
+  }
+  try{
+    await db.collection('pvp_rooms').doc(roomId).update({
+      fen: game.fen(),
+      lastMove: { from: move.from, to: move.to, san: move.san },
+      turn: game.turn(),
+      status: status,
+      result: result,
+      drawOfferFrom: null,
+      updated: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }catch(e){ console.error(e); toast('Move failed to sync'); }
+}
+
+async function offerDraw(){
+  if(!roomId||!game||game.game_over()) return;
+  await db.collection('pvp_rooms').doc(roomId).update({
+    drawOfferFrom: myUid,
+    updated: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  toast('Draw offered');
+}
+async function acceptDraw(){
+  document.getElementById('draw-modal').style.display='none';
+  await db.collection('pvp_rooms').doc(roomId).update({
+    status:'ended', result:{ type:'draw', agreed:true }, drawOfferFrom:null,
+    updated: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+async function declineDraw(){
+  document.getElementById('draw-modal').style.display='none';
+  await db.collection('pvp_rooms').doc(roomId).update({
+    drawOfferFrom:null,
+    updated: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  toast('Draw declined');
+}
+function resignGame(){
+  if(!roomId||!game||game.game_over()) return;
+  document.getElementById('resign-modal').style.display='flex';
+}
+function closeResignModal(){
+  document.getElementById('resign-modal').style.display='none';
+}
+async function confirmResign(){
+  closeResignModal();
+  if(!roomId||!game||game.game_over()) return;
+  const winner = myColor==='w'?'b':'w';
+  await db.collection('pvp_rooms').doc(roomId).update({
+    status:'ended', result:{ type:'resign', winner: winner },
+    updated: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+function showResult(d){
+  const r=d.result||{};
+  const modal=document.getElementById('result-modal');
+  const emoji=document.getElementById('result-emoji');
+  const title=document.getElementById('result-title');
+  const sub=document.getElementById('result-sub');
+  const xpEl=document.getElementById('result-xp');
+  let won=false, draw=false;
+  if(r.type==='draw') draw=true;
+  else if(r.winner===myColor) won=true;
+
+  let xp=8;
+  if(won) xp=25;
+  else if(draw) xp=12;
+  const p=loadProg();
+  if(!p._pvpAwarded || p._pvpAwarded!==roomId){
+    p.xp=(p.xp||0)+xp;
+    p.pvpGames=(p.pvpGames||0)+1;
+    if(won) p.pvpWins=(p.pvpWins||0)+1;
+    p.petHappy=Math.min(100,(p.petHappy||70)+8);
+    if(won){
+      try {
+        var d=new Date();
+        var onejan=new Date(d.getFullYear(),0,1);
+        var wk=d.getFullYear()+'-W'+Math.ceil((((d-onejan)/86400000)+onejan.getDay()+1)/7);
+        if(p.tourneyWeek!==wk){ p.tourneyWeek=wk; p.tourneyPoints=0; p.tourneyClaimed=false; }
+        p.tourneyPoints=(p.tourneyPoints||0)+15;
+      }catch(e){}
+    }
+    p._pvpAwarded=roomId;
+    saveProg(p);
+  }
+
+  if(draw){
+    emoji.textContent='🤝'; title.textContent='Draw!';
+    sub.textContent='Hard-fought game. Both played well!';
+  } else if(won){
+    emoji.textContent='🏆'; title.textContent='You win!';
+    sub.textContent=r.type==='resign'?'Opponent resigned.':'Great game — checkmate!';
+  } else {
+    emoji.textContent='💪'; title.textContent='Nice try!';
+    sub.textContent='Rematch and climb higher.';
+  }
+  xpEl.textContent='+'+xp+' XP';
+  modal.style.display='flex';
+}
+
+function cleanup(){
+  if(unsub){ unsub(); unsub=null; }
+}
+function leaveGame(){
+  cleanup();
+  location.href='index.html';
+}
+
+// Deep link: play-live.html?code=ABCD
+(function(){
+  try{
+    const q=new URLSearchParams(location.search);
+    const c=q.get('code');
+    if(c) document.getElementById('join-code').value=c.toUpperCase();
+  }catch(e){}
+})();
+</script>
+</body>
+</html>
