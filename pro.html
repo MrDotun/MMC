@@ -65,7 +65,6 @@
 
                     <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy Selected Batch</span></button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
-                    <button onclick="downloadTool()" class="px-6 py-3 bg-indigo-800 text-indigo-100 rounded-xl font-bold uppercase text-xs hover:bg-indigo-700">Download This Tool</button>
                 </div>
             </div>
 
@@ -433,19 +432,30 @@
 
                     // Build a short human-readable plan hint from the line
                     let planHint = "";
-                    if (firstMove) {
-                        const evalNum = parseFloat(data.eval);
-                        const isMate = /mate|#/i.test(String(data.eval)) || /#/.test(cont);
-                        if (isMate) {
-                            planHint = "Forced mate sequence exists.";
-                        } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) {
-                            planHint = "Large advantage — concrete attack or decisive material/positional gain.";
-                        } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) {
-                            planHint = "Clear plus — lasting pressure or structural advantage.";
-                        } else {
-                            planHint = "Small edge or equal — positional idea.";
-                        }
+                    const evalNum = parseFloat(data.eval);
+                    const isMate = /mate|#/i.test(String(data.eval)) || /#/.test(cont);
+                    if (isMate) {
+                        planHint = "Forced mate sequence exists — the attack is decisive.";
+                    } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) {
+                        planHint = "Large advantage — concrete attack or decisive material/positional gain.";
+                    } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) {
+                        planHint = "Clear plus — lasting pressure or structural advantage.";
+                    } else if (!isNaN(evalNum) && evalNum <= -0.8) {
+                        planHint = "The side to move is under pressure — must find accurate defence.";
+                    } else {
+                        planHint = "Small edge or equal — positional idea.";
                     }
+
+                    // Directional cue from the first moves of the continuation
+                    let direction = "";
+                    const moves = cont.split(/\s+/).filter(Boolean);
+                    const joined = moves.join(" ").toLowerCase();
+                    if (/[+#]/.test(joined) || isMate) direction = "direct king attack / mating net";
+                    else if (/\bx[a-h][1-8]/.test(joined) || /takes|capture/i.test(joined)) direction = "tactical captures / material";
+                    else if (/o-o-o|0-0-0/.test(joined)) direction = "queenside castling / long-side safety";
+                    else if (/o-o|0-0/.test(joined)) direction = "kingside castling / king safety";
+                    else if (/[a-h][45]/.test(joined) && /[a-h][45]/.test(joined)) direction = "central / space gains";
+                    else if (moves.length >= 2) direction = "improving pieces and consolidating";
 
                     return {
                         eval: data.eval,
@@ -453,6 +463,7 @@
                         continuation: cont,
                         text: data.text || "",
                         planHint: planHint,
+                        direction: direction,
                         invalid: false
                     };
                 } catch (e) {
@@ -712,18 +723,21 @@
                         if (engineData.planHint) {
                             lineOutput += `\n   -> [ENGINE HINT]: ${engineData.planHint}`;
                         }
-                        lineOutput += `\n   -> [READ THIS]: 1) Look at the FEN and POSITION FEATURES. 2) Identify king safety, open lines, development lag, hanging pieces. 3) Turn the best continuation into a natural idea or plan for the side to move. Never list the moves. Never name a concrete next move that already appears later in the PGN.`;
+                        if (engineData.direction) {
+                            lineOutput += `\n   -> [PLAN DIRECTION]: ${engineData.direction}`;
+                        }
+                        lineOutput += `\n   -> [READ THIS]: 1) Read the FEN and POSITION FEATURES. 2) Notice king safety, open lines, development lag, hanging pieces. 3) Use BEST CONTINUATION + PLAN DIRECTION to understand what the side to move wants to do next. 4) Write that idea in natural coaching English. Never list the moves. Never name a concrete next move that already appears later in the PGN.`;
 
                         const evalNum = parseFloat(engineData.eval);
                         const isMate = /mate|#/i.test(String(engineData.eval)) || /#/.test(bestLine);
                         const bigSwing = !isNaN(evalNum) && Math.abs(evalNum) >= 0.9;
 
                         if (isMate || bigSwing || isCritical) {
-                            lineOutput += `\n   -> [TACTICAL / CRITICAL]: There is a concrete idea. Explain the threat or the plan in plain English using the position.`;
+                            lineOutput += `\n   -> [TACTICAL / CRITICAL]: Concrete idea exists. Explain the threat or the plan in plain English from the position.`;
                         }
 
                         if (c.isVariationEnd) {
-                            lineOutput += `\n   -> [VARIATION END — REQUIRED]: This is the last move of the branch. You MUST write a clear idea of what this line was about or how the stronger side continues. Base it on the FEN + POSITION FEATURES + engine continuation. One or two short sentences. Correct colour only.`;
+                            lineOutput += `\n   -> [VARIATION END — REQUIRED]: Last move of this branch. You MUST write a clear idea of what this line was about or how the stronger side continues. Use FEN + POSITION FEATURES + PLAN DIRECTION. One or two short sentences. Correct colour only.`;
                         }
                         if (c.isVariationStart && !c.isVariationEnd) {
                             lineOutput += `\n   -> [VARIATION START]: First move of a new branch. Short note on the idea only if it is not obvious from the moves that follow.`;
@@ -821,28 +835,6 @@ Future / plan language (only for ideas NOT already shown by the next moves):
 - "Black will actively look to land Ne4 once prepared."
 - "with the idea of Bb7"
 - "Next, we play Bd7, activate our Rooks, and prepare b5."
-
-=== OUTPUT ===
-Return ONLY a pure JSON object. Keys = chunk IDs. Values = comment text.
-Omit keys with no comment.
-No markdown, no thought process, no extra text outside the JSON.
-
-=== BATCH TO ANALYZE ===
-${batchString}`;
-"We equalize comfortably out of the opening."
-"An interesting novelty from Black to offer an exchange."
-"With the idea of b5, which can't be stopped, we gain valuable space on the queenside."
-
-=== BAD (never write like this) ===
-"White is better."
-"White keeps the initiative."
-"White will play Bxf7 with a winning position."   ← (when 14.Bxf7+ is already the next move)
-"Black will continue with ...c5"                  ← (when ...c5 is already the next move in the PGN)
-"The queen check on f3 forces the king further into the open..."
-(Any long move-by-move retelling.)
-(Any comment that mixes White and Black or assigns a plan to the wrong side.)
-(Any comment that starts by repeating the move just played.)
-(Any comment longer than two short sentences.)
 
 === OUTPUT ===
 Return ONLY a pure JSON object. Keys = chunk IDs. Values = comment text.
@@ -960,22 +952,6 @@ ${batchString}`;
             a.href = URL.createObjectURL(blob);
             a.download = "GM_Variation_Analysis.pgn";
             a.click();
-        }
-
-        function downloadTool() {
-            try {
-                const html = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
-                const blob = new Blob([html], {type: 'text/html'});
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = "pro.html";
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(a.href);
-            } catch (e) {
-                alert("Download failed. Right-click the page → Save As… instead.");
-            }
         }
     </script>
 </body>
