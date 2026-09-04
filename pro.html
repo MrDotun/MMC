@@ -486,6 +486,7 @@
                     let bestPv = "";
                     let bestScore = null;
                     let bestMate = null;
+                    let altPv = "";
                     let finished = false;
 
                     const timeout = setTimeout(() => {
@@ -495,23 +496,29 @@
                         res({
                             eval: bestMate != null ? (bestMate > 0 ? `M${bestMate}` : `-M${Math.abs(bestMate)}`) : (bestScore != null ? (bestScore / 100).toFixed(2) : null),
                             pvUci: bestPv,
+                            altPvUci: altPv,
                             depthReached: depth
                         });
-                    }, 12000);
+                    }, 14000);
 
                     const handler = function (e) {
                         const line = String(e.data || "");
                         if (line.startsWith("info") && line.indexOf(" pv ") !== -1) {
-                            // score
+                            const multipvMatch = line.match(/\bmultipv (\d+)/);
+                            const mp = multipvMatch ? parseInt(multipvMatch[1], 10) : 1;
                             const mateMatch = line.match(/\bscore mate (-?\d+)/);
                             const cpMatch = line.match(/\bscore cp (-?\d+)/);
-                            if (mateMatch) bestMate = parseInt(mateMatch[1], 10);
-                            else if (cpMatch) {
-                                bestMate = null;
-                                bestScore = parseInt(cpMatch[1], 10);
-                            }
                             const pvMatch = line.match(/\bpv\s+(.+)$/);
-                            if (pvMatch) bestPv = pvMatch[1].trim();
+                            if (mp === 1) {
+                                if (mateMatch) bestMate = parseInt(mateMatch[1], 10);
+                                else if (cpMatch) {
+                                    bestMate = null;
+                                    bestScore = parseInt(cpMatch[1], 10);
+                                }
+                                if (pvMatch) bestPv = pvMatch[1].trim();
+                            } else if (mp === 2 && pvMatch) {
+                                altPv = pvMatch[1].trim();
+                            }
                         }
                         if (line.startsWith("bestmove")) {
                             if (finished) return;
@@ -526,6 +533,7 @@
                             res({
                                 eval: bestMate != null ? (bestMate > 0 ? `M${bestMate}` : `-M${Math.abs(bestMate)}`) : (bestScore != null ? (bestScore / 100).toFixed(2) : null),
                                 pvUci: bestPv,
+                                altPvUci: altPv,
                                 bestUci: bm,
                                 depthReached: depth
                             });
@@ -534,6 +542,7 @@
 
                     stockfishWorker.addEventListener("message", handler);
                     stockfishWorker.postMessage("ucinewgame");
+                    stockfishWorker.postMessage("setoption name MultiPV value 2");
                     stockfishWorker.postMessage("position fen " + fen);
                     stockfishWorker.postMessage("go depth " + depth);
                 }));
@@ -564,36 +573,50 @@
             return { planHint, direction };
         }
 
-        // Turn a SAN line into a short human plan sentence for the AI
+        // Turn a SAN line into a repertoire-style plan sentence
         function buildPlanSummary(sanMoves, sideToMove, evalStr) {
             if (!sanMoves || !sanMoves.length) return "";
             const side = sideToMove || "the side to move";
-            const line = sanMoves.slice(0, 5).join(" ");
+            const moves = sanMoves.filter(Boolean).slice(0, 6);
+            const line = moves.join(" ");
+            const lower = line.toLowerCase();
             const evalNum = parseFloat(evalStr);
             const isMate = /M/i.test(String(evalStr)) || /#/.test(line);
-            const first = sanMoves[0] || "";
-            const rest = sanMoves.slice(1, 4).join(", ");
+            const first = moves[0] || "";
+            const nextIdeas = moves.slice(0, 4);
 
             if (isMate) {
-                return `${side} has a forced mate idea starting with ${first}` + (rest ? ` then ${rest}` : "") + ".";
+                return `PLAN: ${side} has a mating attack. Idea starts ${nextIdeas.join(", ")}.`;
             }
-            // Detect common themes from the moves
-            const lower = line.toLowerCase();
+
+            // Extract named plan moves the AI can quote (Bb7, Rac8, Ne4, c5, etc.)
+            const planMoves = [];
+            moves.forEach(m => {
+                const clean = m.replace(/[+#?!]+$/g, "");
+                if (/^[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8]/.test(clean) || /^O-O/.test(clean) || /^[a-h][1-8]/.test(clean)) {
+                    planMoves.push(clean);
+                }
+            });
+
             let theme = "";
-            if (/xf7|f7\+|bx?f7/.test(lower)) theme = "sacrifice on f7 to drag the king out";
-            else if (/xf2|f2\+/.test(lower)) theme = "sacrifice on f2 against the king";
-            else if (/qh5|qg4|qf3|qh4/.test(lower)) theme = "queen check / attack on the king";
-            else if (/o-o/.test(lower)) theme = "castling to safety then continuing the plan";
-            else if (/d4|d5|c4|c5|e4|e5/.test(lower) && /x/.test(lower)) theme = "opening the centre with captures";
-            else if (/d4|d5|c5|f5|b5/.test(lower)) theme = "central / pawn break ideas";
-            else if (/x/.test(lower)) theme = "tactical captures and material";
-            else theme = "improving pieces and keeping pressure";
+            if (/xf7|f7\+|bxf7|nxf7/.test(lower)) theme = "sacrifice on f7 to drag the king into the open";
+            else if (/xf2|f2\+/.test(lower)) theme = "sacrifice on f2";
+            else if (/qh5|qg4|qf3|qh4|qf6|qe4/.test(lower)) theme = "queen activity / checks against the king";
+            else if (/o-o-o/.test(lower)) theme = "queenside castling";
+            else if (/o-o/.test(lower)) theme = "castling then continuing development";
+            else if (/\bb5\b|\ba6\b|\bbb7\b/.test(lower)) theme = "queenside expansion with b5/Bb7 ideas";
+            else if (/\bc5\b|\bc4\b/.test(lower)) theme = "c-pawn break / challenging the centre";
+            else if (/\bd5\b|\bd4\b/.test(lower)) theme = "central d-pawn play";
+            else if (/\bf5\b|\bf6\b/.test(lower)) theme = "f-pawn break / kingside activity";
+            else if (/x/.test(lower)) theme = "tactical sequence with captures";
+            else theme = "piece improvement and coordination";
 
-            let evalBit = "";
-            if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.2) evalBit = " with a large advantage";
-            else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.7) evalBit = " with a clear plus";
+            let strength = "";
+            if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) strength = " Large advantage.";
+            else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) strength = " Clear plus.";
+            else if (!isNaN(evalNum) && evalNum <= -0.8) strength = " Under pressure — needs accurate defence.";
 
-            return `${side}'s idea: ${theme} (main line idea starts ${first}` + (rest ? `, then ${rest}` : "") + `)${evalBit}.`;
+            return `PLAN FOR ${side}: ${theme}. Next useful ideas from the line: ${planMoves.slice(0, 4).join(", ") || first}.${strength}`;
         }
 
         async function getEngineRefutation(fen, retries = 2, options = {}) {
@@ -611,18 +634,24 @@
                 const sf = await stockfishAnalyze(fen, depth);
                 if (sf && (sf.pvUci || sf.bestUci)) {
                     const sans = uciLineToSan(fen, sf.pvUci || sf.bestUci, 8);
+                    const altSans = sf.altPvUci ? uciLineToSan(fen, sf.altPvUci, 5) : [];
                     const first = sans[0] || "";
                     const cont = sans.join(" ");
                     const hints = buildPlanHints(sans, sf.eval);
+                    let planSummary = buildPlanSummary(sans, turnAfter, sf.eval);
+                    if (altSans.length) {
+                        planSummary += ` Alternative idea: ${altSans.slice(0, 3).join(", ")}.`;
+                    }
                     result = {
                         eval: sf.eval,
                         san: first,
                         continuation: cont,
                         sanMoves: sans,
+                        altContinuation: altSans.join(" "),
                         text: "",
                         planHint: hints.planHint,
                         direction: hints.direction,
-                        planSummary: buildPlanSummary(sans, turnAfter, sf.eval),
+                        planSummary: planSummary,
                         invalid: false,
                         source: "stockfish"
                     };
@@ -714,7 +743,7 @@
             return result;
         }
 
-        // Full piece map from FEN so the AI cannot confuse knights for pawns
+        // Deep position reading from FEN — pieces, structure, development, themes
         function describePositionFromFen(fen) {
             if (!fen || !isValidFen(fen)) return "";
             try {
@@ -727,46 +756,99 @@
                     K: "White king", Q: "White queen", R: "White rook", B: "White bishop", N: "White knight", P: "White pawn",
                     k: "Black king", q: "Black queen", r: "Black rook", b: "Black bishop", n: "Black knight", p: "Black pawn"
                 };
-                const pieces = []; // {sq, name, ch}
+                const pieces = [];
+                const grid = Array.from({ length: 8 }, () => Array(8).fill(null)); // rank 0 = rank 8
                 for (let r = 0; r < 8; r++) {
                     let file = 0;
                     for (const ch of rows[r]) {
                         if (ch >= "1" && ch <= "8") { file += parseInt(ch); continue; }
                         const sq = String.fromCharCode(97 + file) + (8 - r);
-                        pieces.push({ sq, name: pieceNames[ch] || ch, ch });
+                        pieces.push({ sq, name: pieceNames[ch] || ch, ch, file, rank: 8 - r });
+                        grid[r][file] = ch;
                         file++;
                     }
                 }
                 const bySq = {};
-                pieces.forEach(p => { bySq[p.sq] = p.name; });
+                pieces.forEach(p => { bySq[p.sq] = p; });
 
-                // Always list centre and key squares explicitly
-                const keySquares = ["d4","d5","e4","e5","c4","c5","f4","f5","d3","e3","f3","c3","b4","b5","g4","g5","f7","f2","e6","e7","d6","d7"];
-                const centreList = [];
-                keySquares.forEach(sq => {
-                    if (bySq[sq]) centreList.push(`${bySq[sq]} on ${sq}`);
-                });
-
-                // Kings
                 const wk = pieces.find(p => p.ch === "K");
                 const bk = pieces.find(p => p.ch === "k");
 
+                // Material count
+                const vals = { q: 9, r: 5, b: 3, n: 3, p: 1, Q: 9, R: 5, B: 3, N: 3, P: 1 };
+                let wMat = 0, bMat = 0;
+                pieces.forEach(p => {
+                    if (p.ch === "K" || p.ch === "k") return;
+                    if (p.ch === p.ch.toUpperCase()) wMat += (vals[p.ch] || 0);
+                    else bMat += (vals[p.ch] || 0);
+                });
+
+                // Pawn structure: isolated, doubled, passed-ish
+                const wPawns = pieces.filter(p => p.ch === "P");
+                const bPawns = pieces.filter(p => p.ch === "p");
+                function isolated(pawns, color) {
+                    const files = pawns.map(p => p.file);
+                    return pawns.filter(p => !files.some(f => Math.abs(f - p.file) === 1)).map(p => p.sq);
+                }
+                const wIso = isolated(wPawns, "w");
+                const bIso = isolated(bPawns, "b");
+
+                // Centre control / occupation
+                const centreSq = ["d4","d5","e4","e5","c4","c5","f4","f5"];
+                const centreOcc = centreSq.filter(sq => bySq[sq]).map(sq => `${bySq[sq].name} on ${sq}`);
+
+                // Development: minor pieces still on home squares
+                const undeveloped = [];
+                if (bySq["b1"] && bySq["b1"].ch === "N") undeveloped.push("White Nb1");
+                if (bySq["g1"] && bySq["g1"].ch === "N") undeveloped.push("White Ng1");
+                if (bySq["c1"] && bySq["c1"].ch === "B") undeveloped.push("White Bc1");
+                if (bySq["f1"] && bySq["f1"].ch === "B") undeveloped.push("White Bf1");
+                if (bySq["b8"] && bySq["b8"].ch === "n") undeveloped.push("Black Nb8");
+                if (bySq["g8"] && bySq["g8"].ch === "n") undeveloped.push("Black Ng8");
+                if (bySq["c8"] && bySq["c8"].ch === "b") undeveloped.push("Black Bc8");
+                if (bySq["f8"] && bySq["f8"].ch === "b") undeveloped.push("Black Bf8");
+
+                // Bishop pair
+                const wB = pieces.filter(p => p.ch === "B").length;
+                const bB = pieces.filter(p => p.ch === "b").length;
+
+                // Open / semi-open files (no pawns of either color / one side)
+                const openFiles = [];
+                for (let f = 0; f < 8; f++) {
+                    let wP = 0, bP = 0;
+                    for (let r = 0; r < 8; r++) {
+                        if (grid[r][f] === "P") wP++;
+                        if (grid[r][f] === "p") bP++;
+                    }
+                    const letter = String.fromCharCode(97 + f);
+                    if (wP === 0 && bP === 0) openFiles.push(letter + "-file open");
+                    else if (wP === 0) openFiles.push(letter + "-file semi-open for White");
+                    else if (bP === 0) openFiles.push(letter + "-file semi-open for Black");
+                }
+
                 let notes = [];
                 notes.push(`Side to move: ${turn}`);
-                if (wk) notes.push(`White king on ${wk.sq}`);
-                if (bk) notes.push(`Black king on ${bk.sq}`);
-                if (wk && wk.sq[0] === "e" && (castling.includes("K") || castling.includes("Q"))) notes.push("White still uncastled");
-                if (bk && bk.sq[0] === "e" && (castling.includes("k") || castling.includes("q"))) notes.push("Black still uncastled");
-                if (bk && ["d","e","f"].includes(bk.sq[0]) && bk.sq[1] !== "8") notes.push("Black king exposed / advanced");
-                if (wk && ["d","e","f"].includes(wk.sq[0]) && wk.sq[1] !== "1") notes.push("White king exposed / advanced");
-                if (centreList.length) notes.push("PIECES: " + centreList.join(", "));
-                // Full material list for absolute clarity
+                notes.push(`Material: White ${wMat} — Black ${bMat}` + (wMat !== bMat ? ` (${wMat > bMat ? "White +" + (wMat - bMat) : "Black +" + (bMat - wMat)})` : " (equal)"));
+                if (wk) notes.push(`White king on ${wk.sq}` + ((castling.includes("K") || castling.includes("Q")) && wk.sq[0] === "e" ? " (still uncastled)" : ""));
+                if (bk) notes.push(`Black king on ${bk.sq}` + ((castling.includes("k") || castling.includes("q")) && bk.sq[0] === "e" ? " (still uncastled)" : ""));
+                if (bk && ["d","e","f"].includes(bk.sq[0]) && bk.sq[1] !== "8" && bk.sq[1] !== "7") notes.push("Black king is exposed/advanced");
+                if (wk && ["d","e","f"].includes(wk.sq[0]) && wk.sq[1] !== "1" && wk.sq[1] !== "2") notes.push("White king is exposed/advanced");
+                if (wB >= 2) notes.push("White has the bishop pair");
+                if (bB >= 2) notes.push("Black has the bishop pair");
+                if (wIso.length) notes.push("White isolated pawn(s): " + wIso.join(", "));
+                if (bIso.length) notes.push("Black isolated pawn(s): " + bIso.join(", "));
+                if (centreOcc.length) notes.push("Centre: " + centreOcc.join(", "));
+                if (undeveloped.length) notes.push("Still undeveloped: " + undeveloped.join(", "));
+                if (openFiles.length) notes.push("Files: " + openFiles.slice(0, 4).join(", "));
+
+                // Full piece inventory — critical for board truth
                 const whitePcs = pieces.filter(p => p.ch === p.ch.toUpperCase()).map(p => `${p.name.replace("White ","")} ${p.sq}`).join(", ");
                 const blackPcs = pieces.filter(p => p.ch === p.ch.toLowerCase()).map(p => `${p.name.replace("Black ","")} ${p.sq}`).join(", ");
-                notes.push(`WHITE: ${whitePcs}`);
-                notes.push(`BLACK: ${blackPcs}`);
+                notes.push(`WHITE PIECES: ${whitePcs}`);
+                notes.push(`BLACK PIECES: ${blackPcs}`);
                 return notes.join(" | ");
             } catch (e) {
+                console.warn("describePositionFromFen error", e);
                 return "";
             }
         }
@@ -985,27 +1067,25 @@
 
                     if (engineData && !engineData.invalid && engineData.eval != null) {
                         const bestLine = (engineData.continuation || engineData.san || "").trim();
-                        lineOutput += `\n   -> [ENGINE EVAL]: ${engineData.eval}` + (engineData.evalBefore != null ? ` (before move: ${engineData.evalBefore})` : "");
+                        // Plan first — this is what the AI must turn into repertoire notes
+                        if (engineData.planSummary) {
+                            lineOutput += `\n   -> [PLAN SUMMARY]: ${engineData.planSummary}`;
+                        }
+                        if (engineData.altContinuation) {
+                            lineOutput += `\n   -> [ALT IDEA]: ${engineData.altContinuation}`;
+                        }
+                        lineOutput += `\n   -> [BEST CONTINUATION SAN]: ${bestLine || "(none)"}`;
+                        lineOutput += `\n   -> [ENGINE EVAL]: ${engineData.eval}` + (engineData.evalBefore != null ? ` (before: ${engineData.evalBefore})` : "");
                         if (engineData.evalSwing != null) {
                             lineOutput += `\n   -> [EVAL SWING]: ${engineData.evalSwing}`;
                         }
                         if (engineData.swingNote) {
                             lineOutput += `\n   -> [WHY THIS MOVE]: ${engineData.swingNote}`;
                         }
-                        lineOutput += `\n   -> [BEST CONTINUATION]: ${bestLine || "(none)"}`;
-                        if (engineData.planSummary) {
-                            lineOutput += `\n   -> [PLAN SUMMARY]: ${engineData.planSummary}`;
-                        }
-                        if (engineData.planHint) {
-                            lineOutput += `\n   -> [ENGINE HINT]: ${engineData.planHint}`;
-                        }
                         if (engineData.direction) {
                             lineOutput += `\n   -> [PLAN DIRECTION]: ${engineData.direction}`;
                         }
-                        if (engineData.source) {
-                            lineOutput += `\n   -> [ENGINE SOURCE]: ${engineData.source}`;
-                        }
-                        lineOutput += `\n   -> [READ THIS]: 1) Read POSITION FEATURES piece list carefully (knight vs pawn vs bishop — do not mix them up). 2) Use PLAN SUMMARY + BEST CONTINUATION for the real next idea and why the move was chosen. 3) Write a short plan in natural English. Never dump move lists. Never name a move that is already the very next move in the PGN.`;
+                        lineOutput += `\n   -> [READ THIS]: 1) POSITION FEATURES is the board truth — trust WHITE PIECES / BLACK PIECES lists. 2) PLAN SUMMARY is the chess idea — turn it into a repertoire comment like "Black will continue with b6 and Bb7..." 3) Do not dump the SAN list. Do not name a move that is already the next move in the PGN.`;
 
                         const evalNum = parseFloat(engineData.eval);
                         const isMate = /mate|#|M/i.test(String(engineData.eval)) || /#/.test(bestLine);
@@ -1041,73 +1121,69 @@
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a 2700+ GM writing sparse opening notes like a modern repertoire book. Natural English at about 68% skill — clear and direct, not polished or literary. British spelling where it fits (centre, favour).
+            const fullPrompt = `You are a 2700+ GM writing sparse opening notes for a modern repertoire book (Quality Chess / Everyman style). Natural English at about 68% skill — clear, direct, not literary. British spelling (centre, favour) where natural.
 
 STARTING FEN: ${startingFen}
 
-=== HOW TO THINK (MANDATORY) ===
-1. Read [FEN AFTER MOVE] and especially [POSITION FEATURES]. POSITION FEATURES lists every piece and its square (WHITE: ... BLACK: ...). Trust that list. A knight is a knight, a pawn is a pawn — never confuse them.
-2. Prefer [PLAN SUMMARY] when present — it is a human-readable engine plan. Also use [BEST CONTINUATION], [WHY THIS MOVE], [ENGINE HINT], [PLAN DIRECTION].
-3. Turn that into a short plan or idea in plain English. Name the idea with moves when useful (c5, Bb7, Ne4, d4-break, O-O and f5, etc.).
-4. Write the comment. Correct colour only.
-5. If POSITION FEATURES says "Black knight on d5", do NOT write about a pawn on d5. Read the piece list before every comment.
-6. On variation ends, the next idea MUST appear in the comment (with the idea of..., preparing..., will continue with...).
+Your job is to write comments EXACTLY like these real samples from a finished repertoire chapter:
+
+"An interesting sideline where White resolves the tension and gains queenside space with c5 followed by b4."
+"Black doesn't let White close the position with c5 and goes for it himself and challenges the centre."
+"We clarify the center and leave White with a weak isolated pawn."
+"Black will continue with b6 and Bb7 to place the bishop more actively and sharp."
+"Black's position remains solid, with b6 followed by Bb7 as the plan for developing the Bishop."
+"Aiming to play b5 and develop the Bishop to b7 with tempo."
+"[%csl Rg3] Black's plan is to eliminate the g3-Bishop, followed by Ndf6 and Bd7."
+"Bd7 and Bc6 is the way Black chooses."
+"Black gains space on the queenside and can follow up with ...Nb6 and ...Be6, along with further pushing of pawns."
+"Black provokes White into taking on d5 but that simply allows Black to have the sharp Be6 tempo."
+"We aim to play Ne6, while White's King remains stuck in the center, giving us good attacking chances."
+"Black can follow with b5 and Bb7, maintaining a strong position with the bishop pair."
+"[%csl Ge7,Gc8] The position remains equal, but the bishop pair gives Black good practical chances."
+"Aiming to eliminate one of White's bishops."
+"Black immediately kicks away the knight."
+"The position remains unclear, with f5 followed by Re8 and Kf8 as our plan."
+"Black has a solid pawn structure with no weaknesses, while White has yet to castle and is left with an isolated pawn."
+"With Bb7 and Rfd8 coming next, Black's pieces are far more active than White's."
+"transposes to the mainline."
+"[%csl Rd4] The pawn becomes isolated and becomes a burden for White to handle."
+"With Bb7 and Rac8 coming next, we have a very active position, while White is still left with a weak isolated queen's pawn."
+"We plan to take on c4 with dxc4, followed by e5."
+"Black can follow with Rac8 and then expand with b5 and b4, giving us a slight edge."
+"We immediately prevent White from castling, while the misplaced rook on f4 gives Black good attacking chances."
+"Black remains flexible and can choose between Bf6 and Bf5 next."
+"Black completes development and aims for Bxe5 followed by Qf6, even willing to give up the d5-pawn for active piece play."
+"Next, we can simplify by eliminating the isolated pawn."
+"Black equalizes comfortably out of the opening and has a queenside majority. Next, Black can follow up with Rac8 or Rfc8."
+"With the idea of Ne4 and Rac8."
+"Black could improve our Bishop with tempo, with Nb3 or Ne6 next, followed by Rac8."
+
+=== HOW TO THINK ===
+1. Read [POSITION FEATURES] piece list first. Knight on d5 means knight — never invent a pawn there.
+2. Use [PLAN SUMMARY] / [BEST CONTINUATION] / [WHY THIS MOVE] to know the real chess idea.
+3. Write like the samples above: plan + next moves named as ideas (b6 and Bb7, Rac8, Ne6, etc.).
+4. Correct colour only. "We" when the repertoire is for that side.
 
 === HARD RULES ===
 1. Comments ONLY AFTER the move.
-2. Sparse — most moves get nothing.
-3. MUST comment every [VARIATION END — REQUIRED]. Non-negotiable for EVERY variation that closes — main side lines, nested lines, all of them. When the bracket closes you MUST state the next idea or plan (what the side will do after this line). Examples: "with the idea of c5", "preparing the d4-break", "Black will castle and play f5", "White continues with Nc3-d5 ideas", "with Bb7 and Rad8 next". Never leave a closed variation without a next-idea comment.
-4. MUST comment every move with a sign (?, ??, !, !!, !?, ?!, $2, $4, $5, $6, $1, $3, $16, $18, $40, etc.) and every [TACTICAL / CRITICAL].
-5. Also comment a few important in-between moves when the idea is not obvious (key developing move, a useful stop, a break).
-6. Never start by repeating the move just played.
-7. Never mention engine, Stockfish, eval, depth, or "I calculated".
-8. Banned fancy words: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, ferocious, immense, well-known inaccuracy, lasting attack (overuse), "White is better", "keeps the initiative", "long-term structural superiority", "clearly winning endgame".
-9. LENGTH: one short sentence preferred. Max two. No essays.
-10. BOARD TRUTH: POSITION FEATURES lists exact pieces on squares. If it says knight on d5, it is a knight — not a pawn. Never invent material that is not on the list.
+2. Sparse — most moves silent.
+3. MUST comment every [VARIATION END — REQUIRED]. Every closed bracket needs a next-idea comment. Never skip.
+4. MUST comment every move with a sign (?, !, $…) and every [TACTICAL / CRITICAL].
+5. Comment a few key in-between moves when the idea is not obvious.
+6. Never start by naming the move just played.
+7. Never mention engine, Stockfish, eval numbers, depth.
+8. Banned: delve, crucial, fascinating, testament, symphony, ferocious, immense, well-known inaccuracy, long-term structural superiority, "White is better", "keeps the initiative".
+9. Prefer 1 sentence. Max 2. No essays.
+10. You may use [%csl Gx4] / [%csl Rx4] sparingly for key squares (outpost, weak pawn, target).
 
-=== PLANS AND NEXT MOVES AFTER EVERY BRACKET CLOSES (CRITICAL) ===
-For EVERY variation end — no exceptions:
-- The reader must see the next idea without turning on an engine.
-- Always say what comes next: "with c7-c5 ideas next", "preparing d4", "Black will castle then play f5 with a strong attack", "with the idea of Bb7 and Rad8", "Nb3 is the threat", "White will follow up with Nc3 and d4".
-- Use BEST CONTINUATION + PLAN DIRECTION to know the real plan, then phrase it naturally.
-- Only avoid naming a move if that exact move is already the very next move written in the PGN tree. Otherwise naming the plan moves is required.
-- Nested variations get their own next-idea comment when their own bracket closes.
-
-=== WHY THE MOVE WAS CHOSEN ===
-For sacs and sharp moves the reader must see why:
-- "the classic sacrifice — Black's king is dragged into the open and Qf3+ follows with a strong attack"
-- "opens the centre while the king is still uncastled"
-- "Stops Ne4 as c4 would be hanging after Bxe4"
-Do not leave the reader guessing why a sacrifice was played.
-
-=== SIDE / COLOUR ===
-- Trust FEN when FEN OK is true.
-- Plans belong only to the correct colour.
-- Side to move AFTER plays the first move of any continuation.
-- "We" only when the repertoire is clearly for that side.
-
-=== GOOD STYLE (copy this voice) ===
-"with the idea of Bb7"
-"Black is preparing to expand with b5"
-"preparing the d4-break"
-"with c7-c5 ideas next"
-"Black will castle and play f5 with a strong attack"
-"Stops Ne4 as c4 would be hanging after Bxe4"
-"is losing time"
-"Nb3 is the threat..."
-"as White commits the bishop, Black can simply capture the c4 pawn"
-"Black will continue with …b6–Bb7, taking control of the d5 outpost"
-"White stops b5 but has given away the b4 square in the process"
-"the sacrifice drags the king into the open"
-"opens the centre while the king is still uncastled"
-
-=== BAD (never) ===
-"A well-known inaccuracy that allows White to break open the centre..."
-"White blasts open the centre to get at the exposed king, generating a ferocious attack"
-"walks into the sacrifice" (too empty — say the idea)
-"White is better"
-long grammar-heavy essays
-move-by-move forced-line dumps
+=== VARIATION ENDS (EVERY BRACKET) ===
+When a line closes, always give the plan that is NOT already the next move in the PGN:
+- "Black will continue with b6 and Bb7..."
+- "With Bb7 and Rac8 coming next..."
+- "Aiming to play b5 and develop the Bishop to b7 with tempo."
+- "We aim to play Ne6, while White's King remains stuck in the center..."
+- "f5 followed by Re8 and Kf8 as our plan."
+Use PLAN SUMMARY + POSITION FEATURES. Nested lines each get their own end-comment.
 
 === OUTPUT ===
 Return ONLY a pure JSON object. Keys = chunk IDs. Values = comment text.
