@@ -20,7 +20,8 @@
         textarea, input[type="text"] { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; color: #fff; }
         textarea:focus, input:focus { border-color: #d4af37 !important; outline: none; }
         #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.3s; }
-        .board-container { width: 100%; max-width: 360px; margin: 0 auto; }
+        .board-container { width: 100%; max-width: 360px; margin: 0 auto; aspect-ratio: 1 / 1; }
+        #board { width: 100% !important; height: auto !important; }
         .spinner { border: 3px solid rgba(255,255,255,0.1); border-left-color: #d4af37; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .theme-chip.active { background: #a16207 !important; color: #fef3c7 !important; border-color: #fbbf24 !important; }
@@ -143,13 +144,32 @@ const THEMES = [
   {id:'piece_activity',label:'Piece activity'},{id:'favourable_exchange',label:'Favourable exchange'},{id:'plan',label:'Plan / idea'}
 ];
 
+function ensureBoard(fen) {
+  const pos = fen || 'start';
+  try {
+    if (!board) {
+      board = Chessboard('board', {
+        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+        position: pos
+      });
+      setTimeout(bindBoard, 200);
+    } else {
+      board.position(pos, false);
+    }
+    // critical: board was 0-width while workspace was hidden
+    setTimeout(() => { try { board.resize(); } catch (e) {} }, 50);
+    setTimeout(() => { try { board.resize(); refreshMarks(); } catch (e) {} }, 200);
+  } catch (e) {
+    console.warn('board init', e);
+  }
+}
+
 window.onload = () => {
-  board = Chessboard('board', { pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', position: 'start' });
-  setTimeout(bindBoard, 400);
   buildThemes();
   setMode('green');
   setTheme('outpost');
   document.getElementById('engine-line').addEventListener('blur', saveEngEdit);
+  window.addEventListener('resize', () => { if (board) try { board.resize(); } catch (e) {} });
   const s = localStorage.getItem('gm_master_state');
   if (s) {
     try {
@@ -159,7 +179,7 @@ window.onload = () => {
       if (st.ideas) ideasById = st.ideas;
       if (st.engine) engineById = st.engine;
       if (st.original) processPgn(true);
-    } catch(e){}
+    } catch (e) {}
   }
 };
 
@@ -269,7 +289,7 @@ function goToMove(i){
   const fen=c.fenAfter||c.fen;
   document.getElementById('fen-output').value=fen||'';
   document.getElementById('view-label').innerText=c.moveNum+'. '+c.target;
-  if(board&&fen) board.position(fen,false);
+  ensureBoard(fen || 'start');
   const eng=engineById[c.id];
   document.getElementById('engine-line').value=eng?(eng.line||''):'';
   document.getElementById('engine-eval').innerText=eng&&eng.eval!=null?('Eval: '+eng.eval):'';
@@ -277,7 +297,7 @@ function goToMove(i){
   const on=markedIds.has(c.id);
   mb.innerText=on?'Marked':'Mark for comment';
   mb.className=on?'flex-1 py-2 rounded-lg text-xs font-bold gold-bg':'flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold';
-  setTimeout(()=>{refreshIdeas();refreshMarks();},40);
+  setTimeout(()=>{refreshIdeas();refreshMarks();},80);
   updateUI();
 }
 function navMove(d){ goToMove(currentIndex==null?0:currentIndex+d); }
@@ -379,7 +399,11 @@ function processPgn(){
   document.getElementById('engine-btn').classList.remove('hidden');
   currentIndex=null;
   updateUI();
-  if(chunks.length) goToMove(0);
+  // init board only after workspace is visible (otherwise width=0 and board stays blank)
+  setTimeout(() => {
+    ensureBoard(chunks[0] ? (chunks[0].fenAfter || chunks[0].fen || 'start') : 'start');
+    if (chunks.length) goToMove(0);
+  }, 100);
   saveState();
 }
 
