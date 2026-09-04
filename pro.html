@@ -74,7 +74,9 @@
                         <button onclick="toggleMark()" id="mark-btn" class="flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold">Mark for comment</button>
                         <button onclick="navMove(1)" class="flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold">Next</button>
                     </div>
-                    <input type="text" id="fen-output" class="w-full p-2 rounded-lg text-[10px] mt-3 text-emerald-400" readonly>
+                    <!-- PGN context strip: see signs / variation starts while playing -->
+                    <div id="pgn-strip" class="mt-3 flex gap-1 overflow-x-auto pb-1 text-[11px] font-mono"></div>
+                    <input type="text" id="fen-output" class="w-full p-2 rounded-lg text-[10px] mt-2 text-emerald-400" readonly>
 
                     <div class="mt-4 border-t border-slate-700 pt-3">
                         <div class="text-[10px] font-bold text-slate-500 uppercase mb-1">Stockfish line (edit so Gemini gets the right plan)</div>
@@ -97,9 +99,13 @@
 
             <div class="lg:w-3/5 glass p-4 rounded-xl">
                 <div class="mb-3 text-[11px] text-slate-400 flex flex-wrap gap-3">
-                    <span>sky = viewing</span><span>gold = marked</span><span>green edge = has engine</span>
+                    <span class="text-sky-400">sky = viewing</span>
+                    <span class="text-yellow-400">gold = marked</span>
+                    <span class="text-rose-400">! ? $ = GM sign</span>
+                    <span class="text-violet-400">( = variation start</span>
+                    <span class="text-slate-300">end = variation closes</span>
                 </div>
-                <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[620px] overflow-y-auto pr-2"></div>
+                <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-[620px] overflow-y-auto pr-2"></div>
             </div>
         </div>
     </div>
@@ -407,6 +413,34 @@ function processPgn(){
   saveState();
 }
 
+function hasGmSign(target){
+  return /[?!]/.test(target) || /\$\d+/.test(target) || /[\+\-=∞]/.test(target);
+}
+
+function updatePgnStrip(){
+  const strip=document.getElementById('pgn-strip');
+  if(!strip || currentIndex==null){ if(strip) strip.innerHTML=''; return; }
+  const from=Math.max(0, currentIndex-4);
+  const to=Math.min(globalChunks.length-1, currentIndex+5);
+  let html='';
+  for(let i=from;i<=to;i++){
+    const c=globalChunks[i];
+    const on=i===currentIndex;
+    const signed=hasGmSign(c.target);
+    const varS=c.isVariationStart;
+    let cls='shrink-0 px-2 py-1 rounded border cursor-pointer ';
+    if(on) cls+='bg-sky-800 border-sky-400 text-white font-bold';
+    else if(markedIds.has(c.id)) cls+='bg-yellow-900/50 border-yellow-500 text-yellow-100';
+    else if(signed) cls+='bg-rose-900/40 border-rose-500 text-rose-200';
+    else if(varS) cls+='bg-violet-900/40 border-violet-500 text-violet-200';
+    else cls+='bg-slate-800 border-slate-600 text-slate-300';
+    const prefix=varS?'( ':'';
+    const suffix=c.isVariationEnd?' )':'';
+    html+=`<button type="button" class="${cls}" onclick="goToMove(${i})">${prefix}${c.moveNum}.${c.target}${suffix}</button>`;
+  }
+  strip.innerHTML=html;
+}
+
 function updateUI(){
   const box=document.getElementById('chunks-container'); box.innerHTML='';
   globalChunks.forEach((c,i)=>{
@@ -416,10 +450,25 @@ function updateUI(){
     if(engineById[c.id]&&engineById[c.id].line) cls+=' has-engine';
     const div=document.createElement('div');
     div.className=cls; div.onclick=()=>goToMove(i);
-    const flags=[]; if(c.isVariationEnd) flags.push('end'); if(c.transposesTo) flags.push('tr');
-    div.innerHTML=`<p class="text-[9px] gold-text font-bold mb-1">${c.id}</p><p class="text-xs font-semibold truncate">${c.moveNum}. ${c.target}</p>${flags.length?`<p class="text-[9px] text-slate-500">${flags.join(' · ')}</p>`:''}`;
+    div.id='chunk-card-'+i;
+    const flags=[];
+    if(c.isVariationStart) flags.push('<span class="text-violet-400">var start</span>');
+    if(c.isVariationEnd) flags.push('<span class="text-slate-300">end</span>');
+    if(c.transposesTo) flags.push('<span class="text-amber-400">tr</span>');
+    if(hasGmSign(c.target)) flags.push('<span class="text-rose-400">sign</span>');
+    const indent = c.variationLevel ? ('│ '.repeat(Math.min(c.variationLevel,3))) : '';
+    const moveColor = hasGmSign(c.target) ? 'text-rose-300' : (c.isVariationStart ? 'text-violet-200' : 'text-white');
+    div.innerHTML=`<p class="text-[9px] gold-text font-bold mb-1">${c.id}</p>
+      <p class="text-xs font-semibold truncate ${moveColor}">${indent}${c.moveNum}. ${c.target}</p>
+      ${flags.length?`<p class="text-[9px] mt-1">${flags.join(' · ')}</p>`:''}`;
     box.appendChild(div);
   });
+  // scroll current into view
+  if(currentIndex!=null){
+    const el=document.getElementById('chunk-card-'+currentIndex);
+    if(el) el.scrollIntoView({block:'nearest', behavior:'smooth'});
+  }
+  updatePgnStrip();
   document.getElementById('stats').innerText=globalChunks.length+' moves · '+markedIds.size+' marked · '+Object.keys(engineById).filter(k=>engineById[k].line).length+' engine';
 }
 
