@@ -1,600 +1,350 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master Pro | Decipher Chess Academy</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
-        .gold-text { color: #d4af37; }
-        .gold-bg { background-color: #d4af37; color: #1e293b; }
-        .glass { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .chunk-card { border-left: 4px solid #334155; transition: all 0.15s; cursor: pointer; }
-        .chunk-card:hover { border-left-color: #d4af37; background: rgba(255,255,255,0.05); }
-        .chunk-card.viewing { border-left-color: #38bdf8; background-color: rgba(56, 189, 248, 0.15); }
-        .chunk-card.marked { border-left-color: #d4af37; background-color: rgba(212, 175, 55, 0.25); }
-        .chunk-card.has-engine { box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.45); }
-        textarea, input[type="text"] { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; color: #fff; }
-        textarea:focus, input:focus { border-color: #d4af37 !important; outline: none; }
-        #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.3s; }
-        .board-container { width: 100%; max-width: 360px; margin: 0 auto; aspect-ratio: 1 / 1; }
-        #board { width: 100% !important; height: auto !important; }
-        .spinner { border: 3px solid rgba(255,255,255,0.1); border-left-color: #d4af37; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .theme-chip.active { background: #a16207 !important; color: #fef3c7 !important; border-color: #fbbf24 !important; }
-        .mode-green-on { background: #065f46 !important; color: #a7f3d0 !important; border-color: #10b981 !important; }
-        .mode-red-on { background: #7f1d1d !important; color: #fecaca !important; border-color: #ef4444 !important; }
-        #board [data-square].mark-green { box-shadow: inset 0 0 0 3px #10b981 !important; }
-        #board [data-square].mark-red { box-shadow: inset 0 0 0 3px #ef4444 !important; }
-        .pgn-linear .mv { display: inline; cursor: pointer; padding: 1px 3px; border-radius: 3px; }
-        .pgn-linear .mv:hover { background: rgba(255,255,255,0.08); }
-        .pgn-linear .mv.on { background: rgba(56,189,248,0.35); color: #e0f2fe; font-weight: 700; }
-        .pgn-linear .mv.signed { color: #fda4af; }
-        .pgn-linear .mv.marked { outline: 1px solid #d4af37; }
-        .pgn-linear .mv.varstart { color: #c4b5fd; }
-        .pgn-linear .paren { color: #64748b; }
-        .pgn-linear .trnote { color: #f9a8d4; font-style: italic; font-size: 0.85em; }
-        .pgn-linear .varline { display: block; margin-left: 0.75rem; margin-top: 0.15rem; margin-bottom: 0.15rem; border-left: 2px solid #334155; padding-left: 0.5rem; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GM Variation Master Pro</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<style>
+body{font-family:system-ui,sans-serif;background:#020617;color:#f8fafc;margin:0}
+.gold{color:#d4af37}.gold-bg{background:#d4af37;color:#1e293b}
+.glass{background:rgba(30,41,59,.75);border:1px solid rgba(255,255,255,.1);border-radius:12px}
+.card{border-left:3px solid #334155;cursor:pointer;padding:6px 8px;border-radius:8px;background:rgba(15,23,42,.6)}
+.card:hover{border-left-color:#d4af37}
+.card.start{border-left-color:#d4af37;background:rgba(212,175,55,.28)}
+.card.range{border-left-color:#fde047;background:rgba(212,175,55,.12)}
+.card.on{outline:1px solid #38bdf8}
+.card.sign{border-left-color:#fb7185}
+textarea,input[type=text]{background:#0f172a!important;border:1px solid #334155!important;color:#fff;width:100%;border-radius:8px;padding:8px;font-family:ui-monospace,monospace;font-size:12px}
+#progress{height:3px;background:#d4af37;width:0;transition:width .25s}
+.board-wrap{width:100%;max-width:300px;margin:0 auto;aspect-ratio:1/1}
+#board{width:100%!important}
+.chip{padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;background:#1e293b;border:1px solid #475569;cursor:pointer;color:#cbd5e1}
+.chip:hover{border-color:#d4af37;color:#fde68a}
+.chip.on{background:#854d0e;border-color:#fbbf24;color:#fef3c7}
+</style>
 </head>
-<body class="p-4 md:p-8">
-<div class="max-w-7xl mx-auto">
-    <header class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-        <div>
-            <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-            <p class="text-slate-400 text-sm uppercase tracking-widest">Play → Mark → Engine → Ideas → Copy for Gemini</p>
-        </div>
-        <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
-            <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Annotate</button>
-            <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
-        </nav>
-    </header>
+<body class="p-3 md:p-6">
+<div class="max-w-6xl mx-auto">
+  <div class="flex flex-wrap justify-between items-center gap-2 mb-4">
+    <div>
+      <div class="text-xl font-bold gold italic">DECIPHER <span class="text-white not-italic">PRO</span></div>
+      <div class="text-[10px] text-slate-500 uppercase">Fast batch annotation</div>
+    </div>
+    <div class="flex gap-1">
+      <button onclick="switchTab('a')" id="tab-a" class="px-4 py-2 rounded-lg text-xs font-bold uppercase gold-bg">Annotate</button>
+      <button onclick="switchTab('r')" id="tab-r" class="px-4 py-2 rounded-lg text-xs font-bold uppercase text-slate-400">Re-assemble</button>
+    </div>
+  </div>
 
-    <div id="view-fragmenter" class="space-y-6">
-        <div class="glass p-6 rounded-2xl">
-            <div class="flex justify-between items-center mb-4">
-                <label class="text-xs font-bold uppercase text-slate-500">Master PGN</label>
-                <div id="stats" class="text-[10px] text-slate-400 uppercase tracking-widest">Ready</div>
-            </div>
-            <div class="w-full h-1 bg-slate-800 mb-4 rounded-full overflow-hidden"><div id="progress-fill"></div></div>
-            <textarea id="pgn-input" rows="3" class="w-full p-4 rounded-xl text-sm mb-4" placeholder="Paste PGN here..."></textarea>
-            <div class="flex flex-wrap items-center gap-3">
-                <button onclick="processPgn()" class="px-5 py-3 bg-white text-black font-bold rounded-xl uppercase text-xs">Initialize Data</button>
-                <button onclick="runEngineOnMarked()" id="engine-btn" class="px-5 py-3 bg-emerald-700 text-white font-bold rounded-xl uppercase text-xs hidden">Generate Stockfish for marked</button>
-                <button onclick="copyForGemini()" id="copy-btn" class="px-5 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden"><span id="copy-text">Copy for Gemini</span></button>
-                <button onclick="clearAll()" class="px-5 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
-            </div>
-            <p class="mt-3 text-[11px] text-slate-500">1) Initialize  2) Click moves that need comments (gold)  3) Generate Stockfish  4) Add ideas on the board  5) Copy for Gemini. Batch = only marked moves.</p>
-        </div>
-
-        <div id="workspace" class="flex flex-col lg:flex-row gap-6 hidden">
-            <div class="lg:w-2/5 space-y-4">
-                <div class="glass p-4 rounded-xl">
-                    <div class="flex justify-between mb-2">
-                        <span class="text-xs font-bold text-slate-500 uppercase">Board</span>
-                        <span id="view-label" class="text-[10px] text-sky-400 font-bold"></span>
-                    </div>
-                    <div class="board-container"><div id="board" style="width:100%"></div></div>
-                    <div class="flex gap-2 mt-3">
-                        <button onclick="navMove(-1)" class="flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold">Prev</button>
-                        <button onclick="toggleMark()" id="mark-btn" class="flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold">Mark for comment</button>
-                        <button onclick="navMove(1)" class="flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold">Next</button>
-                    </div>
-                    <!-- PGN context strip: see signs / variation starts while playing -->
-                    <div id="pgn-strip" class="mt-3 flex gap-1 overflow-x-auto pb-1 text-[11px] font-mono"></div>
-                    <input type="text" id="fen-output" class="w-full p-2 rounded-lg text-[10px] mt-2 text-emerald-400" readonly>
-
-                    <div class="mt-4 border-t border-slate-700 pt-3">
-                        <div class="text-[10px] font-bold text-slate-500 uppercase mb-1">Stockfish line (edit so Gemini gets the right plan)</div>
-                        <input type="text" id="engine-line" class="w-full p-2 rounded-lg text-xs text-emerald-300" placeholder="Run engine on marked moves first">
-                        <div id="engine-eval" class="text-[10px] text-slate-500 mt-1"></div>
-                    </div>
-
-                    <div class="mt-4 border-t border-slate-700 pt-3">
-                        <div class="text-[10px] font-bold text-slate-500 uppercase mb-2">Ideas — theme, then click square</div>
-                        <div class="flex gap-2 mb-2">
-                            <button id="mode-green" onclick="setMode('green')" class="flex-1 py-2 rounded-lg text-[10px] font-bold border mode-green-on">Green = advantage</button>
-                            <button id="mode-red" onclick="setMode('red')" class="flex-1 py-2 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800 text-slate-400">Red = weakness</button>
-                        </div>
-                        <div id="theme-chips" class="flex flex-wrap gap-1 mb-2"></div>
-                        <div id="idea-list" class="text-xs space-y-1 min-h-[40px] max-h-[130px] overflow-y-auto text-slate-300"></div>
-                        <button onclick="clearIdeas()" class="mt-2 text-[10px] text-red-400 hover:underline">Clear ideas on this move</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="lg:w-3/5 glass p-4 rounded-xl">
-                <div class="mb-2 text-[11px] text-slate-500">Linear PGN — signs in rose, variations indented. No auto-scroll.</div>
-                <div id="chunks-container" class="pgn-linear text-[13px] leading-7 max-h-[520px] overflow-y-auto pr-2 font-mono text-slate-200"></div>
-            </div>
-        </div>
+  <div id="view-a">
+    <div class="glass p-4 mb-4">
+      <div class="flex justify-between text-[10px] text-slate-500 mb-1"><span>PGN</span><span id="stats">Ready</span></div>
+      <div class="w-full bg-slate-800 mb-2 rounded overflow-hidden"><div id="progress"></div></div>
+      <textarea id="pgn" rows="2" placeholder="Paste PGN..."></textarea>
+      <div class="flex flex-wrap gap-2 mt-2">
+        <button onclick="processPgn()" class="px-4 py-2 bg-white text-black text-xs font-bold rounded-lg uppercase">Initialize</button>
+        <button onclick="runBatch()" id="btn-engine" class="px-4 py-2 bg-emerald-700 text-white text-xs font-bold rounded-lg uppercase hidden">Engine + build prompt</button>
+        <button onclick="copyPrompt()" id="btn-copy" class="px-4 py-2 gold-bg text-xs font-bold rounded-lg uppercase hidden">Copy Gemini</button>
+        <button onclick="location.reload()" class="px-4 py-2 bg-red-900/40 text-red-400 text-xs font-bold rounded-lg uppercase">Reset</button>
+      </div>
+      <p class="text-[10px] text-slate-500 mt-2">1) Initialize 2) Click start then end 3) Engine + build prompt 4) Navigate moves, click/type ideas 5) Copy</p>
     </div>
 
-    <div id="view-reassembler" class="hidden space-y-6">
-        <div class="glass p-6 rounded-2xl">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Paste Gemini JSON</label>
-                    <textarea id="ai-json" rows="14" class="w-full p-4 rounded-xl text-xs" placeholder="Paste Gemini JSON..."></textarea>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Final PGN</label>
-                    <textarea id="final-pgn" rows="14" class="w-full p-4 rounded-xl text-xs text-emerald-400" readonly></textarea>
-                    <div class="flex gap-2 mt-2">
-                        <button onclick="copyToClipboard('final-pgn')" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Copy Final</button>
-                        <button onclick="downloadPgn()" class="flex-1 py-3 bg-slate-800 text-xs font-bold rounded-lg uppercase">Download</button>
-                    </div>
-                </div>
-            </div>
-            <button onclick="rebuildPgn()" class="mt-6 w-full py-4 gold-bg rounded-xl font-bold uppercase tracking-widest">Inject Annotations & Rebuild File</button>
+    <div id="workspace" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <!-- LEFT: board always visible -->
+      <div class="space-y-3">
+        <div class="glass p-3">
+          <div class="flex justify-between text-[10px] mb-1"><span class="text-slate-500 font-bold uppercase">Board</span><span id="lab" class="text-sky-400 font-bold"></span></div>
+          <div class="board-wrap"><div id="board"></div></div>
+          <div class="flex gap-2 mt-2">
+            <button onclick="nav(-1)" class="flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold">Prev</button>
+            <button onclick="nav(1)" class="flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold">Next</button>
+          </div>
+          <input type="text" id="fen" class="mt-2 text-[10px] text-emerald-400" readonly>
         </div>
+
+        <!-- quick idea for current move -->
+        <div class="glass p-3" id="idea-box">
+          <div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Idea for this move (click chip or type)</div>
+          <div class="flex flex-wrap gap-1 mb-2" id="chips"></div>
+          <input type="text" id="idea-input" placeholder="Type idea… e.g. with Bb7 and Rac8 next">
+          <button onclick="applyIdea()" class="mt-2 w-full py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold">Apply idea to prompt</button>
+          <div id="eng-show" class="text-[10px] text-emerald-400/80 mt-2"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: moves + prompt -->
+      <div class="space-y-3">
+        <div class="glass p-3">
+          <div class="text-[10px] text-slate-500 mb-1">Click start, then end. Rose edge = GM sign.</div>
+          <div id="moves" class="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-[200px] overflow-y-auto"></div>
+        </div>
+        <div class="glass p-3 hidden" id="prompt-wrap">
+          <div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Prompt (edit anything)</div>
+          <textarea id="prompt" rows="14"></textarea>
+        </div>
+      </div>
     </div>
+  </div>
+
+  <div id="view-r" class="hidden">
+    <div class="glass p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Gemini JSON</div>
+        <textarea id="json" rows="12" placeholder="Paste JSON..."></textarea>
+      </div>
+      <div>
+        <div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Final PGN</div>
+        <textarea id="final" rows="12" class="text-emerald-400" readonly></textarea>
+        <div class="flex gap-2 mt-2">
+          <button onclick="copyEl('final')" class="flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold uppercase">Copy</button>
+          <button onclick="dl()" class="flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold uppercase">Download</button>
+        </div>
+      </div>
+      <button onclick="inject()" class="md:col-span-2 w-full py-3 gold-bg rounded-xl font-bold uppercase">Inject Annotations</button>
+    </div>
+  </div>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
-
 <script>
-const delay = ms => new Promise(r => setTimeout(r, ms));
-let globalChunks = [], pgnTokens = [], board = null, currentIndex = null;
-let markedIds = new Set(), engineById = {}, ideasById = {}, fenSeen = {};
-let markMode = 'green', activeTheme = 'outpost';
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+let chunks=[], tokens=[], board=null, selA=null, selB=null, cur=null;
+let eng={}, ideas={}; // id -> engine / id -> user idea string
 
-const THEMES = [
-  {id:'bishop_pair',label:'Bishop pair'},{id:'outpost',label:'Outpost'},{id:'weak_square',label:'Weak square'},
-  {id:'weak_pawn',label:'Weak pawn'},{id:'isolated_pawn',label:'Isolated pawn'},{id:'passed_pawn',label:'Passed pawn'},
-  {id:'knight_manoeuvre',label:'Knight manoeuvre'},{id:'king_centre',label:'King in centre'},{id:'king_safety',label:'King safety'},
-  {id:'open_file',label:'Open file'},{id:'space',label:'Space'},{id:'development',label:'Development'},
-  {id:'attack',label:'Attack on king'},{id:'central_break',label:'Central break'},{id:'queenside_expand',label:'Queenside expansion'},
-  {id:'piece_activity',label:'Piece activity'},{id:'favourable_exchange',label:'Favourable exchange'},{id:'plan',label:'Plan / idea'}
+const CHIPS=[
+  'with the idea of Bb7','b6 and Bb7 next','c7-c5 break','preparing d4',
+  'Ne4 is the idea','Rac8 and Rfd8','space on the queenside','bishop pair',
+  'isolated pawn pressure','king stuck in the centre','transposes',
+  'drags the king into the open','favourable exchange','development lead'
 ];
 
-function ensureBoard(fen) {
-  const pos = fen || 'start';
-  try {
-    if (!board) {
-      board = Chessboard('board', {
-        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
-        position: pos
-      });
-      setTimeout(bindBoard, 200);
-    } else {
-      board.position(pos, false);
-    }
-    // critical: board was 0-width while workspace was hidden
-    setTimeout(() => { try { board.resize(); } catch (e) {} }, 50);
-    setTimeout(() => { try { board.resize(); refreshMarks(); } catch (e) {} }, 200);
-  } catch (e) {
-    console.warn('board init', e);
-  }
+function isFen(f){try{return!!f&&new Chess().load(f);}catch(e){return false;}}
+function hasSign(t){return/[?!]/.test(t)||/\$\d+/.test(t);}
+
+function ensureBoard(fen){
+  const p=fen||'start';
+  try{
+    if(!board) board=Chessboard('board',{pieceTheme:'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',position:p});
+    else board.position(p,false);
+    setTimeout(()=>{try{board.resize();}catch(e){}},50);
+    setTimeout(()=>{try{board.resize();}catch(e){}},200);
+  }catch(e){}
 }
 
-window.onload = () => {
-  buildThemes();
-  setMode('green');
-  setTheme('outpost');
-  document.getElementById('engine-line').addEventListener('blur', saveEngEdit);
-  window.addEventListener('resize', () => { if (board) try { board.resize(); } catch (e) {} });
-  const s = localStorage.getItem('gm_master_state');
-  if (s) {
-    try {
-      const st = JSON.parse(s);
-      document.getElementById('pgn-input').value = st.original || '';
-      if (st.marked) markedIds = new Set(st.marked);
-      if (st.ideas) ideasById = st.ideas;
-      if (st.engine) engineById = st.engine;
-      if (st.original) processPgn(true);
-    } catch (e) {}
-  }
+window.onload=()=>{
+  document.getElementById('chips').innerHTML=CHIPS.map(t=>`<button type="button" class="chip" onclick="chip('${t.replace(/'/g,"\\'")}')">${t}</button>`).join('');
+  window.addEventListener('resize',()=>{if(board)try{board.resize();}catch(e){}});
+  const s=localStorage.getItem('gm_pro');
+  if(s){try{const st=JSON.parse(s);document.getElementById('pgn').value=st.pgn||'';if(st.pgn)processPgn();}catch(e){}}
 };
 
-function buildThemes() {
-  document.getElementById('theme-chips').innerHTML = THEMES.map(t =>
-    `<button type="button" data-theme="${t.id}" onclick="setTheme('${t.id}')" class="theme-chip px-2 py-1 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-600">${t.label}</button>`
-  ).join('');
+function chip(t){
+  const inp=document.getElementById('idea-input');
+  inp.value=inp.value? (inp.value.replace(/\.$/,'')+'; '+t) : t;
+  inp.focus();
 }
-function setTheme(id) {
-  activeTheme = id;
-  document.querySelectorAll('.theme-chip').forEach(el => el.classList.toggle('active', el.dataset.theme === id));
-}
-function setMode(m) {
-  markMode = m;
-  document.getElementById('mode-green').className = 'flex-1 py-2 rounded-lg text-[10px] font-bold border ' + (m==='green'?'mode-green-on':'bg-slate-800 text-slate-400 border-slate-600');
-  document.getElementById('mode-red').className = 'flex-1 py-2 rounded-lg text-[10px] font-bold border ' + (m==='red'?'mode-red-on':'bg-slate-800 text-slate-400 border-slate-600');
-}
-function bindBoard() {
-  const el = document.getElementById('board');
-  if (!el || el._b) return;
-  el._b = true;
-  el.addEventListener('click', e => {
-    let n = e.target;
-    for (let i=0;i<5&&n;i++) {
-      if (n.dataset && n.dataset.square) { onSq(n.dataset.square); return; }
-      n = n.parentElement;
+
+function applyIdea(){
+  if(cur==null) return;
+  const c=chunks[cur];
+  const text=document.getElementById('idea-input').value.trim();
+  if(!text){ alert('Type or click a chip first'); return; }
+  ideas[c.id]=text;
+  // patch prompt if built
+  const ta=document.getElementById('prompt');
+  let p=ta.value;
+  if(p){
+    const re=new RegExp('(\\[ID: '+c.id.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\][\\s\\S]*?)(?=\\n\\[ID:|$)');
+    if(re.test(p)){
+      p=p.replace(re,(block)=>{
+        if(/USER_IDEA:/.test(block)) return block.replace(/USER_IDEA:.*$/m,'USER_IDEA: '+text);
+        return block.trimEnd()+'\n  USER_IDEA: '+text+'\n';
+      });
+      ta.value=p;
     }
-  });
-}
-function isValidFen(f){ try{ return !!f && new Chess().load(f);}catch(e){return false;} }
-function fenKey(f){ return f ? f.split(/\s+/).slice(0,4).join(' ') : ''; }
-function pieceOn(fen,sq){
-  try{
-    const c=new Chess(); if(!c.load(fen)) return null;
-    const p=c.get(sq); if(!p) return null;
-    const n={p:'pawn',n:'knight',b:'bishop',r:'rook',q:'queen',k:'king'};
-    return {color:p.color==='w'?'White':'Black', type:n[p.type]||p.type};
-  }catch(e){return null;}
-}
-function tLabel(id){ const t=THEMES.find(x=>x.id===id); return t?t.label:id; }
-function ideaSentence(idea){
-  const good=idea.color==='green', who=idea.piece?`${idea.piece.color} ${idea.piece.type}`:null, sq=(idea.square||'').toUpperCase();
-  switch(idea.theme){
-    case 'bishop_pair': return good?`${idea.piece?idea.piece.color:'This side'} has the bishop pair`:'Bishop pair missing';
-    case 'outpost': return good?(who?`${who} on ${sq} is a strong outpost`:`Outpost on ${sq}`):`${sq} is a hole`;
-    case 'weak_square': return good?`Control of ${sq}`:`Weak square on ${sq}`;
-    case 'weak_pawn': case 'isolated_pawn': return good?(who?`${who} on ${sq} is solid`:`Pawn on ${sq} solid`):(who?`${who} on ${sq} is a weakness`:`Weak pawn on ${sq}`);
-    case 'passed_pawn': return good?`Passed pawn on ${sq}`:`Opponent passed pawn on ${sq}`;
-    case 'knight_manoeuvre': return good?(who?`${who} manoeuvres via ${sq}`:`Knight manoeuvre via ${sq}`):`Knight poorly placed on ${sq}`;
-    case 'king_centre': return good?`King centralisation on ${sq}`:`King stuck in centre on ${sq}`;
-    case 'king_safety': return good?'King is safe':`King safety problem around ${sq}`;
-    case 'open_file': return good?`Activity on the ${sq.charAt(0)}-file`:`Opponent owns file near ${sq}`;
-    case 'space': return good?'Space advantage':'Cramped';
-    case 'development': return good?'Lead in development':'Behind in development';
-    case 'attack': return good?`Attacking chances (focus ${sq})`:`Under attack near ${sq}`;
-    case 'central_break': return good?`Central break involving ${sq}`:'Hard to break centre';
-    case 'queenside_expand': return good?'Queenside expansion (b5/Bb7)':'Queenside under pressure';
-    case 'piece_activity': return good?(who?`${who} on ${sq} is active`:`Active on ${sq}`):(who?`${who} on ${sq} is passive`:`Passive on ${sq}`);
-    case 'favourable_exchange': return good?`Favourable exchange around ${sq}`:'Unfavourable exchange';
-    case 'plan': return good?`Plan involving ${sq}`:`Problem on ${sq}`;
-    default: return `${good?'Advantage':'Weakness'} on ${sq}`;
   }
-}
-function formatIdeas(id){
-  const list=ideasById[id]||[]; if(!list.length) return '';
-  const g=list.filter(x=>x.color==='green').map(ideaSentence);
-  const r=list.filter(x=>x.color==='red').map(ideaSentence);
-  let s=''; if(g.length) s+='ADVANTAGES: '+g.join('; ')+'. '; if(r.length) s+='WEAKNESSES: '+r.join('; ')+'. ';
-  return s.trim();
-}
-function onSq(sq){
-  if(currentIndex==null){ document.getElementById('stats').innerText='Click a move first'; return; }
-  const c=globalChunks[currentIndex];
-  const idea={theme:activeTheme,color:markMode,square:sq,piece:pieceOn(c.fenAfter||c.fen,sq)};
-  if(!ideasById[c.id]) ideasById[c.id]=[];
-  ideasById[c.id]=ideasById[c.id].filter(x=>!(x.square===sq&&x.theme===activeTheme));
-  ideasById[c.id].push(idea);
-  markedIds.add(c.id);
-  refreshIdeas(); refreshMarks(); updateUI(); saveState();
-  document.getElementById('stats').innerText=ideaSentence(idea);
-}
-function refreshIdeas(){
-  const box=document.getElementById('idea-list');
-  if(currentIndex==null){ box.innerHTML='<span class="text-slate-500">Select a move</span>'; return; }
-  const list=ideasById[globalChunks[currentIndex].id]||[];
-  if(!list.length){ box.innerHTML='<span class="text-slate-500">Pick theme, Green/Red, click square</span>'; return; }
-  box.innerHTML=list.map((idea,i)=>{
-    const col=idea.color==='green'?'text-emerald-400':'text-red-400';
-    return `<div class="flex justify-between gap-2"><span class="${col}">${ideaSentence(idea)}</span><button type="button" class="text-slate-500" onclick="rmIdea(${i})">x</button></div>`;
-  }).join('');
-}
-function rmIdea(i){ if(currentIndex==null)return; ideasById[globalChunks[currentIndex].id].splice(i,1); refreshIdeas(); refreshMarks(); saveState(); }
-function clearIdeas(){ if(currentIndex==null)return; ideasById[globalChunks[currentIndex].id]=[]; refreshIdeas(); refreshMarks(); saveState(); }
-function refreshMarks(){
-  document.querySelectorAll('#board [data-square]').forEach(el=>{ el.classList.remove('mark-green','mark-red'); });
-  if(currentIndex==null)return;
-  (ideasById[globalChunks[currentIndex].id]||[]).forEach(idea=>{
-    const el=document.querySelector('#board [data-square="'+idea.square+'"]');
-    if(el) el.classList.add(idea.color==='green'?'mark-green':'mark-red');
-  });
-}
-function goToMove(i){
-  if(i==null||i<0||i>=globalChunks.length)return;
-  saveEngEdit();
-  currentIndex=i;
-  const c=globalChunks[i];
-  const fen=c.fenAfter||c.fen;
-  document.getElementById('fen-output').value=fen||'';
-  document.getElementById('view-label').innerText=c.moveNum+'. '+c.target;
-  ensureBoard(fen || 'start');
-  const eng=engineById[c.id];
-  document.getElementById('engine-line').value=eng?(eng.line||''):'';
-  document.getElementById('engine-eval').innerText=eng&&eng.eval!=null?('Eval: '+eng.eval):'';
-  const mb=document.getElementById('mark-btn');
-  const on=markedIds.has(c.id);
-  mb.innerText=on?'Marked':'Mark for comment';
-  mb.className=on?'flex-1 py-2 rounded-lg text-xs font-bold gold-bg':'flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold';
-  setTimeout(()=>{refreshIdeas();refreshMarks();},80);
-  updateUI();
-}
-function navMove(d){ goToMove(currentIndex==null?0:currentIndex+d); }
-function toggleMark(){
-  if(currentIndex==null)return;
-  const id=globalChunks[currentIndex].id;
-  if(markedIds.has(id)) markedIds.delete(id); else markedIds.add(id);
-  goToMove(currentIndex); saveState();
-}
-function saveEngEdit(){
-  if(currentIndex==null)return;
-  const c=globalChunks[currentIndex];
-  const val=document.getElementById('engine-line').value.trim();
-  if(!engineById[c.id]) engineById[c.id]={eval:null,line:'',san:''};
-  engineById[c.id].line=val;
-  if(val) engineById[c.id].san=val.split(/\s+/)[0]||'';
-  saveState(); updateUI();
+  document.getElementById('stats').innerText='Idea saved on '+c.moveNum+'. '+c.target;
+  save();
 }
 
 async function getEngine(fen){
-  if(!isValidFen(fen)) return null;
+  if(!isFen(fen)) return null;
   for(let a=0;a<4;a++){
     try{
-      const res=await fetch('https://chess-api.com/v1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fen,depth:16,maxThinkingTime:80})});
-      if(res.status===429){ await delay(1500*(a+1)); continue; }
+      const res=await fetch('https://chess-api.com/v1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fen,depth:15,maxThinkingTime:70})});
+      if(res.status===429){await delay(1200*(a+1));continue;}
       if(!res.ok) return null;
-      const data=await res.json();
-      if(data.error||(data.text&&/wrong FEN|Cannot evaluate/i.test(data.text))) return null;
+      const d=await res.json();
+      if(d.error) return null;
       let line='';
-      if(data.continuationArr&&data.continuationArr.length) line=data.continuationArr.slice(0,8).join(' ');
-      else if(data.continuation) line=String(data.continuation).split(/\s+/).slice(0,8).join(' ');
-      return {eval:data.eval, line, san:data.san||data.move||(line?line.split(/\s+/)[0]:'')};
-    }catch(e){ if(a===3) return null; await delay(800); }
+      if(d.continuationArr) line=d.continuationArr.slice(0,7).join(' ');
+      else if(d.continuation) line=String(d.continuation).split(/\s+/).slice(0,7).join(' ');
+      return {eval:d.eval,line,san:d.san||d.move||''};
+    }catch(e){if(a===3)return null;await delay(600);}
   }
   return null;
 }
 
-async function runEngineOnMarked(){
-  const ids=[...markedIds];
-  if(!ids.length){ alert('Mark moves that need comments first.'); return; }
-  const btn=document.getElementById('engine-btn'), stats=document.getElementById('stats'), fill=document.getElementById('progress-fill');
-  btn.disabled=true;
-  for(let i=0;i<ids.length;i++){
-    const c=globalChunks.find(x=>x.id===ids[i]);
-    if(!c||!isValidFen(c.fenAfter)) continue;
-    fill.style.width=((i/ids.length)*100)+'%';
-    stats.innerText='Engine '+(i+1)+'/'+ids.length+': '+c.moveNum+'. '+c.target;
-    const data=await getEngine(c.fenAfter);
-    if(data){
-      if(!engineById[c.id]||!engineById[c.id].line) engineById[c.id]=data;
-      else if(engineById[c.id].eval==null) engineById[c.id].eval=data.eval;
-    }
-    await delay(200);
-  }
-  fill.style.width='100%'; btn.disabled=false;
-  stats.innerText='Engine done for '+ids.length+' moves';
-  if(currentIndex!=null) goToMove(currentIndex); else updateUI();
-  saveState();
-  setTimeout(()=>{fill.style.width='0%';},1000);
-}
-
 function processPgn(){
-  const input=document.getElementById('pgn-input').value; if(!input) return;
-  pgnTokens=input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g)||[];
-  let chunks=[], moveNumber=0, variationLevel=0, depthPlyCounts={0:0}, lastChunkAtLevel={};
-  let chess=new Chess(), stateStack=[], currentFEN=chess.fen(), fenBeforeLastMove=currentFEN;
-  fenSeen={};
-  pgnTokens.forEach((token,index)=>{
-    if(token==='('){ variationLevel++; depthPlyCounts[variationLevel]=0; stateStack.push({current:currentFEN,beforeLast:fenBeforeLastMove}); chess.load(fenBeforeLastMove); return; }
-    if(token===')'){ if(lastChunkAtLevel[variationLevel]) lastChunkAtLevel[variationLevel].isVariationEnd=true; variationLevel--; const st=stateStack.pop(); if(st){chess.load(st.current); currentFEN=st.current; fenBeforeLastMove=st.beforeLast;} return; }
-    if(/^\d+\./.test(token)){ moveNumber=parseInt(token); return; }
-    const isMove=/^[a-hA-ZRKNQBO]/.test(token)&&!token.startsWith('{')&&!token.startsWith('[');
-    if(!isMove) return;
-    depthPlyCounts[variationLevel]=(depthPlyCounts[variationLevel]||0)+1;
-    fenBeforeLastMove=chess.fen();
-    let clean=token.replace(/[^a-zA-Z0-9=\+\-#O]/g,'');
-    let moveObj=chess.move(clean,{sloppy:true});
-    if(!moveObj){ clean=clean.replace(/[+#]/g,''); moveObj=chess.move(clean,{sloppy:true}); }
-    if(!moveObj){ const alt=token.replace(/[!?]+$/g,'').replace(/\$\d+$/g,'').trim(); if(alt&&alt!==clean) moveObj=chess.move(alt,{sloppy:true}); }
-    const parsedOk=!!moveObj;
-    if(moveObj) currentFEN=chess.fen(); else currentFEN=fenBeforeLastMove;
-    let evalSymbol='';
-    const next=pgnTokens[index+1];
-    if(next&&(next.startsWith('$')||/^[!?]+$/.test(next)||/^[\+\-=]+$/.test(next))) evalSymbol=' '+next;
-    const isFirst=variationLevel>0&&depthPlyCounts[variationLevel]===1;
-    const key=fenKey(currentFEN);
-    let transposesTo=null;
-    const id='CHK_'+chunks.length+'_M'+moveNumber+'_V'+variationLevel;
-    if(key&&fenSeen[key]) transposesTo=fenSeen[key];
-    else if(key) fenSeen[key]=id;
-    const newChunk={id,target:token+evalSymbol,moveNum:moveNumber,tokenIndex:index,isMainLine:variationLevel===0,isVariationStart:isFirst,isVariationEnd:false,fen:fenBeforeLastMove,fenAfter:currentFEN,moveParsed:parsedOk,variationLevel,transposesTo};
-    chunks.push(newChunk);
-    lastChunkAtLevel[variationLevel]=newChunk;
+  const input=document.getElementById('pgn').value; if(!input) return;
+  tokens=input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g)||[];
+  let out=[], mn=0, lv=0, ply={0:0}, last={}, chess=new Chess(), stack=[], curF=chess.fen(), before=curF, seen={};
+  tokens.forEach((tok,idx)=>{
+    if(tok==='('){lv++;ply[lv]=0;stack.push({c:curF,b:before});chess.load(before);return;}
+    if(tok===')'){if(last[lv])last[lv].isVariationEnd=true;lv--;const st=stack.pop();if(st){chess.load(st.c);curF=st.c;before=st.b;}return;}
+    if(/^\d+\./.test(tok)){mn=parseInt(tok);return;}
+    if(!/^[a-hA-ZRKNQBO]/.test(tok)||tok[0]==='{'||tok[0]==='[') return;
+    ply[lv]=(ply[lv]||0)+1; before=chess.fen();
+    let clean=tok.replace(/[^a-zA-Z0-9=\+\-#O]/g,'');
+    let m=chess.move(clean,{sloppy:true});
+    if(!m){clean=clean.replace(/[+#]/g,'');m=chess.move(clean,{sloppy:true});}
+    if(!m){const alt=tok.replace(/[!?]+$/g,'').replace(/\$\d+$/g,'').trim();if(alt)m=chess.move(alt,{sloppy:true});}
+    if(m) curF=chess.fen(); else curF=before;
+    let sym=''; const n=tokens[idx+1]; if(n&&(n[0]==='$'||/^[!?]+$/.test(n)||/^[\+\-=]+$/.test(n))) sym=' '+n;
+    const id='CHK_'+out.length+'_M'+mn+'_V'+lv;
+    const key=(curF||'').split(/\s+/).slice(0,4).join(' ');
+    let tr=null; if(key&&seen[key]) tr=seen[key]; else if(key) seen[key]=id;
+    const ch={id,target:tok+sym,moveNum:mn,tokenIndex:idx,isMainLine:lv===0,isVariationStart:lv>0&&ply[lv]===1,isVariationEnd:false,fen:before,fenAfter:curF,moveParsed:!!m,variationLevel:lv,transposesTo:tr};
+    out.push(ch); last[lv]=ch;
   });
-  if(lastChunkAtLevel[0]) lastChunkAtLevel[0].isVariationEnd=true;
-  globalChunks=chunks;
+  if(last[0]) last[0].isVariationEnd=true;
+  chunks=out; selA=selB=null; cur=null; eng={}; ideas={};
   document.getElementById('workspace').classList.remove('hidden');
-  document.getElementById('copy-btn').classList.remove('hidden');
-  document.getElementById('engine-btn').classList.remove('hidden');
-  currentIndex=null;
-  updateUI();
-  // init board only after workspace is visible (otherwise width=0 and board stays blank)
-  setTimeout(() => {
-    ensureBoard(chunks[0] ? (chunks[0].fenAfter || chunks[0].fen || 'start') : 'start');
-    if (chunks.length) goToMove(0);
-  }, 100);
-  saveState();
+  document.getElementById('btn-engine').classList.remove('hidden');
+  document.getElementById('btn-copy').classList.remove('hidden');
+  document.getElementById('prompt-wrap').classList.add('hidden');
+  ui();
+  setTimeout(()=>{ensureBoard(out[0]?out[0].fenAfter:'start'); if(out.length) go(0);},80);
+  save();
 }
 
-function hasGmSign(target){
-  return /[?!]/.test(target) || /\$\d+/.test(target) || /[\+\-=∞]/.test(target);
+function go(i){
+  if(i==null||i<0||i>=chunks.length) return;
+  cur=i; const c=chunks[i];
+  document.getElementById('fen').value=c.fenAfter||'';
+  document.getElementById('lab').innerText=c.moveNum+'. '+c.target;
+  ensureBoard(c.fenAfter||c.fen||'start');
+  document.getElementById('idea-input').value=ideas[c.id]||'';
+  const e=eng[c.id];
+  document.getElementById('eng-show').innerText=e&&e.line?('Engine: '+e.line+(e.eval!=null?'  ('+e.eval+')':'')):'';
+  ui();
+}
+function nav(d){go(cur==null?0:cur+d);}
+
+function select(i){
+  go(i);
+  if(selA===null||(selA!==null&&selB!==null)){selA=i;selB=null;}
+  else{selB=Math.max(selA,i);selA=Math.min(selA,i);}
+  ui();
 }
 
-function updatePgnStrip(){
-  const strip=document.getElementById('pgn-strip');
-  if(!strip || currentIndex==null){ if(strip) strip.innerHTML=''; return; }
-  const from=Math.max(0, currentIndex-4);
-  const to=Math.min(globalChunks.length-1, currentIndex+5);
-  let html='';
-  for(let i=from;i<=to;i++){
-    const c=globalChunks[i];
-    const on=i===currentIndex;
-    const signed=hasGmSign(c.target);
-    const varS=c.isVariationStart;
-    let cls='shrink-0 px-2 py-1 rounded border cursor-pointer ';
-    if(on) cls+='bg-sky-800 border-sky-400 text-white font-bold';
-    else if(markedIds.has(c.id)) cls+='bg-yellow-900/50 border-yellow-500 text-yellow-100';
-    else if(signed) cls+='bg-rose-900/40 border-rose-500 text-rose-200';
-    else if(varS) cls+='bg-violet-900/40 border-violet-500 text-violet-200';
-    else cls+='bg-slate-800 border-slate-600 text-slate-300';
-    const prefix=varS?'( ':'';
-    const suffix=c.isVariationEnd?' )':'';
-    html+=`<button type="button" class="${cls}" onclick="goToMove(${i})">${prefix}${c.moveNum}.${c.target}${suffix}</button>`;
-  }
-  strip.innerHTML=html;
-}
-
-function updateUI(){
-  const box=document.getElementById('chunks-container');
-  if(!box) return;
-  // Build linear PGN like Analyze This: main line continuous, variations on nested lines
-  let html='';
-  let openLevels=0;
-  globalChunks.forEach((c,i)=>{
-    // open variation paren
-    if(c.isVariationStart){
-      html+=`<span class="paren">(</span>`;
-      openLevels=c.variationLevel;
-    }
-    let cls='mv';
-    if(i===currentIndex) cls+=' on';
-    if(hasGmSign(c.target)) cls+=' signed';
-    if(markedIds.has(c.id)) cls+=' marked';
-    if(c.isVariationStart) cls+=' varstart';
-    // number only on white moves or start of variation
-    const showNum = c.isVariationStart || (c.fen||'').split(/\s+/)[1]==='w' || i===0;
-    // detect side from fen before move
-    const beforeTurn=(c.fen||'').split(/\s+/)[1];
-    const isWhiteMove=beforeTurn==='w';
-    let label='';
-    if(isWhiteMove) label=c.moveNum+'. '+c.target;
-    else label=(c.isVariationStart?(c.moveNum+'... '):'')+c.target;
-    html+=`<span class="${cls}" data-i="${i}" onclick="goToMove(${i})">${label}</span> `;
-    if(c.transposesTo) html+=`<span class="trnote">transposition</span> `;
-    if(c.isVariationEnd){
-      html+=`<span class="paren">)</span> `;
-    }
+function ui(){
+  const box=document.getElementById('moves'); box.innerHTML='';
+  chunks.forEach((c,i)=>{
+    let cls='card';
+    if(i===cur) cls+=' on';
+    if(hasSign(c.target)) cls+=' sign';
+    if(selA!==null){const mx=selB??selA; if(i===selA) cls+=' start'; else if(i>selA&&i<=mx) cls+=' range';}
+    const d=document.createElement('div'); d.className=cls; d.onclick=()=>select(i);
+    const f=[]; if(c.isVariationEnd) f.push('end'); if(c.transposesTo) f.push('tr');
+    d.innerHTML=`<div class="text-[8px] gold font-bold">${c.id}</div><div class="text-[11px] font-semibold truncate">${c.moveNum}. ${c.target}</div>${f.length?`<div class="text-[8px] text-slate-500">${f.join(' · ')}</div>`:''}`;
+    box.appendChild(d);
   });
-  box.innerHTML=html;
-  // NO auto-scroll — user stays on the board and uses Next/Prev
-  updatePgnStrip();
-  document.getElementById('stats').innerText=globalChunks.length+' moves · '+markedIds.size+' marked · '+Object.keys(engineById).filter(k=>engineById[k].line).length+' engine';
+  document.getElementById('stats').innerText=chunks.length+' moves'+(selA!=null?' · batch '+(selA+1)+'-'+((selB??selA)+1):'');
 }
 
-function describePosition(fen){
-  if(!isValidFen(fen)) return '';
-  try{
-    const parts=fen.trim().split(/\s+/), rows=parts[0].split('/'), turn=parts[1]==='w'?'White':'Black', castling=parts[2]||'-';
-    const names={K:'White king',Q:'White queen',R:'White rook',B:'White bishop',N:'White knight',P:'White pawn',k:'Black king',q:'Black queen',r:'Black rook',b:'Black bishop',n:'Black knight',p:'Black pawn'};
-    const pieces=[];
-    for(let r=0;r<8;r++){ let f=0; for(const ch of rows[r]){ if(ch>='1'&&ch<='8'){f+=parseInt(ch);continue;} pieces.push({sq:String.fromCharCode(97+f)+(8-r),name:names[ch],ch}); f++; } }
-    const wk=pieces.find(p=>p.ch==='K'), bk=pieces.find(p=>p.ch==='k');
-    const notes=['Side to move: '+turn];
-    if(wk) notes.push('White king '+wk.sq); if(bk) notes.push('Black king '+bk.sq);
-    if(wk&&wk.sq[0]==='e'&&/[KQ]/.test(castling)) notes.push('White uncastled');
-    if(bk&&bk.sq[0]==='e'&&/[kq]/.test(castling)) notes.push('Black uncastled');
-    if(pieces.filter(p=>p.ch==='B').length>=2) notes.push('White has the bishop pair');
-    if(pieces.filter(p=>p.ch==='b').length>=2) notes.push('Black has the bishop pair');
-    notes.push('WHITE: '+pieces.filter(p=>p.ch===p.ch.toUpperCase()).map(p=>p.name.replace('White ','')+' '+p.sq).join(', '));
-    notes.push('BLACK: '+pieces.filter(p=>p.ch===p.ch.toLowerCase()).map(p=>p.name.replace('Black ','')+' '+p.sq).join(', '));
-    return notes.join(' | ');
-  }catch(e){return '';}
-}
-
-async function copyForGemini(){
-  saveEngEdit();
-  const ordered=globalChunks.filter(c=>markedIds.has(c.id));
-  if(!ordered.length){ alert('Mark moves that need comments first.'); return; }
-  const btn=document.getElementById('copy-btn'), fill=document.getElementById('progress-fill');
+async function runBatch(){
+  if(selA===null){alert('Click start move, then end move');return;}
+  const end=selB??selA, btn=document.getElementById('btn-engine'), fill=document.getElementById('progress'), st=document.getElementById('stats');
   btn.disabled=true;
-  const startingFen=ordered[0].fen;
-  const lines=[];
-  for(let i=0;i<ordered.length;i++){
-    const c=ordered[i];
-    fill.style.width=((i/ordered.length)*100)+'%';
-    const fb=(c.fen||'').split(/\s+/), fa=(c.fenAfter||'').split(/\s+/);
-    const sideJust=fb[1]==='w'?'White':fb[1]==='b'?'Black':'?';
-    const sideAfter=fa[1]==='w'?'White':fa[1]==='b'?'Black':'?';
-    const fenOk=c.moveParsed!==false&&isValidFen(c.fenAfter);
-    let out=`[ID: ${c.id}] | Move: ${c.moveNum}. ${c.target} | Played by: ${sideJust} | Side to move AFTER: ${sideAfter} | FEN OK: ${fenOk} | Main: ${c.isMainLine} | VarStart: ${c.isVariationStart} | VarEnd: ${c.isVariationEnd} | Depth: ${c.variationLevel}`;
-    if(fenOk){ out+=`\n   -> [FEN AFTER MOVE]: ${c.fenAfter}`; const pos=describePosition(c.fenAfter); if(pos) out+=`\n   -> [POSITION FEATURES]: ${pos}`; }
-    if(/[?!$]/.test(c.target)) out+=`\n   -> [GM SIGN ON MOVE]: ${c.target} — sign given by the GM. Explain the idea behind it.`;
-    if(c.transposesTo) out+=`\n   -> [TRANSPOSITION]: Position already reached earlier (${c.transposesTo}). Write "transposes" or "will be transposed".`;
-    const eng=engineById[c.id];
-    if(eng&&eng.line){ out+=`\n   -> [ENGINE / EDITED CONTINUATION]: ${eng.line}`; if(eng.eval!=null) out+=`\n   -> [ENGINE EVAL]: ${eng.eval}`; out+=`\n   -> Use this as the plan source. Name ideas (c5, Bb7, Ne4…), do not dump the whole line.`; }
-    const ideas=formatIdeas(c.id);
-    if(ideas){ out+=`\n   -> [USER IDEAS — HIGHEST PRIORITY]: ${ideas}`; out+=`\n   -> Annotator board marks (green=advantage, red=weakness). Base the comment on them.`; }
-    if(c.isVariationEnd) out+=`\n   -> [VARIATION END — REQUIRED]: Bracket closes. MUST give next plan/idea.`;
-    lines.push(out);
+  const n=end-selA+1; let k=0;
+  for(let i=selA;i<=end;i++){
+    const c=chunks[i];
+    const need=c.isVariationEnd||hasSign(c.target)||c.isVariationStart||c.transposesTo;
+    if(need&&isFen(c.fenAfter)&&!eng[c.id]){
+      st.innerText='Engine… '+c.moveNum+'. '+c.target;
+      const d=await getEngine(c.fenAfter); if(d) eng[c.id]=d;
+      await delay(160);
+    }
+    k++; fill.style.width=((k/n)*100)+'%';
   }
-  fill.style.width='100%';
-  const fullPrompt=`You are a 2700+ GM writing sparse opening notes like a modern repertoire book (Quality Chess / Everyman). Natural English ~68% skill — clear, direct, not literary. British spelling (centre, favour) where natural.
+  const startFen=chunks[selA].fen;
+  const lines=[];
+  for(let i=selA;i<=end;i++){
+    const c=chunks[i];
+    const b=(c.fen||'').split(/\s+/), a=(c.fenAfter||'').split(/\s+/);
+    const played=b[1]==='w'?'White':b[1]==='b'?'Black':'?';
+    const toMove=a[1]==='w'?'White':a[1]==='b'?'Black':'?';
+    let L=`[ID: ${c.id}] ${c.moveNum}. ${c.target} | Played: ${played} | After: ${toMove} | VarEnd: ${c.isVariationEnd}`;
+    if(isFen(c.fenAfter)) L+=`\n  FEN: ${c.fenAfter}`;
+    if(hasSign(c.target)) L+=`\n  GM_SIGN: ${c.target}`;
+    if(c.transposesTo) L+=`\n  TRANSPOSITION: yes`;
+    if(eng[c.id]&&eng[c.id].line) L+=`\n  ENGINE_PLAN: ${eng[c.id].line}`;
+    if(ideas[c.id]) L+=`\n  USER_IDEA: ${ideas[c.id]}`;
+    if(c.isVariationEnd) L+=`\n  VARIATION_END: next plan required`;
+    lines.push(L);
+  }
+  const prompt=`You are a 2700+ GM writing sparse opening notes. Natural English ~68% skill. British spelling (centre, favour) where natural.
 
-STARTING FEN: ${startingFen}
+STARTING FEN: ${startFen}
 
-=== TASK ===
-For each chunk write ONE short repertoire comment (max two sentences).
-- Prefer [USER IDEAS] above everything.
-- Use [ENGINE / EDITED CONTINUATION] for plans (c5, Bb7, Ne4, Rac8…), not as a move list.
-- [GM SIGN ON MOVE] is from the GM — speak the mind behind ! ? $16 $18 etc.
-- [VARIATION END — REQUIRED] always needs a next plan.
-- [TRANSPOSITION] → write "transposes" or "will be transposed".
-- Trust POSITION FEATURES. Never invent pieces or a bishop pair not listed.
-- Correct colour. Never start by naming the move just played.
-- Never mention engine/Stockfish/eval numbers.
-- Prefer 1 sentence, max 2.
+Rules:
+- Comment only after the move.
+- MUST comment every GM_SIGN move.
+- MUST comment every VARIATION_END with a next plan (use ENGINE_PLAN / USER_IDEA).
+- Prefer USER_IDEA when present. Else use ENGINE_PLAN for ideas (c5, Bb7, Ne4…).
+- TRANSPOSITION → "transposes".
+- Correct colour. One short sentence, max two. No engine talk.
 
-Sample voice:
+Samples:
 "with the idea of Bb7"
-"Black will continue with b6 and Bb7 to place the bishop more actively"
-"Aiming to play b5 and develop the Bishop to b7 with tempo"
-"We aim to play Ne6, while White's King remains stuck in the center"
+"Black will continue with b6 and Bb7"
+"Aiming to play b5 and develop the bishop to b7"
 "transposes to the mainline"
 "the sacrifice drags the king into the open"
 
-=== OUTPUT ===
-ONLY a pure JSON object. Keys = chunk IDs. Values = comment text.
-No markdown, no thought process.
+Output ONLY pure JSON. Keys = IDs. Values = comments. No markdown.
 
-=== BATCH ===
+BATCH:
 ${lines.join('\n\n')}`;
 
-  try{ await navigator.clipboard.writeText(fullPrompt); alert('Copied '+ordered.length+' marked moves for Gemini.'); }
-  catch(e){
-    const ta=document.createElement('textarea'); ta.value=fullPrompt; document.body.appendChild(ta); ta.select();
-    try{ document.execCommand('copy'); alert('Copied '+ordered.length+' moves.'); }catch(err){ console.log(fullPrompt); alert('Copy failed — see console'); }
-    document.body.removeChild(ta);
-  }
-  btn.disabled=false; document.getElementById('copy-text').innerText='Copy for Gemini';
-  setTimeout(()=>{fill.style.width='0%';},1000);
+  document.getElementById('prompt').value=prompt;
+  document.getElementById('prompt-wrap').classList.remove('hidden');
+  btn.disabled=false; st.innerText='Ready — add ideas while browsing, then Copy';
+  fill.style.width='100%'; setTimeout(()=>fill.style.width='0%',700);
+  if(cur!=null) go(cur);
 }
 
-function switchTab(tab){
-  document.getElementById('view-fragmenter').classList.toggle('hidden', tab!=='fragmenter');
-  document.getElementById('view-reassembler').classList.toggle('hidden', tab!=='reassembler');
-  document.getElementById('tab-f').className=tab==='fragmenter'?'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg':'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
-  document.getElementById('tab-r').className=tab==='reassembler'?'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg':'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
+async function copyPrompt(){
+  const t=document.getElementById('prompt').value;
+  if(!t.trim()){alert('Run Engine + build prompt first');return;}
+  try{await navigator.clipboard.writeText(t);alert('Copied');}
+  catch(e){const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('Copied');}
 }
-function rebuildPgn(){
-  const raw=document.getElementById('ai-json').value; let aiData={};
-  try{ const a=raw.indexOf('{'), b=raw.lastIndexOf('}'); if(a!==-1&&b>a) aiData=JSON.parse(raw.substring(a,b+1)); else aiData=JSON.parse(raw); }
-  catch(e){ alert('Could not parse JSON'); return; }
-  const working=[...pgnTokens];
-  Object.keys(aiData).sort((a,b)=>(globalChunks.find(c=>c.id===b)?.tokenIndex||0)-(globalChunks.find(c=>c.id===a)?.tokenIndex||0)).forEach(id=>{
-    const chunk=globalChunks.find(c=>c.id===id);
-    if(chunk&&aiData[id]) working[chunk.tokenIndex]+=` { ${aiData[id]} }`;
+
+function switchTab(t){
+  document.getElementById('view-a').classList.toggle('hidden',t!=='a');
+  document.getElementById('view-r').classList.toggle('hidden',t!=='r');
+  document.getElementById('tab-a').className=t==='a'?'px-4 py-2 rounded-lg text-xs font-bold uppercase gold-bg':'px-4 py-2 rounded-lg text-xs font-bold uppercase text-slate-400';
+  document.getElementById('tab-r').className=t==='r'?'px-4 py-2 rounded-lg text-xs font-bold uppercase gold-bg':'px-4 py-2 rounded-lg text-xs font-bold uppercase text-slate-400';
+}
+function inject(){
+  const raw=document.getElementById('json').value; let ai={};
+  try{const a=raw.indexOf('{'),b=raw.lastIndexOf('}');ai=JSON.parse(a!==-1&&b>a?raw.slice(a,b+1):raw);}catch(e){alert('Bad JSON');return;}
+  const w=[...tokens];
+  Object.keys(ai).sort((a,b)=>(chunks.find(c=>c.id===b)?.tokenIndex||0)-(chunks.find(c=>c.id===a)?.tokenIndex||0)).forEach(id=>{
+    const ch=chunks.find(c=>c.id===id); if(ch&&ai[id]) w[ch.tokenIndex]+=' { '+ai[id]+' }';
   });
-  document.getElementById('final-pgn').value=working.join(' ');
+  document.getElementById('final').value=w.join(' ');
 }
-function saveState(){
-  localStorage.setItem('gm_master_state', JSON.stringify({original:document.getElementById('pgn-input').value, marked:[...markedIds], ideas:ideasById, engine:engineById}));
-}
-function clearAll(){ localStorage.removeItem('gm_master_state'); location.reload(); }
-function copyToClipboard(id){ navigator.clipboard.writeText(document.getElementById(id).value); alert('Copied!'); }
-function downloadPgn(){
-  const val=document.getElementById('final-pgn').value;
-  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([val],{type:'text/plain'})); a.download='GM_Variation_Analysis.pgn'; a.click();
-}
+function copyEl(id){navigator.clipboard.writeText(document.getElementById(id).value);alert('Copied');}
+function dl(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([document.getElementById('final').value],{type:'text/plain'}));a.download='annotated.pgn';a.click();}
+function save(){localStorage.setItem('gm_pro',JSON.stringify({pgn:document.getElementById('pgn').value}));}
 </script>
 </body>
 </html>
