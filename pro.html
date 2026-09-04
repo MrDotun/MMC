@@ -331,11 +331,15 @@
             }
         }
 
-        window.onload = () => {
+        window.onload = async () => {
             board = Chessboard('board', {
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 position: 'start'
             });
+
+            document.getElementById('stats').innerText = "LOADING ENGINE...";
+            const ok = await initStockfish();
+            document.getElementById('stats').innerText = ok ? "ENGINE READY (STOCKFISH)" : "ENGINE FALLBACK (API)";
 
             loadZippedDatabase();
 
@@ -397,84 +401,320 @@
             }
         }
 
-        async function getEngineRefutation(fen, retries = 3) {
+        // ========== STOCKFISH ENGINE (local WASM / worker) ==========
+        let stockfishWorker = null;
+        let stockfishReady = false;
+        let stockfishBusy = false;
+        let stockfishQueue = Promise.resolve();
+
+        function uciLineToSan(fen, uciLine, maxMoves = 8) {
+            if (!uciLine || !fen) return [];
+            try {
+                const chess = new Chess();
+                if (!chess.load(fen)) return [];
+                const moves = uciLine.trim().split(/\s+/).filter(Boolean);
+                const sans = [];
+                for (let i = 0; i < moves.length && sans.length < maxMoves; i++) {
+                    const uci = moves[i];
+                    if (uci.length < 4) break;
+                    const from = uci.slice(0, 2);
+                    const to = uci.slice(2, 4);
+                    const promotion = uci.length > 4 ? uci[4] : undefined;
+                    const mv = chess.move({ from, to, promotion: promotion || "q" });
+                    if (!mv) break;
+                    sans.push(mv.san);
+                }
+                return sans;
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function initStockfish() {
+            return new Promise((resolve) => {
+                if (stockfishWorker && stockfishReady) {
+                    resolve(true);
+                    return;
+                }
+                try {
+                    // stockfish.js as a classic worker script
+                    stockfishWorker = new Worker("https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js");
+                    let resolved = false;
+                    const done = (ok) => {
+                        if (resolved) return;
+                        resolved = true;
+                        stockfishReady = !!ok;
+                        resolve(!!ok);
+                    };
+                    stockfishWorker.onmessage = function (e) {
+                        const line = String(e.data || "");
+                        if (line === "uciok" || line.indexOf("readyok") !== -1) {
+                            done(true);
+                        }
+                    };
+                    stockfishWorker.onerror = function () {
+                        console.warn("Stockfish worker failed, will fall back to chess-api");
+                        done(false);
+                    };
+                    stockfishWorker.postMessage("uci");
+                    stockfishWorker.postMessage("isready");
+                    // safety timeout
+                    setTimeout(() => {
+                        if (!stockfishReady) {
+                            // still try to use it even if readyok was missed
+                            stockfishReady = true;
+                            done(true);
+                        }
+                    }, 4000);
+                } catch (e) {
+                    console.warn("Stockfish init error:", e);
+                    resolve(false);
+                }
+            });
+        }
+
+        function stockfishAnalyze(fen, depth = 18) {
+            return new Promise(async (resolve) => {
+                const ok = await initStockfish();
+                if (!ok || !stockfishWorker) {
+                    resolve(null);
+                    return;
+                }
+
+                // Serialize requests — Stockfish worker handles one search at a time
+                stockfishQueue = stockfishQueue.then(() => new Promise((res) => {
+                    let bestPv = "";
+                    let bestScore = null;
+                    let bestMate = null;
+                    let finished = false;
+
+                    const timeout = setTimeout(() => {
+                        if (finished) return;
+                        finished = true;
+                        try { stockfishWorker.postMessage("stop"); } catch (e) {}
+                        res({
+                            eval: bestMate != null ? (bestMate > 0 ? `M${bestMate}` : `-M${Math.abs(bestMate)}`) : (bestScore != null ? (bestScore / 100).toFixed(2) : null),
+                            pvUci: bestPv,
+                            depthReached: depth
+                        });
+                    }, 12000);
+
+                    const handler = function (e) {
+                        const line = String(e.data || "");
+                        if (line.startsWith("info") && line.indexOf(" pv ") !== -1) {
+                            // score
+                            const mateMatch = line.match(/\bscore mate (-?\d+)/);
+                            const cpMatch = line.match(/\bscore cp (-?\d+)/);
+                            if (mateMatch) bestMate = parseInt(mateMatch[1], 10);
+                            else if (cpMatch) {
+                                bestMate = null;
+                                bestScore = parseInt(cpMatch[1], 10);
+                            }
+                            const pvMatch = line.match(/\bpv\s+(.+)$/);
+                            if (pvMatch) bestPv = pvMatch[1].trim();
+                        }
+                        if (line.startsWith("bestmove")) {
+                            if (finished) return;
+                            finished = true;
+                            clearTimeout(timeout);
+                            stockfishWorker.removeEventListener("message", handler);
+                            const parts = line.split(/\s+/);
+                            const bm = parts[1] && parts[1] !== "(none)" ? parts[1] : "";
+                            if (bm && (!bestPv || bestPv.indexOf(bm) !== 0)) {
+                                bestPv = bestPv ? (bm + " " + bestPv) : bm;
+                            }
+                            res({
+                                eval: bestMate != null ? (bestMate > 0 ? `M${bestMate}` : `-M${Math.abs(bestMate)}`) : (bestScore != null ? (bestScore / 100).toFixed(2) : null),
+                                pvUci: bestPv,
+                                bestUci: bm,
+                                depthReached: depth
+                            });
+                        }
+                    };
+
+                    stockfishWorker.addEventListener("message", handler);
+                    stockfishWorker.postMessage("ucinewgame");
+                    stockfishWorker.postMessage("position fen " + fen);
+                    stockfishWorker.postMessage("go depth " + depth);
+                }));
+
+                const result = await stockfishQueue;
+                resolve(result);
+            });
+        }
+
+        function buildPlanHints(sanLine, evalStr) {
+            const cont = (sanLine || []).join(" ");
+            const evalNum = parseFloat(evalStr);
+            const isMate = /M/i.test(String(evalStr)) || /#/.test(cont);
+            let planHint = "";
+            if (isMate) planHint = "Forced mate sequence exists — the attack is decisive.";
+            else if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) planHint = "Large advantage — concrete attack or decisive material/positional gain.";
+            else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) planHint = "Clear plus — lasting pressure or structural advantage.";
+            else if (!isNaN(evalNum) && evalNum <= -0.8) planHint = "The side to move is under pressure — must find accurate defence.";
+            else planHint = "Small edge or equal — positional idea.";
+
+            let direction = "";
+            const joined = cont.toLowerCase();
+            if (/[+#]/.test(joined) || isMate) direction = "direct king attack / mating net";
+            else if (/x/.test(joined)) direction = "tactical captures / material";
+            else if (/o-o-o/.test(joined)) direction = "queenside castling / long-side safety";
+            else if (/o-o/.test(joined)) direction = "kingside castling / king safety";
+            else if (sanLine && sanLine.length >= 2) direction = "improving pieces and consolidating";
+            return { planHint, direction };
+        }
+
+        // Turn a SAN line into a short human plan sentence for the AI
+        function buildPlanSummary(sanMoves, sideToMove, evalStr) {
+            if (!sanMoves || !sanMoves.length) return "";
+            const side = sideToMove || "the side to move";
+            const line = sanMoves.slice(0, 5).join(" ");
+            const evalNum = parseFloat(evalStr);
+            const isMate = /M/i.test(String(evalStr)) || /#/.test(line);
+            const first = sanMoves[0] || "";
+            const rest = sanMoves.slice(1, 4).join(", ");
+
+            if (isMate) {
+                return `${side} has a forced mate idea starting with ${first}` + (rest ? ` then ${rest}` : "") + ".";
+            }
+            // Detect common themes from the moves
+            const lower = line.toLowerCase();
+            let theme = "";
+            if (/xf7|f7\+|bx?f7/.test(lower)) theme = "sacrifice on f7 to drag the king out";
+            else if (/xf2|f2\+/.test(lower)) theme = "sacrifice on f2 against the king";
+            else if (/qh5|qg4|qf3|qh4/.test(lower)) theme = "queen check / attack on the king";
+            else if (/o-o/.test(lower)) theme = "castling to safety then continuing the plan";
+            else if (/d4|d5|c4|c5|e4|e5/.test(lower) && /x/.test(lower)) theme = "opening the centre with captures";
+            else if (/d4|d5|c5|f5|b5/.test(lower)) theme = "central / pawn break ideas";
+            else if (/x/.test(lower)) theme = "tactical captures and material";
+            else theme = "improving pieces and keeping pressure";
+
+            let evalBit = "";
+            if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.2) evalBit = " with a large advantage";
+            else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.7) evalBit = " with a clear plus";
+
+            return `${side}'s idea: ${theme} (main line idea starts ${first}` + (rest ? `, then ${rest}` : "") + `)${evalBit}.`;
+        }
+
+        async function getEngineRefutation(fen, retries = 2, options = {}) {
             if (!isValidFen(fen)) {
                 return { eval: null, san: "", continuation: "", text: "INVALID FEN", invalid: true };
             }
-            for (let attempt = 0; attempt <= retries; attempt++) {
-                try {
-                    const response = await fetch("https://chess-api.com/v1", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ fen: fen, depth: 18, maxThinkingTime: 90 })
-                    });
-                    
-                    if (response.status === 429) {
-                        await delay(1800 * (attempt + 1));
-                        continue;
-                    }
+            const depth = options.depth || 18;
+            const fenBefore = options.fenBefore && isValidFen(options.fenBefore) ? options.fenBefore : null;
 
-                    if (!response.ok) return null;
-                    const data = await response.json();
+            const turnAfter = (fen.split(/\s+/)[1] === "w") ? "White" : "Black";
+            let result = null;
 
-                    if (data.error || (data.text && /wrong FEN|Cannot evaluate/i.test(data.text))) {
-                        return { eval: null, san: "", continuation: "", text: data.text || "Engine rejected FEN", invalid: true };
-                    }
-
-                    let cont = "";
-                    if (data.continuationArr && data.continuationArr.length) {
-                        cont = data.continuationArr.slice(0, 7).join(" ");
-                    } else if (data.continuation) {
-                        cont = String(data.continuation).split(" ").slice(0, 7).join(" ");
-                    }
-
-                    const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
-
-                    // Build a short human-readable plan hint from the line
-                    let planHint = "";
-                    const evalNum = parseFloat(data.eval);
-                    const isMate = /mate|#/i.test(String(data.eval)) || /#/.test(cont);
-                    if (isMate) {
-                        planHint = "Forced mate sequence exists — the attack is decisive.";
-                    } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) {
-                        planHint = "Large advantage — concrete attack or decisive material/positional gain.";
-                    } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) {
-                        planHint = "Clear plus — lasting pressure or structural advantage.";
-                    } else if (!isNaN(evalNum) && evalNum <= -0.8) {
-                        planHint = "The side to move is under pressure — must find accurate defence.";
-                    } else {
-                        planHint = "Small edge or equal — positional idea.";
-                    }
-
-                    // Directional cue from the first moves of the continuation
-                    let direction = "";
-                    const moves = cont.split(/\s+/).filter(Boolean);
-                    const joined = moves.join(" ").toLowerCase();
-                    if (/[+#]/.test(joined) || isMate) direction = "direct king attack / mating net";
-                    else if (/\bx[a-h][1-8]/.test(joined) || /takes|capture/i.test(joined)) direction = "tactical captures / material";
-                    else if (/o-o-o|0-0-0/.test(joined)) direction = "queenside castling / long-side safety";
-                    else if (/o-o|0-0/.test(joined)) direction = "kingside castling / king safety";
-                    else if (/[a-h][45]/.test(joined) && /[a-h][45]/.test(joined)) direction = "central / space gains";
-                    else if (moves.length >= 2) direction = "improving pieces and consolidating";
-
-                    return {
-                        eval: data.eval,
-                        san: firstMove,
+            // 1) Prefer local Stockfish
+            try {
+                const sf = await stockfishAnalyze(fen, depth);
+                if (sf && (sf.pvUci || sf.bestUci)) {
+                    const sans = uciLineToSan(fen, sf.pvUci || sf.bestUci, 8);
+                    const first = sans[0] || "";
+                    const cont = sans.join(" ");
+                    const hints = buildPlanHints(sans, sf.eval);
+                    result = {
+                        eval: sf.eval,
+                        san: first,
                         continuation: cont,
-                        text: data.text || "",
-                        planHint: planHint,
-                        direction: direction,
-                        invalid: false
+                        sanMoves: sans,
+                        text: "",
+                        planHint: hints.planHint,
+                        direction: hints.direction,
+                        planSummary: buildPlanSummary(sans, turnAfter, sf.eval),
+                        invalid: false,
+                        source: "stockfish"
                     };
-                } catch (e) {
-                    if (attempt === retries) return null;
-                    await delay(1200);
+                }
+            } catch (e) {
+                console.warn("Stockfish analyze failed:", e);
+            }
+
+            // 2) Fallback: chess-api.com
+            if (!result) {
+                for (let attempt = 0; attempt <= retries; attempt++) {
+                    try {
+                        const response = await fetch("https://chess-api.com/v1", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ fen: fen, depth: Math.min(depth, 16), maxThinkingTime: 80 })
+                        });
+                        if (response.status === 429) {
+                            await delay(1600 * (attempt + 1));
+                            continue;
+                        }
+                        if (!response.ok) break;
+                        const data = await response.json();
+                        if (data.error || (data.text && /wrong FEN|Cannot evaluate/i.test(data.text))) {
+                            return { eval: null, san: "", continuation: "", text: data.text || "Engine rejected FEN", invalid: true };
+                        }
+                        let cont = "";
+                        let sanMoves = [];
+                        if (data.continuationArr && data.continuationArr.length) {
+                            sanMoves = data.continuationArr.slice(0, 7);
+                            cont = sanMoves.join(" ");
+                        } else if (data.continuation) {
+                            sanMoves = String(data.continuation).split(" ").slice(0, 7);
+                            cont = sanMoves.join(" ");
+                        }
+                        const firstMove = data.san || data.move || (sanMoves[0] || "");
+                        if (firstMove && (!sanMoves.length || sanMoves[0] !== firstMove)) {
+                            sanMoves = [firstMove].concat(sanMoves.filter(m => m !== firstMove));
+                        }
+                        const hints = buildPlanHints(sanMoves, data.eval);
+                        result = {
+                            eval: data.eval,
+                            san: firstMove,
+                            continuation: cont,
+                            sanMoves: sanMoves,
+                            text: data.text || "",
+                            planHint: hints.planHint,
+                            direction: hints.direction,
+                            planSummary: buildPlanSummary(sanMoves, turnAfter, data.eval),
+                            invalid: false,
+                            source: "chess-api"
+                        };
+                        break;
+                    } catch (e) {
+                        if (attempt === retries) break;
+                        await delay(1000);
+                    }
                 }
             }
-            return null;
+
+            if (!result) return null;
+
+            // 3) Optional before-eval for swing (why the move was chosen)
+            if (fenBefore) {
+                try {
+                    const before = await stockfishAnalyze(fenBefore, Math.min(depth, 14));
+                    if (before && before.eval != null) {
+                        result.evalBefore = before.eval;
+                        const a = parseFloat(before.eval);
+                        const b = parseFloat(result.eval);
+                        if (!isNaN(a) && !isNaN(b)) {
+                            const swing = (b - a);
+                            // From side who just moved perspective roughly
+                            result.evalSwing = swing.toFixed(2);
+                            if (Math.abs(swing) >= 0.8) {
+                                result.swingNote = Math.abs(swing) >= 1.5
+                                    ? "Large eval change — this move changes the assessment sharply."
+                                    : "Clear eval change — the point of the move shows up in the score.";
+                            }
+                        } else if (/M/i.test(String(result.eval)) && !/M/i.test(String(before.eval))) {
+                            result.swingNote = "This line heads toward mate — the attack is real.";
+                        }
+                    }
+                } catch (e) {
+                    // ignore before-eval failures
+                }
+            }
+
+            return result;
         }
 
-        // Quick positional features from FEN for the AI (no engine needed)
+        // Full piece map from FEN so the AI cannot confuse knights for pawns
         function describePositionFromFen(fen) {
             if (!fen || !isValidFen(fen)) return "";
             try {
@@ -483,28 +723,49 @@
                 const turn = parts[1] === "w" ? "White" : "Black";
                 const castling = parts[2] || "-";
                 const rows = board.split("/");
-                let whiteKing = "", blackKing = "";
-                let whiteCastled = castling.includes("K") || castling.includes("Q") ? false : true;
-                let blackCastled = castling.includes("k") || castling.includes("q") ? false : true;
-                // crude but useful: king still on e-file often means uncastled
+                const pieceNames = {
+                    K: "White king", Q: "White queen", R: "White rook", B: "White bishop", N: "White knight", P: "White pawn",
+                    k: "Black king", q: "Black queen", r: "Black rook", b: "Black bishop", n: "Black knight", p: "Black pawn"
+                };
+                const pieces = []; // {sq, name, ch}
                 for (let r = 0; r < 8; r++) {
                     let file = 0;
                     for (const ch of rows[r]) {
                         if (ch >= "1" && ch <= "8") { file += parseInt(ch); continue; }
-                        if (ch === "K") whiteKing = String.fromCharCode(97 + file) + (8 - r);
-                        if (ch === "k") blackKing = String.fromCharCode(97 + file) + (8 - r);
+                        const sq = String.fromCharCode(97 + file) + (8 - r);
+                        pieces.push({ sq, name: pieceNames[ch] || ch, ch });
                         file++;
                     }
                 }
+                const bySq = {};
+                pieces.forEach(p => { bySq[p.sq] = p.name; });
+
+                // Always list centre and key squares explicitly
+                const keySquares = ["d4","d5","e4","e5","c4","c5","f4","f5","d3","e3","f3","c3","b4","b5","g4","g5","f7","f2","e6","e7","d6","d7"];
+                const centreList = [];
+                keySquares.forEach(sq => {
+                    if (bySq[sq]) centreList.push(`${bySq[sq]} on ${sq}`);
+                });
+
+                // Kings
+                const wk = pieces.find(p => p.ch === "K");
+                const bk = pieces.find(p => p.ch === "k");
+
                 let notes = [];
                 notes.push(`Side to move: ${turn}`);
-                if (whiteKing) notes.push(`White king on ${whiteKing}`);
-                if (blackKing) notes.push(`Black king on ${blackKing}`);
-                if (whiteKing && whiteKing[0] === "e" && (castling.includes("K") || castling.includes("Q"))) notes.push("White still uncastled");
-                if (blackKing && blackKing[0] === "e" && (castling.includes("k") || castling.includes("q"))) notes.push("Black still uncastled");
-                if (blackKing && ["d","e","f"].includes(blackKing[0]) && blackKing[1] !== "8") notes.push("Black king exposed / advanced");
-                if (whiteKing && ["d","e","f"].includes(whiteKing[0]) && whiteKing[1] !== "1") notes.push("White king exposed / advanced");
-                return notes.join("; ");
+                if (wk) notes.push(`White king on ${wk.sq}`);
+                if (bk) notes.push(`Black king on ${bk.sq}`);
+                if (wk && wk.sq[0] === "e" && (castling.includes("K") || castling.includes("Q"))) notes.push("White still uncastled");
+                if (bk && bk.sq[0] === "e" && (castling.includes("k") || castling.includes("q"))) notes.push("Black still uncastled");
+                if (bk && ["d","e","f"].includes(bk.sq[0]) && bk.sq[1] !== "8") notes.push("Black king exposed / advanced");
+                if (wk && ["d","e","f"].includes(wk.sq[0]) && wk.sq[1] !== "1") notes.push("White king exposed / advanced");
+                if (centreList.length) notes.push("PIECES: " + centreList.join(", "));
+                // Full material list for absolute clarity
+                const whitePcs = pieces.filter(p => p.ch === p.ch.toUpperCase()).map(p => `${p.name.replace("White ","")} ${p.sq}`).join(", ");
+                const blackPcs = pieces.filter(p => p.ch === p.ch.toLowerCase()).map(p => `${p.name.replace("Black ","")} ${p.sq}`).join(", ");
+                notes.push(`WHITE: ${whitePcs}`);
+                notes.push(`BLACK: ${blackPcs}`);
+                return notes.join(" | ");
             } catch (e) {
                 return "";
             }
@@ -712,37 +973,55 @@
                 
                 if (needsEngine) {
                     btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(280); 
-                    
-                    let engineData = await getEngineRefutation(c.fenAfter);
+                    await delay(200);
+
+                    // Deeper on variation ends; before/after eval to show why the move was chosen
+                    const depth = c.isVariationEnd ? 20 : (isCritical ? 18 : 16);
+                    const wantBefore = c.isVariationEnd || isCritical;
+                    let engineData = await getEngineRefutation(c.fenAfter, 2, {
+                        depth: depth,
+                        fenBefore: wantBefore ? c.fen : null
+                    });
 
                     if (engineData && !engineData.invalid && engineData.eval != null) {
-                        const bestLine = `${engineData.san || ""} ${engineData.continuation || ""}`.trim();
-                        lineOutput += `\n   -> [ENGINE EVAL]: ${engineData.eval}`;
+                        const bestLine = (engineData.continuation || engineData.san || "").trim();
+                        lineOutput += `\n   -> [ENGINE EVAL]: ${engineData.eval}` + (engineData.evalBefore != null ? ` (before move: ${engineData.evalBefore})` : "");
+                        if (engineData.evalSwing != null) {
+                            lineOutput += `\n   -> [EVAL SWING]: ${engineData.evalSwing}`;
+                        }
+                        if (engineData.swingNote) {
+                            lineOutput += `\n   -> [WHY THIS MOVE]: ${engineData.swingNote}`;
+                        }
                         lineOutput += `\n   -> [BEST CONTINUATION]: ${bestLine || "(none)"}`;
+                        if (engineData.planSummary) {
+                            lineOutput += `\n   -> [PLAN SUMMARY]: ${engineData.planSummary}`;
+                        }
                         if (engineData.planHint) {
                             lineOutput += `\n   -> [ENGINE HINT]: ${engineData.planHint}`;
                         }
                         if (engineData.direction) {
                             lineOutput += `\n   -> [PLAN DIRECTION]: ${engineData.direction}`;
                         }
-                        lineOutput += `\n   -> [READ THIS]: 1) Read the FEN and POSITION FEATURES. 2) Notice king safety, open lines, development lag, hanging pieces. 3) Use BEST CONTINUATION + PLAN DIRECTION to understand what the side to move wants to do next. 4) Write that idea in natural coaching English. Never list the moves. Never name a concrete next move that already appears later in the PGN.`;
+                        if (engineData.source) {
+                            lineOutput += `\n   -> [ENGINE SOURCE]: ${engineData.source}`;
+                        }
+                        lineOutput += `\n   -> [READ THIS]: 1) Read POSITION FEATURES piece list carefully (knight vs pawn vs bishop — do not mix them up). 2) Use PLAN SUMMARY + BEST CONTINUATION for the real next idea and why the move was chosen. 3) Write a short plan in natural English. Never dump move lists. Never name a move that is already the very next move in the PGN.`;
 
                         const evalNum = parseFloat(engineData.eval);
-                        const isMate = /mate|#/i.test(String(engineData.eval)) || /#/.test(bestLine);
-                        const bigSwing = !isNaN(evalNum) && Math.abs(evalNum) >= 0.9;
+                        const isMate = /mate|#|M/i.test(String(engineData.eval)) || /#/.test(bestLine);
+                        const bigSwing = (!isNaN(evalNum) && Math.abs(evalNum) >= 0.9) || (engineData.evalSwing != null && Math.abs(parseFloat(engineData.evalSwing)) >= 0.8);
 
                         if (isMate || bigSwing || isCritical) {
-                            lineOutput += `\n   -> [TACTICAL / CRITICAL]: Concrete idea exists. Explain the threat or the plan in plain English from the position.`;
+                            lineOutput += `\n   -> [TACTICAL / CRITICAL]: Concrete idea exists. Explain the threat or the plan in plain English from the position and PLAN SUMMARY.`;
                         }
 
                         if (c.isVariationEnd) {
-                            lineOutput += `\n   -> [VARIATION END — REQUIRED]: Bracket closes here. You MUST write the next idea/plan for this variation (e.g. "with the idea of c5", "preparing d4", "Black will castle and play f5", "with Bb7 and Rad8 next"). Use FEN + POSITION FEATURES + BEST CONTINUATION + PLAN DIRECTION. One short sentence. Correct colour only. Never skip.`;
+                            lineOutput += `\n   -> [VARIATION END — REQUIRED]: Bracket closes here. You MUST write the next idea/plan for this variation (e.g. "with the idea of c5", "preparing d4", "Black will castle and play f5"). Use PLAN SUMMARY + POSITION FEATURES. One short sentence. Correct colour only. Never skip.`;
                         }
                         if (c.isVariationStart && !c.isVariationEnd) {
                             lineOutput += `\n   -> [VARIATION START]: First move of a new branch. Short note on the idea if it helps the reader.`;
                         }
-                        statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"}`;
+                        statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"} (${engineData.source || "?"})`;
                     } else {
                         lineOutput += `\n   -> [ENGINE]: No usable data for this position.`;
                         if (c.isVariationEnd) {
@@ -762,15 +1041,17 @@
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a human chess coach writing sparse opening notes like a modern repertoire book. Natural English at about 68% skill — clear and direct, not polished or literary. British spelling where it fits (centre, favour).
+            const fullPrompt = `You are a 2700+ GM writing sparse opening notes like a modern repertoire book. Natural English at about 68% skill — clear and direct, not polished or literary. British spelling where it fits (centre, favour).
 
 STARTING FEN: ${startingFen}
 
-=== HOW TO THINK ===
-1. Read [FEN AFTER MOVE] and [POSITION FEATURES].
-2. Look at [BEST CONTINUATION], [ENGINE HINT], [PLAN DIRECTION] — these show what the side to move wants to do next.
+=== HOW TO THINK (MANDATORY) ===
+1. Read [FEN AFTER MOVE] and especially [POSITION FEATURES]. POSITION FEATURES lists every piece and its square (WHITE: ... BLACK: ...). Trust that list. A knight is a knight, a pawn is a pawn — never confuse them.
+2. Prefer [PLAN SUMMARY] when present — it is a human-readable engine plan. Also use [BEST CONTINUATION], [WHY THIS MOVE], [ENGINE HINT], [PLAN DIRECTION].
 3. Turn that into a short plan or idea in plain English. Name the idea with moves when useful (c5, Bb7, Ne4, d4-break, O-O and f5, etc.).
 4. Write the comment. Correct colour only.
+5. If POSITION FEATURES says "Black knight on d5", do NOT write about a pawn on d5. Read the piece list before every comment.
+6. On variation ends, the next idea MUST appear in the comment (with the idea of..., preparing..., will continue with...).
 
 === HARD RULES ===
 1. Comments ONLY AFTER the move.
@@ -780,8 +1061,9 @@ STARTING FEN: ${startingFen}
 5. Also comment a few important in-between moves when the idea is not obvious (key developing move, a useful stop, a break).
 6. Never start by repeating the move just played.
 7. Never mention engine, Stockfish, eval, depth, or "I calculated".
-8. Banned fancy words: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, ferocious, immense, well-known inaccuracy, lasting attack (overuse), "White is better", "keeps the initiative".
+8. Banned fancy words: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, ferocious, immense, well-known inaccuracy, lasting attack (overuse), "White is better", "keeps the initiative", "long-term structural superiority", "clearly winning endgame".
 9. LENGTH: one short sentence preferred. Max two. No essays.
+10. BOARD TRUTH: POSITION FEATURES lists exact pieces on squares. If it says knight on d5, it is a knight — not a pawn. Never invent material that is not on the list.
 
 === PLANS AND NEXT MOVES AFTER EVERY BRACKET CLOSES (CRITICAL) ===
 For EVERY variation end — no exceptions:
