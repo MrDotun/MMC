@@ -63,7 +63,8 @@
                         <input type="file" id="db-file-input" accept=".zip,.pgn" class="hidden" onchange="handleFileUpload(event)">
                     </label>
 
-                    <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy Selected Batch</span></button>
+                    <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy for AI</span></button>
+                    <button onclick="generateLocalAnnotations()" id="local-btn" class="px-6 py-3 bg-emerald-700 text-white rounded-xl font-bold uppercase text-xs hidden shadow-lg">Annotate Locally (no AI)</button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
                 </div>
             </div>
@@ -73,22 +74,43 @@
                 <div class="lg:w-1/3 space-y-4">
                     <div class="glass p-4 rounded-xl">
                         <div class="flex justify-between items-center mb-3">
-                            <span class="text-xs font-bold text-slate-500 uppercase">Start Position</span>
+                            <span class="text-xs font-bold text-slate-500 uppercase">Board + Ideas</span>
+                            <span id="idea-move-label" class="text-[10px] text-yellow-400 font-bold"></span>
                         </div>
                         <div class="board-container">
                             <div id="board" style="width: 100%;"></div>
                         </div>
-                        <div class="mt-4">
-                            <label class="text-[10px] font-bold text-slate-500 uppercase">FEN (Feed to AI)</label>
-                            <input type="text" id="fen-output" class="w-full p-3 rounded-lg text-xs mt-1 text-emerald-400" readonly placeholder="FEN will appear here...">
+                        <div class="flex gap-2 mt-3">
+                            <button onclick="navMove(-1)" class="flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold hover:bg-slate-700">◀ Prev</button>
+                            <button onclick="navMove(1)" class="flex-1 py-2 bg-slate-800 rounded-lg text-xs font-bold hover:bg-slate-700">Next ▶</button>
+                        </div>
+                        <div class="mt-3 flex gap-2">
+                            <button id="mode-green" onclick="setMarkMode('green')" class="flex-1 py-2 rounded-lg text-[10px] font-bold bg-emerald-800 text-emerald-200 border border-emerald-500">Green = advantage</button>
+                            <button id="mode-red" onclick="setMarkMode('red')" class="flex-1 py-2 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-600">Red = weakness</button>
+                        </div>
+                        <div class="mt-3">
+                            <div class="text-[10px] font-bold text-slate-500 uppercase mb-1">Theme (then click a square)</div>
+                            <div id="theme-chips" class="flex flex-wrap gap-1"></div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="text-[10px] font-bold text-slate-500 uppercase mb-1">Ideas on this move</div>
+                            <div id="idea-list" class="text-xs text-slate-300 space-y-1 min-h-[40px] max-h-[120px] overflow-y-auto"></div>
+                            <button onclick="clearIdeasOnCurrent()" class="mt-2 text-[10px] text-red-400 hover:underline">Clear ideas on this move</button>
+                        </div>
+                        <div class="mt-3">
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">FEN</label>
+                            <input type="text" id="fen-output" class="w-full p-2 rounded-lg text-[10px] mt-1 text-emerald-400" readonly>
                         </div>
                     </div>
                 </div>
 
                 <div class="lg:w-2/3 glass p-4 rounded-xl">
-                    <div class="mb-3 text-xs text-slate-400 italic">
-                        <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>. 
-                        Engine is called on variation ends and critical marks. Comments focus on <span class="text-white">ideas, plans and continuations</span> — especially when a nested branch closes.
+                    <div class="mb-3 text-xs text-slate-400">
+                        <span class="text-yellow-400 font-bold">How:</span>
+                        1) Click a move (or use Prev/Next).
+                        2) Pick a theme, choose Green/Red, click a square — that is your idea (no typing).
+                        3) Select batch START then END → <span class="text-white">Annotate Locally</span> or <span class="text-white">Copy for AI</span>.
+                        Your square marks become the plan feed.
                     </div>
                     <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
                 </div>
@@ -131,6 +153,32 @@
         let selEnd = null;
         let isDbLoaded = false;
         let dynamicMasterDb = {};
+        let currentMoveIndex = null; // move being viewed / marked
+        let markMode = "green"; // green = advantage, red = weakness
+        let activeTheme = "outpost";
+        // per chunk id: [{theme, color, square, piece, label}]
+        let userIdeas = {};
+
+        const THEME_LIST = [
+            { id: "bishop_pair", label: "Bishop pair" },
+            { id: "outpost", label: "Outpost" },
+            { id: "weak_square", label: "Weak square" },
+            { id: "weak_pawn", label: "Weak pawn" },
+            { id: "isolated_pawn", label: "Isolated pawn" },
+            { id: "passed_pawn", label: "Passed pawn" },
+            { id: "knight_manoeuvre", label: "Knight manoeuvre" },
+            { id: "king_centre", label: "King in centre" },
+            { id: "king_safety", label: "King safety" },
+            { id: "open_file", label: "Open file" },
+            { id: "space", label: "Space" },
+            { id: "development", label: "Development" },
+            { id: "attack", label: "Attack on king" },
+            { id: "central_break", label: "Central break (c5/d5/e5/f5)" },
+            { id: "queenside_expand", label: "Queenside expansion" },
+            { id: "piece_activity", label: "Piece activity" },
+            { id: "exchange", label: "Favourable exchange" },
+            { id: "initiative_plan", label: "Initiative / plan" }
+        ];
 
         const delay = ms => new Promise(res => setTimeout(res, ms));
 
@@ -334,8 +382,15 @@
         window.onload = async () => {
             board = Chessboard('board', {
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
-                position: 'start'
+                position: 'start',
+                onSquareClick: onBoardSquareClick
             });
+            // chessboard.js uses onSquareClick in some versions; also bind DOM fallback
+            setTimeout(bindBoardClickFallback, 500);
+
+            buildThemeChips();
+            setMarkMode('green');
+            setActiveTheme('outpost');
 
             document.getElementById('stats').innerText = "LOADING ENGINE...";
             const ok = await initStockfish();
@@ -347,44 +402,290 @@
             if (saved) {
                 const state = JSON.parse(saved);
                 document.getElementById('pgn-input').value = state.original;
-                if(state.original) { processPgn(true); }
+                if (state.original) { processPgn(true); }
+                if (state.userIdeas) userIdeas = state.userIdeas;
             }
         };
+
+        function buildThemeChips() {
+            const box = document.getElementById('theme-chips');
+            if (!box) return;
+            box.innerHTML = THEME_LIST.map(t =>
+                `<button type="button" data-theme="${t.id}" onclick="setActiveTheme('${t.id}')"
+                    class="theme-chip px-2 py-1 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-600 hover:border-yellow-500">${t.label}</button>`
+            ).join("");
+        }
+
+        function setActiveTheme(id) {
+            activeTheme = id;
+            document.querySelectorAll('.theme-chip').forEach(el => {
+                const on = el.getAttribute('data-theme') === id;
+                el.className = on
+                    ? "theme-chip px-2 py-1 rounded text-[10px] font-bold bg-yellow-700 text-yellow-100 border border-yellow-400"
+                    : "theme-chip px-2 py-1 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-600 hover:border-yellow-500";
+            });
+        }
+
+        function setMarkMode(mode) {
+            markMode = mode;
+            const g = document.getElementById('mode-green');
+            const r = document.getElementById('mode-red');
+            if (g) g.className = mode === 'green'
+                ? "flex-1 py-2 rounded-lg text-[10px] font-bold bg-emerald-800 text-emerald-200 border border-emerald-500"
+                : "flex-1 py-2 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-600";
+            if (r) r.className = mode === 'red'
+                ? "flex-1 py-2 rounded-lg text-[10px] font-bold bg-red-900 text-red-200 border border-red-500"
+                : "flex-1 py-2 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-600";
+        }
+
+        function bindBoardClickFallback() {
+            const el = document.getElementById('board');
+            if (!el || el._ideaBound) return;
+            el._ideaBound = true;
+            el.addEventListener('click', function (e) {
+                const sqEl = e.target.closest('[data-square]');
+                if (sqEl) {
+                    const sq = sqEl.getAttribute('data-square');
+                    if (sq) onBoardSquareClick(sq);
+                    return;
+                }
+                // chessboard.js squares often have class board-b72b1 etc — try data from parent
+                let node = e.target;
+                for (let i = 0; i < 4 && node; i++) {
+                    if (node.dataset && node.dataset.square) {
+                        onBoardSquareClick(node.dataset.square);
+                        return;
+                    }
+                    node = node.parentElement;
+                }
+            });
+        }
+
+        function pieceOnSquare(fen, square) {
+            if (!fen || !square) return null;
+            try {
+                const chess = new Chess();
+                if (!chess.load(fen)) return null;
+                const p = chess.get(square);
+                if (!p) return null;
+                const names = { p: "pawn", n: "knight", b: "bishop", r: "rook", q: "queen", k: "king" };
+                const color = p.color === "w" ? "White" : "Black";
+                return { color, type: names[p.type] || p.type, code: p.type, side: p.color };
+            } catch (e) { return null; }
+        }
+
+        function themeLabel(id) {
+            const t = THEME_LIST.find(x => x.id === id);
+            return t ? t.label : id;
+        }
+
+        function ideaToSentence(idea) {
+            const good = idea.color === "green";
+            const who = idea.piece ? `${idea.piece.color} ${idea.piece.type}` : null;
+            const sq = idea.square ? idea.square.toUpperCase() : "";
+            switch (idea.theme) {
+                case "bishop_pair":
+                    return good
+                        ? ((idea.piece && idea.piece.color) ? idea.piece.color : "This side") + " has the bishop pair as a lasting advantage"
+                        : "Missing the bishop pair is a problem here";
+                case "outpost":
+                    return good
+                        ? (who ? who + " on " + sq + " is a strong outpost" : "Strong outpost on " + sq)
+                        : "The " + sq + " square is a hole the opponent can use";
+                case "weak_square":
+                    return good ? "Control of the " + sq + " square" : "Weak square on " + sq;
+                case "weak_pawn":
+                case "isolated_pawn":
+                    return good
+                        ? (who ? who + " on " + sq + " is solid" : "Pawn on " + sq + " is fine")
+                        : (who ? who + " on " + sq + " is a clear weakness" : "Weak pawn on " + sq);
+                case "passed_pawn":
+                    return good ? "Passed pawn on " + sq : "Opponent's passed pawn on " + sq + " is dangerous";
+                case "knight_manoeuvre":
+                    return good
+                        ? (who ? who + " manoeuvres via " + sq : "Knight manoeuvre involving " + sq)
+                        : "The knight is poorly placed on " + sq;
+                case "king_centre":
+                    return good ? "King centralisation on " + sq : "King stuck in the centre on " + sq;
+                case "king_safety":
+                    return good ? "King is safe" : "King safety issues around " + sq;
+                case "open_file":
+                    return good ? "Open file / activity on the " + sq.charAt(0) + "-file" : "Opponent owns the open file near " + sq;
+                case "space":
+                    return good ? "Space advantage" : "Cramped position";
+                case "development":
+                    return good ? "Lead in development" : "Behind in development";
+                case "attack":
+                    return good ? "Attacking chances against the king (focus " + sq + ")" : "Under attack near " + sq;
+                case "central_break":
+                    return good ? "Central break ideas (c5/d5/e5/f5) involving " + sq : "Cannot easily break in the centre";
+                case "queenside_expand":
+                    return good ? "Queenside expansion (b5/Bb7 ideas)" : "Queenside is under pressure";
+                case "piece_activity":
+                    return good
+                        ? (who ? who + " on " + sq + " is very active" : "Active piece on " + sq)
+                        : (who ? who + " on " + sq + " is passive" : "Passive piece on " + sq);
+                case "exchange":
+                    return good ? "Favourable exchange around " + sq : "Unfavourable exchange";
+                case "initiative_plan":
+                    return good ? "Clear plan / initiative involving " + sq : "No clear plan here";
+                default:
+                    return (good ? "Advantage" : "Weakness") + " on " + sq + " (" + themeLabel(idea.theme) + ")";
+            }
+        }
+
+        function onBoardSquareClick(square) {
+            if (currentMoveIndex == null || !globalChunks[currentMoveIndex]) {
+                document.getElementById('stats').innerText = "Click a move first, then mark squares";
+                return;
+            }
+            const c = globalChunks[currentMoveIndex];
+            const fen = c.fenAfter || c.fen;
+            const piece = pieceOnSquare(fen, square);
+            const idea = {
+                theme: activeTheme,
+                color: markMode,
+                square: square,
+                piece: piece,
+                label: themeLabel(activeTheme)
+            };
+            if (!userIdeas[c.id]) userIdeas[c.id] = [];
+            // replace same square+theme
+            userIdeas[c.id] = userIdeas[c.id].filter(x => !(x.square === square && x.theme === activeTheme));
+            userIdeas[c.id].push(idea);
+            refreshIdeaList();
+            refreshBoardHighlights();
+            saveState();
+            document.getElementById('stats').innerText = (markMode === 'green' ? 'Advantage' : 'Weakness') + ': ' + ideaToSentence(idea);
+        }
+
+        function refreshIdeaList() {
+            const box = document.getElementById('idea-list');
+            if (!box) return;
+            if (currentMoveIndex == null || !globalChunks[currentMoveIndex]) {
+                box.innerHTML = '<span class="text-slate-500">Select a move to mark ideas</span>';
+                return;
+            }
+            const c = globalChunks[currentMoveIndex];
+            const list = userIdeas[c.id] || [];
+            if (!list.length) {
+                box.innerHTML = '<span class="text-slate-500">No ideas yet — pick theme, Green/Red, click square</span>';
+                return;
+            }
+            box.innerHTML = list.map((idea, idx) => {
+                const col = idea.color === 'green' ? 'text-emerald-400' : 'text-red-400';
+                return '<div class="flex justify-between gap-2"><span class="' + col + '">' + ideaToSentence(idea) + '</span>' +
+                    '<button type="button" class="text-slate-500 hover:text-red-400" onclick="removeIdea(' + idx + ')">×</button></div>';
+            }).join('');
+        }
+
+        function removeIdea(idx) {
+            if (currentMoveIndex == null) return;
+            const c = globalChunks[currentMoveIndex];
+            if (!userIdeas[c.id]) return;
+            userIdeas[c.id].splice(idx, 1);
+            refreshIdeaList();
+            refreshBoardHighlights();
+            saveState();
+        }
+
+        function clearIdeasOnCurrent() {
+            if (currentMoveIndex == null) return;
+            const c = globalChunks[currentMoveIndex];
+            userIdeas[c.id] = [];
+            refreshIdeaList();
+            refreshBoardHighlights();
+            saveState();
+        }
+
+        function refreshBoardHighlights() {
+            if (!board || currentMoveIndex == null || !globalChunks[currentMoveIndex]) return;
+            const c = globalChunks[currentMoveIndex];
+            const list = userIdeas[c.id] || [];
+            const cfg = {};
+            list.forEach(idea => {
+                if (!idea.square) return;
+                cfg[idea.square] = idea.color === 'green'
+                    ? 'radial-gradient(circle, rgba(16,185,129,0.55) 40%, transparent 70%)'
+                    : 'radial-gradient(circle, rgba(239,68,68,0.55) 40%, transparent 70%)';
+            });
+            try {
+                board.position(c.fenAfter || c.fen, false);
+                // paint via CSS on squares after a tick
+                setTimeout(() => {
+                    document.querySelectorAll('#board [data-square]').forEach(el => {
+                        el.style.boxShadow = '';
+                        el.style.outline = '';
+                    });
+                    list.forEach(idea => {
+                        const el = document.querySelector('#board [data-square="' + idea.square + '"]');
+                        if (el) {
+                            el.style.boxShadow = idea.color === 'green'
+                                ? 'inset 0 0 0 3px #10b981'
+                                : 'inset 0 0 0 3px #ef4444';
+                        }
+                    });
+                }, 30);
+            } catch (e) {}
+        }
+
+        function goToMove(index) {
+            if (index == null || index < 0 || index >= globalChunks.length) return;
+            currentMoveIndex = index;
+            const c = globalChunks[index];
+            const fen = c.fenAfter || c.fen;
+            document.getElementById('fen-output').value = fen || '';
+            if (board && fen) board.position(fen, false);
+            const lab = document.getElementById('idea-move-label');
+            if (lab) lab.innerText = c.moveNum + '. ' + c.target;
+            refreshIdeaList();
+            refreshBoardHighlights();
+        }
+
+        function navMove(dir) {
+            if (currentMoveIndex == null) {
+                goToMove(0);
+                return;
+            }
+            goToMove(currentMoveIndex + dir);
+        }
+
+        function formatUserIdeasForChunk(chunkId) {
+            const list = userIdeas[chunkId] || [];
+            if (!list.length) return '';
+            const greens = list.filter(x => x.color === 'green').map(ideaToSentence);
+            const reds = list.filter(x => x.color === 'red').map(ideaToSentence);
+            let s = '';
+            if (greens.length) s += 'ADVANTAGES: ' + greens.join('; ') + '. ';
+            if (reds.length) s += 'WEAKNESSES: ' + reds.join('; ') + '. ';
+            return s.trim();
+        }
 
         async function getOpeningDatabase(fen) {
             try {
                 const parts = fen.split(' ');
                 if (parts.length < 4) return null;
-
                 const board = parts[0];
                 const turn = parts[1];
                 const castling = parts[2];
                 const ep = parts[3];
-
                 const formatsToTry = [
                     fen,
-                    `${board} ${turn} ${castling} ${ep}`,
-                    `${board} ${turn} ${castling} -`,
-                    `${board} ${turn} ${castling}`
+                    board + ' ' + turn + ' ' + castling + ' ' + ep,
+                    board + ' ' + turn + ' ' + castling + ' -',
+                    board + ' ' + turn + ' ' + castling
                 ];
-
                 for (let f of formatsToTry) {
-                    if (dynamicMasterDb[f]) {
-                        return dynamicMasterDb[f];
-                    }
+                    if (dynamicMasterDb[f]) return dynamicMasterDb[f];
                 }
-
                 if (typeof NAJDORF_G3_MASTER_DB !== 'undefined') {
                     for (let f of formatsToTry) {
-                        if (NAJDORF_G3_MASTER_DB[f]) {
-                            return NAJDORF_G3_MASTER_DB[f];
-                        }
+                        if (NAJDORF_G3_MASTER_DB[f]) return NAJDORF_G3_MASTER_DB[f];
                     }
                 }
-
                 return null;
             } catch (e) {
-                console.error("Local database fetch failed:", e);
+                console.error('Local database fetch failed:', e);
                 return null;
             }
         }
@@ -639,11 +940,16 @@
             const {
                 sideJustPlayed, sideToMoveAfter, target,
                 isVariationEnd, isVariationStart, isCritical,
-                engineAfter, engineBefore, posNotes, playedSan
+                engineAfter, engineBefore, posNotes, playedSan, chunkId
             } = opts;
             const signs = interpretSigns(target);
             const parts = [];
             const pn = posNotes || "";
+            // User board marks are the highest-priority plan source
+            const userText = chunkId ? formatUserIdeasForChunk(chunkId) : "";
+            if (userText) {
+                parts.push(userText.replace(/^ADVANTAGES:\s*/i, "").replace(/WEAKNESSES:\s*/i, "but ").trim());
+            }
 
             // Idea of the move just played (from fen BEFORE — engine best line for the mover)
             let moverIdea = "";
@@ -709,18 +1015,48 @@
                 }
             }
 
-            // Never claim bishop pair for the wrong side
             let text = parts.join(". ").replace(/\.\./g, ".").trim();
-            if (sideToMoveAfter === "White" || sideJustPlayed === "White") {
-                // strip false "Black has the bishop pair" claims if pos doesn't support
-            }
             if (!/Black has the bishop pair/.test(pn)) {
                 text = text.replace(/Black[^.]*bishop pair[^.]*\.?/gi, "").trim();
             }
             if (!/White has the bishop pair/.test(pn)) {
                 text = text.replace(/White[^.]*bishop pair[^.]*\.?/gi, "").trim();
             }
-            return text.replace(/\s{2,}/g, " ").replace(/^\.|\.$/g, m => m === "." ? "" : m).trim();
+            text = text.replace(/\s{2,}/g, " ").trim();
+
+            // Soft polish toward repertoire voice
+            text = text
+                .replace(/^good move — accurate and purposeful\.\s*/i, "")
+                .replace(/^excellent move — strong concrete idea\.\s*/i, "")
+                .replace(/^mistake — lets the opponent improve\.\s*/i, "A mistake. ")
+                .replace(/^blunder — allows a concrete refutation\.\s*/i, "A blunder. ")
+                .replace(/^interesting try — ambitious idea\.\s*/i, "Interesting try. ")
+                .replace(/^dubious — risky or imprecise\.\s*/i, "Dubious. ")
+                .replace(/^novelty\.\s*/i, "Novelty. ")
+                .replace(/Next:\s*/g, "")
+                .replace(/allows allows/gi, "allows")
+                .replace(/\.\s*\./g, ".");
+
+            // Prefer "with the idea of X" / "Black will continue with..."
+            text = text.replace(/(White|Black)'s idea behind the move:\s*continue with\s+([^.]+)/i,
+                (_, side, ideas) => `${side} plays this with the idea of ${ideas.trim()}`);
+            text = text.replace(/(White|Black)'s idea:\s*([^.]+\.)\s*Useful continuations:\s*([^.]+)/i,
+                (_, side, theme, ideas) => {
+                    const ideaList = ideas.trim();
+                    if (/expansion|break|castling|attack|pressure|bishop|isolated|sacrifice/i.test(theme)) {
+                        return `${side} is aiming for ${theme.replace(/\.$/, "").toLowerCase()}, with ${ideaList} coming next`;
+                    }
+                    return `${side} will continue with ${ideaList}`;
+                });
+            text = text.replace(/(White|Black)'s idea:\s*([^.]+)\.\s*Useful continuations:\s*([^.]+)/i,
+                (_, side, theme, ideas) => `${side} will continue with ${ideas.trim()}`);
+            text = text.replace(/(White|Black)'s plan in this position:\s*([^.]+)/i,
+                (_, side, ideas) => `${side} will continue with ${ideas.trim()}`);
+            text = text.replace(/(White|Black)'s idea:\s*([^.]+)/i,
+                (_, side, rest) => `${side}: ${rest.trim()}`);
+
+            if (text && !/[.!?]$/.test(text)) text += ".";
+            return text.trim();
         }
 
         async function getEngineRefutation(fen, retries = 2, options = {}) {
@@ -1082,6 +1418,8 @@
             globalChunks = chunks;
             document.getElementById('workspace').classList.remove('hidden');
             document.getElementById('copy-btn').classList.remove('hidden');
+            const lb = document.getElementById('local-btn');
+            if (lb) lb.classList.remove('hidden');
             
             selStart = null;
             selEnd = null;
@@ -1093,12 +1431,12 @@
         }
 
         function selectChunk(index) {
+            // Always show this move for idea marking
+            goToMove(index);
+            // Batch range: first click start, second click end
             if (selStart === null || (selStart !== null && selEnd !== null)) {
                 selStart = index;
                 selEnd = null;
-                let fen = globalChunks[index].fen;
-                document.getElementById('fen-output').value = fen;
-                board.position(fen, false); 
             } else {
                 selEnd = Math.max(selStart, index);
                 selStart = Math.min(selStart, index);
@@ -1148,6 +1486,11 @@
                     posDesc = describePositionFromFen(c.fenAfter);
                     if (posDesc) {
                         lineOutput += `\n   -> [POSITION FEATURES]: ${posDesc}`;
+                    }
+                    const ui = formatUserIdeasForChunk(c.id);
+                    if (ui) {
+                        lineOutput += `\n   -> [USER IDEAS — HIGHEST PRIORITY]: ${ui}`;
+                        lineOutput += `\n   -> These marks were made by the annotator on the board (green=advantage, red=weakness). Base the comment on them.`;
                     }
                 } else {
                     lineOutput += `\n   -> [FEN AFTER MOVE]: UNRELIABLE (do not invent a position)`;
@@ -1232,11 +1575,12 @@
                         engineAfter,
                         engineBefore,
                         posNotes: posDesc,
-                        playedSan
+                        playedSan,
+                        chunkId: c.id
                     });
                     if (draft) {
                         lineOutput += `\n   -> [DRAFT COMMENT]: ${draft}`;
-                        lineOutput += `\n   -> [YOUR JOB]: Rewrite into ONE short repertoire sentence. Colour must match DRAFT. Do not claim bishop pair unless POSITION FEATURES says so. Do not name moves listed in ALREADY IN PGN.`;
+                        lineOutput += `\n   -> [YOUR JOB]: Rewrite into ONE short repertoire sentence. Prefer USER IDEAS. Colour must match. Do not invent pieces.`;
                     }
                     if (c.isVariationEnd) {
                         lineOutput += `\n   -> [VARIATION END — REQUIRED]: Must comment. Give the next plan for ${sideToMoveAfter}.`;
@@ -1347,8 +1691,125 @@ ${batchString}`;
             });
         }
 
+        // Local annotations from engine drafts — no external AI required
+        async function generateLocalAnnotations() {
+            if (selStart === null) {
+                alert("Select a start and end move first.");
+                return;
+            }
+            const btn = document.getElementById('local-btn');
+            const statsText = document.getElementById('stats');
+            const progressFill = document.getElementById('progress-fill');
+            btn.disabled = true;
+            btn.classList.add('opacity-80');
+            btn.innerText = "Annotating...";
+
+            const endIdx = selEnd !== null ? selEnd : selStart;
+            const total = (endIdx - selStart) + 1;
+            const comments = {};
+
+            for (let i = selStart; i <= endIdx; i++) {
+                const c = globalChunks[i];
+                const step = (i - selStart) + 1;
+                progressFill.style.width = `${((step - 1) / total) * 100}%`;
+                statsText.innerText = `Local annotate ${c.moveNum}. ${c.target}`;
+
+                const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
+                const isCritical = /[?!$]/.test(c.target);
+                const hasUser = (userIdeas[c.id] || []).length > 0;
+                if (!fenOk || !(c.isVariationEnd || isCritical || c.isVariationStart || hasUser)) {
+                    await delay(10);
+                    continue;
+                }
+
+                const fenPartsBefore = (c.fen || "").split(" ");
+                const sideJustPlayed = fenPartsBefore[1] === "w" ? "White" : (fenPartsBefore[1] === "b" ? "Black" : "?");
+                const fenPartsAfter = (c.fenAfter || "").split(" ");
+                const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
+                const posDesc = describePositionFromFen(c.fenAfter);
+
+                const alreadyInPgn = [];
+                for (let j = i + 1; j <= endIdx && j < i + 6; j++) {
+                    const n = globalChunks[j];
+                    if (!n) break;
+                    if (n.variationLevel < c.variationLevel) break;
+                    if (n.variationLevel === c.variationLevel) {
+                        alreadyInPgn.push((n.target || "").replace(/[?!$0-9\s]+$/g, "").trim());
+                    }
+                }
+
+                let engineAfter = null, engineBefore = null;
+                const depth = c.isVariationEnd ? 18 : 15;
+                engineAfter = await getEngineRefutation(c.fenAfter, 2, { depth });
+                if (engineAfter && !engineAfter.invalid) {
+                    let moves = engineAfter.sanMoves || (engineAfter.continuation || "").split(/\s+/);
+                    moves = cleanSanList(moves).filter(m => {
+                        const base = m.replace(/[+#]/g, "");
+                        return !alreadyInPgn.some(a => a.replace(/[+#]/g, "") === base);
+                    });
+                    engineAfter.planSummary = buildPlanSummary(moves, sideToMoveAfter, engineAfter.eval, posDesc);
+                    engineAfter.sanMoves = moves;
+                }
+                if (c.fen && isValidFen(c.fen)) {
+                    engineBefore = await getEngineRefutation(c.fen, 1, { depth: Math.min(depth, 14) });
+                    if (engineBefore && !engineBefore.invalid) {
+                        engineBefore.planSummary = buildPlanSummary(
+                            engineBefore.sanMoves || (engineBefore.continuation || "").split(/\s+/),
+                            sideJustPlayed,
+                            engineBefore.eval,
+                            describePositionFromFen(c.fen)
+                        );
+                    }
+                }
+
+                const draft = buildDraftComment({
+                    sideJustPlayed,
+                    sideToMoveAfter,
+                    target: c.target,
+                    isVariationEnd: c.isVariationEnd,
+                    isVariationStart: c.isVariationStart,
+                    isCritical,
+                    engineAfter,
+                    engineBefore,
+                    posNotes: posDesc,
+                    playedSan: (c.target || "").replace(/[?!$0-9\s]+$/g, "").trim(),
+                    chunkId: c.id
+                });
+                if (draft && draft.length > 8) {
+                    comments[c.id] = draft;
+                }
+            }
+
+            // Also comment any move that has user square marks, even if not critical
+            for (let i = selStart; i <= endIdx; i++) {
+                const c = globalChunks[i];
+                if (comments[c.id]) continue;
+                const ui = formatUserIdeasForChunk(c.id);
+                if (ui) {
+                    comments[c.id] = ui.replace(/^ADVANTAGES:\s*/i, "").replace(/WEAKNESSES:\s*/i, "but ").trim();
+                    if (comments[c.id] && !/[.!?]$/.test(comments[c.id])) comments[c.id] += ".";
+                }
+            }
+
+            progressFill.style.width = "100%";
+            const json = JSON.stringify(comments, null, 2);
+            const out = document.getElementById('ai-json');
+            if (out) out.value = json;
+            try {
+                await navigator.clipboard.writeText(json);
+            } catch (e) {}
+
+            // Switch to reassembler
+            switchTab('reassembler');
+            btn.disabled = false;
+            btn.classList.remove('opacity-80');
+            btn.innerText = "Annotate Locally (no AI)";
+            statsText.innerText = `${Object.keys(comments).length} local comments ready — click Inject`;
+            alert(`${Object.keys(comments).length} comments generated locally from Stockfish plans.\nJSON is in the Re-assembler box. Click "Inject Annotations & Rebuild File".\nYou can still edit any line before injecting.`);
+        }
+
         function resetCopyBtnUI(btn, btnText, statsText, progressFill, total) {
-            btnText.innerText = "Copy Selected Batch";
+            btnText.innerText = "Copy for AI";
             statsText.innerText = `${globalChunks.length} TOTAL MOVES`;
             btn.classList.remove('opacity-80', 'cursor-not-allowed');
             btn.disabled = false;
@@ -1415,7 +1876,10 @@ ${batchString}`;
         }
 
         function saveState() {
-            localStorage.setItem('gm_master_state', JSON.stringify({ original: document.getElementById('pgn-input').value }));
+            localStorage.setItem('gm_master_state', JSON.stringify({
+                original: document.getElementById('pgn-input').value,
+                userIdeas: userIdeas
+            }));
         }
 
         function clearAll() {
