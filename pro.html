@@ -603,95 +603,124 @@
             const lower = moves.join(" ").toLowerCase();
             const evalNum = parseFloat(evalStr);
             const isMate = /M/i.test(String(evalStr)) || /#/.test(moves.join(" "));
+            const pn = posNotes || "";
 
             let theme = "";
             if (isMate) theme = "mating attack";
-            else if (/xf7|bxf7|nxf7/.test(lower)) theme = "sacrifice on f7 to drag the king into the open";
+            else if (/xf7|bxf7|nxf7/.test(lower)) theme = "sacrifice on f7 to open the king";
             else if (/xf2/.test(lower)) theme = "sacrifice on f2";
-            else if (/\bb5\b|\bbb7\b|\ba6\b|\ba5\b/.test(lower)) theme = "queenside expansion (b5 / Bb7 ideas)";
-            else if (/\bc5\b|\bc4\b/.test(lower)) theme = "c-pawn break, challenging the centre";
-            else if (/\bd5\b|\bd4\b/.test(lower)) theme = "central play with the d-pawn";
-            else if (/\bf5\b|\bf6\b/.test(lower)) theme = "f-pawn break / kingside activity";
-            else if (/o-o/.test(lower)) theme = "castling then completing development";
-            else if (/qh5|qf3|qe4|qg4|qh4/.test(lower)) theme = "queen activity against the king";
-            else if (/x/.test(lower)) theme = "tactical sequence";
-            else theme = "piece improvement and coordination";
+            else if (/\bb5\b|\bbb7\b|\ba6\b/.test(lower)) theme = "queenside expansion with b5/Bb7 ideas";
+            else if (/\bc5\b/.test(lower)) theme = "c7-c5 break, challenging the centre";
+            else if (/\bc4\b/.test(lower)) theme = "c-pawn play";
+            else if (/\bnd5\b|\bnd4\b|\bne4\b|\bne5\b|\bbc5\b|\bb4\b/.test(lower)) theme = "knight/piece to a strong central square";
+            else if (/\bd5\b|\bd4\b/.test(lower)) theme = "central d-pawn play";
+            else if (/\bf5\b|\bf6\b/.test(lower)) theme = "f-pawn break";
+            else if (/o-o/.test(lower)) theme = "castling and completing development";
+            else if (/qh5|qf3|qe4|qg4|qh4/.test(lower)) theme = "queen checks / attack on the king";
+            else if (/x/.test(lower)) theme = "tactical captures";
+            else theme = "improving the pieces";
 
-            const pn = posNotes || "";
-            if (theme === "piece improvement and coordination") {
-                if (/isolated pawn/.test(pn)) theme = "pressure against the isolated pawn";
-                else if (/bishop pair/.test(pn)) theme = "using the bishop pair";
-                else if (/uncastled/.test(pn)) theme = "play against the uncastled king";
-            }
+            // Structure themes — only for the correct side
+            if (side === "White" && /White isolated pawn/.test(pn)) theme = "defending or liquidating the isolated pawn";
+            if (side === "Black" && /Black isolated pawn/.test(pn)) theme = "defending or liquidating the isolated pawn";
+            if (side === "White" && /Black isolated pawn/.test(pn)) theme = "pressuring Black's isolated pawn";
+            if (side === "Black" && /White isolated pawn/.test(pn)) theme = "pressuring White's isolated pawn";
+            if (side === "White" && /White has the bishop pair/.test(pn)) theme = "using the bishop pair";
+            if (side === "Black" && /Black has the bishop pair/.test(pn)) theme = "using the bishop pair";
+            if (side === "White" && /Black king.*uncastled|Black king is exposed/.test(pn)) theme = "attacking the uncastled black king";
+            if (side === "Black" && /White king.*uncastled|White king is exposed/.test(pn)) theme = "attacking the uncastled white king";
 
             const ideaMoves = moves.slice(0, 4).join(", ");
-            let strength = "";
-            if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) strength = " Large advantage.";
-            else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) strength = " Clear plus.";
-            else if (!isNaN(evalNum) && evalNum <= -0.8) strength = " Under pressure.";
-
-            return `${side}: ${theme}. Next ideas: ${ideaMoves || "improve pieces"}.${strength}`;
+            return `${side}'s idea: ${theme}. Useful continuations: ${ideaMoves || "improve pieces"}.`;
         }
 
-        // Draft the AI must polish into final repertoire voice
-        function buildDraftComment({ sideToMoveAfter, target, isVariationEnd, isVariationStart, isCritical, engineData, posNotes }) {
+        // Draft with strict colour + idea from mover AND reply side
+        function buildDraftComment(opts) {
+            const {
+                sideJustPlayed, sideToMoveAfter, target,
+                isVariationEnd, isVariationStart, isCritical,
+                engineAfter, engineBefore, posNotes, playedSan
+            } = opts;
             const signs = interpretSigns(target);
             const parts = [];
+            const pn = posNotes || "";
 
+            // Idea of the move just played (from fen BEFORE — engine best line for the mover)
+            let moverIdea = "";
+            if (engineBefore && engineBefore.sanMoves && engineBefore.sanMoves.length) {
+                const ideas = cleanSanList(engineBefore.sanMoves).slice(0, 4);
+                // If first engine move matches what was played, the rest is the plan behind it
+                const first = (ideas[0] || "").replace(/[+#]/g, "");
+                const played = (playedSan || "").replace(/[+#?!$0-9\s]/g, "");
+                if (first && played && first.toLowerCase() === played.toLowerCase()) {
+                    moverIdea = `${sideJustPlayed}'s idea behind the move: continue with ${ideas.slice(1, 4).join(", ") || ideas.join(", ")}`;
+                } else {
+                    moverIdea = `${sideJustPlayed}'s plan in this position: ${ideas.join(", ")}`;
+                }
+                if (engineBefore.planSummary) {
+                    // force correct side label
+                    moverIdea = engineBefore.planSummary.replace(/^(White|Black|the side to move)/, sideJustPlayed);
+                }
+            }
+
+            // What the opponent wants next (from fen AFTER)
+            let replyIdea = "";
+            if (engineAfter && engineAfter.planSummary) {
+                replyIdea = engineAfter.planSummary.replace(/^(White|Black|the side to move)/, sideToMoveAfter);
+            } else if (engineAfter && engineAfter.sanMoves && engineAfter.sanMoves.length) {
+                replyIdea = `${sideToMoveAfter}'s idea: ${cleanSanList(engineAfter.sanMoves).slice(0, 3).join(", ")}`;
+            }
+
+            // Signs — speak GM mind, attach correct-colour plan
             if (signs.length) {
                 const s = signs[0];
-                if (s.code === "??" || s.code === "?") {
-                    parts.push(s.meaning);
-                    if (engineData && engineData.planSummary) parts.push("allows " + engineData.planSummary);
-                    else if (engineData && engineData.sanMoves && engineData.sanMoves.length) {
-                        parts.push("opponent can go " + cleanSanList(engineData.sanMoves).slice(0, 3).join(", "));
-                    }
-                } else if (s.code === "!!" || s.code === "!" || s.code === "!?" || s.code === "N") {
-                    parts.push(s.meaning);
-                    if (engineData && engineData.planSummary) parts.push(engineData.planSummary);
-                } else if (s.code === "?!") {
-                    parts.push(s.meaning);
-                    if (engineData && engineData.planSummary) parts.push(engineData.planSummary);
+                if (s.code === "?" || s.code === "??") {
+                    parts.push(`${s.meaning}`);
+                    if (replyIdea) parts.push(`allows ${replyIdea}`);
+                } else if (s.code === "!" || s.code === "!!" || s.code === "!?" || s.code === "N") {
+                    parts.push(`${s.meaning}`);
+                    if (moverIdea) parts.push(moverIdea);
+                    else if (replyIdea) parts.push(replyIdea);
                 } else {
                     parts.push(s.meaning);
-                    if (engineData && engineData.planSummary) parts.push(engineData.planSummary);
+                    if (moverIdea) parts.push(moverIdea);
                 }
+            } else if (moverIdea && (isCritical || isVariationStart)) {
+                parts.push(moverIdea);
             }
 
+            // Variation end: next plan for the side to move AFTER the last move
             if (isVariationEnd) {
-                if (engineData && engineData.planSummary) {
-                    parts.push("Next: " + engineData.planSummary);
-                } else if (engineData && engineData.sanMoves && engineData.sanMoves.length) {
-                    parts.push(sideToMoveAfter + " will continue with " + cleanSanList(engineData.sanMoves).slice(0, 3).join(", "));
-                } else if (posNotes) {
-                    if (/isolated pawn/.test(posNotes)) parts.push("pressure on the isolated pawn is the long-term plan");
-                    else if (/bishop pair/.test(posNotes)) parts.push("the bishop pair gives lasting practical chances");
-                    else if (/uncastled/.test(posNotes)) parts.push("the uncastled king remains a target");
-                    else parts.push(sideToMoveAfter + " continues improving the pieces");
-                } else {
-                    parts.push(sideToMoveAfter + " continues with the natural developing plan");
+                if (replyIdea) parts.push(`Next: ${replyIdea}`);
+                else if (moverIdea) parts.push(`Next: ${moverIdea}`);
+                else {
+                    // structure-only, colour-safe
+                    if (sideToMoveAfter === "White" && /Black isolated pawn/.test(pn)) {
+                        parts.push("White will keep pressing the isolated pawn");
+                    } else if (sideToMoveAfter === "Black" && /White isolated pawn/.test(pn)) {
+                        parts.push("Black will keep pressing the isolated pawn");
+                    } else if (sideToMoveAfter === "White" && /White has the bishop pair/.test(pn)) {
+                        parts.push("White will use the bishop pair");
+                    } else if (sideToMoveAfter === "Black" && /Black has the bishop pair/.test(pn)) {
+                        parts.push("Black will use the bishop pair");
+                    } else {
+                        parts.push(`${sideToMoveAfter} continues improving the pieces`);
+                    }
                 }
             }
 
-            if (isVariationStart && !isVariationEnd && !signs.length) {
-                if (engineData && engineData.planSummary) parts.push(engineData.planSummary);
-                else parts.push("alternative way to handle the position");
+            // Never claim bishop pair for the wrong side
+            let text = parts.join(". ").replace(/\.\./g, ".").trim();
+            if (sideToMoveAfter === "White" || sideJustPlayed === "White") {
+                // strip false "Black has the bishop pair" claims if pos doesn't support
             }
-
-            if (isCritical && !signs.length && !isVariationEnd && engineData && engineData.planSummary) {
-                parts.push(engineData.planSummary);
+            if (!/Black has the bishop pair/.test(pn)) {
+                text = text.replace(/Black[^.]*bishop pair[^.]*\.?/gi, "").trim();
             }
-
-            if (engineData && engineData.swingNote && !isVariationEnd) {
-                parts.push(engineData.swingNote);
+            if (!/White has the bishop pair/.test(pn)) {
+                text = text.replace(/White[^.]*bishop pair[^.]*\.?/gi, "").trim();
             }
-
-            const unique = [];
-            parts.forEach(p => {
-                const t = (p || "").trim();
-                if (t && !unique.some(u => u.includes(t) || t.includes(u))) unique.push(t);
-            });
-            return unique.join(". ").replace(/\.\./g, ".").trim();
+            return text.replace(/\s{2,}/g, " ").replace(/^\.|\.$/g, m => m === "." ? "" : m).trim();
         }
 
         async function getEngineRefutation(fen, retries = 2, options = {}) {
@@ -1126,71 +1155,99 @@
 
                 const isCritical = /[?!$]/.test(c.target);
                 const needsEngine = fenOk && (c.isVariationEnd || isCritical || c.isVariationStart);
-                let engineData = null;
+                let engineAfter = null;
+                let engineBefore = null;
+
+                // Moves already in the PGN after this one (same variation depth) — do NOT recommend these as "plans"
+                const alreadyInPgn = [];
+                for (let j = i + 1; j <= endIdx && j < i + 6; j++) {
+                    const n = globalChunks[j];
+                    if (!n) break;
+                    if (n.variationLevel < c.variationLevel) break;
+                    if (n.variationLevel === c.variationLevel) {
+                        alreadyInPgn.push((n.target || "").replace(/[?!$0-9\s]+$/g, "").trim());
+                    }
+                }
+                if (alreadyInPgn.length) {
+                    lineOutput += `\n   -> [ALREADY IN PGN — DO NOT REPEAT AS PLAN]: ${alreadyInPgn.join(", ")}`;
+                }
                 
                 if (needsEngine) {
                     btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(150);
+                    await delay(120);
 
-                    const depth = c.isVariationEnd ? 20 : (isCritical ? 18 : 16);
-                    const wantBefore = c.isVariationEnd || isCritical;
-                    engineData = await getEngineRefutation(c.fenAfter, 2, {
-                        depth: depth,
-                        fenBefore: wantBefore ? c.fen : null
-                    });
+                    const depth = c.isVariationEnd ? 18 : (isCritical ? 16 : 14);
 
-                    if (engineData && !engineData.invalid && engineData.eval != null) {
-                        // Rebuild plan summary with position notes
-                        engineData.planSummary = buildPlanSummary(
-                            engineData.sanMoves || (engineData.continuation || "").split(/\s+/),
+                    // AFTER: what the side to move now wants (reply ideas)
+                    engineAfter = await getEngineRefutation(c.fenAfter, 2, { depth: depth });
+                    if (engineAfter && !engineAfter.invalid && engineAfter.eval != null) {
+                        engineAfter.planSummary = buildPlanSummary(
+                            engineAfter.sanMoves || (engineAfter.continuation || "").split(/\s+/),
                             sideToMoveAfter,
-                            engineData.eval,
+                            engineAfter.eval,
                             posDesc
                         );
-                        const bestLine = (engineData.continuation || engineData.san || "").trim();
-                        if (engineData.planSummary) {
-                            lineOutput += `\n   -> [PLAN SUMMARY]: ${engineData.planSummary}`;
+                        // Strip ideas that are already the next PGN moves
+                        if (engineAfter.sanMoves && alreadyInPgn.length) {
+                            const filtered = cleanSanList(engineAfter.sanMoves).filter(m => {
+                                const base = m.replace(/[+#]/g, "");
+                                return !alreadyInPgn.some(a => a.replace(/[+#]/g, "") === base);
+                            });
+                            if (filtered.length) {
+                                engineAfter.planSummary = buildPlanSummary(filtered, sideToMoveAfter, engineAfter.eval, posDesc);
+                            }
                         }
-                        if (engineData.altContinuation) {
-                            lineOutput += `\n   -> [ALT IDEA]: ${engineData.altContinuation}`;
-                        }
-                        lineOutput += `\n   -> [BEST CONTINUATION SAN]: ${bestLine || "(none)"}`;
-                        lineOutput += `\n   -> [ENGINE EVAL]: ${engineData.eval}` + (engineData.evalBefore != null ? ` (before: ${engineData.evalBefore})` : "");
-                        if (engineData.swingNote) {
-                            lineOutput += `\n   -> [WHY THIS MOVE]: ${engineData.swingNote}`;
-                        }
-                        statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"} (${engineData.source || "?"})`;
-                    } else {
-                        lineOutput += `\n   -> [ENGINE]: No usable data for this position.`;
-                        engineData = null;
+                        lineOutput += `\n   -> [AFTER MOVE — ${sideToMoveAfter} TO PLAY]`;
+                        lineOutput += `\n   -> [PLAN FOR ${sideToMoveAfter}]: ${engineAfter.planSummary || engineAfter.continuation || ""}`;
+                        lineOutput += `\n   -> [EVAL]: ${engineAfter.eval}`;
                     }
+
+                    // BEFORE: idea of the move that was just played (threat / purpose)
+                    if (c.fen && isValidFen(c.fen)) {
+                        engineBefore = await getEngineRefutation(c.fen, 1, { depth: Math.min(depth, 15) });
+                        if (engineBefore && !engineBefore.invalid && engineBefore.eval != null) {
+                            engineBefore.planSummary = buildPlanSummary(
+                                engineBefore.sanMoves || (engineBefore.continuation || "").split(/\s+/),
+                                sideJustPlayed,
+                                engineBefore.eval,
+                                describePositionFromFen(c.fen)
+                            );
+                            lineOutput += `\n   -> [BEFORE MOVE — ${sideJustPlayed} WAS TO PLAY]`;
+                            lineOutput += `\n   -> [IDEA OF ${sideJustPlayed}'S MOVE]: ${engineBefore.planSummary || engineBefore.continuation || ""}`;
+                        }
+                    }
+
+                    statsText.innerText = `[${c.moveNum}.${c.target}] ${engineAfter && engineAfter.san ? engineAfter.san : "ok"}`;
                 }
 
-                // Always build a draft for ends / signs / critical — this is the plan feed
                 if (c.isVariationEnd || isCritical || c.isVariationStart) {
+                    const playedSan = (c.target || "").replace(/[?!$0-9\s]+$/g, "").trim();
                     const draft = buildDraftComment({
+                        sideJustPlayed,
                         sideToMoveAfter,
                         target: c.target,
                         isVariationEnd: c.isVariationEnd,
                         isVariationStart: c.isVariationStart,
                         isCritical,
-                        engineData,
-                        posNotes: posDesc
+                        engineAfter,
+                        engineBefore,
+                        posNotes: posDesc,
+                        playedSan
                     });
                     if (draft) {
                         lineOutput += `\n   -> [DRAFT COMMENT]: ${draft}`;
-                        lineOutput += `\n   -> [YOUR JOB]: Rewrite DRAFT COMMENT into one short repertoire sentence in the sample voice. Keep the plan moves. Do not invent pieces.`;
+                        lineOutput += `\n   -> [YOUR JOB]: Rewrite into ONE short repertoire sentence. Colour must match DRAFT. Do not claim bishop pair unless POSITION FEATURES says so. Do not name moves listed in ALREADY IN PGN.`;
                     }
                     if (c.isVariationEnd) {
-                        lineOutput += `\n   -> [VARIATION END — REQUIRED]: Must output a comment for this ID. Next plan required.`;
+                        lineOutput += `\n   -> [VARIATION END — REQUIRED]: Must comment. Give the next plan for ${sideToMoveAfter}.`;
                     }
                     if (isCritical) {
-                        lineOutput += `\n   -> [SIGN / CRITICAL]: Explain the idea behind the symbol using the draft plan.`;
+                        lineOutput += `\n   -> [SIGN]: Explain the GM sign using the idea above. Correct colour only.`;
                     }
                 }
 
                 if (!needsEngine) {
-                    await delay(15);
+                    await delay(12);
                 }
                 
                 batchData.push(lineOutput);
@@ -1205,10 +1262,12 @@ STARTING FEN: ${startingFen}
 
 === YOUR TASK ===
 For each chunk that has a [DRAFT COMMENT], rewrite that draft into ONE short repertoire sentence (max two).
-- Keep the plan moves named in the draft (b6, Bb7, Rac8, Ne6, c5, etc.).
-- Speak the mind behind any GM sign (?, !, $…) — the sign is already the judgment; explain the idea.
-- On [VARIATION END — REQUIRED] you MUST output a comment with the next plan.
-- Trust [POSITION FEATURES] for what pieces are on which squares. Never invent material.
+- Keep plan moves from the draft (b6, Bb7, Rac8, Ne6, c5, d4-outpost, etc.).
+- COLOUR: if draft says White's idea, the comment is about White — never swap colours.
+- Speak the mind behind GM signs (?, !, $…).
+- On [VARIATION END — REQUIRED] you MUST comment with the next plan for the side named there.
+- Trust POSITION FEATURES. Never invent a bishop pair, knight, or pawn that is not listed.
+- Never recommend moves listed under [ALREADY IN PGN — DO NOT REPEAT AS PLAN].
 - Omit chunks with no draft and no required flag.
 
 Sample voice to match:
