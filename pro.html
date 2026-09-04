@@ -29,6 +29,15 @@
         .mode-red-on { background: #7f1d1d !important; color: #fecaca !important; border-color: #ef4444 !important; }
         #board [data-square].mark-green { box-shadow: inset 0 0 0 3px #10b981 !important; }
         #board [data-square].mark-red { box-shadow: inset 0 0 0 3px #ef4444 !important; }
+        .pgn-linear .mv { display: inline; cursor: pointer; padding: 1px 3px; border-radius: 3px; }
+        .pgn-linear .mv:hover { background: rgba(255,255,255,0.08); }
+        .pgn-linear .mv.on { background: rgba(56,189,248,0.35); color: #e0f2fe; font-weight: 700; }
+        .pgn-linear .mv.signed { color: #fda4af; }
+        .pgn-linear .mv.marked { outline: 1px solid #d4af37; }
+        .pgn-linear .mv.varstart { color: #c4b5fd; }
+        .pgn-linear .paren { color: #64748b; }
+        .pgn-linear .trnote { color: #f9a8d4; font-style: italic; font-size: 0.85em; }
+        .pgn-linear .varline { display: block; margin-left: 0.75rem; margin-top: 0.15rem; margin-bottom: 0.15rem; border-left: 2px solid #334155; padding-left: 0.5rem; }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -98,14 +107,8 @@
             </div>
 
             <div class="lg:w-3/5 glass p-4 rounded-xl">
-                <div class="mb-3 text-[11px] text-slate-400 flex flex-wrap gap-3">
-                    <span class="text-sky-400">sky = viewing</span>
-                    <span class="text-yellow-400">gold = marked</span>
-                    <span class="text-rose-400">! ? $ = GM sign</span>
-                    <span class="text-violet-400">( = variation start</span>
-                    <span class="text-slate-300">end = variation closes</span>
-                </div>
-                <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-[620px] overflow-y-auto pr-2"></div>
+                <div class="mb-2 text-[11px] text-slate-500">Linear PGN — signs in rose, variations indented. No auto-scroll.</div>
+                <div id="chunks-container" class="pgn-linear text-[13px] leading-7 max-h-[520px] overflow-y-auto pr-2 font-mono text-slate-200"></div>
             </div>
         </div>
     </div>
@@ -442,32 +445,38 @@ function updatePgnStrip(){
 }
 
 function updateUI(){
-  const box=document.getElementById('chunks-container'); box.innerHTML='';
+  const box=document.getElementById('chunks-container');
+  if(!box) return;
+  // Build linear PGN like Analyze This: main line continuous, variations on nested lines
+  let html='';
+  let openLevels=0;
   globalChunks.forEach((c,i)=>{
-    let cls='chunk-card glass p-3 rounded-lg';
-    if(i===currentIndex) cls+=' viewing';
+    // open variation paren
+    if(c.isVariationStart){
+      html+=`<span class="paren">(</span>`;
+      openLevels=c.variationLevel;
+    }
+    let cls='mv';
+    if(i===currentIndex) cls+=' on';
+    if(hasGmSign(c.target)) cls+=' signed';
     if(markedIds.has(c.id)) cls+=' marked';
-    if(engineById[c.id]&&engineById[c.id].line) cls+=' has-engine';
-    const div=document.createElement('div');
-    div.className=cls; div.onclick=()=>goToMove(i);
-    div.id='chunk-card-'+i;
-    const flags=[];
-    if(c.isVariationStart) flags.push('<span class="text-violet-400">var start</span>');
-    if(c.isVariationEnd) flags.push('<span class="text-slate-300">end</span>');
-    if(c.transposesTo) flags.push('<span class="text-amber-400">tr</span>');
-    if(hasGmSign(c.target)) flags.push('<span class="text-rose-400">sign</span>');
-    const indent = c.variationLevel ? ('│ '.repeat(Math.min(c.variationLevel,3))) : '';
-    const moveColor = hasGmSign(c.target) ? 'text-rose-300' : (c.isVariationStart ? 'text-violet-200' : 'text-white');
-    div.innerHTML=`<p class="text-[9px] gold-text font-bold mb-1">${c.id}</p>
-      <p class="text-xs font-semibold truncate ${moveColor}">${indent}${c.moveNum}. ${c.target}</p>
-      ${flags.length?`<p class="text-[9px] mt-1">${flags.join(' · ')}</p>`:''}`;
-    box.appendChild(div);
+    if(c.isVariationStart) cls+=' varstart';
+    // number only on white moves or start of variation
+    const showNum = c.isVariationStart || (c.fen||'').split(/\s+/)[1]==='w' || i===0;
+    // detect side from fen before move
+    const beforeTurn=(c.fen||'').split(/\s+/)[1];
+    const isWhiteMove=beforeTurn==='w';
+    let label='';
+    if(isWhiteMove) label=c.moveNum+'. '+c.target;
+    else label=(c.isVariationStart?(c.moveNum+'... '):'')+c.target;
+    html+=`<span class="${cls}" data-i="${i}" onclick="goToMove(${i})">${label}</span> `;
+    if(c.transposesTo) html+=`<span class="trnote">transposition</span> `;
+    if(c.isVariationEnd){
+      html+=`<span class="paren">)</span> `;
+    }
   });
-  // scroll current into view
-  if(currentIndex!=null){
-    const el=document.getElementById('chunk-card-'+currentIndex);
-    if(el) el.scrollIntoView({block:'nearest', behavior:'smooth'});
-  }
+  box.innerHTML=html;
+  // NO auto-scroll — user stays on the board and uses Next/Prev
   updatePgnStrip();
   document.getElementById('stats').innerText=globalChunks.length+' moves · '+markedIds.size+' marked · '+Object.keys(engineById).filter(k=>engineById[k].line).length+' engine';
 }
