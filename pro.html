@@ -752,42 +752,45 @@ FEN OK: ${fenOk}`;
                     if (engineData && !engineData.invalid && engineData.eval != null) {
                         const bestLine = `${engineData.san || ""} ${engineData.continuation || ""}`.trim();
                         lineOutput += `\nENGINE EVAL: ${engineData.eval}`;
-                        lineOutput += `\nBEST CONTINUATION (use these moves in your comment): ${bestLine || "(none)"}`;
+                        lineOutput += `\nBEST CONTINUATION (name 1–3 of these moves in your comment): ${bestLine || "(none)"}`;
                         if (engineData.planHint) {
                             lineOutput += `\nENGINE HINT: ${engineData.planHint}`;
                         }
                         if (engineData.source) {
                             lineOutput += `\nENGINE SOURCE: ${engineData.source}`;
                         }
-                        lineOutput += `\nINSTRUCTION: Read the FEN carefully. Name 1–3 concrete follow-up moves from BEST CONTINUATION in your comment (e.g. "White continues with Be3 and Rc1", "the idea is ...f5 and ...Qh4"). Do NOT be vague ("continue development"). Only avoid naming a move that is already the very next move printed in this PGN line.`;
+                        lineOutput += `\nINSTRUCTION: Write in PRESENT TENSE. Name 1–3 concrete moves from BEST CONTINUATION (e.g. "White continues with Be3 and Rc1"). If one side is better, say WHY (bishop pair, control of d5, activity, structure…). Do not be vague. Do not name the move that is already the next move in this PGN line.`;
 
                         const evalNum = parseFloat(engineData.eval);
                         const isMate = /mate|#/i.test(String(engineData.eval)) || /#/.test(bestLine);
                         const bigSwing = !isNaN(evalNum) && Math.abs(evalNum) >= 0.9;
 
                         if (isMate || bigSwing || isCritical) {
-                            lineOutput += `\n[TACTICAL / CRITICAL]: Concrete idea. Explain with exact moves from the continuation.`;
+                            lineOutput += `\n[TACTICAL / CRITICAL]: Explain the idea with concrete moves. If one side is better, give the positional reason.`;
                         }
                         if (/[\+\-=]|\$\d+/.test(c.target)) {
-                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: Justify the assessment with concrete moves from BEST CONTINUATION + the FEN.`;
+                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: Justify the assessment in present tense with a reason (bishop pair, square control, activity, structure, king safety…) and concrete follow-ups from BEST CONTINUATION.`;
                         }
 
                         if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: Explain the line and how the stronger side continues, naming concrete moves from BEST CONTINUATION (e.g. Be3, Rc1, f4-f5). 1–3 short sentences. Correct colour only.`;
+                            lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain the line and how the stronger side continues, naming concrete moves. If unequal, say WHY. 1–3 short sentences.`;
                         }
                         statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"}${engineData.source ? " (" + engineData.source + ")" : ""}`;
                     } else {
                         lineOutput += `\nENGINE: No usable data for this position.`;
                         if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: Last move of the branch. Explain the intention of the line from the FEN and POSITION FEATURES alone. Correct colour only.`;
+                            lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain the intention from FEN and POSITION FEATURES. If one side is better, say WHY (bishop pair, squares, activity…).`;
+                        }
+                        if (/[\+\-=]|\$\d+/.test(c.target)) {
+                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: Justify the assessment with a positional reason.`;
                         }
                     }
                 } else {
                     if (c.isVariationEnd) {
-                        lineOutput += `\n[VARIATION END — REQUIRED]: Last move of the branch. Explain the intention of the line from the FEN and POSITION FEATURES. Correct colour only. Do not name moves already in the PGN.`;
+                        lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain the intention from FEN. If unequal, say WHY (bishop pair, control of squares, activity, structure…).`;
                     }
                     if (c.isVariationStart && !c.isVariationEnd) {
-                        lineOutput += `\n[VARIATION START]: First move of a new branch. Short note on the intention only if it is not obvious from the moves that follow.`;
+                        lineOutput += `\n[VARIATION START]: Short present-tense note on the intention only if not obvious.`;
                     }
                     await delay(15);
                 }
@@ -798,70 +801,95 @@ FEN OK: ${fenOk}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are the author — a strong grandmaster writing practical opening notes for your repertoire book. English is natural but not perfect (about 65–70% British spelling). Calm, practical coaching voice. The reader must believe these are YOUR notes.
+            const fullPrompt = `You are the repertoire author (Annotator: sheva). You write practical opening notes in PRESENT TENSE, calm coaching English (about 65–70% British spelling). The reader must believe these are your original notes.
 
-Your job: explain the INTENTION of the move just played, grounded in the FEN. When engine data is present, use the exact follow-up moves from BEST CONTINUATION in your comment.
+Your job: explain WHY the move was played and, when the position is unequal or critical, WHY one side is better — always with a concrete positional reason (bishop pair, control of a square, piece activity, pawn structure, king safety, open file, weak pawn, etc.).
 
 STARTING FEN OF THE BATCH: ${startingFen}
 
-=== HOW TO THINK (MANDATORY) ===
-1. Read MOVE PLAYED and FEN AFTER THE MOVE carefully. Visualise the board from the FEN.
-2. Look at POSITION FEATURES (king safety, open lines, pawn structure, piece placement).
-3. If BEST CONTINUATION is present, pick 1–3 useful moves from it and name them in the comment.
-4. Ask: what was the intention? What concrete plan does this move support?
-5. Write a short, exact coaching comment — not vague filler.
+=== TENSE (STRICT) ===
+- Always PRESENT tense: "we develop", "White wants", "the idea is", "we strike with ...c5".
+- NEVER past tense for plans: forbidden "we developed", "White continued", "we managed to", "reached an equal position" as the main voice for ongoing plans.
+- OK at the end of a finished line: "The position is equal." / "We’re slightly better."
+
+=== HOW TO THINK ===
+1. Read MOVE PLAYED and FEN AFTER THE MOVE. Visualise the board.
+2. Read POSITION FEATURES and any GM marks / eval symbols.
+3. If BEST CONTINUATION exists, name 1–3 concrete moves from it (Be3, Rc1, ...Nd7, f4-f5…).
+4. If the side is better or worse, say WHY: bishop pair, control of d5, more active pieces, safer king, better structure, pressure on c6, etc.
+5. Write 1–3 short present-tense sentences.
+
+=== WHY BETTER / EQUAL (REQUIRED WHEN RELEVANT) ===
+Always give a reason. Copy this style:
+
+"White is better thanks to the bishop pair and good piece activity."
+"We’re slightly better. Our pieces are beautifully placed and nothing is stopping the ...c5 break."
+"The position is equal, but from a practical point of view it may be slightly more pleasant to play for Black because of the bishop pair."
+"White has an isolated pawn, but the bishop pair provides sufficient compensation. The position is equal."
+"Our structure is solid and our pieces are well placed. The position is equal."
+"White is better thanks to the control of the d5-square and the more active pieces."
+
+Never say only "White is better" or "equal" with no reason.
+
+=== STYLE — MATCH THESE EXACT SAMPLES ===
+"One of the key ideas in these structures is to achieve the ...c5 break, not allowing White to build a strong centre and at the same time activating our pieces. Nd7 is played specifically to reinforce the c5-square and to prepare ...c5 as quickly as possible."
+
+"White immediately takes the initiative in the centre."
+
+"So, of course, we develop our bishop, aiming to exchange White’s active pieces."
+
+"We recapture with the queen, since e7 is not the most favourable square for our knight."
+
+"An aggressive continuation. White wants to launch an immediate attack on the kingside."
+
+"We also need to play actively. Otherwise, our pieces may get stuck in our own camp."
+
+"A strong prophylactic move. We prevent White from gaining space and developing the initiative."
+
+"Of course, we strike with ...c5, there’s no other way. We simply can’t afford to play passively."
+
+"White develops the bishop to an active diagonal, hoping to push d5 or make use of the pressure along this diagonal."
+
+"We chase the knight away, just to be safe."
+
+"Our pieces are beautifully placed and nothing is stopping the ...c5 break. We’re slightly better."
+
+"White hasn’t posed us any real problems in the opening. The position is equal and pleasant to play."
+
+"White continues with Be3 and Rc1, putting pressure on the c-file."
+
+"The idea is f4-f5 next, opening lines against the black king."
 
 === BE EXACT — NOT VAGUE ===
-BAD (forbidden):
-- "White will continue with development."
-- "Black improves the position."
-- "White keeps the initiative."
-- "The pieces come to good squares."
+FORBIDDEN:
+- "continue with development" (without naming moves)
+- "improves the position"
+- "keeps the initiative"
+- bare "White is better" / "Black is better" with no reason
 
-GOOD (required style when engine line exists):
-- "White continues with Be3 and Rc1, completing development with pressure on the c-file."
-- "The idea is f4-f5 next, opening lines against the black king."
-- "Black wants ...Nd7 and ...c5, challenging the centre at once."
-- "White takes the central knight and follows with Qd2 and 0-0-0."
-- "A strong plan is Rc1, then c4-c5, fixing the queenside weaknesses."
-
-Name real moves from BEST CONTINUATION. Prefer piece moves and pawn breaks you can see on the FEN.
-
-=== STYLE (MATCH THIS VOICE) ===
-"One of the key ideas in these structures is to achieve the ...c5 break. Nd7 reinforces c5 and prepares ...c5 as quickly as possible."
-
-"White takes the strong central knight, opening lines. The natural follow-up is Be3 and Qd2."
-
-"White is clearly better here — the plan is f4-f5 and bringing the queen toward the kingside."
-
-"So we develop the bishop to e7, then castle and play ...b6 and ...Bb7."
-
-"Black must play actively with ...c5; otherwise the pieces stay passive."
-
-Tone: calm, practical, slightly conversational. Prefer "we" for the repertoire side. Prefer "the idea is…", "we want to…", "this prepares…", "White continues with…".
+REQUIRED when engine line exists:
+- Name 1–3 moves from BEST CONTINUATION: "White continues with Be3 and Qd2", "we play ...Nd7 and ...c5", "the plan is f5 and Qh5".
 
 === HARD RULES ===
-1. Comments go ONLY after the move.
+1. Comments ONLY after the move.
 2. Most moves get NO comment. Stay sparse.
-3. MUST comment every [VARIATION END — REQUIRED], [TACTICAL / CRITICAL], [EVAL SYMBOL — REQUIRED], and moves with ?, ??, !!, !?, $2, $4 or assessment symbols (+- -+ +/= etc.).
-4. When BEST CONTINUATION is given, you MUST name 1–3 concrete moves from it (Be3, Rc1, f5, ...Nd7, etc.). Vague "development" / "improve" / "pressure" without a move is forbidden.
-5. Never begin by repeating the move just played ("After 5.c4…" is forbidden).
+3. MUST comment every [VARIATION END — REQUIRED], [TACTICAL / CRITICAL], [EVAL SYMBOL — REQUIRED], and moves with ?, ??, !!, !?, $2, $4 or +- / -+ / +/=.
+4. When an assessment symbol or engine shows a clear edge, explain WHY (bishop pair, square control, activity, structure, king safety…).
+5. Never begin by repeating the move ("After 5.c4…" forbidden).
 6. Never mention engine, Stockfish, database, eval numbers, depth, or "I calculated".
-7. Banned: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, "keeps the initiative", "continue with development", "improves the position" (without naming how).
+7. Banned filler words: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless.
 8. Spelling: centre, d4-square, pair of bishops, favour, analyse, defence, colour.
-9. LENGTH: 1–2 clear sentences preferred; max three when justifying an evaluation or key plan.
+9. LENGTH: 1–2 sentences preferred; max three for a key idea or evaluation reason.
 
 === DO NOT SPOIL THE PGN LINE ===
-- Do NOT name the move that is already the very next move printed in this same PGN variation.
-- You MAY and SHOULD name other moves from BEST CONTINUATION as the plan (Be3, Rc1, f4-f5, ...c5, etc.).
-- Bad: "White will play Bxf7+" when 14.Bxf7+ is the next move in the PGN.
-- Good: "White follows with Be3 and 0-0-0" when those are engine ideas and not the immediate next PGN move.
+- Do NOT name the move that is already the very next move in this PGN variation.
+- You MAY name other moves from BEST CONTINUATION as the plan.
 
-=== COLOUR & FEN (ZERO MISTAKES) ===
-- Trust the FEN only when FEN OK is true.
-- Attribute plans only to the correct side (PLAYED BY / SIDE TO MOVE AFTER).
-- Use "we" only for the repertoire side.
-- Zero colour mistakes. Zero piece-identity mistakes (knight ≠ pawn).
+=== COLOUR & FEN ===
+- Trust FEN when FEN OK is true.
+- Correct side only (PLAYED BY / SIDE TO MOVE AFTER).
+- "we" / "our" = repertoire side (usually Black in this book).
+- Zero colour mistakes. Zero piece mistakes (knight ≠ pawn).
 
 === OUTPUT ===
 Return ONLY a pure JSON object.
