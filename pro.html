@@ -779,32 +779,62 @@ FEN OK: ${fenOk}`;
                         if (engineData.planHint) {
                             lineOutput += `\nENGINE HINT: ${engineData.planHint}`;
                         }
-                        lineOutput += `\nINSTRUCTION: PRESENT TENSE. Name ONLY colour-correct moves from WHITE MOVES FROM PV or BLACK MOVES FROM PV. Never mix colours. Never write +-, ±, +/=, or any eval symbol in the comment. Never repeat the next PGN move (e.g. do not say "we capture with Nxd4" if 4.Nxd4 is already the next book move). Never dump a sequence of upcoming moves. Prefer structure/plan reasons. If one side is better, say WHY (bishop pair, doubled pawns, square control, activity…).`;
-
-                        const evalNum = parseFloat(engineData.eval);
-                        const isMate = /mate|#/i.test(String(engineData.eval)) || /#/.test(bestLine);
-                        const bigSwing = !isNaN(evalNum) && Math.abs(evalNum) >= 0.9;
-
-                        if (isMate || bigSwing || isCritical) {
-                            lineOutput += `\n[TACTICAL / CRITICAL]: Concrete idea. Correct colour for every named move. Give positional reason if unequal.`;
+                        // GM evaluation symbols decide who is better — NOT the engine number
+                        const gmSym = `${c.target || ""} ${(c.gmNotes && c.gmNotes.evalMarks) ? c.gmNotes.evalMarks.join(" ") : ""}`;
+                        let favouredSide = null; // from GM marks only
+                        // White better: +-, ±, +/=, +/- , $16, $18, $14...
+                        if (/\+\/\-|\+\-|±|\+\/\=|\$16|\$18|\$14|\$20/.test(gmSym)) {
+                            favouredSide = "White";
                         }
-                        if (/[\+\-=]|\$\d+/.test(c.target)) {
-                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: Justify assessment with reason (bishop pair, squares, activity, structure…) + colour-correct follow-ups.`;
+                        // Black better: -+, ∓, =/+, -/+ , $17, $19, $15...
+                        else if (/\-\/\+|\-\+|∓|\=\/\+|\$17|\$19|\$15|\$21/.test(gmSym)) {
+                            favouredSide = "Black";
+                        }
+                        // Equal / unclear: = , $10, $11, $13
+                        else if (/\$10|\$11|\$13|=\/=|=\/\u221e/.test(gmSym) || /(^|[^+\-\/])=(?=[^+\-\/]|$)/.test(gmSym)) {
+                            favouredSide = null;
+                        }
+                        // ? / ?? → side that just played is worse → opponent better
+                        if (favouredSide == null && /\?\?|\?/.test(c.target || "")) {
+                            favouredSide = sideJustPlayed === "White" ? "Black" : "White";
+                        }
+                        // ! / !! → side that just played is fine; use their plan if no other mark
+                        if (favouredSide == null && /!/.test(c.target || "")) {
+                            favouredSide = sideJustPlayed;
+                        }
+
+                        const planSide = favouredSide || sideJustPlayed;
+                        const planMoves = planSide === "Black" ? blackMoves.slice(0, 4) : whiteMoves.slice(0, 4);
+                        const gmAssessment = favouredSide
+                            ? `${favouredSide} is better (GM mark)`
+                            : (/\=|\$1[013]/.test(gmSym) ? "equal (GM mark)" : "follow GM marks / structure");
+
+                        lineOutput += `\nGM ASSESSMENT: ${gmAssessment}`;
+                        lineOutput += `\nPLAN SIDE (from GM marks, not engine): ${planSide}`;
+                        lineOutput += `\nFILTERED PLAN MOVES (for ${planSide} only — weave into natural sentences): ${planMoves.length ? planMoves.join(", ") : "(use FEN ideas)"}`;
+                        lineOutput += `\nINSTRUCTION: PRESENT TENSE. Trust GM ASSESSMENT over any engine number. Never write +-, ±, +/=. Never repeat the next PGN move. Never dump a raw list like "c4, c5, Nc3".`;
+                        lineOutput += `\nREQUIRED: If GM says a side is better OR this is a variation end, you MUST (1) say WHY (bishop pair, structure, squares, activity) AND (2) say WHAT ${planSide} plays — natural plan using FILTERED PLAN MOVES. Example: "White is better thanks to the bishop pair and will press with the c4-c5 push or Nc3 ideas."`;
+
+                        if (isCritical || favouredSide) {
+                            lineOutput += `\n[TACTICAL / CRITICAL]: WHY + WHAT ${planSide} plays next (filtered moves, natural wording). Follow GM assessment.`;
+                        }
+                        if (/[\+\-=]|\$\d+/.test(c.target) || favouredSide) {
+                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: Follow GM mark. (1) WHY ${planSide} is better (or why equal). (2) WHAT ${planSide} continues with — weave FILTERED PLAN MOVES into a sentence, not a bare list.`;
                         }
 
                         if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain the line with colour-correct moves from the PV lists. If unequal, say WHY. 1–3 sentences.`;
+                            lineOutput += `\n[VARIATION END — REQUIRED]: Follow GM assessment (not engine eval). MUST include both WHY and WHAT for ${planSide}. Example: "White is better due to the bishop pair and will continue with c4-c5 or Nc3 ideas." 1–3 sentences. No eval symbols. No raw move dump.`;
                         }
                         statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"}`;
                     } else {
                         lineOutput += `\nENGINE: No usable data for this position.`;
                         if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain from FEN. If unequal, say WHY (bishop pair, squares, activity…).`;
+                            lineOutput += `\n[VARIATION END — REQUIRED]: WHY (structure/activity) + WHAT can be played next from the FEN (concrete ideas).`;
                         }
                     }
                 } else {
                     if (c.isVariationEnd) {
-                        lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain from FEN. If unequal, say WHY. Correct colour only.`;
+                        lineOutput += `\n[VARIATION END — REQUIRED]: WHY + WHAT can be played next. Correct colour only.`;
                     }
                     if (c.isVariationStart && !c.isVariationEnd) {
                         lineOutput += `\n[VARIATION START]: Short present-tense note only if intention is not obvious.`;
@@ -845,12 +875,22 @@ Not: "we developed", "White continued", "we managed to reach".
 3. If one side is better, say WHY: bishop pair, control of a square, piece activity, pawn structure, king safety, open file, weak pawn.
 4. Write 1–3 short present-tense sentences.
 
-=== WHY BETTER / EQUAL ===
-Always give a reason when you assess:
-"White is better thanks to the bishop pair and good piece activity."
-"We’re slightly better. Our pieces are beautifully placed and nothing is stopping the ...c5 break."
-"The position is equal, but it may be slightly more pleasant for Black because of the bishop pair."
-"White has an isolated pawn, but the bishop pair provides sufficient compensation. The position is equal."
+=== GM ASSESSMENT OVERRIDES ENGINE ===
+Trust GM ASSESSMENT / PLAN SIDE from the batch (symbols like +-, -+, +/=, =, ?, !!). Do NOT use the engine number to decide who is better. The engine PV is only for concrete move ideas for the side the GM favours.
+
+=== WHY + WHAT (MANDATORY ON VARIATION ENDS AND WHEN GM SAYS ONE SIDE IS BETTER) ===
+Always give a reason AND a concrete plan. Use FILTERED PLAN MOVES / the correct colour PV list. Weave moves into natural English — do not list them like an API dump.
+
+GOOD:
+"White is better thanks to the bishop pair and will press with the c4-c5 push or with Nc3 ideas."
+"We’re slightly better. Our pieces are well placed; next we continue with ...Nd7 and the ...c5 break."
+"White is better due to the superior pawn structure and will continue with O-O, Re1, and pressure on the e-file."
+"Black is under pressure; White plans Be3 and Qd2, aiming for queenside castling."
+
+BAD:
+"White is better." (no reason, no plan)
+"White plays c4, c5, Nc3." (raw dump)
+"Continue with development." (vague, no moves)
 
 === STYLE SAMPLES ===
 "One of the key ideas in these structures is to achieve the ...c5 break, not allowing White to build a strong centre and at the same time activating our pieces. Nd7 is played specifically to reinforce the c5-square and to prepare ...c5 as quickly as possible."
@@ -872,12 +912,13 @@ Always give a reason when you assess:
 === HARD RULES ===
 1. Comments only after the move. Most moves get no comment.
 2. MUST comment [VARIATION END], [TACTICAL / CRITICAL], [EVAL SYMBOL], ?, ??, !!, !?, $2, $4.
-3. Never begin by repeating the move just played.
-4. Never mention engine, Stockfish, eval numbers, depth.
-5. NEVER write evaluation symbols in the comment text. Forbidden in comments: +-, -+, +/=, =/+, ±, ∓, +, -, =, =+, +/-, -/=, ∞, $1, $2, $3, $4, $5, $6, $11, $13, $15, $16, $17, $18, $19. The GM already put those on the moves; your text must not repeat them.
-6. Banned filler: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, "keeps the initiative", "continue with development" (without naming moves).
-7. Spelling: centre, d4-square, pair of bishops, favour, analyse, defence, colour.
-8. Length: 1–2 sentences preferred; max three.
+3. On every [VARIATION END] and when one side is better: MUST state WHY + WHAT (natural plan with 1–3 filtered moves for the stronger side).
+4. Never begin by repeating the move just played.
+5. Never mention engine, Stockfish, eval numbers, depth.
+6. NEVER write evaluation symbols in the comment text. Forbidden: +-, -+, +/=, =/+, ±, ∓, +, -, =, =+, +/-, -/=, ∞, $1–$6, $11, $13, $15–$19.
+7. Banned filler: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, "keeps the initiative", "continue with development" (without naming moves).
+8. Spelling: centre, d4-square, pair of bishops, favour, analyse, defence, colour.
+9. Length: 1–2 sentences preferred; max three.
 
 === DO NOT SPOIL / DO NOT DUMP THE LINE ===
 - Do NOT name the move that is already the next move in this PGN variation.
