@@ -398,68 +398,167 @@
             }
         }
 
-        async function getEngineRefutation(fen, retries = 3) {
-            if (!isValidFen(fen)) {
-                return { eval: null, san: "", continuation: "", text: "INVALID FEN", invalid: true };
+        function buildPlanHint(evalVal, cont, firstMove) {
+            let planHint = "";
+            if (!firstMove && !cont) return planHint;
+            const evalNum = parseFloat(evalVal);
+            const isMate = /mate|#/i.test(String(evalVal)) || /#/.test(cont || "");
+            if (isMate) {
+                planHint = "Forced mate sequence exists.";
+            } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) {
+                planHint = "Large advantage — concrete attack or decisive material/positional gain.";
+            } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) {
+                planHint = "Clear plus — lasting pressure or structural advantage.";
+            } else {
+                planHint = "Small edge or equal — positional idea.";
             }
+            // Extract concrete motifs (pawn pushes, pressure squares, piece destinations)
+            const motifs = [];
+            const moves = String(cont || "").split(/\s+/).filter(Boolean);
+            moves.forEach(m => {
+                if (/^[a-h][2-7]$/.test(m) || /^[a-h][2-7]-[a-h][2-7]$/.test(m)) {
+                    motifs.push(`pawn push ${m}`);
+                }
+                const cap = m.match(/x([a-h][1-8])/);
+                if (cap) motifs.push(`pressure on ${cap[1]}`);
+                if (/^[NBRQ]/.test(m)) {
+                    const dest = m.replace(/^[NBRQ]/, "").replace(/x/, "").replace(/=.*/, "").slice(-2);
+                    if (/^[a-h][1-8]$/.test(dest)) motifs.push(`piece heading for ${dest}`);
+                }
+            });
+            if (motifs.length) {
+                planHint += " Concrete ideas from line: " + [...new Set(motifs)].slice(0, 4).join("; ") + ".";
+            }
+            return planHint;
+        }
+
+        // --- Engine sources (tried in order) ---
+        async function tryLichessCloud(fen) {
+            try {
+                const url = `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=1`;
+                const response = await fetch(url, { headers: { Accept: "application/json" } });
+                if (!response.ok) return null;
+                const data = await response.json();
+                if (!data || !data.pvs || !data.pvs.length) return null;
+                const pv = data.pvs[0];
+                const moves = (pv.moves || "").split(/\s+/).filter(Boolean);
+                let evalVal = null;
+                if (pv.mate != null) evalVal = pv.mate > 0 ? `mate ${pv.mate}` : `mate ${pv.mate}`;
+                else if (pv.cp != null) evalVal = (pv.cp / 100).toFixed(2);
+                if (evalVal == null) return null;
+                const cont = moves.slice(0, 7).join(" ");
+                const firstMove = moves[0] || "";
+                return {
+                    eval: evalVal,
+                    san: firstMove,
+                    continuation: cont,
+                    text: "Lichess cloud",
+                    planHint: buildPlanHint(evalVal, cont, firstMove),
+                    invalid: false,
+                    source: "lichess-cloud"
+                };
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function tryChessApi(fen, retries = 2) {
             for (let attempt = 0; attempt <= retries; attempt++) {
                 try {
                     const response = await fetch("https://chess-api.com/v1", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ fen: fen, depth: 18, maxThinkingTime: 90 })
+                        body: JSON.stringify({ fen: fen, depth: 16, maxThinkingTime: 80, variants: 1 })
                     });
-                    
                     if (response.status === 429) {
-                        await delay(1800 * (attempt + 1));
+                        await delay(1600 * (attempt + 1));
                         continue;
                     }
-
                     if (!response.ok) return null;
                     const data = await response.json();
-
                     if (data.error || (data.text && /wrong FEN|Cannot evaluate/i.test(data.text))) {
-                        return { eval: null, san: "", continuation: "", text: data.text || "Engine rejected FEN", invalid: true };
+                        return { eval: null, san: "", continuation: "", text: data.text || "Engine rejected FEN", invalid: true, source: "chess-api" };
                     }
-
                     let cont = "";
                     if (data.continuationArr && data.continuationArr.length) {
                         cont = data.continuationArr.slice(0, 7).join(" ");
                     } else if (data.continuation) {
                         cont = String(data.continuation).split(" ").slice(0, 7).join(" ");
                     }
-
                     const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
-
-                    // Build a short human-readable plan hint from the line
-                    let planHint = "";
-                    if (firstMove) {
-                        const evalNum = parseFloat(data.eval);
-                        const isMate = /mate|#/i.test(String(data.eval)) || /#/.test(cont);
-                        if (isMate) {
-                            planHint = "Forced mate sequence exists.";
-                        } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) {
-                            planHint = "Large advantage — concrete attack or decisive material/positional gain.";
-                        } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) {
-                            planHint = "Clear plus — lasting pressure or structural advantage.";
-                        } else {
-                            planHint = "Small edge or equal — positional idea.";
-                        }
-                    }
-
+                    const evalVal = data.eval != null ? data.eval : (data.mate != null ? `mate ${data.mate}` : null);
+                    if (evalVal == null && !firstMove) return null;
                     return {
-                        eval: data.eval,
+                        eval: evalVal,
                         san: firstMove,
                         continuation: cont,
                         text: data.text || "",
-                        planHint: planHint,
-                        invalid: false
+                        planHint: buildPlanHint(evalVal, cont, firstMove),
+                        invalid: false,
+                        source: "chess-api"
                     };
                 } catch (e) {
                     if (attempt === retries) return null;
-                    await delay(1200);
+                    await delay(1000);
                 }
             }
+            return null;
+        }
+
+        async function tryStockfishOnline(fen) {
+            try {
+                const depth = 13;
+                const url = `https://stockfish.online/api/s/v2.php?fen=${encodeURIComponent(fen)}&depth=${depth}`;
+                const response = await fetch(url);
+                if (!response.ok) return null;
+                const data = await response.json();
+                if (!data || data.success === false) return null;
+                let evalVal = data.evaluation;
+                if (data.mate != null && data.mate !== 0) evalVal = `mate ${data.mate}`;
+                let cont = "";
+                if (data.continuation) {
+                    cont = String(data.continuation).split(/\s+/).slice(0, 7).join(" ");
+                }
+                let firstMove = "";
+                if (data.bestmove) {
+                    // "bestmove e2e4 ponder e7e5" or similar
+                    const parts = String(data.bestmove).split(/\s+/);
+                    const idx = parts.findIndex(p => p === "bestmove");
+                    firstMove = idx >= 0 && parts[idx + 1] ? parts[idx + 1] : (parts[0] || "");
+                    if (!cont && parts.length > 1) cont = parts.filter(p => p !== "bestmove" && p !== "ponder").slice(0, 7).join(" ");
+                }
+                if (!firstMove && cont) firstMove = cont.split(" ")[0];
+                if (evalVal == null && !firstMove) return null;
+                return {
+                    eval: evalVal,
+                    san: firstMove,
+                    continuation: cont,
+                    text: "stockfish.online",
+                    planHint: buildPlanHint(evalVal, cont, firstMove),
+                    invalid: false,
+                    source: "stockfish-online"
+                };
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function getEngineRefutation(fen) {
+            if (!isValidFen(fen)) {
+                return { eval: null, san: "", continuation: "", text: "INVALID FEN", invalid: true };
+            }
+            // 1) Lichess cloud (instant when position is known)
+            let result = await tryLichessCloud(fen);
+            if (result && !result.invalid && result.eval != null) return result;
+
+            // 2) chess-api.com (strong live Stockfish)
+            result = await tryChessApi(fen);
+            if (result && !result.invalid && (result.eval != null || result.san)) return result;
+
+            // 3) stockfish.online fallback
+            result = await tryStockfishOnline(fen);
+            if (result && !result.invalid && (result.eval != null || result.san)) return result;
+
             return null;
         }
 
@@ -739,7 +838,7 @@ FEN OK: ${fenOk}`;
                 }
 
                 // Engine is reserved for last moves of brackets (variation ends) and critical symbols
-                const isCritical = /[?!$]|\$\d+/.test(c.target);
+                const isCritical = /[?!$]|\$\d+|[\+\-=]/.test(c.target);
                 const needsEngine = fenOk && (c.isVariationEnd || isCritical);
                 
                 if (needsEngine) {
@@ -756,20 +855,24 @@ FEN OK: ${fenOk}`;
                         if (engineData.planHint) {
                             lineOutput += `\nENGINE HINT: ${engineData.planHint}`;
                         }
-                        lineOutput += `\nINSTRUCTION: Read the FEN and POSITION FEATURES first. Then turn the best continuation into a natural human plan or threat. Never list the moves. Never name a concrete next move that already appears later in the PGN.`;
+                        lineOutput += `\nENGINE SOURCE: ${engineData.source || "unknown"}`;
+                        lineOutput += `\nINSTRUCTION: Read the FEN and POSITION FEATURES first. Turn the best continuation into a natural human plan or threat (e.g. "with the f5-f6 push next", "the knight heads for d5", "pressure on the weak c6-pawn"). Never list the raw moves. Never name a concrete next move that already appears later in the PGN.`;
 
                         const evalNum = parseFloat(engineData.eval);
                         const isMate = /mate|#/i.test(String(engineData.eval)) || /#/.test(bestLine);
                         const bigSwing = !isNaN(evalNum) && Math.abs(evalNum) >= 0.9;
 
                         if (isMate || bigSwing || isCritical) {
-                            lineOutput += `\n[TACTICAL / CRITICAL]: There is a concrete idea. Explain the intention or the threat in plain English.`;
+                            lineOutput += `\n[TACTICAL / CRITICAL]: Concrete idea present. Explain the intention or threat in plain English with exact piece names.`;
+                        }
+                        if (/[\+\-=]|\$\d+/.test(c.target)) {
+                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: The GM marked this assessment. Justify it with a concrete plan from the engine idea + FEN (why one side is better / under pressure).`;
                         }
 
                         if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: Last move of this branch. You MUST explain what this line was about or the intention behind the last move / how the stronger side continues. Base it on the FEN + POSITION FEATURES + engine idea. One to three short sentences. Correct colour only.`;
+                            lineOutput += `\n[VARIATION END — REQUIRED]: Last move of this branch. Explain what the line was about and how the stronger side continues. Use FEN + engine idea. 1–3 short sentences. Correct colour only. Exact piece names only.`;
                         }
-                        statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"}`;
+                        statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"} (${engineData.source || "engine"})`;
                     } else {
                         lineOutput += `\nENGINE: No usable data for this position.`;
                         if (c.isVariationEnd) {
