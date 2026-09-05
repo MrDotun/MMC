@@ -622,7 +622,7 @@ Enter Arena <i class="fas fa-arrow-right ml-2"></i>
   <label class="flex items-center gap-2 text-sm text-slate-200 mb-3 cursor-pointer">
     <input type="checkbox" id="set-piece-tips" class="rounded"> Speak piece tips on select
   </label>
-  <p class="text-[10px] text-slate-500 mb-3">AI only talks on captures and when the game ends.</p>
+  <p class="text-[10px] text-slate-500 mb-3">AI speaks at start, on checks, draw offers, and game end — rarely in between.</p>
   <button type="button" onclick="applySettings()" class="w-full bg-gradient-to-r from-amber-400 to-amber-600 text-black py-2.5 rounded-xl text-xs font-black uppercase tracking-widest">Apply</button>
 </div>
 
@@ -1072,6 +1072,45 @@ function showSpeech(text, opts){
   }
 }
 
+// Sparse speech helpers: checks + rare spice only (no capture talk)
+var _spiceSaidThisGame = 0;
+var _spiceUsedLines = {};
+function pickMyKingInCheck(){
+  var lines = [
+    'My king is in check!',
+    'Oh — my king is in check!',
+    'Check on my king…',
+    'My king feels the pressure!'
+  ];
+  return lines[Math.floor(Math.random() * lines.length)];
+}
+function maybeRandomSpice(){
+  // At most 2 quiet lines per game, low chance, no repeats
+  if (_spiceSaidThisGame >= 2) return;
+  if (Math.random() > 0.06) return;
+  var pool = [
+    'Hmm…',
+    'Interesting.',
+    'Nice try.',
+    'I see what you did.',
+    'Focus…',
+    'Good move.',
+    'Thinking…',
+    'Okay then.'
+  ];
+  // Prefer unused lines this game
+  var available = pool.filter(function(t){ return !_spiceUsedLines[t]; });
+  if (!available.length) return;
+  var line = available[Math.floor(Math.random() * available.length)];
+  _spiceUsedLines[line] = true;
+  _spiceSaidThisGame++;
+  showSpeech(line);
+}
+function resetSpiceSpeech(){
+  _spiceSaidThisGame = 0;
+  _spiceUsedLines = {};
+}
+
 function applyStoryRivalUI(){
   if (!storyRival || !storyRival.name) return;
   var name = storyRival.name;
@@ -1274,15 +1313,16 @@ async function startGame(){
   newGameInternal();
   waitForBoardPieces(9000).then(function(){
     setTimeout(function(){ broadcastLive(); }, 200);
-    // Story rivals introduce themselves after board is ready (voices need a beat)
-    if (storyRival) {
-      setTimeout(function(){
-        try {
-          var line = pickLine(settings.level, 'start');
-          if (line) showSpeech(line);
-        } catch(e){}
-      }, 700);
-    }
+    // Welcome / brag once at game start (AI speaks less overall)
+    setTimeout(function(){
+      try {
+        var line = pickLine(settings.level, 'start');
+        if (line) {
+          window._lastStartSpeech = Date.now();
+          showSpeech(line);
+        }
+      } catch(e){}
+    }, 700);
   });
 }
 
@@ -1308,11 +1348,25 @@ function newGameInternal(){
     if(rm) rm.style.display='none';
   } catch(e){}
   window._tippedPieces={};
+  resetSpiceSpeech();
   showBoardLoading('Setting up the pieces…');
   board.orientation(playerColor==='w'?'white':'black');
   board.position('start');
   clearHighlights();
-  waitForBoardPieces(7000);
+  waitForBoardPieces(7000).then(function(){
+    // Welcome / brag on rematch / new game (once)
+    setTimeout(function(){
+      try {
+        // Skip if we already spoke from startGame path within last 2s
+        if (window._lastStartSpeech && Date.now() - window._lastStartSpeech < 2500) return;
+        var line = pickLine(settings.level, 'start');
+        if (line) {
+          window._lastStartSpeech = Date.now();
+          showSpeech(line);
+        }
+      } catch(e){}
+    }, 500);
+  });
   document.getElementById('thinking').classList.add('hidden');
   document.getElementById('board').classList.remove('thinking-glow');
   updateStatus();updateHistory();
@@ -1348,16 +1402,15 @@ function initWorker(){
         playMoveSound(move);
         updateStatus();updateHistory();broadcastLive();
         switchClock('you');
-        // AI talks only on capture (or game-end handled in updateStatus)
+        // Capture burst (visual only — AI does not talk on captures)
         if(move.flags&&(move.flags.includes('c')||move.flags.includes('e'))){
-          showSpeech(pickLine(settings.level,'capture'));
           spawnCaptureBurst(move.to, false);
-        } else if(game.in_check() && !game.in_checkmate()){
-          showSpeech(pickLine(settings.level,'check'));
-        } else if (Math.random() < 0.22) {
-          // Occasional brag / chatter on quiet moves — more personality
-          var chatter = pickLine(settings.level,'move');
-          if (chatter) showSpeech(chatter);
+        }
+        // Speak only on check (AI puts player in check) or rare spice
+        if(game.in_check() && !game.in_checkmate()){
+          showSpeech('Check your king!');
+        } else {
+          maybeRandomSpice();
         }
       }
       stopThinking();
@@ -1637,12 +1690,13 @@ function onSquareClick(sq){
     board.position(game.fen());
     showLastMove();
     playMoveSound(move);
-    // Explosive AI reaction when YOU capture their piece
+    // Capture burst only (visual) — AI does not talk on captures
     if(move.flags && (move.flags.indexOf('c')>=0 || move.flags.indexOf('e')>=0)){
-      showSpeech(pickLine(settings.level,'lose_piece')); // AI reacts on captures
       spawnCaptureBurst(move.to, true);
-    } else if(game.in_check() && !game.in_checkmate()){
-      showSpeech(pickLine(settings.level,'check')); // You put AI in check
+    }
+    // AI speaks only when its own king is in check
+    if(game.in_check() && !game.in_checkmate()){
+      showSpeech(pickMyKingInCheck());
     }
     updateStatus();updateHistory();broadcastLive();
     switchClock('ai');
@@ -1669,13 +1723,12 @@ function executeAiMoveSearch(){
       updateStatus();updateHistory();broadcastLive();
       switchClock('you');
       if(move.flags&&(move.flags.includes('c')||move.flags.includes('e'))){
-        showSpeech(pickLine(settings.level,'capture'));
         spawnCaptureBurst(move.to, false);
-      } else if(game.in_check() && !game.in_checkmate()){
-        showSpeech(pickLine(settings.level,'check'));
-      } else if (Math.random() < 0.22) {
-        var chatter = pickLine(settings.level,'move');
-        if (chatter) showSpeech(chatter);
+      }
+      if(game.in_check() && !game.in_checkmate()){
+        showSpeech('Check your king!');
+      } else {
+        maybeRandomSpice();
       }
       stopThinking();
       return;
@@ -2035,8 +2088,8 @@ function loadLiveFeed(){
         const safeName=(d.player||'Player').replace(/'/g,'');
         const rival=(d.rivalName||('AI Lv'+(d.level||'?'))).replace(/'/g,'');
         const colorHint=d.playerColor==='b'
-          ? '<span class="text-slate-400 font-normal">('+safeName+' Black)</span>'
-          : '<span class="text-slate-400 font-normal">('+safeName+' White)</span>';
+          ? '<span class="text-slate-400 font-normal">('+safeName+' Black · '+rival+' White)</span>'
+          : '<span class="text-slate-400 font-normal">('+safeName+' White · '+rival+' Black)</span>';
         html+=`<div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 cursor-pointer hover:bg-white/10" onclick="spectateGame('${d.id}','${safeName}','${d.level||'?'}')">
           <span class="text-white text-xs font-bold">${safeName} <span class="text-amber-400">vs ${rival}</span><br>${colorHint}</span>
           <span class="live-badge">WATCH</span>
