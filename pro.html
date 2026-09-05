@@ -63,9 +63,15 @@
                         <input type="file" id="db-file-input" accept=".zip,.pgn" class="hidden" onchange="handleFileUpload(event)">
                     </label>
 
+                    <label class="flex items-center gap-2 px-3 py-2 bg-slate-900 rounded-xl text-xs">
+                        <span class="text-slate-400 uppercase font-bold">Repertoire</span>
+                        <select id="repertoire-side" class="bg-slate-800 text-emerald-400 rounded-lg px-2 py-1 font-bold border border-slate-600">
+                            <option value="black">Black (we = Black)</option>
+                            <option value="white">White (we = White)</option>
+                        </select>
+                    </label>
                     <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy Selected Batch</span></button>
                     <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
-                    <button onclick="downloadTool()" class="px-6 py-3 bg-indigo-800 text-indigo-100 rounded-xl font-bold uppercase text-xs hover:bg-indigo-700">Download This Tool</button>
                 </div>
             </div>
 
@@ -667,6 +673,9 @@
 
             let endIdx = selEnd !== null ? selEnd : selStart;
             let startingFen = globalChunks[selStart].fen;
+            const repertoireSide = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
+            const weSide = repertoireSide === 'white' ? 'White' : 'Black';
+            const theySide = repertoireSide === 'white' ? 'Black' : 'White';
 
             // --- Smart selection: first/last of every variation, all critical/symbol moves, plus a few random ---
             const rangeIndices = [];
@@ -751,46 +760,54 @@ FEN OK: ${fenOk}`;
 
                     if (engineData && !engineData.invalid && engineData.eval != null) {
                         const bestLine = `${engineData.san || ""} ${engineData.continuation || ""}`.trim();
+                        // Split PV by colour so AI never mixes White/Black moves
+                        const pvMoves = bestLine.split(/\s+/).filter(Boolean);
+                        const stm = sideToMoveAfter; // first move in PV belongs to this side
+                        const stmMoves = [];
+                        const oppMoves = [];
+                        pvMoves.forEach((m, idx) => {
+                            if (idx % 2 === 0) stmMoves.push(m);
+                            else oppMoves.push(m);
+                        });
+                        const whiteMoves = stm === "White" ? stmMoves : oppMoves;
+                        const blackMoves = stm === "Black" ? stmMoves : oppMoves;
+
                         lineOutput += `\nENGINE EVAL: ${engineData.eval}`;
-                        lineOutput += `\nBEST CONTINUATION (name 1–3 of these moves in your comment): ${bestLine || "(none)"}`;
+                        lineOutput += `\nBEST CONTINUATION (full PV): ${bestLine || "(none)"}`;
+                        lineOutput += `\nWHITE MOVES FROM PV (use only for White's plan): ${whiteMoves.slice(0, 4).join(", ") || "(none)"}`;
+                        lineOutput += `\nBLACK MOVES FROM PV (use only for Black's plan): ${blackMoves.slice(0, 4).join(", ") || "(none)"}`;
                         if (engineData.planHint) {
                             lineOutput += `\nENGINE HINT: ${engineData.planHint}`;
                         }
-                        if (engineData.source) {
-                            lineOutput += `\nENGINE SOURCE: ${engineData.source}`;
-                        }
-                        lineOutput += `\nINSTRUCTION: Write in PRESENT TENSE. Name 1–3 concrete moves from BEST CONTINUATION (e.g. "White continues with Be3 and Rc1"). If one side is better, say WHY (bishop pair, control of d5, activity, structure…). Do not be vague. Do not name the move that is already the next move in this PGN line.`;
+                        lineOutput += `\nINSTRUCTION: PRESENT TENSE. When describing White's plan, name ONLY moves from WHITE MOVES FROM PV. When describing Black's plan, name ONLY moves from BLACK MOVES FROM PV. Never mix colours (e.g. never say White continues with Nh5 and Bg4 if Bg4 is Black's move). If one side is better, say WHY (bishop pair, square control, activity, structure…).`;
 
                         const evalNum = parseFloat(engineData.eval);
                         const isMate = /mate|#/i.test(String(engineData.eval)) || /#/.test(bestLine);
                         const bigSwing = !isNaN(evalNum) && Math.abs(evalNum) >= 0.9;
 
                         if (isMate || bigSwing || isCritical) {
-                            lineOutput += `\n[TACTICAL / CRITICAL]: Explain the idea with concrete moves. If one side is better, give the positional reason.`;
+                            lineOutput += `\n[TACTICAL / CRITICAL]: Concrete idea. Correct colour for every named move. Give positional reason if unequal.`;
                         }
                         if (/[\+\-=]|\$\d+/.test(c.target)) {
-                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: Justify the assessment in present tense with a reason (bishop pair, square control, activity, structure, king safety…) and concrete follow-ups from BEST CONTINUATION.`;
+                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: Justify assessment with reason (bishop pair, squares, activity, structure…) + colour-correct follow-ups.`;
                         }
 
                         if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain the line and how the stronger side continues, naming concrete moves. If unequal, say WHY. 1–3 short sentences.`;
+                            lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain the line with colour-correct moves from the PV lists. If unequal, say WHY. 1–3 sentences.`;
                         }
-                        statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"}${engineData.source ? " (" + engineData.source + ")" : ""}`;
+                        statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"}`;
                     } else {
                         lineOutput += `\nENGINE: No usable data for this position.`;
                         if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain the intention from FEN and POSITION FEATURES. If one side is better, say WHY (bishop pair, squares, activity…).`;
-                        }
-                        if (/[\+\-=]|\$\d+/.test(c.target)) {
-                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: Justify the assessment with a positional reason.`;
+                            lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain from FEN. If unequal, say WHY (bishop pair, squares, activity…).`;
                         }
                     }
                 } else {
                     if (c.isVariationEnd) {
-                        lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain the intention from FEN. If unequal, say WHY (bishop pair, control of squares, activity, structure…).`;
+                        lineOutput += `\n[VARIATION END — REQUIRED]: Present tense. Explain from FEN. If unequal, say WHY. Correct colour only.`;
                     }
                     if (c.isVariationStart && !c.isVariationEnd) {
-                        lineOutput += `\n[VARIATION START]: Short present-tense note on the intention only if not obvious.`;
+                        lineOutput += `\n[VARIATION START]: Short present-tense note only if intention is not obvious.`;
                     }
                     await delay(15);
                 }
@@ -801,37 +818,41 @@ FEN OK: ${fenOk}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are the repertoire author (Annotator: sheva). You write practical opening notes in PRESENT TENSE, calm coaching English (about 65–70% British spelling). The reader must believe these are your original notes.
+            const fullPrompt = `You are the repertoire author (Annotator: sheva). PRESENT TENSE only. Calm practical coaching English (~65–70% British spelling).
 
-Your job: explain WHY the move was played and, when the position is unequal or critical, WHY one side is better — always with a concrete positional reason (bishop pair, control of a square, piece activity, pawn structure, king safety, open file, weak pawn, etc.).
+REPERTOIRE SIDE: ${weSide}
+- Always use "we" / "our" for ${weSide} only.
+- Always use "${theySide}" (never "we") for the opponent.
+- Example if repertoire is Black: "we play ...c5" / "White wants Be3 and Rc1".
+- Example if repertoire is White: "we play Be3 and Rc1" / "Black wants ...Nd7 and ...c5".
 
 STARTING FEN OF THE BATCH: ${startingFen}
 
-=== TENSE (STRICT) ===
-- Always PRESENT tense: "we develop", "White wants", "the idea is", "we strike with ...c5".
-- NEVER past tense for plans: forbidden "we developed", "White continued", "we managed to", "reached an equal position" as the main voice for ongoing plans.
-- OK at the end of a finished line: "The position is equal." / "We’re slightly better."
+=== COLOUR OF NAMED MOVES (ZERO MIX-UPS) ===
+This is critical. The engine PV alternates colours.
+- WHITE MOVES FROM PV = only White's moves. Use these ONLY when describing White's plan.
+- BLACK MOVES FROM PV = only Black's moves. Use these ONLY when describing Black's plan.
+- FORBIDDEN: "we continue with Nh5 and Bg4" if Nh5 is White and Bg4 is Black (or the reverse).
+- CORRECT: "White continues with Nh5" / "Black answers with ...Bg4" / "we continue with Nh5" (only if Nh5 belongs to the repertoire side).
+
+=== TENSE ===
+PRESENT only: "we develop", "White wants", "the idea is".
+Not: "we developed", "White continued", "we managed to reach".
 
 === HOW TO THINK ===
-1. Read MOVE PLAYED and FEN AFTER THE MOVE. Visualise the board.
-2. Read POSITION FEATURES and any GM marks / eval symbols.
-3. If BEST CONTINUATION exists, name 1–3 concrete moves from it (Be3, Rc1, ...Nd7, f4-f5…).
-4. If the side is better or worse, say WHY: bishop pair, control of d5, more active pieces, safer king, better structure, pressure on c6, etc.
-5. Write 1–3 short present-tense sentences.
+1. Read MOVE PLAYED, FEN, PLAYED BY, SIDE TO MOVE AFTER.
+2. If engine PV lists exist, pick moves only from the correct colour list.
+3. If one side is better, say WHY: bishop pair, control of a square, piece activity, pawn structure, king safety, open file, weak pawn.
+4. Write 1–3 short present-tense sentences.
 
-=== WHY BETTER / EQUAL (REQUIRED WHEN RELEVANT) ===
-Always give a reason. Copy this style:
-
+=== WHY BETTER / EQUAL ===
+Always give a reason when you assess:
 "White is better thanks to the bishop pair and good piece activity."
 "We’re slightly better. Our pieces are beautifully placed and nothing is stopping the ...c5 break."
-"The position is equal, but from a practical point of view it may be slightly more pleasant to play for Black because of the bishop pair."
+"The position is equal, but it may be slightly more pleasant for Black because of the bishop pair."
 "White has an isolated pawn, but the bishop pair provides sufficient compensation. The position is equal."
-"Our structure is solid and our pieces are well placed. The position is equal."
-"White is better thanks to the control of the d5-square and the more active pieces."
 
-Never say only "White is better" or "equal" with no reason.
-
-=== STYLE — MATCH THESE EXACT SAMPLES ===
+=== STYLE SAMPLES ===
 "One of the key ideas in these structures is to achieve the ...c5 break, not allowing White to build a strong centre and at the same time activating our pieces. Nd7 is played specifically to reinforce the c5-square and to prepare ...c5 as quickly as possible."
 
 "White immediately takes the initiative in the centre."
@@ -842,61 +863,29 @@ Never say only "White is better" or "equal" with no reason.
 
 "An aggressive continuation. White wants to launch an immediate attack on the kingside."
 
-"We also need to play actively. Otherwise, our pieces may get stuck in our own camp."
-
-"A strong prophylactic move. We prevent White from gaining space and developing the initiative."
-
-"Of course, we strike with ...c5, there’s no other way. We simply can’t afford to play passively."
-
-"White develops the bishop to an active diagonal, hoping to push d5 or make use of the pressure along this diagonal."
-
-"We chase the knight away, just to be safe."
-
-"Our pieces are beautifully placed and nothing is stopping the ...c5 break. We’re slightly better."
-
-"White hasn’t posed us any real problems in the opening. The position is equal and pleasant to play."
+"Of course, we strike with ...c5, there’s no other way."
 
 "White continues with Be3 and Rc1, putting pressure on the c-file."
 
 "The idea is f4-f5 next, opening lines against the black king."
 
-=== BE EXACT — NOT VAGUE ===
-FORBIDDEN:
-- "continue with development" (without naming moves)
-- "improves the position"
-- "keeps the initiative"
-- bare "White is better" / "Black is better" with no reason
-
-REQUIRED when engine line exists:
-- Name 1–3 moves from BEST CONTINUATION: "White continues with Be3 and Qd2", "we play ...Nd7 and ...c5", "the plan is f5 and Qh5".
-
 === HARD RULES ===
-1. Comments ONLY after the move.
-2. Most moves get NO comment. Stay sparse.
-3. MUST comment every [VARIATION END — REQUIRED], [TACTICAL / CRITICAL], [EVAL SYMBOL — REQUIRED], and moves with ?, ??, !!, !?, $2, $4 or +- / -+ / +/=.
-4. When an assessment symbol or engine shows a clear edge, explain WHY (bishop pair, square control, activity, structure, king safety…).
-5. Never begin by repeating the move ("After 5.c4…" forbidden).
-6. Never mention engine, Stockfish, database, eval numbers, depth, or "I calculated".
-7. Banned filler words: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless.
-8. Spelling: centre, d4-square, pair of bishops, favour, analyse, defence, colour.
-9. LENGTH: 1–2 sentences preferred; max three for a key idea or evaluation reason.
+1. Comments only after the move. Most moves get no comment.
+2. MUST comment [VARIATION END], [TACTICAL / CRITICAL], [EVAL SYMBOL], ?, ??, !!, !?, $2, $4, +-, -+, +/=.
+3. Never begin by repeating the move just played.
+4. Never mention engine, Stockfish, eval numbers, depth.
+5. Banned filler: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, "keeps the initiative", "continue with development" (without naming moves).
+6. Spelling: centre, d4-square, pair of bishops, favour, analyse, defence, colour.
+7. Length: 1–2 sentences preferred; max three.
 
-=== DO NOT SPOIL THE PGN LINE ===
-- Do NOT name the move that is already the very next move in this PGN variation.
-- You MAY name other moves from BEST CONTINUATION as the plan.
-
-=== COLOUR & FEN ===
-- Trust FEN when FEN OK is true.
-- Correct side only (PLAYED BY / SIDE TO MOVE AFTER).
-- "we" / "our" = repertoire side (usually Black in this book).
-- Zero colour mistakes. Zero piece mistakes (knight ≠ pawn).
+=== DO NOT SPOIL ===
+Do not name the move that is already the next move in this PGN variation. Other PV moves are fine.
 
 === OUTPUT ===
 Return ONLY a pure JSON object.
-Keys = chunk IDs (e.g. "CHK_12_M5_V1").
-Values = the comment text.
-Omit keys that need no comment.
-No markdown, no thought process, no extra text outside the JSON.
+Keys = chunk IDs. Values = comment text.
+Omit keys with no comment.
+No markdown, no thought process, no extra text.
 
 === BATCH TO ANALYZE ===
 ${batchString}`;
@@ -1009,22 +998,6 @@ ${batchString}`;
             a.href = URL.createObjectURL(blob);
             a.download = "GM_Variation_Analysis.pgn";
             a.click();
-        }
-
-        function downloadTool() {
-            try {
-                const html = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
-                const blob = new Blob([html], {type: 'text/html'});
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = "pro.html";
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(a.href);
-            } catch (e) {
-                alert("Download failed. Right-click the page → Save As… instead.");
-            }
         }
     </script>
 </body>
