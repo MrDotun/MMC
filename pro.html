@@ -723,13 +723,48 @@
                 const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
                 const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
 
+                // --- GM assessment from symbols (never from engine score) ---
+                const gmSym = `${c.target || ""} ${(c.gmNotes && c.gmNotes.evalMarks) ? c.gmNotes.evalMarks.join(" ") : ""}`;
+                let favouredSide = null; // who is better according to GM
+                if (/\+\/\-|\+\-|±|\+\/\=|\$16|\$18|\$14|\$20/.test(gmSym)) {
+                    favouredSide = "White";
+                } else if (/\-\/\+|\-\+|∓|\=\/\+|\$17|\$19|\$15|\$21/.test(gmSym)) {
+                    favouredSide = "Black";
+                } else if (/\$10|\$11|\$13|=\/=/.test(gmSym) || /(^|[^+\-\/])=(?=[^+\-\/]|$)/.test(gmSym)) {
+                    favouredSide = null; // equal
+                }
+                // ? / ?? on a move = that side played a BAD move → the OTHER side is better
+                const hasDubious = /\?\?|\?/.test(c.target || "");
+                const hasGood = /!!|!/.test(c.target || "") && !hasDubious;
+                if (hasDubious) {
+                    // Black played Nd4? → White is better. NEVER say Black is better.
+                    favouredSide = sideJustPlayed === "White" ? "Black" : "White";
+                } else if (favouredSide == null && hasGood) {
+                    favouredSide = sideJustPlayed;
+                }
+
+                const planSide = favouredSide || (hasDubious ? (sideJustPlayed === "White" ? "Black" : "White") : sideJustPlayed);
+                let gmVerdict = "no clear GM edge mark";
+                if (hasDubious) {
+                    gmVerdict = `${sideJustPlayed} just played a DUBIOUS/BAD move (?). ${planSide} is better. NEVER say ${sideJustPlayed} is better.`;
+                } else if (favouredSide) {
+                    gmVerdict = `GM marks ${favouredSide} better. Plan for ${favouredSide} only.`;
+                } else if (/\$10|\$11|\$13|=/.test(gmSym)) {
+                    gmVerdict = "GM marks the position equal.";
+                }
+
                 // Clear statement of the move that was played — the AI must know this
                 let lineOutput = `[ID: ${c.id}]
 MOVE PLAYED: ${c.moveNum}. ${c.target}
 PLAYED BY: ${sideJustPlayed}
 SIDE TO MOVE AFTER: ${sideToMoveAfter}
+REPERTOIRE SIDE ("we"): ${weSide}
+OPPONENT ("${theySide}"): ${theySide}
 MAIN LINE: ${c.isMainLine} | VARIATION START: ${c.isVariationStart} | VARIATION END: ${c.isVariationEnd} | DEPTH: ${c.variationLevel}
-FEN OK: ${fenOk}`;
+FEN OK: ${fenOk}
+GM VERDICT: ${gmVerdict}
+PLAN SIDE: ${planSide}
+USE "we" ONLY FOR: ${weSide}`;
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
@@ -747,8 +782,8 @@ FEN OK: ${fenOk}`;
                     lineOutput += `\nFEN AFTER THE MOVE: UNRELIABLE (do not invent a position)`;
                 }
 
-                // Engine is reserved for last moves of brackets (variation ends) and critical symbols
-                const isCritical = /[?!$]|\$\d+/.test(c.target);
+                // Engine on variation ends, critical symbols, GM marks
+                const isCritical = /[?!$]|\$\d+|[\+\-=±∓]/.test(c.target) || hasDubious || hasGood || !!favouredSide;
                 const needsEngine = fenOk && (c.isVariationEnd || isCritical);
                 
                 if (needsEngine) {
@@ -772,58 +807,35 @@ FEN OK: ${fenOk}`;
                         const whiteMoves = stm === "White" ? stmMoves : oppMoves;
                         const blackMoves = stm === "Black" ? stmMoves : oppMoves;
 
-                        lineOutput += `\nENGINE EVAL: ${engineData.eval}`;
+                        lineOutput += `\nENGINE EVAL (ideas only — do NOT use for who is better): ${engineData.eval}`;
                         lineOutput += `\nBEST CONTINUATION (full PV): ${bestLine || "(none)"}`;
-                        lineOutput += `\nWHITE MOVES FROM PV (use only for White's plan): ${whiteMoves.slice(0, 4).join(", ") || "(none)"}`;
-                        lineOutput += `\nBLACK MOVES FROM PV (use only for Black's plan): ${blackMoves.slice(0, 4).join(", ") || "(none)"}`;
                         if (engineData.planHint) {
                             lineOutput += `\nENGINE HINT: ${engineData.planHint}`;
                         }
-                        // GM evaluation symbols decide who is better — NOT the engine number
-                        const gmSym = `${c.target || ""} ${(c.gmNotes && c.gmNotes.evalMarks) ? c.gmNotes.evalMarks.join(" ") : ""}`;
-                        let favouredSide = null; // from GM marks only
-                        // White better: +-, ±, +/=, +/- , $16, $18, $14...
-                        if (/\+\/\-|\+\-|±|\+\/\=|\$16|\$18|\$14|\$20/.test(gmSym)) {
-                            favouredSide = "White";
-                        }
-                        // Black better: -+, ∓, =/+, -/+ , $17, $19, $15...
-                        else if (/\-\/\+|\-\+|∓|\=\/\+|\$17|\$19|\$15|\$21/.test(gmSym)) {
-                            favouredSide = "Black";
-                        }
-                        // Equal / unclear: = , $10, $11, $13
-                        else if (/\$10|\$11|\$13|=\/=|=\/\u221e/.test(gmSym) || /(^|[^+\-\/])=(?=[^+\-\/]|$)/.test(gmSym)) {
-                            favouredSide = null;
-                        }
-                        // ? / ?? → side that just played is worse → opponent better
-                        if (favouredSide == null && /\?\?|\?/.test(c.target || "")) {
-                            favouredSide = sideJustPlayed === "White" ? "Black" : "White";
-                        }
-                        // ! / !! → side that just played is fine; use their plan if no other mark
-                        if (favouredSide == null && /!/.test(c.target || "")) {
-                            favouredSide = sideJustPlayed;
-                        }
-
-                        const planSide = favouredSide || sideJustPlayed;
                         const planMoves = planSide === "Black" ? blackMoves.slice(0, 4) : whiteMoves.slice(0, 4);
-                        const gmAssessment = favouredSide
-                            ? `${favouredSide} is better (GM mark)`
-                            : (/\=|\$1[013]/.test(gmSym) ? "equal (GM mark)" : "follow GM marks / structure");
 
-                        lineOutput += `\nGM ASSESSMENT: ${gmAssessment}`;
-                        lineOutput += `\nPLAN SIDE (from GM marks, not engine): ${planSide}`;
-                        lineOutput += `\nFILTERED PLAN MOVES (for ${planSide} only — weave into natural sentences): ${planMoves.length ? planMoves.join(", ") : "(use FEN ideas)"}`;
-                        lineOutput += `\nINSTRUCTION: PRESENT TENSE. Trust GM ASSESSMENT over any engine number. Never write +-, ±, +/=. Never repeat the next PGN move. Never dump a raw list like "c4, c5, Nc3".`;
-                        lineOutput += `\nREQUIRED: If GM says a side is better OR this is a variation end, you MUST (1) say WHY (bishop pair, structure, squares, activity) AND (2) say WHAT ${planSide} plays — natural plan using FILTERED PLAN MOVES. Example: "White is better thanks to the bishop pair and will press with the c4-c5 push or Nc3 ideas."`;
-
-                        if (isCritical || favouredSide) {
-                            lineOutput += `\n[TACTICAL / CRITICAL]: WHY + WHAT ${planSide} plays next (filtered moves, natural wording). Follow GM assessment.`;
+                        lineOutput += `\nWHITE MOVES FROM PV: ${whiteMoves.slice(0, 4).join(", ") || "(none)"}`;
+                        lineOutput += `\nBLACK MOVES FROM PV: ${blackMoves.slice(0, 4).join(", ") || "(none)"}`;
+                        lineOutput += `\nFILTERED PLAN MOVES (for ${planSide} only): ${planMoves.length ? planMoves.join(", ") : "(use FEN ideas)"}`;
+                        lineOutput += `\nINSTRUCTION: Trust GM VERDICT above — ignore engine numbers for who is better.`;
+                        lineOutput += `\n- "we" = ${weSide} only. Never use "we" for ${theySide}.`;
+                        lineOutput += `\n- PLAN SIDE is ${planSide}. Name only ${planSide}'s moves from FILTERED PLAN MOVES.`;
+                        if (hasDubious) {
+                            lineOutput += `\n- CRITICAL: ${sideJustPlayed} played a ? move. ${planSide} is better. FORBIDDEN to write "${sideJustPlayed} is better" or that ${sideJustPlayed} consolidates happily.`;
                         }
-                        if (/[\+\-=]|\$\d+/.test(c.target) || favouredSide) {
-                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: Follow GM mark. (1) WHY ${planSide} is better (or why equal). (2) WHAT ${planSide} continues with — weave FILTERED PLAN MOVES into a sentence, not a bare list.`;
+                        lineOutput += `\n- Never write +-, ±, +/=. Never repeat the next PGN move. Never dump raw move lists.`;
+                        lineOutput += `\n- REQUIRED: (1) WHY ${planSide} is better or why equal (structure, bishops, squares…). (2) WHAT ${planSide} plays — natural sentence with FILTERED PLAN MOVES.`;
+                        lineOutput += `\n- Read FEN carefully: do not say a rook pressures its own pawn; only pressure enemy pieces/pawns.`;
+
+                        if (isCritical || favouredSide || hasDubious) {
+                            lineOutput += `\n[TACTICAL / CRITICAL]: Follow GM VERDICT. WHY + WHAT for ${planSide}.`;
+                        }
+                        if (/[\+\-=]|\$\d+/.test(c.target) || favouredSide || hasDubious) {
+                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: GM says ${gmVerdict}. Explain WHY and WHAT ${planSide} continues with.`;
                         }
 
                         if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: Follow GM assessment (not engine eval). MUST include both WHY and WHAT for ${planSide}. Example: "White is better due to the bishop pair and will continue with c4-c5 or Nc3 ideas." 1–3 sentences. No eval symbols. No raw move dump.`;
+                            lineOutput += `\n[VARIATION END — REQUIRED]: GM VERDICT + WHY + WHAT for ${planSide}. 1–3 sentences. No eval symbols. No raw dump.`;
                         }
                         statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"}`;
                     } else {
@@ -851,10 +863,12 @@ FEN OK: ${fenOk}`;
             const fullPrompt = `You are the repertoire author (Annotator: sheva). PRESENT TENSE only. Calm practical coaching English (~65–70% British spelling).
 
 REPERTOIRE SIDE: ${weSide}
+- Every batch line includes REPERTOIRE SIDE ("we"): ${weSide}. Obey it.
 - Always use "we" / "our" for ${weSide} only.
 - Always use "${theySide}" (never "we") for the opponent.
-- Example if repertoire is Black: "we play ...c5" / "White wants Be3 and Rc1".
-- Example if repertoire is White: "we play Be3 and Rc1" / "Black wants ...Nd7 and ...c5".
+- If repertoire is White: "we capture on d4" / "Black is left with doubled pawns".
+- If repertoire is Black: "we play ...c5" / "White wants Be3 and Rc1".
+- Never switch "we" mid-batch.
 
 STARTING FEN OF THE BATCH: ${startingFen}
 
@@ -876,7 +890,13 @@ Not: "we developed", "White continued", "we managed to reach".
 4. Write 1–3 short present-tense sentences.
 
 === GM ASSESSMENT OVERRIDES ENGINE ===
-Trust GM ASSESSMENT / PLAN SIDE from the batch (symbols like +-, -+, +/=, =, ?, !!). Do NOT use the engine number to decide who is better. The engine PV is only for concrete move ideas for the side the GM favours.
+Trust GM VERDICT / PLAN SIDE from each batch item (symbols like +-, -+, +/=, =, ?, !!). Do NOT use the engine number to decide who is better. The engine PV is only for concrete move ideas for PLAN SIDE.
+
+=== DUBIOUS MOVES (?) — ZERO CONFUSION ===
+If Black played 3...Nd4?, GM VERDICT says White is better. You MUST NOT write "Black is better" or "Black consolidates".
+Correct: "A dubious early knight jump. We capture on d4 and leave Black with a damaged structure; White is better and will continue with O-O and Re1."
+If White played a ? move, Black is better — never the reverse.
+A ? move never makes the side that played it better.
 
 === WHY + WHAT (MANDATORY ON VARIATION ENDS AND WHEN GM SAYS ONE SIDE IS BETTER) ===
 Always give a reason AND a concrete plan. Use FILTERED PLAN MOVES / the correct colour PV list. Weave moves into natural English — do not list them like an API dump.
