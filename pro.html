@@ -469,7 +469,7 @@
             return null;
         }
 
-        // Quick positional features from FEN for the AI (no engine needed)
+        // Full board inventory + features from FEN so AI never invents pieces from sibling lines
         function describePositionFromFen(fen) {
             if (!fen || !isValidFen(fen)) return "";
             try {
@@ -478,16 +478,27 @@
                 const turn = parts[1] === "w" ? "White" : "Black";
                 const castling = parts[2] || "-";
                 const rows = board.split("/");
+                const names = {
+                    K: "White king", Q: "White queen", R: "White rook", B: "White bishop", N: "White knight", P: "White pawn",
+                    k: "Black king", q: "Black queen", r: "Black rook", b: "Black bishop", n: "Black knight", p: "Black pawn"
+                };
                 let whiteKing = "", blackKing = "";
-                let whiteCastled = castling.includes("K") || castling.includes("Q") ? false : true;
-                let blackCastled = castling.includes("k") || castling.includes("q") ? false : true;
-                // crude but useful: king still on e-file often means uncastled
+                const pieces = [];
+                const byType = { whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [], whiteRooks: [], blackRooks: [] };
                 for (let r = 0; r < 8; r++) {
                     let file = 0;
                     for (const ch of rows[r]) {
                         if (ch >= "1" && ch <= "8") { file += parseInt(ch); continue; }
-                        if (ch === "K") whiteKing = String.fromCharCode(97 + file) + (8 - r);
-                        if (ch === "k") blackKing = String.fromCharCode(97 + file) + (8 - r);
+                        const sq = String.fromCharCode(97 + file) + (8 - r);
+                        if (ch === "K") whiteKing = sq;
+                        if (ch === "k") blackKing = sq;
+                        if (names[ch]) pieces.push(`${names[ch]} on ${sq}`);
+                        if (ch === "B") byType.whiteBishops.push(sq);
+                        if (ch === "b") byType.blackBishops.push(sq);
+                        if (ch === "N") byType.whiteKnights.push(sq);
+                        if (ch === "n") byType.blackKnights.push(sq);
+                        if (ch === "R") byType.whiteRooks.push(sq);
+                        if (ch === "r") byType.blackRooks.push(sq);
                         file++;
                     }
                 }
@@ -497,9 +508,15 @@
                 if (blackKing) notes.push(`Black king on ${blackKing}`);
                 if (whiteKing && whiteKing[0] === "e" && (castling.includes("K") || castling.includes("Q"))) notes.push("White still uncastled");
                 if (blackKing && blackKing[0] === "e" && (castling.includes("k") || castling.includes("q"))) notes.push("Black still uncastled");
-                if (blackKing && ["d","e","f"].includes(blackKing[0]) && blackKing[1] !== "8") notes.push("Black king exposed / advanced");
-                if (whiteKing && ["d","e","f"].includes(whiteKing[0]) && whiteKing[1] !== "1") notes.push("White king exposed / advanced");
-                return notes.join("; ");
+                if (byType.blackBishops.length) notes.push(`Black bishops on ${byType.blackBishops.join(",")}`);
+                else notes.push("NO black bishop on the board");
+                if (byType.whiteBishops.length) notes.push(`White bishops on ${byType.whiteBishops.join(",")}`);
+                else notes.push("NO white bishop on the board");
+                if (byType.blackKnights.length) notes.push(`Black knights on ${byType.blackKnights.join(",")}`);
+                if (byType.whiteKnights.length) notes.push(`White knights on ${byType.whiteKnights.join(",")}`);
+                // compact piece list for verification
+                notes.push(`PIECES: ${pieces.join("; ")}`);
+                return notes.join(" | ");
             } catch (e) {
                 return "";
             }
@@ -812,20 +829,20 @@ USE "we" ONLY FOR: ${weSide}`;
                         if (engineData.planHint) {
                             lineOutput += `\nENGINE HINT: ${engineData.planHint}`;
                         }
-                        const planMoves = planSide === "Black" ? blackMoves.slice(0, 4) : whiteMoves.slice(0, 4);
+                        const planMoves = (planSide === "Black" ? blackMoves : whiteMoves).slice(0, 3);
 
-                        lineOutput += `\nWHITE MOVES FROM PV: ${whiteMoves.slice(0, 4).join(", ") || "(none)"}`;
-                        lineOutput += `\nBLACK MOVES FROM PV: ${blackMoves.slice(0, 4).join(", ") || "(none)"}`;
-                        lineOutput += `\nFILTERED PLAN MOVES (for ${planSide} only): ${planMoves.length ? planMoves.join(", ") : "(use FEN ideas)"}`;
+                        lineOutput += `\nWHITE MOVES FROM PV (max 3): ${whiteMoves.slice(0, 3).join(", ") || "(none)"}`;
+                        lineOutput += `\nBLACK MOVES FROM PV (max 3): ${blackMoves.slice(0, 3).join(", ") || "(none)"}`;
+                        lineOutput += `\nFILTERED PLAN MOVES (for ${planSide} only — use at most 1–3): ${planMoves.length ? planMoves.join(", ") : "(use FEN ideas)"}`;
                         lineOutput += `\nINSTRUCTION: Trust GM VERDICT above — ignore engine numbers for who is better.`;
                         lineOutput += `\n- "we" = ${weSide} only. Never use "we" for ${theySide}.`;
-                        lineOutput += `\n- PLAN SIDE is ${planSide}. Name only ${planSide}'s moves from FILTERED PLAN MOVES.`;
+                        lineOutput += `\n- PLAN SIDE is ${planSide}. Name only ${planSide}'s moves; at most 1–3 moves in the plan.`;
                         if (hasDubious) {
-                            lineOutput += `\n- CRITICAL: ${sideJustPlayed} played a ? move. ${planSide} is better. FORBIDDEN to write "${sideJustPlayed} is better" or that ${sideJustPlayed} consolidates happily.`;
+                            lineOutput += `\n- CRITICAL: ${sideJustPlayed} played a ? move. ${planSide} is better. FORBIDDEN to write "${sideJustPlayed} is better".`;
                         }
-                        lineOutput += `\n- Never write +-, ±, +/=. Never repeat the next PGN move. Never dump raw move lists.`;
-                        lineOutput += `\n- REQUIRED: (1) WHY ${planSide} is better or why equal (structure, bishops, squares…). (2) WHAT ${planSide} plays — natural sentence with FILTERED PLAN MOVES.`;
-                        lineOutput += `\n- Read FEN carefully: do not say a rook pressures its own pawn; only pressure enemy pieces/pawns.`;
+                        lineOutput += `\n- BOARD TRUTH: Only mention pieces listed in POSITION FEATURES / PIECES for THIS FEN. If it says "NO black bishop on the board", you MUST NOT write about a black bishop on g4 or pinning. Nested variations have different pieces — never borrow a piece from a sibling line.`;
+                        lineOutput += `\n- Never write +-, ±, +/=. Never repeat the next PGN move. Never dump more than 3 plan moves.`;
+                        lineOutput += `\n- REQUIRED: (1) WHY ${planSide} is better or equal. (2) WHAT ${planSide} plays — 1–3 moves woven into a natural sentence.`;
 
                         if (isCritical || favouredSide || hasDubious) {
                             lineOutput += `\n[TACTICAL / CRITICAL]: Follow GM VERDICT. WHY + WHAT for ${planSide}.`;
@@ -872,12 +889,17 @@ REPERTOIRE SIDE: ${weSide}
 
 STARTING FEN OF THE BATCH: ${startingFen}
 
+=== BOARD TRUTH (NESTED VARIATIONS) ===
+Each position has its own FEN and PIECES list. Nested brackets are different positions.
+- ONLY mention pieces that appear in POSITION FEATURES / PIECES for THAT line.
+- If the list says "NO black bishop on the board", do NOT write "question the bishop" or "the pin on g4".
+- Example: after 7...O-O there is no bishop on g4. After 7...Bg4 there is. Never mix sibling lines.
+- Do not invent pins, attacks, or captures that the FEN does not support.
+
 === COLOUR OF NAMED MOVES (ZERO MIX-UPS) ===
-This is critical. The engine PV alternates colours.
-- WHITE MOVES FROM PV = only White's moves. Use these ONLY when describing White's plan.
-- BLACK MOVES FROM PV = only Black's moves. Use these ONLY when describing Black's plan.
-- FORBIDDEN: "we continue with Nh5 and Bg4" if Nh5 is White and Bg4 is Black (or the reverse).
-- CORRECT: "White continues with Nh5" / "Black answers with ...Bg4" / "we continue with Nh5" (only if Nh5 belongs to the repertoire side).
+- WHITE MOVES FROM PV = only White's moves. BLACK MOVES FROM PV = only Black's moves.
+- FORBIDDEN: mixing colours in one plan.
+- Plans: at most 1–3 moves, woven into a sentence (e.g. "continue with Nc3 and Be3"), never a long API dump.
 
 === TENSE ===
 PRESENT only: "we develop", "White wants", "the idea is".
@@ -903,14 +925,14 @@ Always give a reason AND a concrete plan. Use FILTERED PLAN MOVES / the correct 
 
 GOOD:
 "White is better thanks to the bishop pair and will press with the c4-c5 push or with Nc3 ideas."
-"We’re slightly better. Our pieces are well placed; next we continue with ...Nd7 and the ...c5 break."
-"White is better due to the superior pawn structure and will continue with O-O, Re1, and pressure on the e-file."
-"Black is under pressure; White plans Be3 and Qd2, aiming for queenside castling."
+"We’re slightly better; next we continue with ...Nd7 and ...c5."
+"White is better due to the superior structure and will continue with O-O and Re1."
 
 BAD:
 "White is better." (no reason, no plan)
-"White plays c4, c5, Nc3." (raw dump)
-"Continue with development." (vague, no moves)
+"White plays c4, c5, Nc3, Be3, Qd2, O-O-O." (too many moves / raw dump — max 1–3)
+"We question the bishop on g4" when PIECES says no black bishop (wrong board / sibling line)
+"Continue with development." (vague)
 
 === STYLE SAMPLES ===
 "One of the key ideas in these structures is to achieve the ...c5 break, not allowing White to build a strong centre and at the same time activating our pieces. Nd7 is played specifically to reinforce the c5-square and to prepare ...c5 as quickly as possible."
