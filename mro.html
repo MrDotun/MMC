@@ -95,7 +95,7 @@
                 <div class="lg:w-2/3 glass p-4 rounded-xl">
                     <div class="mb-3 text-xs text-slate-400 italic">
                         <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>. 
-                        The tool includes every variation start &amp; end, all moves with !?/$ symbols, plus a few random samples. Each position is sent with the exact move played + correct FEN. Engine ideas are supplied on branch ends so the AI can explain the <span class="text-white">intention</span> behind the move in natural GM style.
+                        Keep batches small (about 12–25 positions). The tool includes every variation start &amp; end, all moves with !?/$ symbols, plus a few samples. Each position is sent with the exact move, FEN, and explicit board facts (open/closed files, passed pawns, pieces). Engine ideas are supplied on branch ends so the AI can explain the <span class="text-white">intention</span> behind the move in natural GM style.
                     </div>
                     <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
                 </div>
@@ -482,14 +482,17 @@
                     K: "White king", Q: "White queen", R: "White rook", B: "White bishop", N: "White knight", P: "White pawn",
                     k: "Black king", q: "Black queen", r: "Black rook", b: "Black bishop", n: "Black knight", p: "Black pawn"
                 };
+                // grid[rank0=8..7=1][file0=a..7=h] = piece char or ''
+                const grid = Array.from({length:8}, () => Array(8).fill(''));
                 let whiteKing = "", blackKing = "";
                 const pieces = [];
-                const byType = { whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [], whiteRooks: [], blackRooks: [] };
+                const byType = { whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [], whiteRooks: [], blackRooks: [], whitePawns: [], blackPawns: [] };
                 for (let r = 0; r < 8; r++) {
                     let file = 0;
                     for (const ch of rows[r]) {
                         if (ch >= "1" && ch <= "8") { file += parseInt(ch); continue; }
                         const sq = String.fromCharCode(97 + file) + (8 - r);
+                        grid[r][file] = ch;
                         if (ch === "K") whiteKing = sq;
                         if (ch === "k") blackKing = sq;
                         if (names[ch]) pieces.push(`${names[ch]} on ${sq}`);
@@ -499,22 +502,93 @@
                         if (ch === "n") byType.blackKnights.push(sq);
                         if (ch === "R") byType.whiteRooks.push(sq);
                         if (ch === "r") byType.blackRooks.push(sq);
+                        if (ch === "P") byType.whitePawns.push(sq);
+                        if (ch === "p") byType.blackPawns.push(sq);
                         file++;
                     }
                 }
+
+                // File occupancy for open/semi-open detection
+                const fileLetters = "abcdefgh";
+                const openFiles = [], semiOpenWhite = [], semiOpenBlack = [], closedFiles = [];
+                for (let f = 0; f < 8; f++) {
+                    let hasW = false, hasB = false;
+                    for (let r = 0; r < 8; r++) {
+                        if (grid[r][f] === "P") hasW = true;
+                        if (grid[r][f] === "p") hasB = true;
+                    }
+                    const fl = fileLetters[f];
+                    if (!hasW && !hasB) openFiles.push(fl);
+                    else if (!hasW && hasB) semiOpenWhite.push(fl); // no white pawn = open for White
+                    else if (hasW && !hasB) semiOpenBlack.push(fl); // no black pawn = open for Black
+                    else closedFiles.push(fl);
+                }
+
+                // Passed pawns: no enemy pawn on same or adjacent files ahead
+                function isPassed(sq, isWhite) {
+                    const file = sq.charCodeAt(0) - 97;
+                    const rank = parseInt(sq[1], 10);
+                    if (isWhite) {
+                        for (let r = rank + 1; r <= 8; r++) {
+                            for (let df = -1; df <= 1; df++) {
+                                const f = file + df;
+                                if (f < 0 || f > 7) continue;
+                                const row = 8 - r; // grid row
+                                if (grid[row][f] === "p") return false;
+                            }
+                        }
+                        return true;
+                    } else {
+                        for (let r = rank - 1; r >= 1; r--) {
+                            for (let df = -1; df <= 1; df++) {
+                                const f = file + df;
+                                if (f < 0 || f > 7) continue;
+                                const row = 8 - r;
+                                if (grid[row][f] === "P") return false;
+                            }
+                        }
+                        return true;
+                    }
+                }
+                const whitePassed = byType.whitePawns.filter(sq => isPassed(sq, true));
+                const blackPassed = byType.blackPawns.filter(sq => isPassed(sq, false));
+
+                // Simple centre control / advanced pawns
+                const whiteAdvanced = byType.whitePawns.filter(sq => parseInt(sq[1]) >= 5);
+                const blackAdvanced = byType.blackPawns.filter(sq => parseInt(sq[1]) <= 4);
+
                 let notes = [];
                 notes.push(`Side to move: ${turn}`);
                 if (whiteKing) notes.push(`White king on ${whiteKing}`);
                 if (blackKing) notes.push(`Black king on ${blackKing}`);
                 if (whiteKing && whiteKing[0] === "e" && (castling.includes("K") || castling.includes("Q"))) notes.push("White still uncastled");
                 if (blackKing && blackKing[0] === "e" && (castling.includes("k") || castling.includes("q"))) notes.push("Black still uncastled");
+
+                // Explicit file status — model must obey these
+                if (openFiles.length) notes.push(`OPEN FILES (no pawns): ${openFiles.join(",")}`);
+                else notes.push("NO fully open files");
+                if (semiOpenWhite.length) notes.push(`SEMI-OPEN FOR WHITE (no white pawn): ${semiOpenWhite.join(",")}`);
+                if (semiOpenBlack.length) notes.push(`SEMI-OPEN FOR BLACK (no black pawn): ${semiOpenBlack.join(",")}`);
+                if (closedFiles.length) notes.push(`CLOSED FILES (both sides have pawns): ${closedFiles.join(",")}`);
+
+                // Passed pawns — explicit
+                if (whitePassed.length) notes.push(`WHITE PASSED PAWNS: ${whitePassed.join(",")}`);
+                else notes.push("NO white passed pawn");
+                if (blackPassed.length) notes.push(`BLACK PASSED PAWNS: ${blackPassed.join(",")}`);
+                else notes.push("NO black passed pawn");
+
+                if (whiteAdvanced.length) notes.push(`White advanced pawns (rank 5+): ${whiteAdvanced.join(",")}`);
+                if (blackAdvanced.length) notes.push(`Black advanced pawns (rank 4-): ${blackAdvanced.join(",")}`);
+
                 if (byType.blackBishops.length) notes.push(`Black bishops on ${byType.blackBishops.join(",")}`);
                 else notes.push("NO black bishop on the board");
                 if (byType.whiteBishops.length) notes.push(`White bishops on ${byType.whiteBishops.join(",")}`);
                 else notes.push("NO white bishop on the board");
                 if (byType.blackKnights.length) notes.push(`Black knights on ${byType.blackKnights.join(",")}`);
                 if (byType.whiteKnights.length) notes.push(`White knights on ${byType.whiteKnights.join(",")}`);
-                // compact piece list for verification
+                if (byType.whiteRooks.length) notes.push(`White rooks on ${byType.whiteRooks.join(",")}`);
+                if (byType.blackRooks.length) notes.push(`Black rooks on ${byType.blackRooks.join(",")}`);
+
                 notes.push(`PIECES: ${pieces.join("; ")}`);
                 return notes.join(" | ");
             } catch (e) {
@@ -715,9 +789,9 @@
                 if (/[?!$]|\$\d+/.test(c.target)) mustInclude.add(i);
             });
 
-            // A handful of random ordinary moves (max ~8 extra) so the AI still sees middle positions
+            // A few random ordinary moves only (keep batches small so the model stays accurate)
             const remaining = rangeIndices.filter(i => !mustInclude.has(i));
-            const randomCount = Math.min(8, Math.max(2, Math.floor(remaining.length * 0.15)));
+            const randomCount = Math.min(4, Math.max(0, Math.floor(remaining.length * 0.08)));
             for (let k = 0; k < randomCount && remaining.length; k++) {
                 const r = Math.floor(Math.random() * remaining.length);
                 mustInclude.add(remaining.splice(r, 1)[0]);
@@ -887,13 +961,16 @@ REPERTOIRE SIDE: ${weSide}
 STARTING FEN OF THE BATCH: ${startingFen}
 
 === LOOK AT THE FEN FIRST (MANDATORY) ===
-Before writing any comment you MUST examine the concrete position:
-1. Read FEN AFTER THE MOVE and POSITION FEATURES / PIECES for that exact line.
-2. Note side to move, king positions, which pieces are actually on the board, castling rights, and any structural features given.
+Before writing any comment you MUST examine the concrete position facts given for THAT line only:
+1. Read FEN AFTER THE MOVE and the full POSITION FEATURES block.
+2. Note side to move, king positions, pieces on the board, OPEN / SEMI-OPEN / CLOSED FILES, PASSED PAWNS, and advanced pawns.
 3. Only then decide what the move achieves in THIS position.
-4. Never invent a piece, pin, attack, capture, or threat that the FEN / PIECES list does not support.
-5. Nested variations are different positions — never borrow a bishop, knight, or idea from a sibling line.
-6. If POSITION FEATURES says "NO black bishop on the board", you must not mention a black bishop (or a pin on g4, etc.).
+4. HARD FACTS — never contradict them:
+   - If it says "CLOSED FILES: e" or "NO fully open files", you MUST NOT write "open e-file", "open centre", or "rook to the open e-file".
+   - If it says "NO white passed pawn" / "NO black passed pawn", you MUST NOT call any pawn passed.
+   - If it says "NO black bishop on the board", do not mention a black bishop, pin on g4, etc.
+5. Nested variations are different positions — never borrow pieces or structural claims from a sibling line.
+6. Prefer structural and developmental truths that the features actually confirm.
 
 === COLOUR OF NAMED MOVES ===
 - WHITE MOVES FROM PV = only White’s moves. BLACK MOVES FROM PV = only Black’s moves.
@@ -999,8 +1076,12 @@ Write like the following sample annotations — natural, idea-driven, varied in 
 “The knight reroutes toward g6 and Black has fully equalized. White has no meaningful pressure, while Black’s structure and piece coordination are excellent.”
 
 === WRITING PRINCIPLES ===
-- Explain the INTENTION of the move in the concrete position shown by the FEN.
-- Mention development, structural changes, exchanges, prophylaxis, space, activity or king safety when the board actually supports it.
+- Explain the INTENTION of the move in the concrete position shown by the FEN and POSITION FEATURES.
+- Mention development, structural changes, exchanges, prophylaxis, space, activity or king safety ONLY when the board facts support it.
+- HARD BAN on invented structure:
+  • Never say “open e-file”, “open centre”, “open d-file” etc. unless POSITION FEATURES lists that file under OPEN FILES or the correct SEMI-OPEN list.
+  • Never call a pawn “passed” unless it appears under WHITE PASSED PAWNS or BLACK PASSED PAWNS.
+  • Never invent a piece, pin, or attack absent from PIECES / bishop / knight lists.
 - Vary sentence length and structure. Mix short crisp notes with slightly longer explanatory ones.
 - On variation ends or critical moments, give a clear sense of the resulting position (equal, comfortable, slightly better for one side, playable, etc.) without dumping engine numbers or evaluation symbols.
 - Prefer natural coaching language over rigid templates.
