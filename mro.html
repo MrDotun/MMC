@@ -95,7 +95,7 @@
                 <div class="lg:w-2/3 glass p-4 rounded-xl">
                     <div class="mb-3 text-xs text-slate-400 italic">
                         <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>. 
-                        Keep batches small (about 12–25 positions). The tool includes every variation start &amp; end, all moves with !?/$ symbols, plus a few samples. Each position is sent with the exact move, FEN, and explicit board facts (open/closed files, passed pawns, pieces). Engine ideas are supplied on branch ends so the AI can explain the <span class="text-white">intention</span> behind the move in natural GM style.
+                        The tool includes every variation start &amp; end, all moves with !?/$ symbols, plus a few random samples. Each position is sent with the exact move played + correct FEN. Engine ideas are supplied on branch ends so the AI can explain the <span class="text-white">intention</span> behind the move in natural GM style.
                     </div>
                     <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
                 </div>
@@ -410,10 +410,11 @@
             }
             for (let attempt = 0; attempt <= retries; attempt++) {
                 try {
+                    // Multi-PV (variants: 3) so we see 2nd/3rd ideas, not only the top line
                     const response = await fetch("https://chess-api.com/v1", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ fen: fen, depth: 18, maxThinkingTime: 90 })
+                        body: JSON.stringify({ fen: fen, depth: 16, maxThinkingTime: 80, variants: 3 })
                     });
                     
                     if (response.status === 429) {
@@ -430,27 +431,50 @@
 
                     let cont = "";
                     if (data.continuationArr && data.continuationArr.length) {
-                        cont = data.continuationArr.slice(0, 7).join(" ");
+                        cont = data.continuationArr.slice(0, 6).join(" ");
                     } else if (data.continuation) {
-                        cont = String(data.continuation).split(" ").slice(0, 7).join(" ");
+                        cont = String(data.continuation).split(" ").slice(0, 6).join(" ");
                     }
 
                     const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
 
-                    // Build a short human-readable plan hint from the line
+                    // Collect multi-PV alternatives if API returns them
+                    const altLines = [];
+                    if (Array.isArray(data.variants) || Array.isArray(data.lines) || Array.isArray(data.pvs)) {
+                        const arr = data.variants || data.lines || data.pvs;
+                        arr.slice(0, 3).forEach((v, i) => {
+                            const san = v.san || v.move || "";
+                            let line = "";
+                            if (v.continuationArr) line = v.continuationArr.slice(0, 4).join(" ");
+                            else if (v.continuation) line = String(v.continuation).split(" ").slice(0, 4).join(" ");
+                            else if (v.moves) line = String(v.moves).split(" ").slice(0, 4).join(" ");
+                            const ev = v.eval != null ? v.eval : (v.score != null ? v.score : "");
+                            altLines.push(`Line ${i + 1}: ${san} ${line}`.trim() + (ev !== "" ? ` (eval ${ev})` : ""));
+                        });
+                    }
+                    // Some APIs return only one line but mention secondary moves
+                    if (!altLines.length && firstMove) {
+                        altLines.push(`Line 1: ${firstMove} ${cont}`.trim());
+                    }
+
                     let planHint = "";
                     if (firstMove) {
                         const evalNum = parseFloat(data.eval);
                         const isMate = /mate|#/i.test(String(data.eval)) || /#/.test(cont);
-                        if (isMate) {
-                            planHint = "Forced mate sequence exists.";
-                        } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) {
-                            planHint = "Large advantage — concrete attack or decisive material/positional gain.";
-                        } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) {
-                            planHint = "Clear plus — lasting pressure or structural advantage.";
-                        } else {
-                            planHint = "Small edge or equal — positional idea.";
-                        }
+                        if (isMate) planHint = "Forced mate sequence exists.";
+                        else if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) planHint = "Large advantage — concrete attack or decisive gain.";
+                        else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) planHint = "Clear plus — lasting pressure or structural edge.";
+                        else planHint = "Small edge or equal — positional idea.";
+                        // Extract pawn breaks / tempi from continuation
+                        const motifs = [];
+                        cont.split(/\s+/).forEach(m => {
+                            if (/^[a-h][2-7]$/.test(m)) motifs.push(`pawn to ${m}`);
+                            if (/^[NBQR][a-h][1-8]$/.test(m) || /^[NBQR]x/.test(m)) {
+                                const dest = m.replace(/x/, "").slice(-2);
+                                if (/^[a-h][1-8]$/.test(dest)) motifs.push(`piece to ${dest}`);
+                            }
+                        });
+                        if (motifs.length) planHint += " Motifs: " + [...new Set(motifs)].slice(0, 3).join("; ") + ".";
                     }
 
                     return {
@@ -459,6 +483,7 @@
                         continuation: cont,
                         text: data.text || "",
                         planHint: planHint,
+                        altLines: altLines,
                         invalid: false
                     };
                 } catch (e) {
@@ -467,6 +492,94 @@
                 }
             }
             return null;
+        }
+
+        // Chess-aware purpose of the move just played (not empty geometry)
+        function analyzeMovePurpose(fenBefore, fenAfter, moveSan, moveObj) {
+            const hints = [];
+            if (!fenBefore || !fenAfter) return hints;
+            try {
+                const before = new Chess(fenBefore);
+                const after = new Chess(fenAfter);
+                const san = (moveSan || "").replace(/[!?]+/g, "");
+                const from = moveObj && moveObj.from;
+                const to = moveObj && moveObj.to;
+                const piece = moveObj && moveObj.piece;
+                const captured = moveObj && moveObj.captured;
+
+                // Bishop/queen left a square that a pawn can now occupy (classic Bc4-d3 to free c4)
+                if (from && piece && "bnq".includes(piece)) {
+                    const file = from[0];
+                    const rank = from[1];
+                    // If a friendly pawn sits one or two ranks behind on same file, advancing may be the point
+                    const turnWas = fenBefore.split(" ")[1];
+                    const pawn = turnWas === "w" ? "P" : "p";
+                    // c4 vacated → c2-c4 or c3-c4 idea
+                    if (file === "c" && (rank === "4" || rank === "5")) {
+                        hints.push(`By leaving ${from}, the ${file}-pawn is free to advance (e.g. c2-c4 / c3-c4). That is often the real point — not the diagonal.`);
+                    }
+                    if (file === "f" && (rank === "4" || rank === "5")) {
+                        hints.push(`Leaving ${from} can free the f-pawn to advance.`);
+                    }
+                    if (file === "e" && (rank === "4" || rank === "5")) {
+                        hints.push(`Leaving ${from} can support a central pawn break.`);
+                    }
+                }
+
+                // Pawn advance that attacks a piece (tempo / space)
+                if (piece === "p" && to) {
+                    const tmp = new Chess(fenAfter);
+                    const attacks = [];
+                    // check opponent pieces adjacent in capture pattern — use board scan of knight/bishop/rook near
+                    const board = after.board();
+                    const files = "abcdefgh";
+                    const tr = 8 - parseInt(to[1], 10);
+                    const tf = files.indexOf(to[0]);
+                    const opp = fenAfter.split(" ")[1] === "w" ? "b" : "w"; // side that moved is opposite of side to move after
+                    // simpler: if SAN has no x but opponent knight was on a square attacked by this pawn
+                    if (moveObj && moveObj.flags && moveObj.flags.includes("c")) {
+                        hints.push("Gains space and hits an enemy piece with tempo.");
+                    }
+                    // d4-d5 vs knight on c6 is classic even without capture flag
+                    if ((to === "d5" || to === "d4" || to === "e5" || to === "e4" || to === "c5" || to === "f5")) {
+                        hints.push(`Central space gain with ${san}; often forces an enemy piece (e.g. a knight) to retreat and regroup.`);
+                    }
+                }
+
+                // Capture that damages structure
+                if (captured === "p" || (san && /x[a-h][1-8]/.test(san))) {
+                    if (san && /[a-h]x[a-h]/.test(san)) {
+                        hints.push("Capture may create doubled or isolated pawns — structure damage is the point.");
+                    }
+                }
+
+                // Retreat of a piece that was hanging or overloaded
+                if (piece && from && to) {
+                    const fromRank = parseInt(from[1], 10);
+                    const toRank = parseInt(to[1], 10);
+                    if (piece === "b" || piece === "n") {
+                        // moving backward often prophylactic or to free a pawn
+                        if ((fenBefore.split(" ")[1] === "w" && toRank < fromRank) || (fenBefore.split(" ")[1] === "b" && toRank > fromRank)) {
+                            hints.push("A retreat — ask what square or pawn break it frees, or what threat it steps out of. Do not praise a blocked diagonal.");
+                        }
+                    }
+                }
+
+                // Castling
+                if (/O-O/.test(san)) {
+                    hints.push("King safety and connecting rooks.");
+                }
+
+                // Developing move that prepares a break
+                if (piece === "n" && to && ["c3","d2","e2","f3","c6","d7","e7","f6"].includes(to)) {
+                    hints.push("Development — often prepares central breaks or stabilises the centre.");
+                }
+
+                if (!hints.length && san) {
+                    hints.push("Ask: what threat does this stop, what break does it prepare, or what does it force the opponent to do? Avoid empty geometry.");
+                }
+            } catch (e) {}
+            return hints;
         }
 
         // Full board inventory + features from FEN so AI never invents pieces from sibling lines
@@ -482,17 +595,14 @@
                     K: "White king", Q: "White queen", R: "White rook", B: "White bishop", N: "White knight", P: "White pawn",
                     k: "Black king", q: "Black queen", r: "Black rook", b: "Black bishop", n: "Black knight", p: "Black pawn"
                 };
-                // grid[rank0=8..7=1][file0=a..7=h] = piece char or ''
-                const grid = Array.from({length:8}, () => Array(8).fill(''));
                 let whiteKing = "", blackKing = "";
                 const pieces = [];
-                const byType = { whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [], whiteRooks: [], blackRooks: [], whitePawns: [], blackPawns: [] };
+                const byType = { whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [], whiteRooks: [], blackRooks: [] };
                 for (let r = 0; r < 8; r++) {
                     let file = 0;
                     for (const ch of rows[r]) {
                         if (ch >= "1" && ch <= "8") { file += parseInt(ch); continue; }
                         const sq = String.fromCharCode(97 + file) + (8 - r);
-                        grid[r][file] = ch;
                         if (ch === "K") whiteKing = sq;
                         if (ch === "k") blackKing = sq;
                         if (names[ch]) pieces.push(`${names[ch]} on ${sq}`);
@@ -502,93 +612,22 @@
                         if (ch === "n") byType.blackKnights.push(sq);
                         if (ch === "R") byType.whiteRooks.push(sq);
                         if (ch === "r") byType.blackRooks.push(sq);
-                        if (ch === "P") byType.whitePawns.push(sq);
-                        if (ch === "p") byType.blackPawns.push(sq);
                         file++;
                     }
                 }
-
-                // File occupancy for open/semi-open detection
-                const fileLetters = "abcdefgh";
-                const openFiles = [], semiOpenWhite = [], semiOpenBlack = [], closedFiles = [];
-                for (let f = 0; f < 8; f++) {
-                    let hasW = false, hasB = false;
-                    for (let r = 0; r < 8; r++) {
-                        if (grid[r][f] === "P") hasW = true;
-                        if (grid[r][f] === "p") hasB = true;
-                    }
-                    const fl = fileLetters[f];
-                    if (!hasW && !hasB) openFiles.push(fl);
-                    else if (!hasW && hasB) semiOpenWhite.push(fl); // no white pawn = open for White
-                    else if (hasW && !hasB) semiOpenBlack.push(fl); // no black pawn = open for Black
-                    else closedFiles.push(fl);
-                }
-
-                // Passed pawns: no enemy pawn on same or adjacent files ahead
-                function isPassed(sq, isWhite) {
-                    const file = sq.charCodeAt(0) - 97;
-                    const rank = parseInt(sq[1], 10);
-                    if (isWhite) {
-                        for (let r = rank + 1; r <= 8; r++) {
-                            for (let df = -1; df <= 1; df++) {
-                                const f = file + df;
-                                if (f < 0 || f > 7) continue;
-                                const row = 8 - r; // grid row
-                                if (grid[row][f] === "p") return false;
-                            }
-                        }
-                        return true;
-                    } else {
-                        for (let r = rank - 1; r >= 1; r--) {
-                            for (let df = -1; df <= 1; df++) {
-                                const f = file + df;
-                                if (f < 0 || f > 7) continue;
-                                const row = 8 - r;
-                                if (grid[row][f] === "P") return false;
-                            }
-                        }
-                        return true;
-                    }
-                }
-                const whitePassed = byType.whitePawns.filter(sq => isPassed(sq, true));
-                const blackPassed = byType.blackPawns.filter(sq => isPassed(sq, false));
-
-                // Simple centre control / advanced pawns
-                const whiteAdvanced = byType.whitePawns.filter(sq => parseInt(sq[1]) >= 5);
-                const blackAdvanced = byType.blackPawns.filter(sq => parseInt(sq[1]) <= 4);
-
                 let notes = [];
                 notes.push(`Side to move: ${turn}`);
                 if (whiteKing) notes.push(`White king on ${whiteKing}`);
                 if (blackKing) notes.push(`Black king on ${blackKing}`);
                 if (whiteKing && whiteKing[0] === "e" && (castling.includes("K") || castling.includes("Q"))) notes.push("White still uncastled");
                 if (blackKing && blackKing[0] === "e" && (castling.includes("k") || castling.includes("q"))) notes.push("Black still uncastled");
-
-                // Explicit file status — model must obey these
-                if (openFiles.length) notes.push(`OPEN FILES (no pawns): ${openFiles.join(",")}`);
-                else notes.push("NO fully open files");
-                if (semiOpenWhite.length) notes.push(`SEMI-OPEN FOR WHITE (no white pawn): ${semiOpenWhite.join(",")}`);
-                if (semiOpenBlack.length) notes.push(`SEMI-OPEN FOR BLACK (no black pawn): ${semiOpenBlack.join(",")}`);
-                if (closedFiles.length) notes.push(`CLOSED FILES (both sides have pawns): ${closedFiles.join(",")}`);
-
-                // Passed pawns — explicit
-                if (whitePassed.length) notes.push(`WHITE PASSED PAWNS: ${whitePassed.join(",")}`);
-                else notes.push("NO white passed pawn");
-                if (blackPassed.length) notes.push(`BLACK PASSED PAWNS: ${blackPassed.join(",")}`);
-                else notes.push("NO black passed pawn");
-
-                if (whiteAdvanced.length) notes.push(`White advanced pawns (rank 5+): ${whiteAdvanced.join(",")}`);
-                if (blackAdvanced.length) notes.push(`Black advanced pawns (rank 4-): ${blackAdvanced.join(",")}`);
-
                 if (byType.blackBishops.length) notes.push(`Black bishops on ${byType.blackBishops.join(",")}`);
                 else notes.push("NO black bishop on the board");
                 if (byType.whiteBishops.length) notes.push(`White bishops on ${byType.whiteBishops.join(",")}`);
                 else notes.push("NO white bishop on the board");
                 if (byType.blackKnights.length) notes.push(`Black knights on ${byType.blackKnights.join(",")}`);
                 if (byType.whiteKnights.length) notes.push(`White knights on ${byType.whiteKnights.join(",")}`);
-                if (byType.whiteRooks.length) notes.push(`White rooks on ${byType.whiteRooks.join(",")}`);
-                if (byType.blackRooks.length) notes.push(`Black rooks on ${byType.blackRooks.join(",")}`);
-
+                // compact piece list for verification
                 notes.push(`PIECES: ${pieces.join("; ")}`);
                 return notes.join(" | ");
             } catch (e) {
@@ -694,6 +733,7 @@
                     }
 
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
+                    const purposeHints = analyzeMovePurpose(fenBeforeLastMove, currentFEN, token, moveObj);
 
                     let newChunk = {
                         id: `CHK_${chunks.length}_M${moveNumber}_V${variationLevel}`,
@@ -706,7 +746,9 @@
                         fen: fenBeforeLastMove,
                         fenAfter: currentFEN,
                         moveParsed: parsedOk,
-                        variationLevel: variationLevel
+                        variationLevel: variationLevel,
+                        moveObj: moveObj ? { from: moveObj.from, to: moveObj.to, piece: moveObj.piece, captured: moveObj.captured, san: moveObj.san, flags: moveObj.flags } : null,
+                        purposeHints: purposeHints
                     };
 
                     chunks.push(newChunk);
@@ -789,9 +831,9 @@
                 if (/[?!$]|\$\d+/.test(c.target)) mustInclude.add(i);
             });
 
-            // A few random ordinary moves only (keep batches small so the model stays accurate)
+            // A handful of random ordinary moves (max ~8 extra) so the AI still sees middle positions
             const remaining = rangeIndices.filter(i => !mustInclude.has(i));
-            const randomCount = Math.min(4, Math.max(0, Math.floor(remaining.length * 0.08)));
+            const randomCount = Math.min(8, Math.max(2, Math.floor(remaining.length * 0.15)));
             for (let k = 0; k < randomCount && remaining.length; k++) {
                 const r = Math.floor(Math.random() * remaining.length);
                 mustInclude.add(remaining.splice(r, 1)[0]);
@@ -872,6 +914,13 @@ USE "we" ONLY FOR: ${weSide}`;
                 } else {
                     lineOutput += `\nFEN AFTER THE MOVE: UNRELIABLE (do not invent a position)`;
                 }
+                if (c.moveObj) {
+                    lineOutput += `\nMOVE DETAIL: ${c.moveObj.piece || "?"} from ${c.moveObj.from || "?"} to ${c.moveObj.to || "?"}${c.moveObj.captured ? " captures " + c.moveObj.captured : ""}`;
+                }
+                if (c.purposeHints && c.purposeHints.length) {
+                    lineOutput += `\nMOVE PURPOSE HINTS (chess reasons — prefer these over empty geometry): ${c.purposeHints.join(" | ")}`;
+                }
+                lineOutput += `\nCOMMENT RULE: Explain the PURPOSE of the move (what break it frees, what it forces, what threat it stops). Forbidden: praising a blocked diagonal, generic "active placement", "controls the long diagonal" when the diagonal is blocked by own pawns.`;
 
                 // Engine on variation ends, critical symbols, GM marks
                 const isCritical = /[?!$]|\$\d+|[\+\-=±∓]/.test(c.target) || hasDubious || hasGood || !!favouredSide;
@@ -902,6 +951,9 @@ USE "we" ONLY FOR: ${weSide}`;
                         lineOutput += `\nBEST CONTINUATION (full PV): ${bestLine || "(none)"}`;
                         if (engineData.planHint) {
                             lineOutput += `\nENGINE HINT: ${engineData.planHint}`;
+                        }
+                        if (engineData.altLines && engineData.altLines.length) {
+                            lineOutput += `\nMULTI-PV IDEAS (2nd/3rd choices — use to understand plans, not to dump moves):\n` + engineData.altLines.map(l => `  ${l}`).join("\n");
                         }
                         const planMoves = (planSide === "Black" ? blackMoves : whiteMoves).slice(0, 3);
 
@@ -951,160 +1003,111 @@ USE "we" ONLY FOR: ${weSide}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are the repertoire author (Annotator: sheva). Write calm, practical coaching annotations in present tense, with mixed natural style (~65–70% British spelling). Match the voice and variety of high-quality repertoire notes: explanatory, idea-focused, never rigid or formulaic.
+            const fullPrompt = `You are the repertoire author (Annotator: sheva). PRESENT TENSE only. Calm practical coaching English (~65–70% British spelling).
 
 REPERTOIRE SIDE: ${weSide}
-- Always use "we" / "our" only for ${weSide}.
-- Always refer to the opponent as ${theySide} (never "we").
+- Every batch line includes REPERTOIRE SIDE ("we"): ${weSide}. Obey it.
+- Always use "we" / "our" for ${weSide} only.
+- Always use "${theySide}" (never "we") for the opponent.
+- If repertoire is White: "we capture on d4" / "Black is left with doubled pawns".
+- If repertoire is Black: "we play ...c5" / "White wants Be3 and Rc1".
 - Never switch "we" mid-batch.
 
 STARTING FEN OF THE BATCH: ${startingFen}
 
-=== LOOK AT THE FEN FIRST (MANDATORY) ===
-Before writing any comment you MUST examine the concrete position facts given for THAT line only:
-1. Read FEN AFTER THE MOVE and the full POSITION FEATURES block.
-2. Note side to move, king positions, pieces on the board, OPEN / SEMI-OPEN / CLOSED FILES, PASSED PAWNS, and advanced pawns.
-3. Only then decide what the move achieves in THIS position.
-4. HARD FACTS — never contradict them:
-   - If it says "CLOSED FILES: e" or "NO fully open files", you MUST NOT write "open e-file", "open centre", or "rook to the open e-file".
-   - If it says "NO white passed pawn" / "NO black passed pawn", you MUST NOT call any pawn passed.
-   - If it says "NO black bishop on the board", do not mention a black bishop, pin on g4, etc.
-5. Nested variations are different positions — never borrow pieces or structural claims from a sibling line.
-6. Prefer structural and developmental truths that the features actually confirm.
+=== BOARD TRUTH (NESTED VARIATIONS) ===
+Each position has its own FEN and PIECES list. Nested brackets are different positions.
+- ONLY mention pieces that appear in POSITION FEATURES / PIECES for THAT line.
+- If the list says "NO black bishop on the board", do NOT write "question the bishop" or "the pin on g4".
+- Example: after 7...O-O there is no bishop on g4. After 7...Bg4 there is. Never mix sibling lines.
+- Do not invent pins, attacks, or captures that the FEN does not support.
 
-=== COLOUR OF NAMED MOVES ===
-- WHITE MOVES FROM PV = only White’s moves. BLACK MOVES FROM PV = only Black’s moves.
-- Never mix colours inside one plan sentence.
-- When naming concrete ideas, use at most 1–3 moves, woven naturally into the sentence.
+=== COLOUR OF NAMED MOVES (ZERO MIX-UPS) ===
+- WHITE MOVES FROM PV = only White's moves. BLACK MOVES FROM PV = only Black's moves.
+- FORBIDDEN: mixing colours in one plan.
+- Plans: at most 1–3 moves, woven into a sentence (e.g. "continue with Nc3 and Be3"), never a long API dump.
 
-=== TENSE & VOICE ===
-Present tense only: “we develop”, “White wants”, “the idea is”, “Black can now challenge”.
-Avoid past-tense narration.
+=== TENSE ===
+PRESENT only: "we develop", "White wants", "the idea is".
+Not: "we developed", "White continued", "we managed to reach".
 
-=== HOW TO THINK ===
-1. Read MOVE PLAYED, FEN AFTER THE MOVE, POSITION FEATURES, PLAYED BY, SIDE TO MOVE AFTER, GM VERDICT.
-2. Ground the comment in what is actually on the board (piece placement, structure, development stage).
-3. Decide the natural idea: development, exchange, structural change, prophylaxis, space, activity, king safety, etc.
-4. If engine PV or plan moves exist, pick only the correct colour and only the most useful 1–3 ideas.
-5. Write a short, natural coaching comment. Length should vary: sometimes one crisp sentence, sometimes two or three flowing sentences. Avoid always using the same template.
+=== HOW TO THINK (CHESS PURPOSE) ===
+1. Read MOVE PLAYED, MOVE PURPOSE HINTS, FEN, PLAYED BY.
+2. Ask: what does this move ENABLE (pawn break, tempo, regrouping)? What does it FORCE the opponent to do? What threat does it stop?
+3. Examples of REAL reasons:
+   - Bd3 after Bc4: frees c2-c4 / keeps the bishop, not "controls the blocked d3-h7 diagonal".
+   - d5 against a knight on c6: gains space with tempo; Black must retreat (Nb8) and regroup Nb8-d7 — not "Black happily aims for Nb8".
+   - h3 vs Bg4: asks the bishop to take or retreat — only if the bishop is actually on g4 in THIS FEN.
+4. If one side is better, say WHY (structure, space, tempo, piece activity) + WHAT they play (1–3 moves).
+5. Prefer MOVE PURPOSE HINTS and MULTI-PV IDEAS over geometric filler.
 
 === GM ASSESSMENT OVERRIDES ENGINE ===
-Trust GM VERDICT / PLAN SIDE (symbols, ?, !!, etc.). Do NOT use engine numbers to decide who is better. Engine lines are only for concrete move ideas for the correct side.
+Trust GM VERDICT / PLAN SIDE from each batch item (symbols like +-, -+, +/=, =, ?, !!). Do NOT use the engine number to decide who is better. The engine PV is only for concrete move ideas for PLAN SIDE.
 
-=== DUBIOUS MOVES (?) ===
-A ? or ?? move is bad for the side that played it. Never claim that side is better.
+=== DUBIOUS MOVES (?) — ZERO CONFUSION ===
+If Black played 3...Nd4?, GM VERDICT says White is better. You MUST NOT write "Black is better" or "Black consolidates".
+Correct: "A dubious early knight jump. We capture on d4 and leave Black with a damaged structure; White is better and will continue with O-O and Re1."
+If White played a ? move, Black is better — never the reverse.
+A ? move never makes the side that played it better.
 
-=== STYLE TARGET (MATCH THIS FEEL) ===
-Write like the following sample annotations — natural, idea-driven, varied in length and focus, always consistent with the actual position:
+=== WHY + WHAT (MANDATORY ON VARIATION ENDS AND WHEN GM SAYS ONE SIDE IS BETTER) ===
+Always give a reason AND a concrete plan. Use FILTERED PLAN MOVES / the correct colour PV list. Weave moves into natural English — do not list them like an API dump.
 
-“We attack White’s bishop, aiming either to gain the bishop pair or to slightly weaken White’s pawn structure.”
+GOOD:
+"A strong retreat: the bishop steps aside so we can play c2-c4 and gain space."
+"We gain space with tempo; Black must go back to b8 and later regroup with ...Nd7."
+"White is better thanks to the space advantage and will continue with Be3 and Qd2."
+"We’re slightly better; next we continue with ...Nd7 and ...c5."
 
-“White keeps the bishop active and avoids structural damage on e3. Black can now challenge it directly and gain useful development time.”
+BAD:
+"Keeping our bishop actively placed on the d3-h7 diagonal." (empty geometry; diagonal often blocked)
+"Black will try to untangle, possibly aiming for ...Nb8." (wrong: Nb8 is forced by d5, not a happy plan)
+"White is better." (no reason, no plan)
+"We question the bishop on g4" when no black bishop on the board
+"Continue with development." (vague)
 
-“We trade off White’s active pieces.”
+=== STYLE SAMPLES ===
+"One of the key ideas in these structures is to achieve the ...c5 break, not allowing White to build a strong centre and at the same time activating our pieces. Nd7 is played specifically to reinforce the c5-square and to prepare ...c5 as quickly as possible."
 
-“White supports the bishop with the queen.”
+"White immediately takes the initiative in the centre."
 
-“White exchanges immediately and gives Black a healthy central pawn structure.”
+"So, of course, we develop our bishop, aiming to exchange White’s active pieces."
 
-“Black has fully equalized and prepares ...Bb7 with a very comfortable setup.”
+"We recapture with the queen, since e7 is not the most favourable square for our knight."
 
-“White doesn’t want to allow us to build a more solid center and simply retreats the bishop to a safe square.”
+"An aggressive continuation. White wants to launch an immediate attack on the kingside."
 
-“We develop the queen with the threat of ...Qb4, aiming to complete our development more quickly.”
+"Of course, we strike with ...c5, there’s no other way."
 
-“We have no problems here.”
+"White continues with Be3 and Rc1, putting pressure on the c-file."
 
-“Another possible move, leading to a series of simplifications.”
+"The idea is f4-f5 next, opening lines against the black king."
 
-“White wants to grab more space and keep more active pieces on the board.”
+=== HARD RULES ===
+1. Comments only after the move. Most moves get no comment.
+2. MUST comment [VARIATION END], [TACTICAL / CRITICAL], [EVAL SYMBOL], ?, ??, !!, !?, $2, $4.
+3. On every [VARIATION END] and when one side is better: MUST state WHY + WHAT (natural plan with 1–3 filtered moves for the stronger side).
+4. Never begin by repeating the move just played.
+5. Never mention engine, Stockfish, eval numbers, depth.
+6. NEVER write evaluation symbols in the comment text. Forbidden: +-, -+, +/=, =/+, ±, ∓, +, -, =, =+, +/-, -/=, ∞, $1–$6, $11, $13, $15–$19.
+7. Banned filler: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, "keeps the initiative", "continue with development" (without naming moves).
+8. Spelling: centre, d4-square, pair of bishops, favour, analyse, defence, colour.
+9. Length: 1–2 sentences preferred; max three.
 
-“We keep the queens on the board to limit White’s activity. The position is equal.”
-
-“We counterattack the b2-pawn and bring our queen into play, otherwise it could get stuck on the back rank after Rd1.”
-
-“We also make sure to continue our development.”
-
-“We chase the queen away to reduce the pressure.”
-
-“We defend our queen with the bishop, since we don’t want to give up such a good square and after an exchange White’s bishop would become too strong.”
-
-“White wants to grab space on the kingside while they still have the chance.”
-
-“White wants to gain a few tempi and get ahead of us in development.”
-
-“We move the king aside so that it doesn’t interfere with our bishop’s development if needed.”
-
-“Then we gain space on the kingside, looking to create play there instead of remaining passive.”
-
-“Although our position is somewhat passive, White cannot invade the seventh rank and gain any real benefits from it. The position is unclear and complicated, but still roughly equal.”
-
-“We reroute the bishop to a useful diagonal.”
-
-“We have completed our development and reached a perfectly playable position that will most likely end in a draw.”
-
-“Black develops naturally and prepares ...Bc6 or ...0-0-0 depending on White’s setup.”
-
-“White drives our knight away from g4.”
-
-“Black removes it before it can generate pressure.”
-
-“We make a prophylactic move.”
-
-“This is a hasty decision.”
-
-“After the forced exchanges, our king gets stuck in the center, and we are left with a difficult position.”
-
-“In this setup, our king will be safer on the queenside.”
-
-“We defend the a7-pawn with the king and reach a solid, equal position.”
-
-“In this setup, White’s knight has a more stable position on e5, so we’ll have to put in more effort to chase it away.”
-
-“The knight centralizes with tempo against the bishop.”
-
-“White places the bishop on e5, where it can create unpleasant pressure on the g7-pawn.”
-
-“Here White does go for the exchange, since they can gain a few tempi.”
-
-“We stop White’s queenside expansion and then simply complete our development. The position is equal.”
-
-“The bishop takes the active diagonal and reinforces the central squares.”
-
-“Black completes development and keeps the position compact.”
-
-“The knight reroutes toward g6 and Black has fully equalized. White has no meaningful pressure, while Black’s structure and piece coordination are excellent.”
-
-=== WRITING PRINCIPLES ===
-- Explain the INTENTION of the move in the concrete position shown by the FEN and POSITION FEATURES.
-- Mention development, structural changes, exchanges, prophylaxis, space, activity or king safety ONLY when the board facts support it.
-- HARD BAN on invented structure:
-  • Never say “open e-file”, “open centre”, “open d-file” etc. unless POSITION FEATURES lists that file under OPEN FILES or the correct SEMI-OPEN list.
-  • Never call a pawn “passed” unless it appears under WHITE PASSED PAWNS or BLACK PASSED PAWNS.
-  • Never invent a piece, pin, or attack absent from PIECES / bishop / knight lists.
-- Vary sentence length and structure. Mix short crisp notes with slightly longer explanatory ones.
-- On variation ends or critical moments, give a clear sense of the resulting position (equal, comfortable, slightly better for one side, playable, etc.) without dumping engine numbers or evaluation symbols.
-- Prefer natural coaching language over rigid templates.
-- You may name 1–3 useful follow-up ideas when they help the reader, but weave them into the sentence; never list them like an API dump.
-- Do not start the comment by repeating the move that was just played.
-- Do not name the immediate next move of the main PGN line (that would spoil the variation).
-- Do not paste mini-game scores or long sequences of upcoming moves.
-- Never mention the engine, Stockfish, eval numbers or depth.
-- Never write evaluation symbols inside the comment text (+-, -+, ±, ∓, +/=, =/+, =, $, etc.).
-- Banned filler: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, “keeps the initiative”, vague “continue with development” without naming ideas.
-- Spelling: centre, favour, analyse, defence, colour, pair of bishops, d4-square.
-
-=== WHEN TO COMMENT ===
-- MUST comment: variation ends, critical/tactical moments, moves with ? !! !? or evaluation symbols, and positions where one side is clearly better or fully equalized.
-- Ordinary developing moves may receive a short natural note or be left without a comment.
-- Prefer quality and natural variety over commenting every single move.
+=== DO NOT SPOIL / DO NOT DUMP THE LINE ===
+- Do NOT name the move that is already the next move in this PGN variation.
+  Bad: on 3...Nd4? writing "We immediately capture with Nxd4" when 4.Nxd4 is the next PGN move.
+  Good: "A dubious early knight jump that allows us to damage Black's structure."
+- Do NOT paste a sequence of upcoming PGN moves into the comment (e.g. "4.Nxd4 exd4 5.O-O c6 6.Re1").
+- Do NOT write a mini-game score inside the comment.
+- You MAY name longer-term ideas from WHITE MOVES FROM PV / BLACK MOVES FROM PV only when those moves are NOT the immediate next PGN move.
+- Prefer structural reasons (doubled pawns, superior structure, bishop pair, control of a square) over listing the next two developing moves that are already in the book line.
 
 === OUTPUT ===
 Return ONLY a pure JSON object.
-Keys = chunk IDs.
-Values = comment text only (pure English, no eval symbols, no move-list dumps).
-Omit keys that need no comment.
-No markdown, no thought process, no extra text outside the JSON.
+Keys = chunk IDs. Values = comment text only — pure English, no eval symbols, no move lists from the PGN.
+Omit keys with no comment.
+No markdown, no thought process, no extra text.
 
 === BATCH TO ANALYZE ===
 ${batchString}`;
