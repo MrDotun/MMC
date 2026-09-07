@@ -888,16 +888,8 @@
 
                 // Clear statement of the move that was played — the AI must know this
                 let lineOutput = `[ID: ${c.id}]
-MOVE PLAYED: ${c.moveNum}. ${c.target}
-PLAYED BY: ${sideJustPlayed}
-SIDE TO MOVE AFTER: ${sideToMoveAfter}
-REPERTOIRE SIDE ("we"): ${weSide}
-OPPONENT ("${theySide}"): ${theySide}
-MAIN LINE: ${c.isMainLine} | VARIATION START: ${c.isVariationStart} | VARIATION END: ${c.isVariationEnd} | DEPTH: ${c.variationLevel}
-FEN OK: ${fenOk}
-GM VERDICT: ${gmVerdict}
-PLAN SIDE: ${planSide}
-USE "we" ONLY FOR: ${weSide}`;
+${c.moveNum}. ${c.target}  (${sideJustPlayed})  → ${sideToMoveAfter} to move
+GM: ${gmVerdict} | PLAN: ${planSide} | V${c.variationLevel}${c.isVariationEnd ? " END" : ""}${c.isVariationStart ? " START" : ""}`;
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
@@ -915,12 +907,11 @@ USE "we" ONLY FOR: ${weSide}`;
                     lineOutput += `\nFEN AFTER THE MOVE: UNRELIABLE (do not invent a position)`;
                 }
                 if (c.moveObj) {
-                    lineOutput += `\nMOVE DETAIL: ${c.moveObj.piece || "?"} from ${c.moveObj.from || "?"} to ${c.moveObj.to || "?"}${c.moveObj.captured ? " captures " + c.moveObj.captured : ""}`;
+                    lineOutput += `\nMOVE: ${c.moveObj.piece || "?"} ${c.moveObj.from || "?"}→${c.moveObj.to || "?"}${c.moveObj.captured ? " x" + c.moveObj.captured : ""}`;
                 }
                 if (c.purposeHints && c.purposeHints.length) {
-                    lineOutput += `\nMOVE PURPOSE HINTS (chess reasons — prefer these over empty geometry): ${c.purposeHints.join(" | ")}`;
+                    lineOutput += `\nPURPOSE: ${c.purposeHints.join(" | ")}`;
                 }
-                lineOutput += `\nCOMMENT RULE: Explain the PURPOSE of the move (what break it frees, what it forces, what threat it stops). Forbidden: praising a blocked diagonal, generic "active placement", "controls the long diagonal" when the diagonal is blocked by own pawns.`;
 
                 // Engine on variation ends, critical symbols, GM marks
                 const isCritical = /[?!$]|\$\d+|[\+\-=±∓]/.test(c.target) || hasDubious || hasGood || !!favouredSide;
@@ -947,38 +938,13 @@ USE "we" ONLY FOR: ${weSide}`;
                         const whiteMoves = stm === "White" ? stmMoves : oppMoves;
                         const blackMoves = stm === "Black" ? stmMoves : oppMoves;
 
-                        lineOutput += `\nENGINE EVAL (ideas only — do NOT use for who is better): ${engineData.eval}`;
-                        lineOutput += `\nBEST CONTINUATION (full PV): ${bestLine || "(none)"}`;
-                        if (engineData.planHint) {
-                            lineOutput += `\nENGINE HINT: ${engineData.planHint}`;
-                        }
-                        if (engineData.altLines && engineData.altLines.length) {
-                            lineOutput += `\nMULTI-PV IDEAS (2nd/3rd choices — use to understand plans, not to dump moves):\n` + engineData.altLines.map(l => `  ${l}`).join("\n");
-                        }
                         const planMoves = (planSide === "Black" ? blackMoves : whiteMoves).slice(0, 3);
-
-                        lineOutput += `\nWHITE MOVES FROM PV (max 3): ${whiteMoves.slice(0, 3).join(", ") || "(none)"}`;
-                        lineOutput += `\nBLACK MOVES FROM PV (max 3): ${blackMoves.slice(0, 3).join(", ") || "(none)"}`;
-                        lineOutput += `\nFILTERED PLAN MOVES (for ${planSide} only — use at most 1–3): ${planMoves.length ? planMoves.join(", ") : "(use FEN ideas)"}`;
-                        lineOutput += `\nINSTRUCTION: Trust GM VERDICT above — ignore engine numbers for who is better.`;
-                        lineOutput += `\n- "we" = ${weSide} only. Never use "we" for ${theySide}.`;
-                        lineOutput += `\n- PLAN SIDE is ${planSide}. Name only ${planSide}'s moves; at most 1–3 moves in the plan.`;
-                        if (hasDubious) {
-                            lineOutput += `\n- CRITICAL: ${sideJustPlayed} played a ? move. ${planSide} is better. FORBIDDEN to write "${sideJustPlayed} is better".`;
+                        lineOutput += `\nPLAN MOVES (${planSide}, max 3): ${planMoves.join(", ") || "(from FEN)"}`;
+                        if (engineData.altLines && engineData.altLines.length > 1) {
+                            lineOutput += `\nALT IDEAS: ${engineData.altLines.slice(0, 3).join(" | ")}`;
                         }
-                        lineOutput += `\n- BOARD TRUTH: Only mention pieces listed in POSITION FEATURES / PIECES for THIS FEN. If it says "NO black bishop on the board", you MUST NOT write about a black bishop on g4 or pinning. Nested variations have different pieces — never borrow a piece from a sibling line.`;
-                        lineOutput += `\n- Never write +-, ±, +/=. Never repeat the next PGN move. Never dump more than 3 plan moves.`;
-                        lineOutput += `\n- REQUIRED: (1) WHY ${planSide} is better or equal. (2) WHAT ${planSide} plays — 1–3 moves woven into a natural sentence.`;
-
-                        if (isCritical || favouredSide || hasDubious) {
-                            lineOutput += `\n[TACTICAL / CRITICAL]: Follow GM VERDICT. WHY + WHAT for ${planSide}.`;
-                        }
-                        if (/[\+\-=]|\$\d+/.test(c.target) || favouredSide || hasDubious) {
-                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: GM says ${gmVerdict}. Explain WHY and WHAT ${planSide} continues with.`;
-                        }
-
-                        if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: GM VERDICT + WHY + WHAT for ${planSide}. 1–3 sentences. No eval symbols. No raw dump.`;
+                        if (c.isVariationEnd || favouredSide || hasDubious || isCritical) {
+                            lineOutput += `\n→ Comment: WHY + WHAT for ${planSide} (1–3 moves).`;
                         }
                         statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"}`;
                     } else {
@@ -1003,113 +969,26 @@ USE "we" ONLY FOR: ${weSide}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are the repertoire author (Annotator: sheva). PRESENT TENSE only. Calm practical coaching English (~65–70% British spelling).
+            const fullPrompt = `You write short opening notes for a repertoire book (Annotator: sheva). Present tense. "we"/"our" = ${weSide} only; opponent = ${theySide}.
 
-REPERTOIRE SIDE: ${weSide}
-- Every batch line includes REPERTOIRE SIDE ("we"): ${weSide}. Obey it.
-- Always use "we" / "our" for ${weSide} only.
-- Always use "${theySide}" (never "we") for the opponent.
-- If repertoire is White: "we capture on d4" / "Black is left with doubled pawns".
-- If repertoire is Black: "we play ...c5" / "White wants Be3 and Rc1".
-- Never switch "we" mid-batch.
+START FEN: ${startingFen}
 
-STARTING FEN OF THE BATCH: ${startingFen}
+For each position below:
+• Read FEN + PIECES. Only mention pieces that are actually there. Nested lines are different boards.
+• Trust GM VERDICT / PLAN SIDE (not engine numbers). A ? move means the side that played it is worse.
+• Explain PURPOSE: what the move frees, forces, or stops — not empty geometry ("controls the diagonal").
+• If GM says one side is better or the line ends: say WHY + WHAT (1–3 plan moves for PLAN SIDE, natural sentence).
+• Sparse comments. Must comment variation ends, ?, !!, and GM eval marks.
+• No eval symbols in text (+-, ±, $16…). No naming the next PGN move. No engine talk.
 
-=== BOARD TRUTH (NESTED VARIATIONS) ===
-Each position has its own FEN and PIECES list. Nested brackets are different positions.
-- ONLY mention pieces that appear in POSITION FEATURES / PIECES for THAT line.
-- If the list says "NO black bishop on the board", do NOT write "question the bishop" or "the pin on g4".
-- Example: after 7...O-O there is no bishop on g4. After 7...Bg4 there is. Never mix sibling lines.
-- Do not invent pins, attacks, or captures that the FEN does not support.
-
-=== COLOUR OF NAMED MOVES (ZERO MIX-UPS) ===
-- WHITE MOVES FROM PV = only White's moves. BLACK MOVES FROM PV = only Black's moves.
-- FORBIDDEN: mixing colours in one plan.
-- Plans: at most 1–3 moves, woven into a sentence (e.g. "continue with Nc3 and Be3"), never a long API dump.
-
-=== TENSE ===
-PRESENT only: "we develop", "White wants", "the idea is".
-Not: "we developed", "White continued", "we managed to reach".
-
-=== HOW TO THINK (CHESS PURPOSE) ===
-1. Read MOVE PLAYED, MOVE PURPOSE HINTS, FEN, PLAYED BY.
-2. Ask: what does this move ENABLE (pawn break, tempo, regrouping)? What does it FORCE the opponent to do? What threat does it stop?
-3. Examples of REAL reasons:
-   - Bd3 after Bc4: frees c2-c4 / keeps the bishop, not "controls the blocked d3-h7 diagonal".
-   - d5 against a knight on c6: gains space with tempo; Black must retreat (Nb8) and regroup Nb8-d7 — not "Black happily aims for Nb8".
-   - h3 vs Bg4: asks the bishop to take or retreat — only if the bishop is actually on g4 in THIS FEN.
-4. If one side is better, say WHY (structure, space, tempo, piece activity) + WHAT they play (1–3 moves).
-5. Prefer MOVE PURPOSE HINTS and MULTI-PV IDEAS over geometric filler.
-
-=== GM ASSESSMENT OVERRIDES ENGINE ===
-Trust GM VERDICT / PLAN SIDE from each batch item (symbols like +-, -+, +/=, =, ?, !!). Do NOT use the engine number to decide who is better. The engine PV is only for concrete move ideas for PLAN SIDE.
-
-=== DUBIOUS MOVES (?) — ZERO CONFUSION ===
-If Black played 3...Nd4?, GM VERDICT says White is better. You MUST NOT write "Black is better" or "Black consolidates".
-Correct: "A dubious early knight jump. We capture on d4 and leave Black with a damaged structure; White is better and will continue with O-O and Re1."
-If White played a ? move, Black is better — never the reverse.
-A ? move never makes the side that played it better.
-
-=== WHY + WHAT (MANDATORY ON VARIATION ENDS AND WHEN GM SAYS ONE SIDE IS BETTER) ===
-Always give a reason AND a concrete plan. Use FILTERED PLAN MOVES / the correct colour PV list. Weave moves into natural English — do not list them like an API dump.
-
-GOOD:
-"A strong retreat: the bishop steps aside so we can play c2-c4 and gain space."
+Style:
+"A strong retreat: the bishop steps aside so we can play c2-c4."
 "We gain space with tempo; Black must go back to b8 and later regroup with ...Nd7."
-"White is better thanks to the space advantage and will continue with Be3 and Qd2."
-"We’re slightly better; next we continue with ...Nd7 and ...c5."
+"White is better due to the space advantage and will continue with Be3 and Qd2."
 
-BAD:
-"Keeping our bishop actively placed on the d3-h7 diagonal." (empty geometry; diagonal often blocked)
-"Black will try to untangle, possibly aiming for ...Nb8." (wrong: Nb8 is forced by d5, not a happy plan)
-"White is better." (no reason, no plan)
-"We question the bishop on g4" when no black bishop on the board
-"Continue with development." (vague)
+Output: JSON only. Keys = chunk IDs. Values = comment strings. Omit quiet moves.
 
-=== STYLE SAMPLES ===
-"One of the key ideas in these structures is to achieve the ...c5 break, not allowing White to build a strong centre and at the same time activating our pieces. Nd7 is played specifically to reinforce the c5-square and to prepare ...c5 as quickly as possible."
-
-"White immediately takes the initiative in the centre."
-
-"So, of course, we develop our bishop, aiming to exchange White’s active pieces."
-
-"We recapture with the queen, since e7 is not the most favourable square for our knight."
-
-"An aggressive continuation. White wants to launch an immediate attack on the kingside."
-
-"Of course, we strike with ...c5, there’s no other way."
-
-"White continues with Be3 and Rc1, putting pressure on the c-file."
-
-"The idea is f4-f5 next, opening lines against the black king."
-
-=== HARD RULES ===
-1. Comments only after the move. Most moves get no comment.
-2. MUST comment [VARIATION END], [TACTICAL / CRITICAL], [EVAL SYMBOL], ?, ??, !!, !?, $2, $4.
-3. On every [VARIATION END] and when one side is better: MUST state WHY + WHAT (natural plan with 1–3 filtered moves for the stronger side).
-4. Never begin by repeating the move just played.
-5. Never mention engine, Stockfish, eval numbers, depth.
-6. NEVER write evaluation symbols in the comment text. Forbidden: +-, -+, +/=, =/+, ±, ∓, +, -, =, =+, +/-, -/=, ∞, $1–$6, $11, $13, $15–$19.
-7. Banned filler: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, "keeps the initiative", "continue with development" (without naming moves).
-8. Spelling: centre, d4-square, pair of bishops, favour, analyse, defence, colour.
-9. Length: 1–2 sentences preferred; max three.
-
-=== DO NOT SPOIL / DO NOT DUMP THE LINE ===
-- Do NOT name the move that is already the next move in this PGN variation.
-  Bad: on 3...Nd4? writing "We immediately capture with Nxd4" when 4.Nxd4 is the next PGN move.
-  Good: "A dubious early knight jump that allows us to damage Black's structure."
-- Do NOT paste a sequence of upcoming PGN moves into the comment (e.g. "4.Nxd4 exd4 5.O-O c6 6.Re1").
-- Do NOT write a mini-game score inside the comment.
-- You MAY name longer-term ideas from WHITE MOVES FROM PV / BLACK MOVES FROM PV only when those moves are NOT the immediate next PGN move.
-- Prefer structural reasons (doubled pawns, superior structure, bishop pair, control of a square) over listing the next two developing moves that are already in the book line.
-
-=== OUTPUT ===
-Return ONLY a pure JSON object.
-Keys = chunk IDs. Values = comment text only — pure English, no eval symbols, no move lists from the PGN.
-Omit keys with no comment.
-No markdown, no thought process, no extra text.
-
-=== BATCH TO ANALYZE ===
+=== POSITIONS ===
 ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
