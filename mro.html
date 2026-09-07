@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master Pro (3-Line Engine) | Decipher Chess Academy</title>
+    <title>GM Variation Master Pro (5-Line Engine) | Decipher Chess Academy</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -34,7 +34,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Idea-Focused Annotation Engine · 3 Engine Lines</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Idea-Focused Annotation Engine · 5 Engine Lines</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -95,7 +95,7 @@
                 <div class="lg:w-2/3 glass p-4 rounded-xl">
                     <div class="mb-3 text-xs text-slate-400 italic">
                         <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>. 
-                        The tool includes every variation start &amp; end, all moves with !?/$ symbols, plus a few random samples. Each position is sent with the exact move played + correct FEN. Engine ideas are supplied on branch ends so the AI can explain the <span class="text-white">intention</span> behind the move in natural GM style.
+                        The tool includes every variation start &amp; end, all moves with !?/$ symbols, plus a few random samples. Each position is sent with the exact move played + correct FEN. GM evaluation signs are the authority; engine ideas (up to 5 lines) are supplied mainly on variation ends so the AI can explain the <span class="text-white">intention</span> and longer plans in natural GM style — without quoting the variation's own moves as the plan.
                     </div>
                     <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
                 </div>
@@ -447,7 +447,7 @@
                             fen: fen,
                             depth: 18,
                             maxThinkingTime: 90,
-                            variants: 3
+                            variants: 5
                         })
                     });
                     
@@ -459,14 +459,14 @@
                     if (!response.ok) return null;
                     const data = await response.json();
 
-                    // Support both single-object and array responses (MultiPV)
+                    // Support both single-object and array responses (MultiPV) — keep up to 5 lines
                     let lines = [];
                     if (Array.isArray(data)) {
-                        lines = data.map(parseEngineLine).filter(Boolean).slice(0, 3);
+                        lines = data.map(parseEngineLine).filter(Boolean).slice(0, 5);
                     } else if (data.lines && Array.isArray(data.lines)) {
-                        lines = data.lines.map(parseEngineLine).filter(Boolean).slice(0, 3);
+                        lines = data.lines.map(parseEngineLine).filter(Boolean).slice(0, 5);
                     } else if (data.pvs && Array.isArray(data.pvs)) {
-                        lines = data.pvs.map(parseEngineLine).filter(Boolean).slice(0, 3);
+                        lines = data.pvs.map(parseEngineLine).filter(Boolean).slice(0, 5);
                     } else {
                         const one = parseEngineLine(data);
                         if (one) lines = [one];
@@ -647,6 +647,13 @@
 
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
 
+                    // Detect captured piece (if any) so AI never invents the wrong unit
+                    let capturedPiece = null;
+                    if (moveObj && moveObj.captured) {
+                        const captMap = { p: "pawn", n: "knight", b: "bishop", r: "rook", q: "queen", k: "king" };
+                        capturedPiece = captMap[moveObj.captured.toLowerCase()] || moveObj.captured;
+                    }
+
                     let newChunk = {
                         id: `CHK_${chunks.length}_M${moveNumber}_V${variationLevel}`,
                         target: token + evalSymbol,
@@ -658,7 +665,8 @@
                         fen: fenBeforeLastMove,
                         fenAfter: currentFEN,
                         moveParsed: parsedOk,
-                        variationLevel: variationLevel
+                        variationLevel: variationLevel,
+                        capturedPiece: capturedPiece
                     };
 
                     chunks.push(newChunk);
@@ -741,9 +749,9 @@
                 if (/[?!$]|\$\d+/.test(c.target)) mustInclude.add(i);
             });
 
-            // A handful of random ordinary moves (max ~8 extra) so the AI still sees middle positions
+            // Larger sample of ordinary moves so batches cover more of the selected range
             const remaining = rangeIndices.filter(i => !mustInclude.has(i));
-            const randomCount = Math.min(8, Math.max(2, Math.floor(remaining.length * 0.15)));
+            const randomCount = Math.min(25, Math.max(5, Math.floor(remaining.length * 0.40)));
             for (let k = 0; k < randomCount && remaining.length; k++) {
                 const r = Math.floor(Math.random() * remaining.length);
                 mustInclude.add(remaining.splice(r, 1)[0]);
@@ -796,28 +804,27 @@
                     favouredSide = sideJustPlayed;
                 }
 
-                const planSide = favouredSide || (isBadMove ? (sideJustPlayed === "White" ? "Black" : "White") : sideJustPlayed);
-                let gmVerdict = "no clear GM edge mark";
-                if (hasBlunder) {
-                    gmVerdict = `${sideJustPlayed} just played a BLUNDER (??). ${planSide} is better. NEVER say ${sideJustPlayed} is better.`;
-                } else if (hasMistake) {
-                    gmVerdict = `${sideJustPlayed} just played a MISTAKE (?). ${planSide} is better. NEVER say ${sideJustPlayed} is better.`;
-                } else if (hasDubious) {
-                    gmVerdict = `${sideJustPlayed} just played a DUBIOUS move (?!). Position may still be playable but the idea is questionable.`;
-                } else if (favouredSide) {
-                    gmVerdict = `GM marks ${favouredSide} better.`;
+                // Symbol is already on the move (in MOVE PLAYED). Keep any extra note short.
+                let gmNote = "";
+                if (favouredSide) {
+                    gmNote = `Favoured side: ${favouredSide}`;
                 } else if (/\$10|\$11|\$13|=/.test(gmSym)) {
-                    gmVerdict = "GM marks the position equal.";
+                    gmNote = "Equal";
                 }
 
-                // Clear statement of the move that was played
+                // Clear statement of the move that was played — symbol sits beside the move
                 let lineOutput = `[ID: ${c.id}]
 MOVE PLAYED: ${c.moveNum}. ${c.target}
 PLAYED BY: ${sideJustPlayed}
 SIDE TO MOVE AFTER: ${sideToMoveAfter}
 REPERTOIRE ("we"): ${weSide}
-MAIN LINE: ${c.isMainLine} | VARIATION START: ${c.isVariationStart} | VARIATION END: ${c.isVariationEnd}
-GM VERDICT: ${gmVerdict}`;
+MAIN LINE: ${c.isMainLine} | VARIATION START: ${c.isVariationStart} | VARIATION END: ${c.isVariationEnd}`;
+                if (gmNote) {
+                    lineOutput += `\nGM NOTE: ${gmNote}`;
+                }
+                if (c.capturedPiece) {
+                    lineOutput += `\nCAPTURED PIECE: ${c.capturedPiece}`;
+                }
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
@@ -850,11 +857,13 @@ GM VERDICT: ${gmVerdict}`;
                         const lines = engineData.lines;
                         const stm = sideToMoveAfter;
 
-                        lineOutput += `\nENGINE LINES (ideas only — do NOT decide who is better from the numbers):`;
+                        // No evaluation numbers — only move ideas for plan understanding
+                        lineOutput += `\nENGINE IDEAS (for plans after this move / variation end only):`;
                         lines.forEach((ln, idx) => {
                             const rank = idx + 1;
                             const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            lineOutput += `\n  LINE ${rank}${rank === 1 ? " (BEST)" : rank === 2 ? " (2ND)" : " (3RD)"}: eval ${ln.eval} | ${fullPv || "(none)"}`;
+                            const label = rank === 1 ? "BEST" : rank === 2 ? "2ND" : rank === 3 ? "3RD" : rank === 4 ? "4TH" : "5TH";
+                            lineOutput += `\n  LINE ${rank} (${label}): ${fullPv || "(none)"}`;
                         });
 
                         // Aggregate colour-split moves from all lines
@@ -875,11 +884,11 @@ GM VERDICT: ${gmVerdict}`;
                             b.forEach(m => { if (!allBlack.includes(m)) allBlack.push(m); });
                         });
 
-                        lineOutput += `\nWHITE IDEAS FROM ENGINE: ${allWhite.slice(0, 4).join(", ") || "(none)"}`;
-                        lineOutput += `\nBLACK IDEAS FROM ENGINE: ${allBlack.slice(0, 4).join(", ") || "(none)"}`;
+                        lineOutput += `\nWHITE IDEAS FROM ENGINE: ${allWhite.slice(0, 5).join(", ") || "(none)"}`;
+                        lineOutput += `\nBLACK IDEAS FROM ENGINE: ${allBlack.slice(0, 5).join(", ") || "(none)"}`;
 
                         if (c.isVariationEnd || isCritical) {
-                            lineOutput += `\nNOTE: Variation end / critical — comment if the idea is useful. Use engine lines only as inspiration.`;
+                            lineOutput += `\nNOTE: On VARIATION END (or after a sacrifice / brilliant move) use these ENGINE IDEAS move strings as the next plan/ideas (e.g. with Nc5-e4 ideas). Never present them as the GM's recommended continuation inside an unfinished variation.`;
                         }
                         const topSan = lines[0].san || "ok";
                         statsText.innerText = `[${c.moveNum}.${c.target}] ${topSan} (+${lines.length - 1} more)`;
@@ -896,39 +905,38 @@ GM VERDICT: ${gmVerdict}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a strong repertoire author (Annotator: sheva). Write calm, practical coaching notes in present tense (~65–70% British spelling: centre, favour, analyse, defence, colour).
-
+            const fullPrompt = `You are a strong repertoire GM author with only 70% English skill. Write practical coaching notes in present tense.
 REPERTOIRE: we = ${weSide}. Always use "we/our" for ${weSide} and "${theySide}" for the opponent. Never switch.
 
-For each position you receive:
-- The exact move just played, the FEN after it, and a piece list (POSITION FEATURES). Trust only that board — never invent pieces from other variations.
-- Up to 3 ENGINE LINES (best / 2nd / 3rd). Use them only to understand ideas, activity and possible plans. Do NOT quote eval numbers or decide who is better from them.
-- GM VERDICT when present (from symbols). Trust it over the engine:
-  • ? = mistake, ?? = blunder → the side that played it is worse
-  • ?! = dubious
-  • ! / !! = good / brilliant
-  • +-, ±, etc. mark the favoured side
+These PGNs were marked by a GM. Symbols (!, !!, ?, ??, ?!, !?, +-, ±, =/+, etc.) appear beside the moves in MOVE PLAYED. Trust the symbol on the move — you already know what good, bad, dubious, and brilliant mean.
 
-Annotate freely and naturally. Prefer short notes (1–2 sentences). Most moves need no comment. Comment especially on variation ends, mistakes, critical moments and evaluation symbols.
+For each position:
+- MOVE PLAYED includes the move and its symbol. Use that symbol.
+- FEN + POSITION FEATURES describe the real board. Never invent pieces from other lines.
+- CAPTURED PIECE (when present) is the exact unit taken. State that unit — do not invent a different one.
+- Up to 5 ENGINE IDEAS (move strings). On VARIATION END, use them as the next plans/ideas. You may write move-string style (e.g. "with Nc5-e4 ideas" or "plans Re1–e4"). Pure natural language is optional. Same for sacrifices / brilliant moves. Do not treat engine lines as the GM's continuation inside an unfinished variation.
+
+HOW TO ANNOTATE VARIATIONS:
+- Early moves in a variation: explain the idea/mark without listing later moves of that same variation as "the plan".
+- Do not quote moves that already appear later in the same variation.
+- On VARIATION END: use the ENGINE IDEAS move strings for the plan (e.g. "with Re1–e4 ideas").
+
+Prefer short notes. Most moves need no comment. Focus on variation ends, critical symbols, and sacrifices.
 
 Good style:
-- "We recapture with the queen, keeping the knight free for a better square."
-- "White is better thanks to the space advantage and will develop the bishop before castling queenside."
-- "A dubious early knight jump that allows us to damage the pawn structure."
+- "We recapture with the bishop, keeping the knight free for a better square."
+- "with Nc5-e4 ideas."
+- "A strong pawn sacrifice intending Qh5+ and Qxe5."
 
 Avoid:
-- Repeating the move just played
-- Naming the immediate next move already in the PGN
-- Long move lists or mini-games inside the comment
-- Engine names, eval numbers, or symbols like +-, ±, =, $n
-- Vague filler ("continues with development", "keeps the initiative")
+- Repeating the move played.
+- Naming the next move already written in the PGN variation.
+- Engine names or eval symbols in the comment.
+- Inventing the wrong captured piece.
+- Vague filler.
+- Use centre instead of center.
 
-When describing a plan, respect legal move order (e.g. the c1-bishop must move before queenside castling is possible).
-
-OUTPUT: Return ONLY a pure JSON object.
-Keys = chunk IDs. Values = comment text only.
-Omit keys that need no comment.
-No markdown, no thinking, no extra text.
+OUTPUT: ONLY a pure JSON object. Keys = chunk IDs. Values = comment text only. Omit keys with no comment. No markdown, no thinking, no extra text.
 
 === BATCH ===
 ${batchString}`;
