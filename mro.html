@@ -849,146 +849,70 @@
                 let currentStep = s + 1;
                 let c = globalChunks[i];
 
-                // Side that JUST played the move = the side that was to move BEFORE the move
                 const fenPartsBefore = (c.fen || "").split(" ");
                 const sideJustPlayed = fenPartsBefore[1] === "w" ? "White" : (fenPartsBefore[1] === "b" ? "Black" : "?");
                 const fenPartsAfter = (c.fenAfter || "").split(" ");
                 const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
                 const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
 
-                // --- GM assessment from symbols (never from engine score) ---
-                const gmSym = `${c.target || ""} ${(c.gmNotes && c.gmNotes.evalMarks) ? c.gmNotes.evalMarks.join(" ") : ""}`;
-                let favouredSide = null; // who is better according to GM
-                if (/\+\/\-|\+\-|±|\+\/\=|\$16|\$18|\$14|\$20/.test(gmSym)) {
-                    favouredSide = "White";
-                } else if (/\-\/\+|\-\+|∓|\=\/\+|\$17|\$19|\$15|\$21/.test(gmSym)) {
-                    favouredSide = "Black";
-                } else if (/\$10|\$11|\$13|=\/=/.test(gmSym) || /(^|[^+\-\/])=(?=[^+\-\/]|$)/.test(gmSym)) {
-                    favouredSide = null; // equal
-                }
-                // ? / ?? on a move = that side played a BAD move → the OTHER side is better
-                const hasDubious = /\?\?|\?/.test(c.target || "");
-                const hasGood = /!!|!/.test(c.target || "") && !hasDubious;
-                if (hasDubious) {
-                    // Black played Nd4? → White is better. NEVER say Black is better.
-                    favouredSide = sideJustPlayed === "White" ? "Black" : "White";
-                } else if (favouredSide == null && hasGood) {
-                    favouredSide = sideJustPlayed;
-                }
+                // Short GM mark only (for context, not a lecture)
+                const gmSym = (c.target || "").match(/(\?\?|\?|!!|!\?|\?!|!|\+\-|\-\+|\+\/\-|\-\/\+|\+\/\=|\=\/\+|±|∓|\$\d+)/g);
+                const gmMark = gmSym ? gmSym.join(" ") : "";
 
-                const planSide = favouredSide || (hasDubious ? (sideJustPlayed === "White" ? "Black" : "White") : sideJustPlayed);
-                let gmVerdict = "no clear GM edge mark";
-                if (hasDubious) {
-                    gmVerdict = `${sideJustPlayed} just played a DUBIOUS/BAD move (?). ${planSide} is better. NEVER say ${sideJustPlayed} is better.`;
-                } else if (favouredSide) {
-                    gmVerdict = `GM marks ${favouredSide} better. Plan for ${favouredSide} only.`;
-                } else if (/\$10|\$11|\$13|=/.test(gmSym)) {
-                    gmVerdict = "GM marks the position equal.";
-                }
-
-                // Clear statement of the move that was played — the AI must know this
                 let lineOutput = `[ID: ${c.id}]
-${c.moveNum}. ${c.target}  (${sideJustPlayed})  → ${sideToMoveAfter} to move
-GM: ${gmVerdict} | PLAN: ${planSide} | V${c.variationLevel}${c.isVariationEnd ? " END" : ""}${c.isVariationStart ? " START" : ""}`;
+Move: ${c.moveNum}. ${c.target} by ${sideJustPlayed}
+FEN: ${fenOk ? c.fenAfter : "INVALID"}`;
+                if (gmMark) lineOutput += `\nGM mark: ${gmMark}`;
+                if (c.variationLevel > 0) lineOutput += `\nBranch depth: ${c.variationLevel}${c.isVariationEnd ? " (end)" : ""}`;
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
-                
                 statsText.innerText = `Preparing: ${c.moveNum}. ${c.target}`;
 
-                // Always give the true FEN after the move + positional features
-                if (fenOk) {
-                    lineOutput += `\nFEN AFTER THE MOVE: ${c.fenAfter}`;
-                    const posDesc = describePositionFromFen(c.fenAfter);
-                    if (posDesc) {
-                        lineOutput += `\nPOSITION FEATURES: ${posDesc}`;
-                    }
-                } else {
-                    lineOutput += `\nFEN AFTER THE MOVE: UNRELIABLE (do not invent a position)`;
-                }
-                if (c.moveObj) {
-                    lineOutput += `\nMOVE: ${c.moveObj.piece || "?"} ${c.moveObj.from || "?"}→${c.moveObj.to || "?"}${c.moveObj.captured ? " x" + c.moveObj.captured : ""}`;
-                }
-                if (c.purposeHints && c.purposeHints.length) {
-                    lineOutput += `\nPURPOSE: ${c.purposeHints.join(" | ")}`;
-                }
+                // Engine on ends / critical marks — 3 lines for the AI to read the plan
+                const isCritical = /[?!$]|\$\d+|[\+\-=±∓]/.test(c.target);
+                const needsEngine = fenOk && (c.isVariationEnd || isCritical || c.isVariationStart);
 
-                // Engine on variation ends, critical symbols, GM marks
-                const isCritical = /[?!$]|\$\d+|[\+\-=±∓]/.test(c.target) || hasDubious || hasGood || !!favouredSide;
-                const needsEngine = fenOk && (c.isVariationEnd || isCritical);
-                
                 if (needsEngine) {
                     engineCalls++;
                     btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(300); 
-                    
-                    let engineData = await getEngineRefutation(c.fenAfter);
-
-                    if (engineData && !engineData.invalid && engineData.eval != null) {
-                        const bestLine = `${engineData.san || ""} ${engineData.continuation || ""}`.trim();
-                        // Split PV by colour so AI never mixes White/Black moves
-                        const pvMoves = bestLine.split(/\s+/).filter(Boolean);
-                        const stm = sideToMoveAfter; // first move in PV belongs to this side
-                        const stmMoves = [];
-                        const oppMoves = [];
-                        pvMoves.forEach((m, idx) => {
-                            if (idx % 2 === 0) stmMoves.push(m);
-                            else oppMoves.push(m);
-                        });
-                        const whiteMoves = stm === "White" ? stmMoves : oppMoves;
-                        const blackMoves = stm === "Black" ? stmMoves : oppMoves;
-
-                        const planMoves = (planSide === "Black" ? blackMoves : whiteMoves).slice(0, 3);
-                        lineOutput += `\nPLAN MOVES (${planSide}, max 3): ${planMoves.join(", ") || "(from FEN)"}`;
-                        if (engineData.altLines && engineData.altLines.length > 1) {
-                            lineOutput += `\nALT IDEAS: ${engineData.altLines.slice(0, 3).join(" | ")}`;
+                    await delay(250);
+                    const engineData = await getEngineRefutation(c.fenAfter);
+                    if (engineData && !engineData.invalid) {
+                        const lines = [];
+                        if (engineData.altLines && engineData.altLines.length) {
+                            engineData.altLines.slice(0, 3).forEach(l => lines.push(l));
+                        } else {
+                            const one = `${engineData.san || ""} ${engineData.continuation || ""}`.trim();
+                            if (one) lines.push(`Line 1: ${one}`);
                         }
-                        if (c.isVariationEnd || favouredSide || hasDubious || isCritical) {
-                            lineOutput += `\n→ Comment: WHY + WHAT for ${planSide} (1–3 moves).`;
+                        while (lines.length < 3 && engineData.continuation) {
+                            // pad with truncated single PV if API only returned one line
+                            break;
                         }
-                        statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"}`;
-                    } else {
-                        lineOutput += `\nENGINE: No usable data for this position.`;
-                        if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: WHY (structure/activity) + WHAT can be played next from the FEN (concrete ideas).`;
+                        if (lines.length) {
+                            lineOutput += `\nEngine lines:\n` + lines.slice(0, 3).map((l, i) => `  ${i + 1}. ${l.replace(/^Line \d+:\s*/i, "")}`).join("\n");
                         }
+                        statsText.innerText = `[${c.moveNum}.${c.target}] ok`;
                     }
                 } else {
-                    if (c.isVariationEnd) {
-                        lineOutput += `\n[VARIATION END — REQUIRED]: WHY + WHAT can be played next. Correct colour only.`;
-                    }
-                    if (c.isVariationStart && !c.isVariationEnd) {
-                        lineOutput += `\n[VARIATION START]: Short present-tense note only if intention is not obvious.`;
-                    }
-                    await delay(15);
+                    await delay(10);
                 }
-                
+
                 batchData.push(lineOutput);
             }
 
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
-            
-            const fullPrompt = `You write short opening notes for a repertoire book (Annotator: sheva). Present tense. "we"/"our" = ${weSide} only; opponent = ${theySide}.
 
-START FEN: ${startingFen}
+            const fullPrompt = `Opening repertoire notes. Present tense. "we" = ${weSide}; opponent = ${theySide}.
 
-For each position below:
-• Read FEN + PIECES. Only mention pieces that are actually there. Nested lines are different boards.
-• Trust GM VERDICT / PLAN SIDE (not engine numbers). A ? move means the side that played it is worse.
-• Explain PURPOSE: what the move frees, forces, or stops — not empty geometry ("controls the diagonal").
-• If GM says one side is better or the line ends: say WHY + WHAT (1–3 plan moves for PLAN SIDE, natural sentence).
-• Sparse comments. Must comment variation ends, ?, !!, and GM eval marks.
-• No eval symbols in text (+-, ±, $16…). No naming the next PGN move. No engine talk.
+Look at each FEN. The move and colour are given. Engine lines (when present) show possible continuations — use them only as ideas for our plan.
 
-Style:
-"A strong retreat: the bishop steps aside so we can play c2-c4."
-"We gain space with tempo; Black must go back to b8 and later regroup with ...Nd7."
-"White is better due to the space advantage and will continue with Be3 and Qd2."
+Write short comments for interesting moves (branch ends, ? !!, GM marks). Explain why the move was played and what we want next. Trust the FEN for what is on the board. No eval symbols in the text. No engine jargon.
 
-Output: JSON only. Keys = chunk IDs. Values = comment strings. Omit quiet moves.
+JSON only: keys = IDs, values = comments. Skip quiet moves.
 
-=== POSITIONS ===
 ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
