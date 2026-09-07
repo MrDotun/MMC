@@ -95,7 +95,7 @@
                 <div class="lg:w-2/3 glass p-4 rounded-xl">
                     <div class="mb-3 text-xs text-slate-400 italic">
                         <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>. 
-                        Lean mode: only variation starts/ends + critical symbols (no random filler). Each position carries exact FEN + board features so the AI never invents pieces. Variations are seen bracket-by-bracket. GM signs are the authority; short engine ideas (top 3) appear only on variation ends / sacrifices so the AI can explain the <span class="text-white">intention</span> without quoting the variation's own moves.
+                        Includes variation starts/ends, critical symbols, and samples. Each position is sent with the exact move + FEN only (no piece-list text). Variations are seen bracket-by-bracket. GM signs are the authority; short engine ideas (top 3) appear mainly on variation ends / sacrifices so the AI can explain the <span class="text-white">intention</span> without quoting the variation's own moves.
                     </div>
                     <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
                 </div>
@@ -720,8 +720,8 @@
             const weSide = repertoireSide === 'white' ? 'White' : 'Black';
             const theySide = repertoireSide === 'white' ? 'Black' : 'White';
 
-            // --- Lean selection to reduce AI hallucination: only variation starts/ends + critical/symbol moves ---
-            // No random filler positions. AI sees the variation structure via brackets + exact FEN.
+            // --- Selection: variation starts/ends + critical/symbol moves + reasonable samples ---
+            // FEN is the only board source of truth (no piece-list text that can cause hallucination).
             const rangeIndices = [];
             for (let i = selStart; i <= endIdx; i++) rangeIndices.push(i);
 
@@ -742,9 +742,9 @@
                 if (/[?!$]|\$\d+/.test(c.target)) mustInclude.add(i);
             });
 
-            // Minimal samples only when range is very long (max 2)
+            // Restore samples so AI sees middle positions (max ~8)
             const remaining = rangeIndices.filter(i => !mustInclude.has(i));
-            const randomCount = remaining.length > 20 ? Math.min(2, Math.floor(remaining.length * 0.05)) : 0;
+            const randomCount = Math.min(8, Math.max(2, Math.floor(remaining.length * 0.15)));
             for (let k = 0; k < randomCount && remaining.length; k++) {
                 const r = Math.floor(Math.random() * remaining.length);
                 mustInclude.add(remaining.splice(r, 1)[0]);
@@ -811,7 +811,7 @@
                     gmVerdict = "GM marks the position equal.";
                 }
 
-                // Lean per-position data: FEN is the source of truth, variation structure is explicit
+                // Per-position data: FEN is the only board source of truth, variation structure is explicit
                 let lineOutput = `[ID: ${c.id}]
 MOVE: ${c.moveNum}. ${c.target}
 BY: ${sideJustPlayed} | TO MOVE: ${sideToMoveAfter} | WE: ${weSide}
@@ -823,13 +823,9 @@ GM: ${gmVerdict}`;
                 
                 statsText.innerText = `Preparing: ${c.moveNum}. ${c.target}`;
 
-                // FEN is primary — AI must trust only this board
+                // FEN only — no piece-list text (avoids "black bishop on c7" style hallucination)
                 if (fenOk) {
                     lineOutput += `\nFEN: ${c.fenAfter}`;
-                    const posDesc = describePositionFromFen(c.fenAfter);
-                    if (posDesc) {
-                        lineOutput += `\nBOARD: ${posDesc}`;
-                    }
                 } else {
                     lineOutput += `\nFEN: UNRELIABLE — do not invent pieces`;
                 }
@@ -876,7 +872,7 @@ IMPORTANT CONTEXT:
 These PGNs have already been checked by a GM who does not write English. He marked every critical moment with evaluation signs and symbols (!, !!, ?, ??, ?!, !?, +-, ±, =/+, etc.). Your only job is to translate those GM marks into clear natural-language coaching notes. Trust the GM symbols completely for who is better and whether a move is good or bad.
 
 For each position you receive:
-- The exact move just played, the FEN after it, and a piece list (POSITION FEATURES). Trust only that board — never invent pieces from other variations.
+- The exact move just played and the FEN after it. Trust only that FEN — never invent pieces from other variations or from engine lines.
 - GM VERDICT (from the symbols). This is the authority:
   • ? = mistake, ?? = blunder → the side that just played it is worse
   • ?! = dubious
@@ -927,7 +923,7 @@ ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
                 resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                alert(`Lean Batch Copied!\n${totalSelectedMoves} positions (variation starts/ends + critical only)\n${engineCalls} engine calls.\nFEN + bracket structure = source of truth.`);
+                alert(`Batch Copied!\n${totalSelectedMoves} positions (variation starts/ends + critical + samples)\n${engineCalls} engine calls.\nFEN only — no piece lists.`);
             }).catch(err => {
                 const textArea = document.createElement("textarea");
                 textArea.value = fullPrompt;
@@ -936,7 +932,7 @@ ${batchString}`;
                 try {
                     document.execCommand('copy');
                     resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                    alert(`Lean Batch Copied!\n${totalSelectedMoves} positions\n${engineCalls} engine calls.`);
+                    alert(`Batch Copied!\n${totalSelectedMoves} positions\n${engineCalls} engine calls.`);
                 } catch (e) {
                     alert("Clipboard error. Please try again or copy manually.");
                     resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
