@@ -510,12 +510,7 @@
                 };
                 let whiteKing = "", blackKing = "";
                 const pieces = [];
-                const byType = {
-                    whiteBishops: [], blackBishops: [],
-                    whiteKnights: [], blackKnights: [],
-                    whiteRooks: [], blackRooks: [],
-                    whiteQueens: [], blackQueens: []
-                };
+                const byType = { whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [], whiteRooks: [], blackRooks: [] };
                 for (let r = 0; r < 8; r++) {
                     let file = 0;
                     for (const ch of rows[r]) {
@@ -530,8 +525,6 @@
                         if (ch === "n") byType.blackKnights.push(sq);
                         if (ch === "R") byType.whiteRooks.push(sq);
                         if (ch === "r") byType.blackRooks.push(sq);
-                        if (ch === "Q") byType.whiteQueens.push(sq);
-                        if (ch === "q") byType.blackQueens.push(sq);
                         file++;
                     }
                 }
@@ -541,20 +534,14 @@
                 if (blackKing) notes.push(`Black king on ${blackKing}`);
                 if (whiteKing && whiteKing[0] === "e" && (castling.includes("K") || castling.includes("Q"))) notes.push("White still uncastled");
                 if (blackKing && blackKing[0] === "e" && (castling.includes("k") || castling.includes("q"))) notes.push("Black still uncastled");
-
-                // Explicit presence / absence — hardest signal against hallucination
-                notes.push(byType.whiteBishops.length ? `White bishops: ${byType.whiteBishops.join(",")}` : "NO white bishop");
-                notes.push(byType.blackBishops.length ? `Black bishops: ${byType.blackBishops.join(",")}` : "NO black bishop");
-                notes.push(byType.whiteKnights.length ? `White knights: ${byType.whiteKnights.join(",")}` : "NO white knight");
-                notes.push(byType.blackKnights.length ? `Black knights: ${byType.blackKnights.join(",")}` : "NO black knight");
-                notes.push(byType.whiteRooks.length ? `White rooks: ${byType.whiteRooks.join(",")}` : "NO white rook");
-                notes.push(byType.blackRooks.length ? `Black rooks: ${byType.blackRooks.join(",")}` : "NO black rook");
-                if (byType.whiteQueens.length) notes.push(`White queen: ${byType.whiteQueens.join(",")}`);
-                else notes.push("NO white queen");
-                if (byType.blackQueens.length) notes.push(`Black queen: ${byType.blackQueens.join(",")}`);
-                else notes.push("NO black queen");
-
-                notes.push(`ALL PIECES ON BOARD: ${pieces.join("; ")}`);
+                if (byType.blackBishops.length) notes.push(`Black bishops on ${byType.blackBishops.join(",")}`);
+                else notes.push("NO black bishop on the board");
+                if (byType.whiteBishops.length) notes.push(`White bishops on ${byType.whiteBishops.join(",")}`);
+                else notes.push("NO white bishop on the board");
+                if (byType.blackKnights.length) notes.push(`Black knights on ${byType.blackKnights.join(",")}`);
+                if (byType.whiteKnights.length) notes.push(`White knights on ${byType.whiteKnights.join(",")}`);
+                // compact piece list for verification
+                notes.push(`PIECES: ${pieces.join("; ")}`);
                 return notes.join(" | ");
             } catch (e) {
                 return "";
@@ -863,11 +850,11 @@ GM VERDICT: ${gmVerdict}`;
                         const lines = engineData.lines;
                         const stm = sideToMoveAfter;
 
-                        lineOutput += `\nENGINE LINES (study these to understand the position — ideas, plans, typical moves):`;
+                        lineOutput += `\nENGINE LINES (ideas only — do NOT decide who is better from the numbers):`;
                         lines.forEach((ln, idx) => {
                             const rank = idx + 1;
                             const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            lineOutput += `\n  LINE ${rank}${rank === 1 ? " (BEST)" : rank === 2 ? " (2ND)" : " (3RD)"}: ${fullPv || "(none)"}  [eval ${ln.eval}]`;
+                            lineOutput += `\n  LINE ${rank}${rank === 1 ? " (BEST)" : rank === 2 ? " (2ND)" : " (3RD)"}: eval ${ln.eval} | ${fullPv || "(none)"}`;
                         });
 
                         // Aggregate colour-split moves from all lines
@@ -888,8 +875,12 @@ GM VERDICT: ${gmVerdict}`;
                             b.forEach(m => { if (!allBlack.includes(m)) allBlack.push(m); });
                         });
 
-                        lineOutput += `\nWHITE IDEAS SEEN IN LINES: ${allWhite.slice(0, 5).join(", ") || "(none)"}`;
-                        lineOutput += `\nBLACK IDEAS SEEN IN LINES: ${allBlack.slice(0, 5).join(", ") || "(none)"}`;
+                        lineOutput += `\nWHITE IDEAS FROM ENGINE: ${allWhite.slice(0, 4).join(", ") || "(none)"}`;
+                        lineOutput += `\nBLACK IDEAS FROM ENGINE: ${allBlack.slice(0, 4).join(", ") || "(none)"}`;
+
+                        if (c.isVariationEnd || isCritical) {
+                            lineOutput += `\nNOTE: Variation end / critical — comment if the idea is useful. Use engine lines only as inspiration.`;
+                        }
                         const topSan = lines[0].san || "ok";
                         statsText.innerText = `[${c.moveNum}.${c.target}] ${topSan} (+${lines.length - 1} more)`;
                     } else {
@@ -905,32 +896,36 @@ GM VERDICT: ${gmVerdict}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `Annotate like a 2700+ human GM with only 70% English skill.
+            const fullPrompt = `You are a strong repertoire author (Annotator: sheva). Write calm, practical coaching notes in present tense (~65–70% British spelling: centre, favour, analyse, defence, colour).
 
-REPERTOIRE: we = ${weSide}. Always use “we / our” for ${weSide} and “${theySide}” for the opponent. Never switch.
+REPERTOIRE: we = ${weSide}. Always use "we/our" for ${weSide} and "${theySide}" for the opponent. Never switch.
 
-Use the engine moves but not the engine evaluation. Only use the provided evaluation symbols (GM VERDICT) to decide who is better or if a move is good/bad/dubious.
+For each position you receive:
+- The exact move just played, the FEN after it, and a piece list (POSITION FEATURES). Trust only that board — never invent pieces from other variations.
+- Up to 3 ENGINE LINES (best / 2nd / 3rd). Use them only to understand ideas, activity and possible plans. Do NOT quote eval numbers or decide who is better from them.
+- GM VERDICT when present (from symbols). Trust it over the engine:
+  • ? = mistake, ?? = blunder → the side that played it is worse
+  • ?! = dubious
+  • ! / !! = good / brilliant
+  • +-, ±, etc. mark the favoured side
 
-Look carefully at each position. At least 60% of the time, explain a concrete plan or why the move/position is good or bad. Pull these ideas from the engine lines. Examples of the style you want:
-“White prevents the c7-c5 break.”
-“With Nb8-d7 ideas.”
-“We prepare ...c5 and develop the bishop to b7.”
-“Black wants to exchange the active pieces.”
-“White is better because of the space advantage and will continue with Bd2 and O-O-O.”
+Annotate freely and naturally. Prefer short notes (1–2 sentences). Most moves need no comment. Comment especially on variation ends, mistakes, critical moments and evaluation symbols.
 
-Only mention pieces that exist in POSITION FEATURES for that exact line. Nested variations have different pieces; never invent pieces from other lines.
+Good style:
+- "We recapture with the queen, keeping the knight free for a better square."
+- "White is better thanks to the space advantage and will develop the bishop before castling queenside."
+- "A dubious early knight jump that allows us to damage the pawn structure."
 
-Comment where useful — variation ends, critical moments, mistakes, dubious moves, evaluation symbols, and also ordinary moves when there is a clear idea or plan. Prefer short notes (1–2 sentences). Omit the key if there is nothing useful to say.
+Avoid:
+- Repeating the move just played
+- Naming the immediate next move already in the PGN
+- Long move lists or mini-games inside the comment
+- Engine names, eval numbers, or symbols like +-, ±, =, $n
+- Vague filler ("continues with development", "keeps the initiative")
 
-Never:
-– quote engine numbers or mention the engine
-– write evaluation symbols (+-, ±, =, $n…) inside the comment text
-– begin by repeating the move just played
-– name the immediate next move already written in the PGN
-– dump long move lists
+When describing a plan, respect legal move order (e.g. the c1-bishop must move before queenside castling is possible).
 
-OUTPUT
-Return ONLY a pure JSON object.
+OUTPUT: Return ONLY a pure JSON object.
 Keys = chunk IDs. Values = comment text only.
 Omit keys that need no comment.
 No markdown, no thinking, no extra text.
