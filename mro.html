@@ -404,91 +404,123 @@
             }
         }
 
-        async function getEngineRefutation(fen, retries = 3) {
+        function uciLineToSan(fen, uciMoves, maxPly = 6) {
+            try {
+                const g = new Chess(fen);
+                const sans = [];
+                for (const u of (uciMoves || []).slice(0, maxPly)) {
+                    if (!u || u.length < 4) continue;
+                    const from = u.slice(0, 2);
+                    const to = u.slice(2, 4);
+                    const promo = u.length > 4 ? u[4] : undefined;
+                    const m = g.move({ from, to, promotion: promo || "q" });
+                    if (!m) break;
+                    sans.push(m.san);
+                }
+                return sans;
+            } catch (e) {
+                return [];
+            }
+        }
+
+        async function chessApiOnce(fen, opts = {}) {
+            const body = {
+                fen,
+                depth: opts.depth || 14,
+                maxThinkingTime: opts.maxThinkingTime || 70
+            };
+            if (opts.searchmoves) body.searchmoves = opts.searchmoves;
+            const response = await fetch("https://chess-api.com/v1", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            });
+            if (response.status === 429) {
+                const err = new Error("429");
+                err.status = 429;
+                throw err;
+            }
+            if (!response.ok) return null;
+            return await response.json();
+        }
+
+        // Three different Stockfish lines (best / 2nd / 3rd) via sequential search
+        async function getEngineRefutation(fen, retries = 2) {
             if (!isValidFen(fen)) {
-                return { eval: null, san: "", continuation: "", text: "INVALID FEN", invalid: true };
+                return { eval: null, san: "", continuation: "", altLines: [], invalid: true };
             }
             for (let attempt = 0; attempt <= retries; attempt++) {
                 try {
-                    // Multi-PV (variants: 3) so we see 2nd/3rd ideas, not only the top line
-                    const response = await fetch("https://chess-api.com/v1", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ fen: fen, depth: 16, maxThinkingTime: 80, variants: 3 })
-                    });
-                    
-                    if (response.status === 429) {
-                        await delay(1800 * (attempt + 1));
-                        continue;
+                    const board = new Chess(fen);
+                    const legal = board.moves({ verbose: true });
+                    if (!legal.length) {
+                        return { eval: null, san: "", continuation: "", altLines: [], invalid: false };
                     }
 
-                    if (!response.ok) return null;
-                    const data = await response.json();
-
-                    if (data.error || (data.text && /wrong FEN|Cannot evaluate/i.test(data.text))) {
-                        return { eval: null, san: "", continuation: "", text: data.text || "Engine rejected FEN", invalid: true };
-                    }
-
-                    let cont = "";
-                    if (data.continuationArr && data.continuationArr.length) {
-                        cont = data.continuationArr.slice(0, 6).join(" ");
-                    } else if (data.continuation) {
-                        cont = String(data.continuation).split(" ").slice(0, 6).join(" ");
-                    }
-
-                    const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
-
-                    // Collect multi-PV alternatives if API returns them
+                    const excluded = [];
                     const altLines = [];
-                    if (Array.isArray(data.variants) || Array.isArray(data.lines) || Array.isArray(data.pvs)) {
-                        const arr = data.variants || data.lines || data.pvs;
-                        arr.slice(0, 3).forEach((v, i) => {
-                            const san = v.san || v.move || "";
-                            let line = "";
-                            if (v.continuationArr) line = v.continuationArr.slice(0, 4).join(" ");
-                            else if (v.continuation) line = String(v.continuation).split(" ").slice(0, 4).join(" ");
-                            else if (v.moves) line = String(v.moves).split(" ").slice(0, 4).join(" ");
-                            const ev = v.eval != null ? v.eval : (v.score != null ? v.score : "");
-                            altLines.push(`Line ${i + 1}: ${san} ${line}`.trim() + (ev !== "" ? ` (eval ${ev})` : ""));
-                        });
-                    }
-                    // Some APIs return only one line but mention secondary moves
-                    if (!altLines.length && firstMove) {
-                        altLines.push(`Line 1: ${firstMove} ${cont}`.trim());
-                    }
+                    let topSan = "";
+                    let topCont = "";
+                    let topEval = null;
 
-                    let planHint = "";
-                    if (firstMove) {
-                        const evalNum = parseFloat(data.eval);
-                        const isMate = /mate|#/i.test(String(data.eval)) || /#/.test(cont);
-                        if (isMate) planHint = "Forced mate sequence exists.";
-                        else if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) planHint = "Large advantage — concrete attack or decisive gain.";
-                        else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) planHint = "Clear plus — lasting pressure or structural edge.";
-                        else planHint = "Small edge or equal — positional idea.";
-                        // Extract pawn breaks / tempi from continuation
-                        const motifs = [];
-                        cont.split(/\s+/).forEach(m => {
-                            if (/^[a-h][2-7]$/.test(m)) motifs.push(`pawn to ${m}`);
-                            if (/^[NBQR][a-h][1-8]$/.test(m) || /^[NBQR]x/.test(m)) {
-                                const dest = m.replace(/x/, "").slice(-2);
-                                if (/^[a-h][1-8]$/.test(dest)) motifs.push(`piece to ${dest}`);
-                            }
+                    for (let v = 0; v < 3; v++) {
+                        const remaining = legal.filter(m => {
+                            const u = m.from + m.to + (m.promotion || "");
+                            return !excluded.includes(u);
                         });
-                        if (motifs.length) planHint += " Motifs: " + [...new Set(motifs)].slice(0, 3).join("; ") + ".";
+                        if (!remaining.length) break;
+
+                        let data;
+                        if (v === 0) {
+                            data = await chessApiOnce(fen);
+                        } else {
+                            const searchmoves = remaining.map(m => m.from + m.to + (m.promotion || "")).join(" ");
+                            data = await chessApiOnce(fen, { searchmoves });
+                        }
+                        if (!data || data.error) break;
+                        if (data.text && /wrong FEN|Cannot evaluate/i.test(data.text)) {
+                            return { eval: null, san: "", continuation: "", altLines: [], invalid: true };
+                        }
+
+                        const uciFirst = data.move || (data.from && data.to ? data.from + data.to : "");
+                        let contUci = [];
+                        if (Array.isArray(data.continuationArr)) {
+                            contUci = data.continuationArr.slice(0, 5);
+                        } else if (Array.isArray(data.continuation)) {
+                            contUci = data.continuation.slice(0, 5).map(x =>
+                                typeof x === "string" ? x : (x.from && x.to ? x.from + x.to : "")
+                            ).filter(Boolean);
+                        }
+
+                        const fullUci = uciFirst ? [uciFirst, ...contUci] : contUci;
+                        let sanLine = uciLineToSan(fen, fullUci, 6);
+                        if (!sanLine.length && data.san) sanLine = [data.san];
+                        const lineStr = sanLine.join(" ");
+                        if (lineStr) altLines.push(lineStr);
+                        if (uciFirst) excluded.push(uciFirst);
+
+                        if (v === 0) {
+                            topSan = sanLine[0] || data.san || "";
+                            topCont = sanLine.slice(1).join(" ");
+                            topEval = data.eval;
+                        }
+                        await delay(60);
                     }
 
                     return {
-                        eval: data.eval,
-                        san: firstMove,
-                        continuation: cont,
-                        text: data.text || "",
-                        planHint: planHint,
-                        altLines: altLines,
+                        eval: topEval,
+                        san: topSan,
+                        continuation: topCont,
+                        altLines,
                         invalid: false
                     };
                 } catch (e) {
+                    if (e && e.status === 429) {
+                        await delay(1800 * (attempt + 1));
+                        continue;
+                    }
                     if (attempt === retries) return null;
-                    await delay(1200);
+                    await delay(900);
                 }
             }
             return null;
@@ -876,24 +908,17 @@ FEN: ${fenOk ? c.fenAfter : "INVALID"}`;
                 if (needsEngine) {
                     engineCalls++;
                     btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(250);
+                    await delay(200);
                     const engineData = await getEngineRefutation(c.fenAfter);
-                    if (engineData && !engineData.invalid) {
-                        const lines = [];
-                        if (engineData.altLines && engineData.altLines.length) {
-                            engineData.altLines.slice(0, 3).forEach(l => lines.push(l));
-                        } else {
-                            const one = `${engineData.san || ""} ${engineData.continuation || ""}`.trim();
-                            if (one) lines.push(`Line 1: ${one}`);
+                    if (engineData && !engineData.invalid && engineData.altLines && engineData.altLines.length) {
+                        lineOutput += `\nEngine lines (use as our next plans):\n` +
+                            engineData.altLines.slice(0, 3).map((l, i) => `  ${i + 1}. ${l}`).join("\n");
+                        if (c.isVariationEnd) {
+                            lineOutput += `\n(branch end — say what we play next using line 1 or 2)`;
                         }
-                        while (lines.length < 3 && engineData.continuation) {
-                            // pad with truncated single PV if API only returned one line
-                            break;
-                        }
-                        if (lines.length) {
-                            lineOutput += `\nEngine lines:\n` + lines.slice(0, 3).map((l, i) => `  ${i + 1}. ${l.replace(/^Line \d+:\s*/i, "")}`).join("\n");
-                        }
-                        statsText.innerText = `[${c.moveNum}.${c.target}] ok`;
+                        statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.altLines.length} lines`;
+                    } else {
+                        statsText.innerText = `[${c.moveNum}.${c.target}] no engine`;
                     }
                 } else {
                     await delay(10);
@@ -905,11 +930,13 @@ FEN: ${fenOk ? c.fenAfter : "INVALID"}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
 
-            const fullPrompt = `Opening repertoire notes. Present tense. "we" = ${weSide}; opponent = ${theySide}.
+            const fullPrompt = `You are a 2700+ human grandmaster writing repertoire notes. Your English is about 68% native — clear and practical, not perfect, slightly imperfect phrasing is fine (like a strong player who thinks in ideas). Present tense. "we" = ${weSide}; opponent = ${theySide}.
 
-Look at each FEN. The move and colour are given. Engine lines (when present) show possible continuations — use them only as ideas for our plan.
-
-Write short comments for interesting moves (branch ends, ? !!, GM marks). Explain why the move was played and what we want next. Trust the FEN for what is on the board. No eval symbols in the text. No engine jargon.
+Each item has a FEN, the move played, and (often) 3 engine lines in SAN.
+• Read the FEN — that is the board.
+• At branch ends: use engine line 1 or 2 as our continuation plan (e.g. "we continue with Nc3 and Be3").
+• On critical moves: short note on why the move was played + what we want next.
+• Sparse. No eval symbols in text. No engine jargon.
 
 JSON only: keys = IDs, values = comments. Skip quiet moves.
 
