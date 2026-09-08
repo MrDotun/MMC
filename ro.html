@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master Pro (RO) v1.1 | Decipher Chess Academy</title>
-    <!-- build: 2026-09-08-b -->
+    <title>GM Variation Master Pro (RO) v1.2 | Decipher Chess Academy</title>
+    <!-- build: 2026-09-08-c -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -34,7 +34,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (RO)</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Simple English · Position-True · 3 Engine Lines · v1.1</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Simple English · FEN-only · GM symbols · v1.2</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -95,7 +95,7 @@
                 <div class="lg:w-2/3 glass p-4 rounded-xl">
                     <div class="mb-3 text-xs text-slate-400 italic">
                         <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>. 
-                        Includes every variation start &amp; end, moves with !?/$ symbols, plus samples. Each position is sent with the move path, exact FEN, full piece list, and (on branch ends) 3 engine lines. The AI is told to use simple English, trust only the given board (no invented pins), and at variation ends explain the GM sign plus a short plan from the engine.
+                        Includes every variation start &amp; end, moves with !?/$ symbols, plus samples. Each position is sent with last-3 / next moves of that variation, exact FEN only, GM symbols, and (on branch ends or critical moves) plan ideas. The AI is a 2700+ style annotator writing simple correct English; it must trust GM signs, never quote the next PGN move, and use the local variation line to understand why a move is good or bad.
                     </div>
                     <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
                 </div>
@@ -880,18 +880,22 @@
                     gmVerdict = "GM marks the position equal.";
                 }
 
-                // Clear statement of the move that was played + path context
-                // last3Moves = the three moves immediately before this one
-                // nextMoves  = the next 3-4 moves that continue this variation (so AI never repeats them)
+                // Variation context: last 3 moves + this move + next moves of THIS variation only
                 const last3Str = (c.last3Moves && c.last3Moves.length)
                     ? c.last3Moves.join(" ")
-                    : "(none — start of line)";
+                    : "(start of line)";
                 const nextStr = (c.nextMoves && c.nextMoves.length)
                     ? c.nextMoves.join(" ")
                     : "(end of this variation)";
+                // Compact view of the local variation line so AI sees why a move is good/bad
+                const localLine = [
+                    last3Str !== "(start of line)" ? last3Str : "",
+                    c.san || c.target.replace(/[!?$].*$/,'').trim(),
+                    nextStr !== "(end of this variation)" ? nextStr : ""
+                ].filter(Boolean).join(" → ");
 
                 let lineOutput = `[ID: ${c.id}]
-MOVES LEADING HERE: ${c.pathToHere || "(start)"}
+THIS VARIATION LINE (local only): ${localLine || "(single move)"}
 LAST 3 MOVES: ${last3Str}
 MOVE PLAYED: ${c.moveNum}. ${c.target}
 NEXT MOVES IN THIS VARIATION: ${nextStr}
@@ -899,27 +903,24 @@ PLAYED BY: ${sideJustPlayed}
 SIDE TO MOVE AFTER: ${sideToMoveAfter}
 REPERTOIRE ("we"): ${weSide}
 MAIN LINE: ${c.isMainLine} | VARIATION START: ${c.isVariationStart} | VARIATION END: ${c.isVariationEnd}
-GM VERDICT: ${gmVerdict}`;
+GM VERDICT (from PGN symbols only): ${gmVerdict}`;
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
                 
                 statsText.innerText = `Preparing: ${c.moveNum}. ${c.target}`;
 
-                // Always give the true FEN after the move + positional features
+                // Board state = FEN only (no piece lists)
                 if (fenOk) {
-                    lineOutput += `\nFEN AFTER THE MOVE: ${c.fenAfter}`;
-                    const posDesc = describePositionFromFen(c.fenAfter);
-                    if (posDesc) {
-                        lineOutput += `\nPOSITION FEATURES: ${posDesc}`;
-                    }
+                    lineOutput += `\nFEN: ${c.fenAfter}`;
                 } else {
-                    lineOutput += `\nFEN AFTER THE MOVE: UNRELIABLE (do not invent a position)`;
+                    lineOutput += `\nFEN: UNRELIABLE (do not invent a position)`;
                 }
 
-                // Engine on variation ends, critical symbols, GM marks
+                // Engine only for plan ideas at variation ends / critical moves.
+                // Never treat engine numbers as the truth — GM symbols are the truth.
                 const isCritical = /[?!$]|\$\d+|[\+\-=±∓]/.test(c.target) || isBadMove || hasDubious || hasGood || !!favouredSide;
-                const needsEngine = fenOk && (c.isVariationEnd || isCritical);
+                const needsEngine = fenOk && (c.isVariationEnd || isCritical || !(c.nextMoves && c.nextMoves.length));
                 
                 if (needsEngine) {
                     engineCalls++;
@@ -932,14 +933,14 @@ GM VERDICT: ${gmVerdict}`;
                         const lines = engineData.lines;
                         const stm = sideToMoveAfter;
 
-                        lineOutput += `\nENGINE LINES (ideas only — do NOT decide who is better from the numbers):`;
+                        // Ideas only — no eval numbers shown to the annotator model
+                        lineOutput += `\nPLAN IDEAS (from engine, for inspiration only — ignore numbers, trust GM symbols):`;
                         lines.forEach((ln, idx) => {
                             const rank = idx + 1;
                             const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            lineOutput += `\n  LINE ${rank}${rank === 1 ? " (BEST)" : rank === 2 ? " (2ND)" : " (3RD)"}: eval ${ln.eval} | ${fullPv || "(none)"}`;
+                            lineOutput += `\n  IDEA ${rank}: ${fullPv || "(none)"}`;
                         });
 
-                        // Aggregate colour-split moves from all lines
                         const allWhite = [];
                         const allBlack = [];
                         lines.forEach(ln => {
@@ -957,20 +958,20 @@ GM VERDICT: ${gmVerdict}`;
                             b.forEach(m => { if (!allBlack.includes(m)) allBlack.push(m); });
                         });
 
-                        lineOutput += `\nWHITE IDEAS FROM ENGINE: ${allWhite.slice(0, 4).join(", ") || "(none)"}`;
-                        lineOutput += `\nBLACK IDEAS FROM ENGINE: ${allBlack.slice(0, 4).join(", ") || "(none)"}`;
+                        lineOutput += `\nWHITE PLAN IDEAS: ${allWhite.slice(0, 4).join(", ") || "(none)"}`;
+                        lineOutput += `\nBLACK PLAN IDEAS: ${allBlack.slice(0, 4).join(", ") || "(none)"}`;
 
                         if (c.isVariationEnd) {
-                            lineOutput += `\nVARIATION END: Explain the GM sign/verdict in plain words, then give a short plan or continuation idea taken from the engine lines (in words, not long move lists).`;
+                            lineOutput += `\nVARIATION END: Explain the GM sign in plain words. Use the NEXT MOVES (if any) and/or PLAN IDEAS to say why the move is good, bad or dubious. Do not quote the next PGN move by name.`;
                         } else if (isCritical) {
-                            lineOutput += `\nNOTE: Critical move — comment on the idea. Use engine lines only as inspiration.`;
+                            lineOutput += `\nCRITICAL: Comment on the idea. Look at NEXT MOVES IN THIS VARIATION to understand the point. Use PLAN IDEAS only as inspiration.`;
                         }
                         const topSan = lines[0].san || "ok";
                         statsText.innerText = `[${c.moveNum}.${c.target}] ${topSan} (+${lines.length - 1} more)`;
                     } else {
-                        lineOutput += `\nENGINE: No usable data for this position.`;
+                        lineOutput += `\nPLAN IDEAS: none available.`;
                         if (c.isVariationEnd) {
-                            lineOutput += `\nVARIATION END: Explain the GM sign/verdict in plain words and a short plan from the position features.`;
+                            lineOutput += `\nVARIATION END: Explain the GM sign in plain words. Use NEXT MOVES IN THIS VARIATION (if any) to understand why.`;
                         }
                     }
                 } else {
@@ -983,44 +984,43 @@ GM VERDICT: ${gmVerdict}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a repertoire annotator who writes in simple, correct English only (about 70% English level). Use short everyday words. Do not use big or fancy words.
+            const fullPrompt = `You are a 2700+ GM repertoire annotator. You write in simple but correct English (about 70% English level). Short everyday words. No fancy or complex vocabulary. Grammar must still be correct.
 
 REPERTOIRE: we = ${weSide}. Always say "we / our" for ${weSide} and "${theySide}" for the opponent. Never switch sides.
 
-STRICT RULES — READ CAREFULLY:
-1. Trust ONLY the FEN and the POSITION FEATURES / FULL PIECE LIST given for that move. Never invent pieces, pins, attacks or ideas from other lines or from memory.
-2. Do NOT assume a pin, a threat or an attack unless the pieces on THIS board actually create it. Example: after Bg4 you may only call it a pin if a White piece is really on the same line and unprotected in a way that matters — check the piece list first.
-3. Always look at the POSITION FEATURES (king places, bishops, knights, uncastled kings, etc.) and mention the useful ones when they matter for the plan.
-4. Use the MOVES LEADING HERE string so you know the recent sequence and do not invent a different history.
-5. GM VERDICT (from the symbols ! ? !! ?? ?! $n +- etc.) is the truth about who is better. Trust it more than any engine number.
-6. At VARIATION END you MUST:
-   - Say what the GM sign means in plain words (equal, White better, Black better, dubious, mistake, etc.).
-   - Give a short continuation / plan idea taken from the ENGINE LINES (turn the engine moves into a simple plan in words; do not dump long move lists).
+STRICT RULES:
+1. Board state = ONLY the FEN given for that move. Trust that FEN. Do not invent pieces, pins, attacks or ideas from memory or from other lines.
+2. GM symbols on the move (! ? !! ?? ?! $n +- etc.) are the truth about quality and who is better. The GM does not use an engine. Never decide who is better from engine numbers.
+3. Look at THIS VARIATION LINE, LAST 3 MOVES and NEXT MOVES IN THIS VARIATION. They show the local idea and why a move is good, bad or dubious. Especially at VARIATION END, the following moves (or the lack of them) explain the reason.
+4. You may use PLAN IDEAS only as inspiration for a short verbal plan when the variation has no further moves. Never quote engine names or numbers.
+5. Never name or quote the next move that already appears in the PGN. Never repeat the move that was just played.
 
-STYLE (copy this feeling):
-- Short notes, usually 1–3 sentences.
+STYLE (copy this feeling — short, clear, instructional):
+- 1–3 sentences.
 - Explain the idea and the plan, not just the move name.
-- Talk about typical breaks (...c5, ...e5), piece placement, why we choose one recapture, how we finish development, how we stop the opponent's idea.
-- Good examples:
+- Typical themes: breaks (...c5, ...e5), piece placement, why one recapture, how we finish development, how we stop the opponent.
+- Sample style (match this tone):
   "One of the key ideas in these structures is to achieve the ...c5 break, not allowing White to build a strong center and at the same time activating our pieces."
   "We recapture with the queen, since e7 is not the most favorable square for our knight."
   "A strong prophylactic move. We prevent White from gaining space and developing the initiative."
   "The position is equal and quite pleasant to play from here."
-- Comment especially on variation starts, variation ends, moves with ! ? !! ?? ?! and critical moments. Aim to comment on most moves.
+  "This is a mistake. After the natural continuation Black's king becomes weak and we get a lasting initiative."
+  "Dubious. The idea looks active but the next few moves show that White can simply consolidate and keep the extra pawn."
+- Comment especially on variation starts, variation ends, and moves with ! ? !! ?? ?!. Aim to comment on most moves.
 
 NEVER DO:
 - Repeat the move that was just played.
-- Name the next move that is already written in the PGN.
+- Name the next move already written in the PGN.
 - Write long move lists or mini-games inside the comment.
 - Quote engine names, eval numbers, or symbols like +-, ±, =, $n.
 - Use vague filler ("continues development", "keeps the initiative").
-- Invent a pin, a sacrifice or a piece that is not on the FULL PIECE LIST.
+- Invent a pin, sacrifice or piece that is not on the given FEN.
 
 When you describe a plan, respect legal move order (for example the c1-bishop must move before queenside castling is possible).
 
 OUTPUT: Return ONLY a pure JSON object.
 Keys = the chunk IDs (for example "CHK_0_M5_V0").
-Values = the comment text only (simple English).
+Values = the comment text only (simple correct English).
 Omit any key that needs no comment.
 No markdown, no thinking, no extra text outside the JSON.
 
