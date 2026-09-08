@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master Pro (RO) v1.2 | Decipher Chess Academy</title>
-    <!-- build: 2026-09-08-c -->
+    <title>GM Variation Master Pro (RO) v1.3 | Decipher Chess Academy</title>
+    <!-- build: 2026-09-08-d -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -34,7 +34,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (RO)</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Simple English · FEN-only · GM symbols · v1.2</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Simple English · FEN-only · GM symbols · v1.3</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -604,10 +604,14 @@
                 if (token === "(") {
                     variationLevel++;
                     depthPlyCounts[variationLevel] = 0; 
-                    // Push state BEFORE the last move so the variation starts from the correct parent position
+                    // Save full state (including path WITH the main-line move that this variation replaces)
                     stateStack.push({ current: currentFEN, beforeLast: fenBeforeLastMove });
                     pathStack.push([...currentPath]);
-                    // Load the position that existed before the last move (parent of this variation)
+                    // Variation is an ALTERNATIVE to the last move → drop that move from the path
+                    // and load the position that existed before it
+                    if (currentPath.length > 0) {
+                        currentPath = currentPath.slice(0, -1);
+                    }
                     const loaded = chess.load(fenBeforeLastMove);
                     if (!loaded) {
                         console.warn("Failed to load FEN for variation start:", fenBeforeLastMove);
@@ -631,6 +635,7 @@
                             fenBeforeLastMove = normalizeFen(state.beforeLast);
                         }
                     }
+                    // Restore path that includes the main-line move we branched from
                     currentPath = pathStack.pop() || [];
                     return; 
                 }
@@ -719,22 +724,24 @@
                 lastChunkAtLevel[0].isVariationEnd = true;
             }
 
-            // Post-process: attach next 3-4 moves of the *same variation line*
-            // A "next move" is a subsequent chunk that continues the current branch
-            // (same or deeper level until we return below the current variation level).
+            // Post-process: next moves of THIS variation only (same level, skip nested branches)
+            // Nested ( ) side-lines are skipped so "NEXT MOVES" stays on the pure continuation.
             for (let i = 0; i < chunks.length; i++) {
                 const c = chunks[i];
                 const nextSans = [];
                 let j = i + 1;
-                while (j < chunks.length && nextSans.length < 4) {
+                while (j < chunks.length && nextSans.length < 6) {
                     const nxt = chunks[j];
-                    // Stop if we have left this variation branch entirely
+                    // Left this variation entirely
                     if (nxt.variationLevel < c.variationLevel) break;
-                    // If we hit a sibling variation start at the same level, stop
-                    if (nxt.variationLevel === c.variationLevel && nxt.isVariationStart && j > i + 1) break;
-                    // Include the move (even if it starts a deeper nested variation — it is the continuation)
+                    // Nested variation — skip until we return to our level
+                    if (nxt.variationLevel > c.variationLevel) {
+                        j++;
+                        continue;
+                    }
+                    // Same level: sibling variation start ends our continuation
+                    if (nxt.isVariationStart) break;
                     nextSans.push(nxt.san || nxt.target.replace(/[!?$].*$/, '').trim());
-                    // After taking a deeper move we continue, but if the next one drops back we already handled via level check
                     j++;
                 }
                 c.nextMoves = nextSans;
