@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master Pro (RO) | Decipher Chess Academy</title>
-    
+    <title>GM Variation Master Pro (RO) v1.1 | Decipher Chess Academy</title>
+    <!-- build: 2026-09-08-b -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -34,7 +34,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (RO)</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Simple English · Position-True · 3 Engine Lines</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Simple English · Position-True · 3 Engine Lines · v1.1</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -591,13 +591,28 @@
             let pathStack = [[]]; // path of SANs at each variation level
             let currentPath = [];
 
+            const normalizeFen = (f) => {
+                if (!f || typeof f !== "string") return f;
+                try {
+                    const tmp = new Chess();
+                    if (tmp.load(f)) return tmp.fen();
+                } catch (e) {}
+                return f;
+            };
+
             pgnTokens.forEach((token, index) => {
                 if (token === "(") {
                     variationLevel++;
                     depthPlyCounts[variationLevel] = 0; 
+                    // Push state BEFORE the last move so the variation starts from the correct parent position
                     stateStack.push({ current: currentFEN, beforeLast: fenBeforeLastMove });
                     pathStack.push([...currentPath]);
-                    chess.load(fenBeforeLastMove);
+                    // Load the position that existed before the last move (parent of this variation)
+                    const loaded = chess.load(fenBeforeLastMove);
+                    if (!loaded) {
+                        console.warn("Failed to load FEN for variation start:", fenBeforeLastMove);
+                    }
+                    currentFEN = normalizeFen(chess.fen());
                     return; 
                 }
                 if (token === ")") {
@@ -606,10 +621,15 @@
                     }
                     variationLevel--;
                     let state = stateStack.pop();
-                    if(state) {
-                        chess.load(state.current);
-                        currentFEN = state.current;
-                        fenBeforeLastMove = state.beforeLast;
+                    if (state) {
+                        const loaded = chess.load(state.current);
+                        if (loaded) {
+                            currentFEN = normalizeFen(chess.fen());
+                            fenBeforeLastMove = normalizeFen(state.beforeLast);
+                        } else {
+                            currentFEN = normalizeFen(state.current);
+                            fenBeforeLastMove = normalizeFen(state.beforeLast);
+                        }
                     }
                     currentPath = pathStack.pop() || [];
                     return; 
@@ -625,7 +645,7 @@
                 
                 if (isMove) {
                     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
-                    fenBeforeLastMove = chess.fen();
+                    fenBeforeLastMove = normalizeFen(chess.fen());
 
                     let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O]/g, ''); 
                     let moveObj = chess.move(cleanMove, { sloppy: true });
@@ -640,25 +660,17 @@
                         }
                     }
                     let parsedOk = !!moveObj;
+                    let sanUsed = "";
                     if (moveObj) {
-                        currentFEN = chess.fen();
-                        currentPath.push(moveObj.san);
+                        currentFEN = normalizeFen(chess.fen());
+                        sanUsed = moveObj.san;
+                        currentPath.push(sanUsed);
                     } else {
                         currentFEN = fenBeforeLastMove;
-                        currentPath.push(token.replace(/[!?$].*$/,'').trim());
+                        sanUsed = token.replace(/[!?$].*$/,'').trim();
+                        currentPath.push(sanUsed);
                         console.warn("Move failed to parse:", token, "at", fenBeforeLastMove);
                     }
-
-                    const normalizeFen = (f) => {
-                        if (!f || typeof f !== "string") return f;
-                        try {
-                            const tmp = new Chess();
-                            if (tmp.load(f)) return tmp.fen();
-                        } catch (e) {}
-                        return f;
-                    };
-                    fenBeforeLastMove = normalizeFen(fenBeforeLastMove);
-                    currentFEN = normalizeFen(currentFEN);
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
@@ -668,10 +680,17 @@
 
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
 
-                    // Short path string (last ~12 plies) so AI sees the sequence leading here
-                    const pathStr = currentPath.length > 12
-                        ? "..." + currentPath.slice(-12).join(" ")
-                        : currentPath.join(" ");
+                    // Full path array (up to and including this move) for precise last-3 / next-move logic
+                    const pathArray = [...currentPath];
+                    // Short path string (last ~12 plies) for the prompt
+                    const pathStr = pathArray.length > 12
+                        ? "..." + pathArray.slice(-12).join(" ")
+                        : pathArray.join(" ");
+
+                    // Last 3 moves BEFORE the current move (so AI sees the immediate history)
+                    const last3 = pathArray.length > 1
+                        ? pathArray.slice(Math.max(0, pathArray.length - 4), pathArray.length - 1)
+                        : [];
 
                     let newChunk = {
                         id: `CHK_${chunks.length}_M${moveNumber}_V${variationLevel}`,
@@ -685,7 +704,10 @@
                         fenAfter: currentFEN,
                         moveParsed: parsedOk,
                         variationLevel: variationLevel,
-                        pathToHere: pathStr
+                        pathToHere: pathStr,
+                        pathArray: pathArray,
+                        last3Moves: last3,
+                        san: sanUsed
                     };
 
                     chunks.push(newChunk);
@@ -695,6 +717,27 @@
 
             if (lastChunkAtLevel[0]) {
                 lastChunkAtLevel[0].isVariationEnd = true;
+            }
+
+            // Post-process: attach next 3-4 moves of the *same variation line*
+            // A "next move" is a subsequent chunk that continues the current branch
+            // (same or deeper level until we return below the current variation level).
+            for (let i = 0; i < chunks.length; i++) {
+                const c = chunks[i];
+                const nextSans = [];
+                let j = i + 1;
+                while (j < chunks.length && nextSans.length < 4) {
+                    const nxt = chunks[j];
+                    // Stop if we have left this variation branch entirely
+                    if (nxt.variationLevel < c.variationLevel) break;
+                    // If we hit a sibling variation start at the same level, stop
+                    if (nxt.variationLevel === c.variationLevel && nxt.isVariationStart && j > i + 1) break;
+                    // Include the move (even if it starts a deeper nested variation — it is the continuation)
+                    nextSans.push(nxt.san || nxt.target.replace(/[!?$].*$/, '').trim());
+                    // After taking a deeper move we continue, but if the next one drops back we already handled via level check
+                    j++;
+                }
+                c.nextMoves = nextSans;
             }
 
             globalChunks = chunks;
@@ -838,9 +881,20 @@
                 }
 
                 // Clear statement of the move that was played + path context
+                // last3Moves = the three moves immediately before this one
+                // nextMoves  = the next 3-4 moves that continue this variation (so AI never repeats them)
+                const last3Str = (c.last3Moves && c.last3Moves.length)
+                    ? c.last3Moves.join(" ")
+                    : "(none — start of line)";
+                const nextStr = (c.nextMoves && c.nextMoves.length)
+                    ? c.nextMoves.join(" ")
+                    : "(end of this variation)";
+
                 let lineOutput = `[ID: ${c.id}]
 MOVES LEADING HERE: ${c.pathToHere || "(start)"}
+LAST 3 MOVES: ${last3Str}
 MOVE PLAYED: ${c.moveNum}. ${c.target}
+NEXT MOVES IN THIS VARIATION: ${nextStr}
 PLAYED BY: ${sideJustPlayed}
 SIDE TO MOVE AFTER: ${sideToMoveAfter}
 REPERTOIRE ("we"): ${weSide}
@@ -1025,19 +1079,65 @@ ${batchString}`;
         function rebuildPgn() {
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
-            
+
+            // --- Robust extraction: tolerate extra text, markdown fences, trailing commas, missing commas, single quotes ---
+            function tryParseJson(str) {
+                try { return JSON.parse(str); } catch (e) { return null; }
+            }
+
+            function extractChunkMap(text) {
+                const map = {};
+                // 1. Prefer a clean JSON object if present
+                const firstBrace = text.indexOf('{');
+                const lastBrace = text.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace > firstBrace) {
+                    let candidate = text.substring(firstBrace, lastBrace + 1);
+                    // Fix common AI issues: trailing commas before } or ]
+                    candidate = candidate.replace(/,\s*([}\]])/g, '$1');
+                    // Convert single-quoted keys/values to double quotes (simple heuristic)
+                    candidate = candidate.replace(/'([^']*)'/g, '"$1"');
+                    let parsed = tryParseJson(candidate);
+                    if (parsed && typeof parsed === 'object') {
+                        Object.assign(map, parsed);
+                        return map;
+                    }
+                }
+
+                // 2. Fallback: regex-extract every "CHK_...": "comment" pair (handles broken JSON)
+                // Matches both "key": "value" and 'key': 'value' and key: "value"
+                const pairRe = /["']?(CHK_\d+_M\d+_V\d+)["']?\s*:\s*["']((?:\\.|[^"\\])*?)["']/gs;
+                let m;
+                while ((m = pairRe.exec(text)) !== null) {
+                    const id = m[1];
+                    // Unescape common sequences
+                    let comment = m[2]
+                        .replace(/\\"/g, '"')
+                        .replace(/\\n/g, ' ')
+                        .replace(/\\t/g, ' ')
+                        .replace(/\\\\/g, '\\')
+                        .trim();
+                    if (id && comment) map[id] = comment;
+                }
+
+                // 3. Even more permissive: lines that look like CHK_0_M5_V0: some text
+                if (Object.keys(map).length === 0) {
+                    const lineRe = /(CHK_\d+_M\d+_V\d+)\s*[:=]\s*["']?(.+?)["']?\s*(?:,|$)/gm;
+                    while ((m = lineRe.exec(text)) !== null) {
+                        const id = m[1];
+                        let comment = m[2].replace(/["']\s*,?\s*$/, '').trim();
+                        if (id && comment) map[id] = comment;
+                    }
+                }
+                return map;
+            }
+
             try {
-                const firstBrace = raw.indexOf('{');
-                const lastBrace = raw.lastIndexOf('}');
-                
-                if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-                    const jsonStr = raw.substring(firstBrace, lastBrace + 1);
-                    aiData = JSON.parse(jsonStr);
-                } else {
-                    aiData = JSON.parse(raw);
+                aiData = extractChunkMap(raw);
+                if (!aiData || Object.keys(aiData).length === 0) {
+                    throw new Error("No chunk IDs found");
                 }
             } catch (e) {
-                alert("Failed to parse the JSON. Please ensure the AI provided a valid JSON object mapping chunk IDs to comments.");
+                alert("Failed to parse the AI output. Paste the full response (even with thinking text). The tool will extract CHK_… keys automatically.");
                 console.error("JSON Parse Error:", e);
                 return;
             }
@@ -1052,8 +1152,12 @@ ${batchString}`;
             // Always place comments AFTER the move (never before)
             sortedIds.forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
-                if (chunk) {
-                    workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
+                if (chunk && aiData[id]) {
+                    // Clean any residual braces the user might have left
+                    const cleanComment = String(aiData[id]).replace(/^[{[\s]+|[}\]\s]+$/g, '').trim();
+                    if (cleanComment) {
+                        workingTokens[chunk.tokenIndex] += ` { ${cleanComment} }`;
+                    }
                 }
             });
 
