@@ -40,7 +40,7 @@
             <div class="flex flex-wrap gap-3 items-center">
                 <label class="px-5 py-3 bg-white text-black font-bold rounded-xl text-xs uppercase cursor-pointer hover:bg-slate-200">
                     Upload chapters / database
-                    <input type="file" id="files" accept=".pgn,.txt" multiple class="hidden" onchange="handleFiles(event)">
+                    <input type="file" id="files" accept=".pgn,.txt,text/plain,*/*" multiple class="hidden" onchange="handleFiles(event)">
                 </label>
                 <button onclick="analyze()" class="px-5 py-3 bg-yellow-600 text-black font-bold rounded-xl text-xs uppercase hover:bg-yellow-500">Analyze</button>
                 <button onclick="clearAll()" class="px-4 py-3 bg-red-900/40 text-red-300 rounded-xl text-xs font-bold uppercase">Clear</button>
@@ -74,16 +74,42 @@
 
         function handleFiles(e) {
             const files = Array.from(e.target.files || []);
-            if (!files.length) return;
+            if (!files.length) {
+                alert('No file selected.');
+                return;
+            }
+            document.getElementById('stats').innerText = 'Reading ' + files.length + ' file(s)...';
             let pending = files.length;
-            files.forEach(f => {
+            let errors = [];
+            files.forEach(function(f) {
                 const reader = new FileReader();
-                reader.onload = () => {
-                    uploadedTexts.push({ name: f.name, text: reader.result });
+                reader.onload = function() {
+                    const text = reader.result || '';
+                    if (!text.trim()) {
+                        errors.push(f.name + ' (empty)');
+                    } else {
+                        uploadedTexts.push({ name: f.name, text: text });
+                    }
                     pending--;
                     if (pending === 0) {
                         renderFileList();
+                        if (!uploadedTexts.length) {
+                            alert('Could not read PGN text. Try opening the .pgn in a text editor and pasting it into the box, then click Analyze.');
+                            document.getElementById('stats').innerText = 'Read failed — paste instead';
+                            return;
+                        }
+                        try {
+                            document.getElementById('pgn').value = uploadedTexts.map(function(u) { return u.text; }).join('\n\n');
+                        } catch (err) {}
                         analyze();
+                    }
+                };
+                reader.onerror = function() {
+                    errors.push(f.name);
+                    pending--;
+                    if (pending === 0) {
+                        alert('File could not be read on this device. Open the .pgn in Notes/Files, copy all text, paste below, then Analyze.');
+                        document.getElementById('stats').innerText = 'Read error — paste instead';
                     }
                 };
                 reader.readAsText(f);
