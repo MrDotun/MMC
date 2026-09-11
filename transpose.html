@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transposition Finder v2.1 | Decipher Chess Academy</title>
-    <!-- build: 2026-09-11-d -->
+    <title>Transposition Finder v2.2 | Decipher Chess Academy</title>
+    <!-- build: 2026-09-11-e -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -28,7 +28,7 @@
 <body class="p-4 md:p-8">
     <div class="max-w-5xl mx-auto space-y-6">
         <header>
-            <h1 class="text-2xl font-bold gold tracking-tight">TRANSPOSITION FINDER <span class="text-slate-500 text-sm font-normal">v2.1</span></h1>
+            <h1 class="text-2xl font-bold gold tracking-tight">TRANSPOSITION FINDER <span class="text-slate-500 text-sm font-normal">v2.2</span></h1>
             <p class="text-slate-400 text-sm mt-1">
                 Upload <strong>all chapters</strong> of your repertoire. Finds every <span class="text-emerald-400 font-semibold">tr / transposes</span>,
                 matches the same position (or 1–2 moves later) across chapters, shows a board, and reports results.
@@ -39,19 +39,26 @@
         <div class="glass rounded-2xl p-5 space-y-4">
             <div class="flex flex-wrap gap-3 items-center">
                 <label class="px-5 py-3 bg-white text-black font-bold rounded-xl text-xs uppercase cursor-pointer hover:bg-slate-200">
-                    Upload chapter PGNs (multi)
+                    Upload chapters / database
                     <input type="file" id="files" accept=".pgn,.txt" multiple class="hidden" onchange="handleFiles(event)">
                 </label>
-                <button onclick="analyze()" class="px-5 py-3 bg-yellow-600 text-black font-bold rounded-xl text-xs uppercase hover:bg-yellow-500">Analyze All</button>
-                <button onclick="exportReport()" id="btn-export" class="px-4 py-3 bg-slate-800 rounded-xl text-xs font-bold uppercase hover:bg-slate-700 hidden">Copy Report</button>
+                <button onclick="analyze()" class="px-5 py-3 bg-yellow-600 text-black font-bold rounded-xl text-xs uppercase hover:bg-yellow-500">Analyze</button>
                 <button onclick="clearAll()" class="px-4 py-3 bg-red-900/40 text-red-300 rounded-xl text-xs font-bold uppercase">Clear</button>
                 <span id="stats" class="text-[10px] text-slate-500 uppercase tracking-widest ml-auto">Ready</span>
             </div>
             <div id="file-list" class="text-xs text-slate-400 space-y-1"></div>
-            <details class="text-xs text-slate-500">
-                <summary class="cursor-pointer text-slate-400 hover:text-white">Or paste PGNs here (separate chapters with a blank line + [Event)</summary>
-                <textarea id="pgn" rows="6" class="w-full p-3 rounded-xl text-xs mt-2" placeholder="Paste one or more chapter PGNs..."></textarea>
+            <details class="text-xs text-slate-500" open>
+                <summary class="cursor-pointer text-slate-400 hover:text-white">Or paste one chapter / full database here</summary>
+                <textarea id="pgn" rows="8" class="w-full p-3 rounded-xl text-xs mt-2" placeholder="Paste one chapter or several chapters (each starting with [Event ...]). Then click Analyze."></textarea>
             </details>
+        </div>
+
+        <!-- Action bar after analysis -->
+        <div id="action-bar" class="glass rounded-2xl p-4 hidden flex flex-wrap gap-3 items-center">
+            <span class="text-xs font-bold uppercase text-slate-400">Results</span>
+            <button onclick="copyAllReport()" class="px-4 py-2 bg-emerald-700 text-white font-bold rounded-lg text-xs uppercase hover:bg-emerald-600">Copy all chapters</button>
+            <button onclick="downloadReport()" class="px-4 py-2 bg-slate-700 text-white font-bold rounded-lg text-xs uppercase hover:bg-slate-600">Download .txt</button>
+            <span class="text-[10px] text-slate-500">Edit any note below, then copy. Notes are in GM book style.</span>
         </div>
 
         <div id="results" class="space-y-8 hidden"></div>
@@ -96,11 +103,85 @@
             document.getElementById('files').value = '';
             document.getElementById('results').classList.add('hidden');
             document.getElementById('results').innerHTML = '';
-            document.getElementById('btn-export').classList.add('hidden');
+            const ab = document.getElementById('action-bar');
+            if (ab) ab.classList.add('hidden');
             document.getElementById('stats').innerText = 'Ready';
             document.getElementById('file-list').innerHTML = '';
             lastReportText = '';
+            window.trData = null;
             boards = {};
+        }
+
+        function copyText(str) {
+            if (!str) return;
+            navigator.clipboard.writeText(str).then(function() {
+                alert('Copied.');
+            }).catch(function() {
+                const ta = document.createElement('textarea');
+                ta.value = str;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                alert('Copied.');
+            });
+        }
+
+        // Build report text from current (possibly edited) textareas
+        function buildReportFromUI() {
+            const data = window.trData;
+            if (!data) return '';
+            const lines = [];
+            lines.push('TRANSPOSITION NOTES');
+            lines.push('(GM book style — edit freely before copying)');
+            lines.push('');
+            data.chapters.forEach(function(ch, ci) {
+                lines.push('========== ' + ch.name + ' ==========');
+                lines.push('');
+                ch.items.forEach(function(item, ii) {
+                    const el = document.getElementById('note_' + ci + '_' + ii);
+                    const note = el ? el.value.trim() : item.note;
+                    lines.push(item.move + '   ' + item.path);
+                    lines.push(note || '(no note)');
+                    lines.push('');
+                });
+                lines.push('');
+            });
+            return lines.join('\n');
+        }
+
+        function buildChapterReport(ci) {
+            const data = window.trData;
+            if (!data || !data.chapters[ci]) return '';
+            const ch = data.chapters[ci];
+            const lines = [];
+            lines.push('========== ' + ch.name + ' ==========');
+            lines.push('');
+            ch.items.forEach(function(item, ii) {
+                const el = document.getElementById('note_' + ci + '_' + ii);
+                const note = el ? el.value.trim() : item.note;
+                lines.push(item.move + '   ' + item.path);
+                lines.push(note || '(no note)');
+                lines.push('');
+            });
+            return lines.join('\n');
+        }
+
+        function copyAllReport() {
+            copyText(buildReportFromUI());
+        }
+
+        function copyChapter(ci) {
+            copyText(buildChapterReport(ci));
+        }
+
+        function downloadReport() {
+            const text = buildReportFromUI();
+            const blob = new Blob([text], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'transposition_notes.txt';
+            a.click();
         }
 
         function fenKey(fen) {
@@ -420,88 +501,62 @@
 
             const box = document.getElementById('results');
             box.classList.remove('hidden');
-            document.getElementById('btn-export').classList.remove('hidden');
+            const actionBar = document.getElementById('action-bar');
+            if (actionBar) actionBar.classList.remove('hidden');
 
             if (totalTr === 0) {
                 box.innerHTML = '<div class="glass rounded-xl p-6 text-slate-400 text-sm">No <span class="text-emerald-400">tr / transposes</span> marks found. Use {tr}, {transposes}, or bare tr after the move.</div>';
-                lastReportText = reportLines.join('\n');
+                window.trData = { chapters: [] };
                 return;
             }
 
+            // Structured data for copy/edit
+            const trData = { chapters: [] };
             let html = '';
             let boardId = 0;
             const pendingBoards = [];
+            let chapterIndex = 0;
 
             Object.keys(byChapter).forEach(function(chapter) {
                 const hits = byChapter[chapter];
-                reportLines.push('========================================');
-                reportLines.push('CHAPTER: ' + chapter);
-                reportLines.push('========================================');
+                const chData = { name: chapter, items: [] };
+                const ci = chapterIndex++;
 
-                html += '<section class="space-y-4"><h2 class="chapter-head text-lg font-bold gold pb-2">' +
-                    chapter + ' <span class="text-slate-500 text-xs font-normal ml-2">' + hits.length + ' transposition(s)</span></h2>';
+                html += '<section class="space-y-4" id="chapter_' + ci + '">' +
+                    '<div class="chapter-head flex flex-wrap items-center justify-between gap-3 pb-2">' +
+                    '<h2 class="text-lg font-bold gold">' + chapter +
+                    ' <span class="text-slate-500 text-xs font-normal ml-2">' + hits.length + ' transposition(s)</span></h2>' +
+                    '<button onclick="copyChapter(' + ci + ')" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-[10px] font-bold uppercase">Copy this chapter</button>' +
+                    '</div>';
 
-                hits.forEach(function(h) {
+                hits.forEach(function(h, ii) {
                     const p = h.pos;
                     const bid = 'bd_' + (boardId++);
                     let matchClass = 'match-none';
-                    let matchLabel = '';
-                    let targetsHtml = '';
-                    let bookNotes = [];
+                    let note = '';
 
                     if (h.exact.length) {
                         matchClass = 'match-exact';
-                        // Prefer one best note (other chapter / main line first — already sorted)
-                        const best = h.exact[0];
-                        const note = gmPhrase(p, best, null);
-                        bookNotes.push(note);
-                        // Optional alternates
-                        for (let j = 1; j < Math.min(h.exact.length, 3); j++) {
-                            bookNotes.push(gmPhrase(p, h.exact[j], null));
-                        }
-                        matchLabel = 'Found';
-                        targetsHtml = bookNotes.map(function(n) {
-                            return '<div class="text-emerald-300 text-sm mt-1 leading-relaxed">' + n + '</div>';
-                        }).join('');
-                        reportLines.push(p.moveNum + '. ' + p.san + '  (' + p.path + ')');
-                        bookNotes.forEach(function(n) { reportLines.push('  ' + n); });
-                        reportLines.push('');
+                        note = gmPhrase(p, h.exact[0], null);
                     } else if (h.near.length) {
                         matchClass = 'match-near';
-                        const best = h.near[0];
-                        const note = gmPhrase(p, best, best);
-                        bookNotes.push(note);
-                        for (let j = 1; j < Math.min(h.near.length, 3); j++) {
-                            bookNotes.push(gmPhrase(p, h.near[j], h.near[j]));
-                        }
-                        matchLabel = 'Found (after a move or two)';
-                        targetsHtml = bookNotes.map(function(n) {
-                            return '<div class="text-amber-300 text-sm mt-1 leading-relaxed">' + n + '</div>';
-                        }).join('');
-                        reportLines.push(p.moveNum + '. ' + p.san + '  (' + p.path + ')');
-                        bookNotes.forEach(function(n) { reportLines.push('  ' + n); });
-                        reportLines.push('');
+                        note = gmPhrase(p, h.near[0], h.near[0]);
                     } else {
-                        matchLabel = 'Not found in loaded chapters';
-                        const fallback = 'Transposition marked, but the target line was not found in the chapters you loaded. Upload the other chapter, or the lines may merge later.';
-                        targetsHtml = '<div class="text-slate-400 text-sm mt-1">' + fallback + '</div>';
-                        reportLines.push(p.moveNum + '. ' + p.san + '  (' + p.path + ')');
-                        reportLines.push('  ' + fallback);
-                        reportLines.push('');
+                        note = 'Transposition marked, but the target line was not found in the chapters you loaded.';
                     }
 
-                    const colorClass = matchClass === 'match-exact' ? 'text-emerald-400' : (matchClass === 'match-near' ? 'text-amber-400' : 'text-slate-500');
+                    const moveLabel = p.moveNum + '. ' + p.san;
+                    chData.items.push({ move: moveLabel, path: p.path, note: note, fen: p.fen });
 
                     html += '<div class="glass tr-card ' + matchClass + ' rounded-xl p-4">' +
                         '<div class="flex flex-col md:flex-row gap-4">' +
                         '<div class="board-box flex-shrink-0"><div id="' + bid + '" style="width:100%"></div></div>' +
                         '<div class="flex-1 space-y-2 min-w-0">' +
-                        '<div class="flex flex-wrap justify-between gap-2">' +
-                        '<span class="text-white font-semibold text-base">' + p.moveNum + '. ' + p.san + '</span>' +
-                        '<span class="text-[10px] uppercase tracking-widest font-bold ' + colorClass + '">' + matchLabel + '</span></div>' +
+                        '<div class="text-white font-semibold text-base">' + moveLabel + '</div>' +
                         '<div class="path">Line: ' + p.path + '</div>' +
-                        (p.comment ? '<div class="text-xs text-slate-400">Mark: ' + p.comment + '</div>' : '') +
-                        '<div class="pt-2 border-t border-slate-700">' + targetsHtml + '</div>' +
+                        '<label class="text-[10px] font-bold uppercase text-slate-500">Book note (editable)</label>' +
+                        '<textarea id="note_' + ci + '_' + ii + '" rows="2" class="w-full p-3 rounded-lg text-sm text-emerald-200">' +
+                        note.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</textarea>' +
                         '<div class="fen">FEN: ' + p.fen + '</div>' +
                         '</div></div></div>';
 
@@ -509,11 +564,11 @@
                 });
 
                 html += '</section>';
-                reportLines.push('');
+                trData.chapters.push(chData);
             });
 
+            window.trData = trData;
             box.innerHTML = html;
-            lastReportText = reportLines.join('\n');
 
             pendingBoards.forEach(function(b, i) {
                 setTimeout(function() {
@@ -526,21 +581,6 @@
                         });
                     } catch (e) {}
                 }, 40 + i * 30);
-            });
-        }
-
-        function exportReport() {
-            if (!lastReportText) return;
-            navigator.clipboard.writeText(lastReportText).then(function() {
-                alert('Report copied to clipboard.');
-            }).catch(function() {
-                const ta = document.createElement('textarea');
-                ta.value = lastReportText;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                alert('Report copied.');
             });
         }
     </script>
