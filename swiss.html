@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swiss & Round Robin | Mind Masters Academy</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+<style>
+:root{--bg:#07090f;--gold:#e8c547}
+*{box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8f0;margin:0;min-height:100vh}
+.panel{background:linear-gradient(160deg,#161c27,#0e1219);border:1px solid rgba(232,197,71,.14);border-radius:1.15rem}
+.btn-gold{background:linear-gradient(135deg,#fbbf24,#eab308);color:#000;font-weight:900;border-radius:12px;padding:12px 18px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;border:0;cursor:pointer}
+.btn-gold:disabled{opacity:.45;cursor:not-allowed}
+.btn-soft{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:#e2e8f0;font-weight:800;border-radius:12px;padding:11px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+.btn-soft:hover{background:rgba(255,255,255,.12)}
+.btn-danger{background:rgba(244,63,94,.15);border:1px solid rgba(244,63,94,.35);color:#fda4af;font-weight:800;border-radius:12px;padding:11px 16px;font-size:12px;cursor:pointer}
+input,select,textarea{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#fff;padding:10px 12px;width:100%;outline:none}
+input:focus,select:focus,textarea:focus{border-color:rgba(232,197,71,.45)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08)}
+td{padding:10px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle}
+tr:hover td{background:rgba(255,255,255,.03)}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.badge-swiss{background:rgba(139,92,246,.2);color:#c4b5fd}
+.badge-rr{background:rgba(56,189,248,.2);color:#7dd3fc}
+.badge-elo{background:rgba(251,191,36,.15);color:#fde68a}
+.badge-live{background:rgba(34,197,94,.15);color:#86efac}
+.badge-done{background:rgba(148,163,184,.15);color:#cbd5e1}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.96);border:1px solid rgba(232,197,71,.4);color:#fde68a;padding:10px 18px;border-radius:999px;font-size:12px;font-weight:800;z-index:80;opacity:0;pointer-events:none;transition:opacity .25s}
+.toast.show{opacity:1}
+.tab{padding:10px 14px;border-radius:10px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;cursor:pointer;border:1px solid transparent}
+.tab.active{background:rgba(232,197,71,.12);border-color:rgba(232,197,71,.35);color:#fde68a}
+.result-btn{padding:6px 10px;border-radius:8px;font-size:11px;font-weight:800;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#cbd5e1;cursor:pointer}
+.result-btn.active-w{background:rgba(34,197,94,.2);border-color:rgba(34,197,94,.45);color:#86efac}
+.result-btn.active-d{background:rgba(56,189,248,.2);border-color:rgba(56,189,248,.45);color:#7dd3fc}
+.result-btn.active-b{background:rgba(244,63,94,.2);border-color:rgba(244,63,94,.45);color:#fda4af}
+.rank-1{color:#fbbf24;font-weight:900}
+.rank-2{color:#cbd5e1;font-weight:900}
+.rank-3{color:#fdba74;font-weight:900}
+.modal-bg{display:none;position:fixed;inset:0;z-index:100;align-items:center;justify-content:center;background:rgba(5,7,13,.88);backdrop-filter:blur(10px);padding:16px}
+.modal-card{background:linear-gradient(160deg,#1a1520,#0f172a);border:1px solid rgba(232,197,71,.3);border-radius:18px;padding:24px;max-width:480px;width:100%}
+@media print{
+  nav,.no-print{display:none!important}
+  body{background:#fff;color:#000}
+  .panel{border:1px solid #ccc;background:#fff;box-shadow:none}
+  input,select,button{display:none}
+}
+</style>
+</head>
+<body>
+<nav class="sticky top-0 z-40 border-b border-white/5 bg-[#07090f]/95 backdrop-blur-xl px-4 py-3 flex items-center justify-between no-print">
+  <a href="index.html" class="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-white">← Academy</a>
+  <div class="text-sm font-black text-amber-400">♟️ Swiss Manager</div>
+  <button type="button" class="text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-amber-400" onclick="window.print()">Print</button>
+</nav>
+
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+  <!-- LIST VIEW -->
+  <div id="view-list">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+      <div>
+        <h1 class="text-xl font-black italic uppercase text-white">Swiss &amp; Round Robin</h1>
+        <p class="text-sm text-slate-400">Numbered pupils · pairings · standings · optional Elo · Firebase</p>
+      </div>
+      <button type="button" class="btn-gold" onclick="openCreateModal()">+ New tournament</button>
+    </div>
+    <div id="tourney-list" class="grid gap-3">
+      <p class="text-slate-500 text-sm">Loading tournaments…</p>
+    </div>
+  </div>
+
+  <!-- DETAIL VIEW -->
+  <div id="view-detail" class="hidden">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4 no-print">
+      <button type="button" class="btn-soft" onclick="showList()">← All tournaments</button>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" class="btn-soft" onclick="exportCsv()">Export CSV</button>
+        <button type="button" class="btn-danger" onclick="deleteCurrentTourney()">Delete</button>
+      </div>
+    </div>
+
+    <div class="panel p-5 mb-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-xl font-black text-white" id="d-name">Tournament</h2>
+          <div class="flex flex-wrap gap-2 mt-2">
+            <span class="badge" id="d-type">Swiss</span>
+            <span class="badge badge-elo hidden" id="d-elo">Elo on</span>
+            <span class="badge" id="d-status">Setup</span>
+            <span class="text-[11px] text-slate-500 font-bold" id="d-meta"></span>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2 no-print" id="d-actions"></div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mb-4 no-print" id="tabs">
+      <button type="button" class="tab active" data-tab="players" onclick="switchTab('players')">Players</button>
+      <button type="button" class="tab" data-tab="pairings" onclick="switchTab('pairings')">Pairings</button>
+      <button type="button" class="tab" data-tab="standings" onclick="switchTab('standings')">Standings</button>
+    </div>
+
+    <!-- PLAYERS TAB -->
+    <div id="tab-players" class="panel p-5">
+      <!-- Quick numbered registration for large classes -->
+      <div class="rounded-xl border border-amber-400/25 bg-amber-500/5 p-4 mb-5 no-print">
+        <div class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2">Quick register by numbers (large classes)</div>
+        <p class="text-xs text-slate-400 mb-3">Enter how many pupils are playing. Each gets a board number — pairings show as <strong class="text-slate-300">1 vs 3</strong>, <strong class="text-slate-300">2 vs 5</strong>, etc.</p>
+        <div class="flex flex-wrap items-end gap-3">
+          <div>
+            <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Total players</label>
+            <input id="num-players" type="number" min="2" max="500" value="20" class="w-28">
+          </div>
+          <div>
+            <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Start from #</label>
+            <input id="num-start" type="number" min="1" max="999" value="1" class="w-24">
+          </div>
+          <div>
+            <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Default rating</label>
+            <input id="num-default-elo" type="number" min="100" max="3000" value="1000" class="w-28">
+          </div>
+          <button type="button" class="btn-gold" onclick="generateNumberedPlayers()">Create numbered list</button>
+        </div>
+      </div>
+
+      <div class="flex flex-col md:flex-row gap-4 mb-4 no-print">
+        <div class="flex-1">
+          <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Or add by name (one per line, optional rating after comma)</label>
+          <textarea id="bulk-players" rows="4" placeholder="Ada, 1400&#10;12&#10;Bobby Fischer"></textarea>
+          <p class="text-[11px] text-slate-500 mt-1">You can also type numbers here (e.g. <code class="text-slate-400">7</code>) or <code class="text-slate-400">Name, 1200</code>.</p>
+        </div>
+        <div class="flex flex-col gap-2 md:w-44">
+          <button type="button" class="btn-gold" onclick="addPlayersBulk()">Add to list</button>
+          <button type="button" class="btn-soft" onclick="clearPlayers()" id="btn-clear-players">Clear all</button>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Player / Number</th>
+              <th>Start rating</th>
+              <th>Current rating</th>
+              <th class="no-print"></th>
+            </tr>
+          </thead>
+          <tbody id="players-body"></tbody>
+        </table>
+      </div>
+      <p class="text-[11px] text-slate-500 mt-3" id="players-count">0 players</p>
+    </div>
+
+    <!-- PAIRINGS TAB -->
+    <div id="tab-pairings" class="panel p-5 hidden">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div class="flex flex-wrap gap-2 items-center">
+          <label class="text-[10px] font-black uppercase tracking-widest text-slate-500">Round</label>
+          <select id="round-select" class="w-auto" onchange="renderPairings()"></select>
+        </div>
+        <div class="flex flex-wrap gap-2 no-print" id="pairings-actions"></div>
+      </div>
+      <div id="pairings-box" class="space-y-2"></div>
+      <p class="text-[11px] text-slate-500 mt-4" id="pairings-hint"></p>
+    </div>
+
+    <!-- STANDINGS TAB -->
+    <div id="tab-standings" class="panel p-5 hidden">
+      <div class="overflow-x-auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Player</th>
+              <th>Pts</th>
+              <th title="Buchholz">BH</th>
+              <th title="Sonneborn–Berger">SB</th>
+              <th>Games</th>
+              <th id="th-elo">Elo</th>
+              <th>±</th>
+            </tr>
+          </thead>
+          <tbody id="standings-body"></tbody>
+        </table>
+      </div>
+      <p class="text-[11px] text-slate-500 mt-3">Tie-break order: Points → Buchholz → Sonneborn–Berger → Elo</p>
+    </div>
+  </div>
+</div>
+
+<!-- CREATE MODAL -->
+<div id="create-modal" class="modal-bg no-print">
+  <div class="modal-card">
+    <h3 class="text-lg font-black text-white mb-4">New tournament</h3>
+    <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Name</label>
+    <input id="c-name" placeholder="School Swiss 2026" class="mb-3">
+    <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">System</label>
+    <select id="c-type" class="mb-3" onchange="toggleCreateFields()">
+      <option value="swiss">Swiss system</option>
+      <option value="rr">Round robin</option>
+    </select>
+    <div id="c-swiss-fields" class="mb-3">
+      <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Number of rounds</label>
+      <input id="c-rounds" type="number" min="1" max="20" value="5">
+      <p class="text-[11px] text-slate-500 mt-1">Tip: for N players, about ⌈log₂(N)⌉ rounds is common.</p>
+    </div>
+    <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Default rating (always applied to new players)</label>
+    <input id="c-default-elo" type="number" value="1000" min="100" max="3000" class="mb-3">
+    <label class="flex items-center gap-2 text-sm text-slate-200 mb-2 cursor-pointer">
+      <input type="checkbox" id="c-elo" class="rounded" onchange="toggleCreateFields()"> Enable Elo rating updates after each game
+    </label>
+    <div id="c-elo-fields" class="hidden mb-3">
+      <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">K-factor</label>
+      <select id="c-k">
+        <option value="40">40 (youth / provisional)</option>
+        <option value="20" selected>20 (standard)</option>
+        <option value="10">10 (masters / stable)</option>
+      </select>
+      <p class="text-[11px] text-slate-500 mt-1">New players start at the default rating above unless you set another value.</p>
+    </div>
+    <div class="flex gap-2 mt-4">
+      <button type="button" class="btn-gold flex-1" onclick="createTournament()">Create</button>
+      <button type="button" class="btn-soft flex-1" onclick="closeCreateModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",
+  authDomain: "assignments-de95a.firebaseapp.com",
+  projectId: "assignments-de95a",
+  storageBucket: "assignments-de95a.firebasestorage.app",
+  messagingSenderId: "1088073398299",
+  appId: "1:1088073398299:web:dab1f57ac1d63b10dba0be"
+};
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const COL = 'chess_tournaments';
+
+let currentId = null;
+let T = null; // active tournament object
+let activeTab = 'players';
+let listUnsub = null;
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2600);
+}
+function uid() {
+  return 'p_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+function nowTs() {
+  return firebase.firestore.FieldValue.serverTimestamp();
+}
+
+/* ========== ELO ========== */
+function expectedScore(ra, rb) {
+  return 1 / (1 + Math.pow(10, (rb - ra) / 400));
+}
+function eloDelta(ra, rb, score, k) {
+  return Math.round(k * (score - expectedScore(ra, rb)));
+}
+
+/* ========== TIE-BREAKS ========== */
+function computeStandings(tourney) {
+  const players = (tourney.players || []).map(p => ({
+    ...p,
+    score: 0,
+    games: 0,
+    bh: 0,
+    sb: 0,
+    opponents: [],
+    resultsVs: {} // oppId -> score obtained
+  }));
+  const byId = {};
+  players.forEach(p => { byId[p.id] = p; });
+
+  (tourney.roundsData || []).forEach(rd => {
+    (rd.pairings || []).forEach(g => {
+      if (g.bye) {
+        const pl = byId[g.white];
+        if (pl && g.result === '1-0') {
+          pl.score += 1;
+          pl.games += 1;
+        }
+        return;
+      }
+      const w = byId[g.white], b = byId[g.black];
+      if (!w || !b || !g.result) return;
+      w.games++; b.games++;
+      let ws = 0, bs = 0;
+      if (g.result === '1-0') { ws = 1; bs = 0; }
+      else if (g.result === '0-1') { ws = 0; bs = 1; }
+      else if (g.result === '½-½' || g.result === '1/2-1/2') { ws = 0.5; bs = 0.5; }
+      else return;
+      w.score += ws; b.score += bs;
+      w.opponents.push(b.id); b.opponents.push(w.id);
+      w.resultsVs[b.id] = ws; b.resultsVs[w.id] = bs;
+    });
+  });
+
+  players.forEach(p => {
+    let bh = 0, sb = 0;
+    p.opponents.forEach(oid => {
+      const opp = byId[oid];
+      if (!opp) return;
+      bh += opp.score;
+      const sc = p.resultsVs[oid] || 0;
+      sb += sc * opp.score;
+    });
+    p.bh = Math.round(bh * 100) / 100;
+    p.sb = Math.round(sb * 100) / 100;
+  });
+
+  players.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.bh !== a.bh) return b.bh - a.bh;
+    if (b.sb !== a.sb) return b.sb - a.sb;
+    return (b.rating || 0) - (a.rating || 0);
+  });
+
+  return players;
+}
+
+/* ========== ROUND ROBIN SCHEDULE (circle method) ========== */
+function generateRoundRobinSchedule(playerIds) {
+  const ids = playerIds.slice();
+  const bye = ids.length % 2 === 1;
+  if (bye) ids.push(null); // bye marker
+  const n = ids.length;
+  const rounds = n - 1;
+  const half = n / 2;
+  const arr = ids.slice();
+  const schedule = [];
+
+  for (let r = 0; r < rounds; r++) {
+    const pairings = [];
+    for (let i = 0; i < half; i++) {
+      const a = arr[i];
+      const b = arr[n - 1 - i];
+      if (a === null || b === null) {
+        const real = a || b;
+        pairings.push({ white: real, black: null, bye: true, result: '1-0' });
+      } else {
+        // Alternate colors by round for fairness
+        if (r % 2 === 0) pairings.push({ white: a, black: b, result: null });
+        else pairings.push({ white: b, black: a, result: null });
+      }
+    }
+    schedule.push({ round: r + 1, pairings, complete: false });
+    // rotate (keep index 0 fixed)
+    const fixed = arr[0];
+    const rest = arr.slice(1);
+    rest.unshift(rest.pop());
+    arr.splice(0, arr.length, fixed, ...rest);
+  }
+  return schedule;
+}
+
+/* ========== SWISS PAIRING ========== */
+function hasPlayed(tourney, a, b) {
+  for (const rd of (tourney.roundsData || [])) {
+    for (const g of (rd.pairings || [])) {
+      if (g.bye) continue;
+      if ((g.white === a && g.black === b) || (g.white === b && g.black === a)) return true;
+    }
+  }
+  return false;
+}
+
+function colorBalance(tourney, pid) {
+  // positive = more whites
+  let bal = 0;
+  (tourney.roundsData || []).forEach(rd => {
+    (rd.pairings || []).forEach(g => {
+      if (g.bye) return;
+      if (g.white === pid) bal++;
+      if (g.black === pid) bal--;
+    });
+  });
+  return bal;
+}
+
+function generateSwissPairings(tourney) {
+  const standings = computeStandings(tourney);
+  // Only active players
+  const pool = standings.map(p => p.id);
+  const byId = {};
+  (tourney.players || []).forEach(p => { byId[p.id] = p; });
+
+  // Score map
+  const scoreMap = {};
+  standings.forEach(p => { scoreMap[p.id] = p.score; });
+
+  // Sort: score desc, rating desc
+  pool.sort((a, b) => {
+    if (scoreMap[b] !== scoreMap[a]) return scoreMap[b] - scoreMap[a];
+    return (byId[b].rating || 0) - (byId[a].rating || 0);
+  });
+
+  const unpaired = pool.slice();
+  const pairings = [];
+  const paired = new Set();
+
+  // Odd number → bye to lowest score who hasn't had a bye
+  if (unpaired.length % 2 === 1) {
+    let byeCandidate = null;
+    for (let i = unpaired.length - 1; i >= 0; i--) {
+      const id = unpaired[i];
+      const hadBye = (tourney.roundsData || []).some(rd =>
+        (rd.pairings || []).some(g => g.bye && g.white === id)
+      );
+      if (!hadBye) { byeCandidate = id; break; }
+    }
+    if (!byeCandidate) byeCandidate = unpaired[unpaired.length - 1];
+    pairings.push({ white: byeCandidate, black: null, bye: true, result: '1-0' });
+    paired.add(byeCandidate);
+    unpaired.splice(unpaired.indexOf(byeCandidate), 1);
+  }
+
+  // Pair within score groups: try top half vs bottom half
+  while (unpaired.length >= 2) {
+    const a = unpaired[0];
+    let partnerIdx = -1;
+    // Prefer opponent not played, similar score, good color balance
+    for (let i = 1; i < unpaired.length; i++) {
+      const b = unpaired[i];
+      if (hasPlayed(tourney, a, b)) continue;
+      partnerIdx = i;
+      break;
+    }
+    // Fallback: allow rematch only if no alternative
+    if (partnerIdx < 0) {
+      for (let i = 1; i < unpaired.length; i++) {
+        partnerIdx = i;
+        break;
+      }
+    }
+    if (partnerIdx < 0) break;
+    const b = unpaired[partnerIdx];
+    unpaired.splice(partnerIdx, 1);
+    unpaired.shift();
+
+    // Colors: prefer who is due opposite color
+    const balA = colorBalance(tourney, a);
+    const balB = colorBalance(tourney, b);
+    let white = a, black = b;
+    if (balA > balB) { white = b; black = a; }
+    else if (balA === balB) {
+      // slight preference higher rating takes black if equal (or random)
+      if ((byId[a].rating || 0) >= (byId[b].rating || 0)) { white = b; black = a; }
+    }
+    pairings.push({ white, black, bye: false, result: null });
+    paired.add(a); paired.add(b);
+  }
+
+  return pairings;
+}
+
+/* ========== FIRESTORE ========== */
+function tourneyToSave(t) {
+  // Strip undefined
+  return JSON.parse(JSON.stringify(t));
+}
+
+async function saveTournament(t) {
+  const payload = tourneyToSave(t);
+  payload.updated = nowTs();
+  if (t.id) {
+    await db.collection(COL).doc(t.id).set(payload, { merge: true });
+  } else {
+    payload.created = nowTs();
+    const ref = await db.collection(COL).add(payload);
+    t.id = ref.id;
+    payload.id = ref.id;
+    await db.collection(COL).doc(ref.id).set({ id: ref.id }, { merge: true });
+  }
+  return t;
+}
+
+function loadList() {
+  const box = document.getElementById('tourney-list');
+  if (listUnsub) listUnsub();
+  listUnsub = db.collection(COL).orderBy('updated', 'desc').limit(50).onSnapshot(snap => {
+    if (snap.empty) {
+      box.innerHTML = '<div class="panel p-8 text-center text-slate-500">No tournaments yet. Create a Swiss or Round Robin to begin.</div>';
+      return;
+    }
+    let html = '';
+    snap.forEach(doc => {
+      const t = doc.data();
+      const id = doc.id;
+      const typeBadge = t.type === 'rr' ? 'badge-rr">Round robin' : 'badge-swiss">Swiss';
+      const st = t.status === 'done' ? 'badge-done">Finished' : (t.status === 'active' ? 'badge-live">Active' : 'badge-done">Setup');
+      const n = (t.players || []).length;
+      const rnd = t.currentRound || 0;
+      html += `<div class="panel p-4 flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:border-amber-400/30 transition" onclick="openTournament('${id}')">
+        <div>
+          <div class="font-black text-white">${esc(t.name || 'Untitled')}</div>
+          <div class="flex flex-wrap gap-2 mt-1.5">
+            <span class="badge ${typeBadge}</span>
+            <span class="badge ${st}</span>
+            ${t.eloEnabled ? '<span class="badge badge-elo">Elo</span>' : ''}
+            <span class="text-[11px] text-slate-500 font-bold">${n} players · Round ${rnd}${t.type==='swiss' ? ' / '+(t.totalRounds||'?') : ''}</span>
+          </div>
+        </div>
+        <span class="text-amber-400 text-xs font-black uppercase tracking-widest">Open →</span>
+      </div>`;
+    });
+    box.innerHTML = html;
+  }, err => {
+    console.error(err);
+    box.innerHTML = '<div class="panel p-6 text-rose-300 text-sm">Could not load tournaments. Check Firestore rules for <code>chess_tournaments</code>.</div>';
+  });
+}
+
+function esc(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ========== UI: LIST / CREATE ========== */
+function showList() {
+  currentId = null; T = null;
+  document.getElementById('view-list').classList.remove('hidden');
+  document.getElementById('view-detail').classList.add('hidden');
+}
+function openCreateModal() {
+  document.getElementById('create-modal').style.display = 'flex';
+  document.getElementById('c-name').value = '';
+  document.getElementById('c-type').value = 'swiss';
+  document.getElementById('c-rounds').value = '5';
+  document.getElementById('c-default-elo').value = '1000';
+  document.getElementById('c-elo').checked = false;
+  toggleCreateFields();
+}
+function closeCreateModal() {
+  document.getElementById('create-modal').style.display = 'none';
+}
+function toggleCreateFields() {
+  const isSwiss = document.getElementById('c-type').value === 'swiss';
+  document.getElementById('c-swiss-fields').style.display = isSwiss ? 'block' : 'none';
+  document.getElementById('c-elo-fields').classList.toggle('hidden', !document.getElementById('c-elo').checked);
+}
+
+async function createTournament() {
+  const name = (document.getElementById('c-name').value || '').trim() || 'New Tournament';
+  const type = document.getElementById('c-type').value;
+  const eloEnabled = document.getElementById('c-elo').checked;
+  const kFactor = parseInt(document.getElementById('c-k').value, 10) || 20;
+  const defaultElo = parseInt(document.getElementById('c-default-elo').value, 10) || 1000;
+  const totalRounds = type === 'swiss' ? Math.max(1, parseInt(document.getElementById('c-rounds').value, 10) || 5) : 0;
+
+  const t = {
+    name,
+    type,
+    eloEnabled,
+    kFactor,
+    defaultElo,
+    totalRounds,
+    currentRound: 0,
+    players: [],
+    roundsData: [],
+    status: 'setup'
+  };
+  try {
+    await saveTournament(t);
+    closeCreateModal();
+    toast('Tournament created');
+    openTournament(t.id);
+  } catch (e) {
+    console.error(e);
+    toast('Create failed — check Firestore rules');
+  }
+}
+
+async function openTournament(id) {
+  try {
+    const doc = await db.collection(COL).doc(id).get();
+    if (!doc.exists) { toast('Not found'); return; }
+    T = doc.data();
+    T.id = doc.id;
+    currentId = doc.id;
+    document.getElementById('view-list').classList.add('hidden');
+    document.getElementById('view-detail').classList.remove('hidden');
+    renderDetail();
+  } catch (e) {
+    console.error(e);
+    toast('Could not open tournament');
+  }
+}
+
+/* ========== RENDER DETAIL ========== */
+function renderDetail() {
+  if (!T) return;
+  document.getElementById('d-name').textContent = T.name || 'Tournament';
+  const typeEl = document.getElementById('d-type');
+  typeEl.textContent = T.type === 'rr' ? 'Round robin' : 'Swiss';
+  typeEl.className = 'badge ' + (T.type === 'rr' ? 'badge-rr' : 'badge-swiss');
+  const eloEl = document.getElementById('d-elo');
+  eloEl.classList.toggle('hidden', !T.eloEnabled);
+  const st = document.getElementById('d-status');
+  st.textContent = T.status === 'done' ? 'Finished' : (T.status === 'active' ? 'Active' : 'Setup');
+  st.className = 'badge ' + (T.status === 'active' ? 'badge-live' : 'badge-done');
+  const n = (T.players || []).length;
+  document.getElementById('d-meta').textContent = n + ' players' + (T.type === 'swiss' ? ' · ' + (T.currentRound || 0) + '/' + (T.totalRounds || '?') + ' rounds' : ' · Round ' + (T.currentRound || 0));
+
+  // Actions
+  const act = document.getElementById('d-actions');
+  let btns = '';
+  if (T.status !== 'done') {
+    if (T.type === 'rr' && !(T.roundsData && T.roundsData.length)) {
+      btns += '<button type="button" class="btn-gold" onclick="startRoundRobin()">Generate full RR schedule</button>';
+    }
+    if (T.type === 'swiss') {
+      const canNext = (T.players || []).length >= 2 && (T.currentRound || 0) < (T.totalRounds || 0);
+      const allDone = roundComplete(T.currentRound);
+      if ((T.currentRound || 0) === 0) {
+        btns += '<button type="button" class="btn-gold" onclick="startNextSwissRound()" ' + ((T.players||[]).length<2?'disabled':'') + '>Start Round 1</button>';
+      } else if (canNext) {
+        btns += '<button type="button" class="btn-gold" onclick="startNextSwissRound()" ' + (!allDone?'disabled title="Enter all results first"':'') + '>Pair Round ' + ((T.currentRound||0)+1) + '</button>';
+      }
+      if ((T.currentRound || 0) >= (T.totalRounds || 0) && allDone) {
+        btns += '<button type="button" class="btn-gold" onclick="finishTournament()">Finish tournament</button>';
+      }
+    } else if (T.type === 'rr' && T.roundsData && T.roundsData.length) {
+      const allRoundsDone = T.roundsData.every(r => r.complete || pairingsAllResults(r.pairings));
+      if (allRoundsDone) btns += '<button type="button" class="btn-gold" onclick="finishTournament()">Finish tournament</button>';
+    }
+  }
+  act.innerHTML = btns;
+
+  renderPlayers();
+  fillRoundSelect();
+  renderPairings();
+  renderStandings();
+  switchTab(activeTab);
+}
+
+function pairingsAllResults(pairings) {
+  return (pairings || []).every(g => g.bye || !!g.result);
+}
+function roundComplete(roundNum) {
+  if (!roundNum) return true;
+  const rd = (T.roundsData || []).find(r => r.round === roundNum);
+  if (!rd) return false;
+  return pairingsAllResults(rd.pairings);
+}
+
+function switchTab(name) {
+  activeTab = name;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.getElementById('tab-players').classList.toggle('hidden', name !== 'players');
+  document.getElementById('tab-pairings').classList.toggle('hidden', name !== 'pairings');
+  document.getElementById('tab-standings').classList.toggle('hidden', name !== 'standings');
+}
+
+/* ========== PLAYERS ========== */
+function renderPlayers() {
+  const body = document.getElementById('players-body');
+  const players = T.players || [];
+  const locked = (T.currentRound || 0) > 0 || (T.roundsData || []).length > 0;
+  document.getElementById('btn-clear-players').style.display = locked ? 'none' : '';
+  // Sync default rating field
+  const defElo = document.getElementById('num-default-elo');
+  if (defElo && T.defaultElo) defElo.value = T.defaultElo;
+  body.innerHTML = players.map((p, i) => `<tr>
+    <td class="text-slate-500">${i + 1}</td>
+    <td class="font-black text-xl text-white">${esc(p.name)}</td>
+    <td>${p.startRating != null ? p.startRating : (T.defaultElo || 1000)}</td>
+    <td>${p.rating != null ? p.rating : (T.defaultElo || 1000)}</td>
+    <td class="no-print">${locked ? '' : '<button type="button" class="result-btn" onclick="removePlayer(\''+p.id+'\')">Remove</button>'}</td>
+  </tr>`).join('') || '<tr><td colspan="5" class="text-slate-500">No players yet — use “Create numbered list” for a full class.</td></tr>';
+  document.getElementById('players-count').textContent = players.length + ' players' + (locked ? ' · list locked after pairings start' : '');
+}
+
+function defaultRating() {
+  if (T && T.defaultElo) return T.defaultElo;
+  const fromUi = parseInt((document.getElementById('num-default-elo') || {}).value, 10);
+  return fromUi || 1000;
+}
+
+/** Create players 1..N (or from start number) for large classes */
+async function generateNumberedPlayers() {
+  if (!T) return;
+  if ((T.currentRound || 0) > 0 || (T.roundsData || []).length > 0) {
+    toast('Cannot change players after pairings started');
+    return;
+  }
+  const n = Math.max(2, Math.min(500, parseInt(document.getElementById('num-players').value, 10) || 0));
+  const start = Math.max(1, parseInt(document.getElementById('num-start').value, 10) || 1);
+  const rating = parseInt(document.getElementById('num-default-elo').value, 10) || T.defaultElo || 1000;
+  T.defaultElo = rating;
+  if ((T.players || []).length) {
+    if (!confirm('Replace current list with players #' + start + '–' + (start + n - 1) + '?')) return;
+  }
+  T.players = [];
+  for (let i = 0; i < n; i++) {
+    const num = String(start + i);
+    T.players.push({
+      id: uid(),
+      name: num,
+      number: start + i,
+      startRating: rating,
+      rating: rating
+    });
+  }
+  await persist();
+  toast(n + ' players registered as #' + start + '–' + (start + n - 1));
+}
+
+async function addPlayersBulk() {
+  if (!T) return;
+  if ((T.currentRound || 0) > 0 || (T.roundsData || []).length > 0) {
+    toast('Cannot add players after pairings started');
+    return;
+  }
+  const raw = document.getElementById('bulk-players').value || '';
+  const lines = raw.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) { toast('Paste at least one name or number'); return; }
+  T.players = T.players || [];
+  const existing = new Set(T.players.map(p => p.name.toLowerCase()));
+  let added = 0;
+  const ratingDefault = defaultRating();
+  lines.forEach(line => {
+    let name = line, rating = ratingDefault;
+    const m = line.match(/^(.+?)[,\t](\s*\d{3,4})\s*$/);
+    if (m) { name = m[1].trim(); rating = parseInt(m[2], 10); }
+    if (!name || existing.has(name.toLowerCase())) return;
+    existing.add(name.toLowerCase());
+    const asNum = /^\d+$/.test(name) ? parseInt(name, 10) : null;
+    T.players.push({
+      id: uid(),
+      name,
+      number: asNum,
+      startRating: rating,
+      rating: rating
+    });
+    added++;
+  });
+  document.getElementById('bulk-players').value = '';
+  await persist();
+  toast('Added ' + added + ' player(s)');
+}
+
+async function removePlayer(id) {
+  if ((T.currentRound || 0) > 0) return;
+  T.players = (T.players || []).filter(p => p.id !== id);
+  await persist();
+}
+async function clearPlayers() {
+  if ((T.currentRound || 0) > 0) return;
+  if (!confirm('Remove all players?')) return;
+  T.players = [];
+  await persist();
+}
+
+async function persist() {
+  try {
+    await saveTournament(T);
+    renderDetail();
+  } catch (e) {
+    console.error(e);
+    toast('Save failed');
+  }
+}
+
+/* ========== PAIRINGS UI ========== */
+function fillRoundSelect() {
+  const sel = document.getElementById('round-select');
+  const rounds = T.roundsData || [];
+  if (!rounds.length) {
+    sel.innerHTML = '<option value="0">No rounds yet</option>';
+    return;
+  }
+  sel.innerHTML = rounds.map(r => `<option value="${r.round}">Round ${r.round}</option>`).join('');
+  const cur = T.currentRound || rounds[rounds.length - 1].round;
+  sel.value = String(cur);
+}
+
+function playerName(id) {
+  const p = (T.players || []).find(x => x.id === id);
+  return p ? p.name : '???';
+}
+
+function renderPairings() {
+  const box = document.getElementById('pairings-box');
+  const hint = document.getElementById('pairings-hint');
+  const actions = document.getElementById('pairings-actions');
+  const rounds = T.roundsData || [];
+  if (!rounds.length) {
+    box.innerHTML = '<p class="text-slate-500 text-sm">No pairings yet. Add players, then start the tournament.</p>';
+    hint.textContent = '';
+    actions.innerHTML = '';
+    return;
+  }
+  const rn = parseInt(document.getElementById('round-select').value, 10) || rounds[rounds.length - 1].round;
+  const rd = rounds.find(r => r.round === rn);
+  if (!rd) { box.innerHTML = ''; return; }
+
+  const locked = T.status === 'done';
+  box.innerHTML = (rd.pairings || []).map((g, idx) => {
+    if (g.bye) {
+      return `<div class="flex flex-wrap items-center justify-between gap-2 bg-white/5 rounded-xl px-4 py-3">
+        <div class="font-black text-2xl text-white tracking-wide">${esc(playerName(g.white))} <span class="text-slate-500 text-base font-semibold">bye</span></div>
+        <span class="badge badge-live">1 pt</span>
+      </div>`;
+    }
+    const res = g.result || '';
+    const wName = playerName(g.white);
+    const bName = playerName(g.black);
+    return `<div class="bg-white/5 rounded-xl px-4 py-3">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Board ${idx + 1}</div>
+          <div class="font-black text-2xl text-white tracking-wide">${esc(wName)} <span class="text-amber-400/90 text-lg font-black">vs</span> ${esc(bName)}</div>
+          <div class="text-[11px] text-slate-500 mt-1">White: ${esc(wName)} · Black: ${esc(bName)}</div>
+          ${T.eloEnabled && (g.eloWhiteDelta != null) ? `<div class="text-[11px] text-slate-500 mt-1">Elo: ${g.eloWhiteDelta>=0?'+':''}${g.eloWhiteDelta} / ${g.eloBlackDelta>=0?'+':''}${g.eloBlackDelta}</div>` : ''}
+        </div>
+        <div class="flex flex-wrap gap-1.5 no-print">
+          <button type="button" class="result-btn ${res==='1-0'?'active-w':''}" ${locked?'disabled':''} onclick="setResult(${rn},${idx},'1-0')">1-0</button>
+          <button type="button" class="result-btn ${res==='½-½'?'active-d':''}" ${locked?'disabled':''} onclick="setResult(${rn},${idx},'½-½')">½-½</button>
+          <button type="button" class="result-btn ${res==='0-1'?'active-b':''}" ${locked?'disabled':''} onclick="setResult(${rn},${idx},'0-1')">0-1</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const done = pairingsAllResults(rd.pairings);
+  rd.complete = done;
+  hint.textContent = done ? 'All results entered for Round ' + rn + '.' : 'Enter a result for every board.';
+  actions.innerHTML = '';
+}
+
+async function setResult(roundNum, idx, result) {
+  if (!T || T.status === 'done') return;
+  const rd = (T.roundsData || []).find(r => r.round === roundNum);
+  if (!rd || !rd.pairings[idx] || rd.pairings[idx].bye) return;
+
+  const g = rd.pairings[idx];
+  // Revert previous elo if changing result
+  if (T.eloEnabled && g.result && g.eloApplied) {
+    revertElo(g);
+    g.eloApplied = false;
+  }
+  g.result = result;
+  if (T.eloEnabled) {
+    applyElo(g);
+    g.eloApplied = true;
+  }
+  rd.complete = pairingsAllResults(rd.pairings);
+  T.status = 'active';
+  await persist();
+  toast('Result saved');
+}
+
+function applyElo(g) {
+  if (g.bye || !g.result) return;
+  const w = (T.players || []).find(p => p.id === g.white);
+  const b = (T.players || []).find(p => p.id === g.black);
+  if (!w || !b) return;
+  const ra = w.rating || T.defaultElo || 1000;
+  const rb = b.rating || T.defaultElo || 1000;
+  const k = T.kFactor || 20;
+  let scoreW = 0.5;
+  if (g.result === '1-0') scoreW = 1;
+  else if (g.result === '0-1') scoreW = 0;
+  const dW = eloDelta(ra, rb, scoreW, k);
+  const dB = eloDelta(rb, ra, 1 - scoreW, k);
+  w.rating = ra + dW;
+  b.rating = rb + dB;
+  g.eloWhiteDelta = dW;
+  g.eloBlackDelta = dB;
+  g.eloWhiteBefore = ra;
+  g.eloBlackBefore = rb;
+}
+
+function revertElo(g) {
+  if (!g.eloApplied) return;
+  const w = (T.players || []).find(p => p.id === g.white);
+  const b = (T.players || []).find(p => p.id === g.black);
+  if (w && g.eloWhiteBefore != null) w.rating = g.eloWhiteBefore;
+  if (b && g.eloBlackBefore != null) b.rating = g.eloBlackBefore;
+  g.eloWhiteDelta = null;
+  g.eloBlackDelta = null;
+}
+
+/* ========== START ROUNDS ========== */
+async function startNextSwissRound() {
+  if (!T || T.type !== 'swiss') return;
+  if ((T.players || []).length < 2) { toast('Need at least 2 players'); return; }
+  if (T.currentRound > 0 && !roundComplete(T.currentRound)) {
+    toast('Finish current round results first');
+    return;
+  }
+  if (T.currentRound >= T.totalRounds) { toast('All rounds paired'); return; }
+
+  const next = (T.currentRound || 0) + 1;
+  const pairings = generateSwissPairings(T);
+  T.roundsData = T.roundsData || [];
+  T.roundsData.push({ round: next, pairings, complete: pairings.every(g => g.bye || g.result) });
+  T.currentRound = next;
+  T.status = 'active';
+  await persist();
+  activeTab = 'pairings';
+  switchTab('pairings');
+  toast('Round ' + next + ' paired');
+}
+
+async function startRoundRobin() {
+  if (!T || T.type !== 'rr') return;
+  if ((T.players || []).length < 2) { toast('Need at least 2 players'); return; }
+  if (T.roundsData && T.roundsData.length) { toast('Schedule already generated'); return; }
+  const ids = T.players.map(p => p.id);
+  const schedule = generateRoundRobinSchedule(ids);
+  // Auto-apply bye points; no elo on byes
+  schedule.forEach(rd => {
+    rd.pairings.forEach(g => {
+      if (g.bye) g.result = '1-0';
+    });
+    rd.complete = pairingsAllResults(rd.pairings);
+  });
+  T.roundsData = schedule;
+  T.totalRounds = schedule.length;
+  T.currentRound = 1;
+  T.status = 'active';
+  await persist();
+  activeTab = 'pairings';
+  switchTab('pairings');
+  toast('Round robin schedule ready (' + schedule.length + ' rounds)');
+}
+
+async function finishTournament() {
+  if (!T) return;
+  T.status = 'done';
+  await persist();
+  toast('Tournament finished');
+  switchTab('standings');
+}
+
+/* ========== STANDINGS ========== */
+function renderStandings() {
+  const body = document.getElementById('standings-body');
+  const rows = computeStandings(T);
+  const showElo = !!T.eloEnabled;
+  document.getElementById('th-elo').style.display = showElo ? '' : 'none';
+
+  body.innerHTML = rows.map((p, i) => {
+    const rankCls = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : '';
+    const start = p.startRating != null ? p.startRating : (T.defaultElo || 1000);
+    const cur = p.rating != null ? p.rating : start;
+    const delta = cur - start;
+    const deltaStr = (delta >= 0 ? '+' : '') + delta;
+    return `<tr>
+      <td class="${rankCls}">${i + 1}</td>
+      <td class="font-bold text-white">${esc(p.name)}</td>
+      <td class="font-black text-amber-300">${p.score}</td>
+      <td>${p.bh}</td>
+      <td>${p.sb}</td>
+      <td>${p.games}</td>
+      <td style="${showElo?'':'display:none'}">${cur}</td>
+      <td class="${delta>0?'text-emerald-400':delta<0?'text-rose-400':'text-slate-500'}" style="${showElo?'':'display:none'}">${showElo?deltaStr:'—'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" class="text-slate-500">No data yet</td></tr>';
+}
+
+/* ========== EXPORT / DELETE ========== */
+function exportCsv() {
+  if (!T) return;
+  const rows = computeStandings(T);
+  let csv = 'Rank,Name,Points,Buchholz,SB,Games,Elo\n';
+  rows.forEach((p, i) => {
+    csv += [i+1, '"'+String(p.name).replace(/"/g,'""')+'"', p.score, p.bh, p.sb, p.games, p.rating||''].join(',') + '\n';
+  });
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (T.name || 'tournament').replace(/\s+/g,'_') + '_standings.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('CSV downloaded');
+}
+
+async function deleteCurrentTourney() {
+  if (!T || !T.id) return;
+  if (!confirm('Delete this tournament permanently?')) return;
+  try {
+    await db.collection(COL).doc(T.id).delete();
+    toast('Deleted');
+    showList();
+  } catch (e) {
+    toast('Delete failed');
+  }
+}
+
+/* ========== INIT ========== */
+loadList();
+</script>
+</body>
+</html>
