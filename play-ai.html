@@ -389,10 +389,13 @@ body { -webkit-tap-highlight-color: transparent; padding-bottom: env(safe-area-i
 <label class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2 block">1. Your Name <span class="text-rose-400">*</span></label>
 <input id="player-name" type="text" placeholder="Type your full name" maxlength="40"
 class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-base text-white" autocomplete="name">
+<label class="text-[10px] font-black uppercase tracking-widest text-amber-400 mt-3 mb-2 block">Class / Grade <span class="text-rose-400">*</span></label>
+<input id="player-class" type="text" placeholder="e.g. Primary 5A, JSS 2B, Grade 4" maxlength="40"
+class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-base text-white" autocomplete="off">
 <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mt-3 mb-2 block">Optional PIN (protects your cloud progress)</label>
 <input id="player-pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="4–6 digit PIN (optional)"
 class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-base text-white" autocomplete="off">
-<p class="text-[10px] text-slate-500 mt-2">Same name on any phone = same XP &amp; unlocked rivals. Set a PIN so only you can load it.</p>
+<p class="text-[10px] text-slate-500 mt-2">Same name on any phone = same XP &amp; unlocked rivals. Set a PIN so only you can load it. Class helps your coach see who played.</p>
 <p id="cloud-status" class="text-[10px] font-bold text-slate-500 mt-1">☁ Ready to sync</p>
 </div>
 
@@ -460,6 +463,16 @@ Enter Arena <i class="fas fa-arrow-right ml-2"></i>
 <div id="spec-board" style="max-width:280px;margin:0 auto;border-radius:10px;overflow:hidden;border:2px solid rgba(232,197,71,.3)"></div>
 </div>
 </div>
+</div>
+
+<!-- Full list of students who played (name + class) -->
+<div class="panel p-5 mt-4 max-w-3xl mx-auto">
+<div class="flex items-center justify-between gap-2 mb-4 flex-wrap">
+  <div class="flex items-center gap-2"><span class="text-lg">📋</span><h3 class="font-black text-white text-sm uppercase tracking-tight">Students who played against the AI</h3></div>
+  <span id="players-played-count" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">—</span>
+</div>
+<div id="players-played-list" class="space-y-2 text-sm max-h-72 overflow-y-auto"><p class="text-slate-600 text-xs">Loading students…</p></div>
+<p class="text-[10px] text-slate-500 mt-3">Shows name, class, XP and AI wins. Updates live from cloud progress.</p>
 </div>
 </div>
 
@@ -788,6 +801,7 @@ function mergeProgress(local, cloud){
   out.equipFrame=local.equipFrame||cloud.equipFrame||'auto';
   out.schoolCode=local.schoolCode||cloud.schoolCode||'';
   out.name=local.name||cloud.name||'';
+  out.playerClass=local.playerClass||cloud.playerClass||cloud.class||'';
   out.pin=local.pin||cloud.pin||'';
   out.achievements=Object.assign({}, cloud.achievements||{}, local.achievements||{});
   out.dailyDone=Object.assign({}, cloud.dailyDone||{}, local.dailyDone||{});
@@ -806,6 +820,8 @@ function pushCloudProgress(p){
   db.collection('player_progress').doc(id).set({
     name: displayPlayerName(name),
     nameKey: normalizePlayerName(name),
+    playerClass: p.playerClass||'',
+    class: p.playerClass||'',
     xp: p.xp||0,
     unlockedLevel: p.unlockedLevel||1,
     beatenLevels: p.beatenLevels||[],
@@ -1253,9 +1269,17 @@ function waitForBoardPieces(timeoutMs){
 
 async function startGame(){
   const name=document.getElementById('player-name').value.trim();
+  const playerClass=(document.getElementById('player-class')||{}).value ? document.getElementById('player-class').value.trim() : '';
   if(!name){
+    document.getElementById('setup-error').textContent='Please enter your name first';
     document.getElementById('setup-error').classList.remove('hidden');
     document.getElementById('player-name').focus();
+    return;
+  }
+  if(!playerClass){
+    document.getElementById('setup-error').textContent='Please enter your class / grade';
+    document.getElementById('setup-error').classList.remove('hidden');
+    var ce=document.getElementById('player-class'); if(ce) ce.focus();
     return;
   }
   document.getElementById('setup-error').classList.add('hidden');
@@ -1269,10 +1293,12 @@ async function startGame(){
     if(pinEl) pinEl.focus();
     return;
   }
-  if(pinVal && pinVal.length>=4){
+  // Always save class with progress so coach can see who played
+  {
     var pp=loadMMProgress();
-    pp.pin=pinVal;
     pp.name=name;
+    pp.playerClass=playerClass;
+    if(pinVal && pinVal.length>=4) pp.pin=pinVal;
     saveMMProgress(pp);
   }
   if(settings.level>maxUnlockedLevel()){
@@ -1284,7 +1310,9 @@ async function startGame(){
   }
   refreshCharacterLocks();
   settings.name=name;
+  settings.playerClass=playerClass;
   localStorage.setItem('mm_online_name', name);
+  localStorage.setItem('mm_player_class', playerClass);
   playerColor=settings.color;
   soundStart();
   document.getElementById('setup-screen').classList.add('hidden');
@@ -1996,9 +2024,12 @@ function cleanupStaleLiveGames(){
 
 function recordWin(){
   const raw=settings.name||'Player';
+  const cls=(settings.playerClass||(loadMMProgress().playerClass)||localStorage.getItem('mm_player_class')||'').trim();
   db.collection('ai_wins').add({
     name:displayPlayerName(raw),
     nameKey:normalizePlayerName(raw),
+    playerClass: cls,
+    class: cls,
     level:settings.level,
     color:playerColor,
     timestamp:firebase.firestore.FieldValue.serverTimestamp()
@@ -2016,25 +2047,98 @@ function loadAILeaderboard(){
       if(d.source==='hub_share') return;
       const key=d.nameKey||normalizePlayerName(d.name||'Player');
       if(!key) return;
-      if(!counts[key]) counts[key]={name:displayPlayerName(d.name||key),wins:0,bestLevel:0};
+      if(!counts[key]) counts[key]={name:displayPlayerName(d.name||key),wins:0,bestLevel:0,playerClass:d.playerClass||d.class||''};
       counts[key].wins++;
       if((d.level||0)>counts[key].bestLevel) counts[key].bestLevel=d.level;
       if(d.name) counts[key].name=displayPlayerName(d.name);
+      if(d.playerClass||d.class) counts[key].playerClass=d.playerClass||d.class;
     });
     const ranked=Object.values(counts).sort((a,b)=>b.wins-a.wins||b.bestLevel-a.bestLevel).slice(0,10);
     let html='',rank=0;
     ranked.forEach(r=>{
       rank++;
       const medal=rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':'#'+rank;
+      const clsLine=r.playerClass ? (' · '+r.playerClass) : '';
       html+=`<div class="flex items-center gap-3 bg-white/5 rounded-xl px-3 py-2.5">
         <div class="font-black w-7 text-center">${medal}</div>
         <div class="flex-1 min-w-0"><div class="font-bold text-white text-xs truncate">${r.name}</div>
-        <div class="text-[10px] text-slate-500">Best AI Lv${r.bestLevel}</div></div>
+        <div class="text-[10px] text-slate-500">Best AI Lv${r.bestLevel}${clsLine}</div></div>
         <div class="font-black text-amber-400 text-sm">${r.wins} win${r.wins>1?'s':''}</div>
       </div>`;
     });
     box.innerHTML=html||'<p class="text-slate-600 text-xs">No wins yet — beat the AI!</p>';
   },()=>{document.getElementById('ai-leaderboard').innerHTML='<p class="text-slate-600 text-xs">Leaderboard offline</p>'});
+}
+
+/** Full list of students who played (from player_progress cloud docs) — name + class */
+function loadPlayersPlayed(){
+  var box=document.getElementById('players-played-list');
+  var cntEl=document.getElementById('players-played-count');
+  if(!box||!db) return;
+  db.collection('player_progress').orderBy('updated','desc').limit(120).onSnapshot(function(snap){
+    if(snap.empty){
+      box.innerHTML='<p class="text-slate-600 text-xs">No students yet — they appear here after entering their name &amp; class and starting a game.</p>';
+      if(cntEl) cntEl.textContent='0 students';
+      return;
+    }
+    var list=[];
+    snap.forEach(function(doc){
+      var d=doc.data()||{};
+      var n=d.name||d.nameKey||'';
+      if(!n) return;
+      list.push({
+        name: displayPlayerName(n),
+        playerClass: d.playerClass||d.class||'—',
+        xp: d.xp||0,
+        aiWins: d.aiWins||0,
+        unlockedLevel: d.unlockedLevel||1
+      });
+    });
+    // Sort by name for easy roll-call
+    list.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    if(cntEl) cntEl.textContent=list.length+' student'+(list.length===1?'':'s');
+    var html='';
+    list.forEach(function(r,i){
+      html+='<div class="flex items-center gap-3 bg-white/5 rounded-xl px-3 py-2.5">'+
+        '<div class="font-black w-7 text-center text-slate-500 text-xs">'+(i+1)+'</div>'+
+        '<div class="flex-1 min-w-0"><div class="font-bold text-white text-xs truncate">'+r.name+'</div>'+
+        '<div class="text-[10px] text-amber-400/90 font-bold">'+r.playerClass+'</div></div>'+
+        '<div class="text-right shrink-0"><div class="font-black text-amber-400 text-xs">'+r.aiWins+' win'+(r.aiWins===1?'':'s')+'</div>'+
+        '<div class="text-[10px] text-slate-500">'+r.xp+' XP · Lv'+(r.unlockedLevel||1)+'</div></div></div>';
+    });
+    box.innerHTML=html||'<p class="text-slate-600 text-xs">No students yet</p>';
+  }, function(){
+    // Fallback without orderBy if index missing
+    db.collection('player_progress').limit(120).get().then(function(snap){
+      var list=[];
+      snap.forEach(function(doc){
+        var d=doc.data()||{};
+        var n=d.name||d.nameKey||'';
+        if(!n) return;
+        list.push({
+          name: displayPlayerName(n),
+          playerClass: d.playerClass||d.class||'—',
+          xp: d.xp||0,
+          aiWins: d.aiWins||0,
+          unlockedLevel: d.unlockedLevel||1
+        });
+      });
+      list.sort(function(a,b){ return a.name.localeCompare(b.name); });
+      if(cntEl) cntEl.textContent=list.length+' student'+(list.length===1?'':'s');
+      var html='';
+      list.forEach(function(r,i){
+        html+='<div class="flex items-center gap-3 bg-white/5 rounded-xl px-3 py-2.5">'+
+          '<div class="font-black w-7 text-center text-slate-500 text-xs">'+(i+1)+'</div>'+
+          '<div class="flex-1 min-w-0"><div class="font-bold text-white text-xs truncate">'+r.name+'</div>'+
+          '<div class="text-[10px] text-amber-400/90 font-bold">'+r.playerClass+'</div></div>'+
+          '<div class="text-right shrink-0"><div class="font-black text-amber-400 text-xs">'+r.aiWins+' win'+(r.aiWins===1?'':'s')+'</div>'+
+          '<div class="text-[10px] text-slate-500">'+r.xp+' XP</div></div></div>';
+      });
+      box.innerHTML=html||'<p class="text-slate-600 text-xs">No students yet — or list needs internet</p>';
+    }).catch(function(){
+      box.innerHTML='<p class="text-rose-400 text-xs">Could not load student list (check connection / Firestore rules for player_progress)</p>';
+    });
+  });
 }
 
 let specBoard=null,specUnsub=null;
@@ -2278,6 +2382,9 @@ beep = function(freq, dur, type, vol) {
     const n=p.name||localStorage.getItem('mm_online_name')||'';
     const el=document.getElementById('player-name');
     if(el&&n) el.value=n;
+    var cls=p.playerClass||localStorage.getItem('mm_player_class')||'';
+    var cel=document.getElementById('player-class');
+    if(cel&&cls) cel.value=cls;
     if(n){
       setCloudStatus('syncing');
       const cloud=await pullCloudProgress(n);
@@ -2285,9 +2392,11 @@ beep = function(freq, dur, type, vol) {
         if(!cloud.pin || !String(cloud.pin).length || cloud.pin===(p.pin||'')){
           const merged=mergeProgress(p, cloud);
           merged.name=n;
+          if(cloud.playerClass||cloud.class) merged.playerClass=cloud.playerClass||cloud.class;
           saveMMProgress(merged, {cloud:true});
           setCloudStatus('loaded');
           refreshCharacterLocks();
+          if(cel && (merged.playerClass)) cel.value=merged.playerClass;
         } else {
           setCloudStatus('offline');
           const cs=document.getElementById('cloud-status');
@@ -2887,6 +2996,7 @@ window.addEventListener('resize', function(){
 
 loadAILeaderboard();
 loadLiveFeed();
+loadPlayersPlayed();
 </script>
 <script>
 window.addEventListener('online',()=>{const b=document.getElementById('offline-banner');if(b)b.style.display='none'});
