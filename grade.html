@@ -140,13 +140,26 @@ input,select{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.12);bo
       <div class="text-6xl mb-3" id="result-emoji">🌟</div>
       <h2 class="text-2xl font-black text-white uppercase" id="result-title">Well done!</h2>
       <p class="text-sm text-slate-300 mt-2 mb-1" id="result-sub"></p>
-      <div class="text-4xl font-black text-amber-400 my-3" id="result-score">0%</div>
+      <div class="text-[11px] font-black uppercase tracking-widest text-slate-500 mt-3">Your score</div>
+      <div class="text-5xl font-black text-amber-400 my-2" id="result-score">0%</div>
       <div class="star-row text-2xl mb-2" id="result-stars">☆☆☆</div>
-      <p class="text-xs text-slate-500 mb-2" id="result-detail"></p>
-      <p class="text-sm text-emerald-300/90 font-bold mb-5" id="result-streak-note"></p>
+      <p class="text-sm text-white font-bold mb-1" id="result-detail"></p>
+      <p class="text-sm text-emerald-300/90 font-bold mb-4" id="result-streak-note"></p>
       <button type="button" class="btn-gold w-full mb-2" onclick="redoAssignment()">🔁 Redo assignment</button>
-      <button type="button" class="btn-soft w-full mb-2" onclick="showScores()">See class scores</button>
-      <a href="index.html" class="btn-soft w-full block text-center">Back to academy</a>
+      <a href="index.html" class="btn-soft w-full block text-center mb-4">Back to academy</a>
+    </div>
+    <div class="mt-5">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-black text-white">Everyone who took the test</h3>
+      </div>
+      <div class="flex flex-wrap gap-2 mb-3">
+        <button type="button" class="tab active" data-filter="all" onclick="filterScores('all')">All</button>
+        <button type="button" class="tab" data-filter="Grade 4 Blue" onclick="filterScores('Grade 4 Blue')">Blue</button>
+        <button type="button" class="tab" data-filter="Grade 4 Red" onclick="filterScores('Grade 4 Red')">Red</button>
+        <button type="button" class="tab" data-filter="Grade 4 White" onclick="filterScores('Grade 4 White')">White</button>
+        <button type="button" class="tab" data-filter="Grade 4 Green" onclick="filterScores('Grade 4 Green')">Green</button>
+      </div>
+      <div id="result-scores-list" class="space-y-2"><p class="text-slate-500 text-sm">Loading list…</p></div>
     </div>
   </div>
 
@@ -293,7 +306,6 @@ function evaluateMove(move){
     $('#board .square-'+move.to).addClass('highlight-correct');
     fb.className='feedback-box show ok';
     fb.innerHTML='✅ Correct! <span class="notation">'+move.san+'</span>';
-    if(streak>=2) speakDotunWin();
     showCongrats(move.san);
   } else {
     streak=0;updateHud();
@@ -408,42 +420,53 @@ async function finishHomework(){
   const total=QUESTIONS.length,pct=Math.round((score/total)*100),pass=pct>=70;
   document.getElementById('result-score').textContent=pct+'%';
   document.getElementById('result-stars').textContent=starsFromScore(score,total);
-  document.getElementById('result-detail').textContent=score+' / '+total+' correct · '+student.className;
-  document.getElementById('result-streak-note').textContent=bestStreak>=3?('Best streak this run: '+bestStreak+' 🔥'):'Try for a 3+ streak next time!';
+  document.getElementById('result-detail').textContent=student.name+' · '+score+' / '+total+' correct · '+student.className;
+  document.getElementById('result-streak-note').textContent=pass?('Passed · best streak '+bestStreak+' 🔥'):('Need 70% to pass · you have '+pct+'%');
   if(pass){
     document.getElementById('result-emoji').textContent='🏆';
     document.getElementById('result-title').textContent='You passed!';
     document.getElementById('result-sub').textContent='Amazing opening skills, '+student.name+'!';
-    spawnConfetti();if(bestStreak>=2)speakDotunWin();
-    setTimeout(()=>speakTeacher('Congratulations '+student.name+'! You passed all twenty challenges.'),1000);
+    spawnConfetti();
+    // Dotun only once — after the last question, and only if they passed
+    speakDotunWin();
   } else {
     document.getElementById('result-emoji').textContent='💪';
     document.getElementById('result-title').textContent='Keep practising!';
     document.getElementById('result-sub').textContent='You need 70% to pass. Hit Redo and beat your score!';
-    speakTeacher('You scored '+pct+' percent. Press redo assignment and try again.');
   }
   try{
     await db.collection(COL).add({name:student.name,className:student.className,score,total,percent:pct,passed:pass,bestStreak,assignment:'opening-grade4-20',timestamp:firebase.firestore.FieldValue.serverTimestamp()});
   }catch(e){
     try{const arr=JSON.parse(localStorage.getItem('mm_g4_opening_scores')||'[]');arr.unshift({name:student.name,className:student.className,score,total,percent:pct,passed:pass,at:Date.now()});localStorage.setItem('mm_g4_opening_scores',JSON.stringify(arr.slice(0,100)));}catch(e2){}
   }
+  // Show full list of everyone who took the test under the score
+  loadScores('result-scores-list');
 }
 
 function classBadge(c){if(/Blue/i.test(c))return 'class-blue';if(/Red/i.test(c))return 'class-red';if(/White/i.test(c))return 'class-white';if(/Green/i.test(c))return 'class-green';return 'class-blue';}
 function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function showScores(){document.getElementById('screen-start').classList.add('hidden');document.getElementById('screen-quiz').classList.add('hidden');document.getElementById('screen-result').classList.add('hidden');document.getElementById('screen-scores').classList.remove('hidden');loadScores();}
+function showScores(){document.getElementById('screen-start').classList.add('hidden');document.getElementById('screen-quiz').classList.add('hidden');document.getElementById('screen-result').classList.add('hidden');document.getElementById('screen-scores').classList.remove('hidden');loadScores('scores-list');}
 function hideScores(){document.getElementById('screen-scores').classList.add('hidden');document.getElementById('screen-start').classList.remove('hidden');}
-function filterScores(f){scoreFilter=f;document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.filter===f));loadScores();}
-async function loadScores(){
-  const box=document.getElementById('scores-list');box.innerHTML='<p class="text-slate-500 text-sm">Loading…</p>';
+function filterScores(f){
+  scoreFilter=f;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.filter===f));
+  // Refresh whichever list is visible
+  if(!document.getElementById('screen-result').classList.contains('hidden')) loadScores('result-scores-list');
+  else loadScores('scores-list');
+}
+async function loadScores(targetId){
+  const id=targetId||'scores-list';
+  const box=document.getElementById(id);
+  if(!box)return;
+  box.innerHTML='<p class="text-slate-500 text-sm">Loading…</p>';
   try{
-    const snap=await db.collection(COL).orderBy('timestamp','desc').limit(80).get();
+    const snap=await db.collection(COL).orderBy('timestamp','desc').limit(100).get();
     let rows=[];snap.forEach(doc=>rows.push(doc.data()));
     if(scoreFilter!=='all')rows=rows.filter(r=>r.className===scoreFilter);
     if(!rows.length){box.innerHTML='<p class="text-slate-500 text-sm">No scores yet.</p>';return;}
     box.innerHTML=rows.map(r=>{const pct=r.percent!=null?r.percent:Math.round((r.score/(r.total||20))*100);const pass=r.passed||pct>=70;
       return `<div class="panel p-3 flex items-center justify-between gap-3"><div class="min-w-0"><div class="font-black text-white truncate">${esc(r.name)}</div><div class="mt-1"><span class="badge ${classBadge(r.className)}">${esc(r.className)}</span></div></div><div class="text-right"><div class="font-black ${pass?'text-emerald-400':'text-amber-400'}">${pct}%</div><div class="text-[10px] text-slate-500">${r.score}/${r.total||20} · ${pass?'PASS':'TRY AGAIN'}</div></div></div>`;}).join('');
-  }catch(e){box.innerHTML='<p class="text-rose-300 text-sm">Cloud scores unavailable.</p>';}
+  }catch(e){box.innerHTML='<p class="text-rose-300 text-sm">Cloud scores unavailable — check Firestore rules.</p>';}
 }
 if(typeof speechSynthesis!=='undefined'){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=function(){speechSynthesis.getVoices();};}
 </script>
