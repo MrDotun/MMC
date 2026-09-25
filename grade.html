@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Grade 4 Homework | Mind Masters Academy</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+<style>
+:root{--bg:#07090f;--gold:#e8c547}
+*{box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8f0;margin:0;min-height:100vh;overflow-x:hidden}
+.panel{background:linear-gradient(160deg,#161c27,#0e1219);border:1px solid rgba(232,197,71,.14);border-radius:1.2rem}
+.btn-gold{background:linear-gradient(135deg,#fbbf24,#eab308);color:#000;font-weight:900;border-radius:12px;padding:14px 18px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;border:0;cursor:pointer}
+.btn-soft{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:#e2e8f0;font-weight:800;border-radius:12px;padding:12px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+input,select{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#fff;padding:12px 14px;width:100%;outline:none}
+#board{width:100%;max-width:340px;margin:0 auto;border-radius:12px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.5),0 0 0 3px rgba(232,197,71,.3)}
+.highlight-select{box-shadow:inset 0 0 0 4px rgba(232,197,71,.9)!important}
+.highlight-legal{position:relative}
+.highlight-legal::after{content:'';position:absolute;left:50%;top:50%;width:18%;height:18%;min-width:9px;min-height:9px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(34,197,94,.55);pointer-events:none;z-index:2}
+.highlight-correct{box-shadow:inset 0 0 0 4px rgba(34,197,94,.9)!important}
+.highlight-wrong{box-shadow:inset 0 0 0 4px rgba(244,63,94,.9)!important;animation:shake .4s ease}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes popIn{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.06)}100%{transform:scale(1);opacity:1}}
+@keyframes starSpin{0%{transform:scale(0) rotate(0)}100%{transform:scale(1) rotate(20deg)}}
+@keyframes pulseGlow{0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,.4)}50%{box-shadow:0 0 24px 6px rgba(251,191,36,.35)}}
+.float-piece{animation:floaty 2.5s ease-in-out infinite;font-size:2.5rem}
+.progress-rail{height:10px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,#fbbf24,#f59e0b);border-radius:999px;transition:width .4s ease}
+.badge{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.96);border:1px solid rgba(232,197,71,.4);color:#fde68a;padding:10px 18px;border-radius:999px;font-size:12px;font-weight:800;z-index:90;opacity:0;transition:opacity .25s}
+.toast.show{opacity:1}
+.confetti-piece{position:fixed;width:10px;height:10px;top:-12px;z-index:95;pointer-events:none;animation:fall 2.2s linear forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(720deg);opacity:0}}
+.tab{padding:8px 12px;border-radius:10px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;cursor:pointer}
+.tab.active{background:rgba(232,197,71,.12);color:#fde68a}
+.feedback-box{border-radius:14px;padding:14px 16px;margin-top:12px;font-size:14px;line-height:1.45;display:none}
+.feedback-box.show{display:block}
+.feedback-box.ok{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35);color:#bbf7d0}
+.feedback-box.bad{background:rgba(244,63,94,.1);border:1px solid rgba(244,63,94,.3);color:#fecdd3}
+.notation{font-family:ui-monospace,monospace;background:rgba(0,0,0,.35);padding:2px 8px;border-radius:6px;color:#fde68a;font-weight:800}
+.class-blue{background:rgba(59,130,246,.2);color:#93c5fd}
+.class-red{background:rgba(244,63,94,.2);color:#fda4af}
+.class-white{background:rgba(255,255,255,.12);color:#f8fafc}
+.class-green{background:rgba(34,197,94,.2);color:#86efac}
+.board-wrap{position:relative}
+.board-lock::after{content:'';position:absolute;inset:0;z-index:5;cursor:not-allowed}
+/* Side attractions */
+.hud{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.hud-chip{flex:1;min-width:90px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:8px 10px;text-align:center}
+.hud-chip .v{font-size:1.15rem;font-weight:900;color:#fde68a}
+.hud-chip .l{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8}
+.mascot{display:flex;gap:10px;align-items:flex-start;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.3);border-radius:14px;padding:10px 12px;margin-bottom:12px}
+.mascot .face{font-size:1.75rem;animation:floaty 3s ease-in-out infinite}
+.star-row{letter-spacing:2px;font-size:1.1rem}
+/* Congrats modal */
+.modal-bg{display:none;position:fixed;inset:0;z-index:100;align-items:center;justify-content:center;background:rgba(5,7,13,.88);backdrop-filter:blur(12px);padding:16px}
+.modal-bg.open{display:flex}
+.congrats-card{position:relative;width:100%;max-width:360px;background:linear-gradient(160deg,#1e1b4b 0%,#0f172a 45%,#14532d 100%);border:2px solid rgba(251,191,36,.55);border-radius:24px;padding:28px 22px 22px;text-align:center;animation:popIn .45s ease;box-shadow:0 0 60px rgba(251,191,36,.25),0 25px 50px rgba(0,0,0,.5)}
+.congrats-card::before{content:'';position:absolute;inset:-2px;border-radius:24px;padding:2px;background:linear-gradient(135deg,#fbbf24,#34d399,#a78bfa,#fbbf24);-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none;opacity:.5}
+.congrats-emoji{font-size:4rem;animation:starSpin .5s ease;filter:drop-shadow(0 8px 16px rgba(251,191,36,.4))}
+.congrats-title{font-size:1.6rem;font-weight:900;font-style:italic;text-transform:uppercase;color:#fff;margin-top:6px;text-shadow:0 0 20px rgba(251,191,36,.4)}
+.congrats-sub{color:#cbd5e1;font-size:14px;margin:8px 0 4px}
+.congrats-san{display:inline-block;margin:10px 0 14px;padding:8px 16px;border-radius:12px;background:rgba(0,0,0,.35);border:1px solid rgba(251,191,36,.4);color:#fde68a;font-family:ui-monospace,monospace;font-weight:900;font-size:1.25rem}
+.streak-banner{font-size:12px;font-weight:800;color:#86efac;margin-bottom:12px}
+</style>
+</head>
+<body>
+<nav class="sticky top-0 z-40 border-b border-white/5 bg-[#07090f]/95 backdrop-blur-xl px-4 py-3 flex items-center justify-between">
+  <a href="index.html" class="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-white">← Academy</a>
+  <div class="text-sm font-black text-amber-400">📚 Grade 4 · Openings</div>
+  <button type="button" class="text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-amber-400" onclick="showScores()">Scores</button>
+</nav>
+
+<div class="max-w-lg mx-auto px-4 py-6">
+  <div id="screen-start" class="space-y-4">
+    <div class="panel p-6 text-center">
+      <div class="float-piece mb-2">♟️</div>
+      <h1 class="text-xl font-black italic uppercase text-white mb-1">Opening Quest</h1>
+      <p class="text-sm text-slate-400 mb-4">20 board challenges · move the pieces · earn stars</p>
+      <label class="block text-left text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Your name</label>
+      <input id="student-name" maxlength="30" placeholder="First name" class="mb-3">
+      <label class="block text-left text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Your class</label>
+      <select id="student-class" class="mb-4">
+        <option value="">Select class…</option>
+        <option value="Grade 4 Blue">Grade 4 Blue</option>
+        <option value="Grade 4 Red">Grade 4 Red</option>
+        <option value="Grade 4 White">Grade 4 White</option>
+        <option value="Grade 4 Green">Grade 4 Green</option>
+      </select>
+      <button type="button" class="btn-gold w-full mb-2" onclick="startHomework()">Start the quest!</button>
+      <button type="button" class="btn-soft w-full" onclick="showScores()">View class scores</button>
+    </div>
+    <div class="panel p-4 text-sm text-slate-300 space-y-1.5">
+      <div>⭐ 20 interactive board moves</div>
+      <div>🔥 Streaks · stars · Coach Pip tips</div>
+      <div>🔁 Redo anytime to beat your score</div>
+    </div>
+  </div>
+
+  <div id="screen-quiz" class="hidden">
+    <div class="hud">
+      <div class="hud-chip"><div class="v" id="hud-q">1/20</div><div class="l">Question</div></div>
+      <div class="hud-chip"><div class="v" id="hud-score">0</div><div class="l">Correct</div></div>
+      <div class="hud-chip"><div class="v" id="hud-streak">0🔥</div><div class="l">Streak</div></div>
+      <div class="hud-chip"><div class="v star-row" id="hud-stars">☆☆☆</div><div class="l">Stars</div></div>
+    </div>
+    <div class="mascot" id="mascot-box">
+      <div class="face" id="mascot-face">🦊</div>
+      <div>
+        <div class="text-[10px] font-black uppercase tracking-widest text-violet-300">Coach Pip</div>
+        <div class="text-sm text-slate-200" id="mascot-tip">Ready when you are — make the best opening move!</div>
+      </div>
+    </div>
+    <div class="progress-rail mb-4"><div class="progress-fill" id="q-bar" style="width:0%"></div></div>
+    <div class="panel p-5">
+      <div class="text-[10px] font-black uppercase tracking-widest text-violet-300 mb-1" id="q-topic">Topic</div>
+      <h2 class="text-base font-black text-white mb-1 leading-snug" id="q-text">Question</h2>
+      <p class="text-[12px] text-slate-400 mb-3" id="q-hint">Tap a piece, then the square it should go to.</p>
+      <div class="board-wrap mb-3" id="board-wrap"><div id="board"></div></div>
+      <div class="text-center text-[11px] text-slate-500 mb-2">Notation: <span class="notation" id="move-san">—</span></div>
+      <div class="feedback-box" id="q-feedback"></div>
+      <div class="flex gap-2 mt-4">
+        <button type="button" class="btn-soft flex-1" id="btn-reset" onclick="resetPosition()">Reset</button>
+        <button type="button" class="btn-soft flex-1" onclick="confirmRedo()">Redo all</button>
+        <button type="button" class="btn-gold flex-1 hidden" id="q-next" onclick="nextQuestion()">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-result" class="hidden">
+    <div class="panel p-6 text-center">
+      <div class="text-6xl mb-3" id="result-emoji">🌟</div>
+      <h2 class="text-2xl font-black text-white uppercase" id="result-title">Well done!</h2>
+      <p class="text-sm text-slate-300 mt-2 mb-1" id="result-sub"></p>
+      <div class="text-4xl font-black text-amber-400 my-3" id="result-score">0%</div>
+      <div class="star-row text-2xl mb-2" id="result-stars">☆☆☆</div>
+      <p class="text-xs text-slate-500 mb-2" id="result-detail"></p>
+      <p class="text-sm text-emerald-300/90 font-bold mb-5" id="result-streak-note"></p>
+      <button type="button" class="btn-gold w-full mb-2" onclick="redoAssignment()">🔁 Redo assignment</button>
+      <button type="button" class="btn-soft w-full mb-2" onclick="showScores()">See class scores</button>
+      <a href="index.html" class="btn-soft w-full block text-center">Back to academy</a>
+    </div>
+  </div>
+
+  <div id="screen-scores" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-black text-white">Class scores</h2>
+      <button type="button" class="btn-soft" onclick="hideScores()">Close</button>
+    </div>
+    <div class="flex flex-wrap gap-2 mb-3">
+      <button type="button" class="tab active" data-filter="all" onclick="filterScores('all')">All</button>
+      <button type="button" class="tab" data-filter="Grade 4 Blue" onclick="filterScores('Grade 4 Blue')">Blue</button>
+      <button type="button" class="tab" data-filter="Grade 4 Red" onclick="filterScores('Grade 4 Red')">Red</button>
+      <button type="button" class="tab" data-filter="Grade 4 White" onclick="filterScores('Grade 4 White')">White</button>
+      <button type="button" class="tab" data-filter="Grade 4 Green" onclick="filterScores('Grade 4 Green')">Green</button>
+    </div>
+    <div id="scores-list" class="space-y-2"><p class="text-slate-500 text-sm">Loading…</p></div>
+  </div>
+</div>
+
+<!-- Congratulatory popup -->
+<div id="congrats-modal" class="modal-bg">
+  <div class="congrats-card">
+    <div class="congrats-emoji" id="congrats-emoji">🌟</div>
+    <div class="congrats-title" id="congrats-title">Brilliant!</div>
+    <div class="congrats-sub" id="congrats-sub">You found the right opening move.</div>
+    <div class="congrats-san" id="congrats-san">e4</div>
+    <div class="streak-banner" id="congrats-streak"></div>
+    <button type="button" class="btn-gold w-full" onclick="closeCongrats()">Continue ✨</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const firebaseConfig={apiKey:"AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",authDomain:"assignments-de95a.firebaseapp.com",projectId:"assignments-de95a",storageBucket:"assignments-de95a.firebasestorage.app",messagingSenderId:"1088073398299",appId:"1:1088073398299:web:dab1f57ac1d63b10dba0be"};
+if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
+const db=firebase.firestore();
+const COL='grade4_opening_homework';
+const DOTUN_WIN=['audio/well-done.mp3','audio/well-done-chap.mp3','audio/great-job.mp3','audio/excellent.mp3','audio/that-was-a-strong-game.mp3'];
+const PIECE_THEME='https://images.chesscomfiles.com/chess-themes/pieces/neo/150/{piece}.png';
+function pieceThemeUrl(){return function(piece){const m={wP:'wp',wR:'wr',wN:'wn',wB:'wb',wQ:'wq',wK:'wk',bP:'bp',bR:'br',bN:'bn',bB:'bb',bQ:'bq',bK:'bk'};return PIECE_THEME.replace('{piece}',m[piece]||piece.toLowerCase());};}
+
+const START='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+const PRAISE=['Brilliant!','Super move!','You nailed it!','Opening star!','Champion choice!','Fantastic!','Yes! Perfect!','Mind Master move!'];
+const MASCOT_TIPS=[
+  'Open the gates — pawns first!','Knights before bishops — Pip’s rule!','Castle early, sleep safely!',
+  'Rooks love open files!','Write it right: N for knight!','Connect those rooks!','Centre pawns are your friends!',
+  'O-O is kingside… O-O-O is the long one!'
+];
+
+const QUESTIONS=[
+  {topic:'Pawn gates',text:'Open a pawn gate for the king’s bishop. Move the e-pawn two squares forward.',hint:'Pawn e2 → e4. Notation: e4',fen:START,acceptSan:['e4'],acceptUci:['e2e4'],correctUci:'e2e4',teach:'The correct move is e4. It opens the gate so the bishop on f1 can come out later.'},
+  {topic:'Pawn gates',text:'Open a gate for the queen’s bishop. Move the d-pawn two squares to d4.',hint:'Pawn d2 → d4. Notation: d4',fen:START,acceptSan:['d4'],acceptUci:['d2d4'],correctUci:'d2d4',teach:'The move is written d4. Moving the d-pawn opens the path for the bishop on c1.'},
+  {topic:'Pawn gates',text:'After 1.e4, Black played e5. Push your d-pawn to free more space — play d4.',hint:'Pawn d2 → d4 (the Scotch idea).',fen:'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2',acceptSan:['d4'],acceptUci:['d2d4'],correctUci:'d2d4',teach:'d4 challenges the centre. Opening pawn play fights for the middle of the board.'},
+  {topic:'Knight before bishop',text:'Develop a knight toward the centre. Play knight to f3.',hint:'Knight g1 → f3. Notation: Nf3',fen:'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1',acceptSan:['Nf3'],acceptUci:['g1f3'],correctUci:'g1f3',teach:'Nf3 — N means knight. Knights before bishops is a great habit.'},
+  {topic:'Knight before bishop',text:'Develop the other knight toward the centre. Play knight to c3.',hint:'Knight b1 → c3. Notation: Nc3',fen:'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 1',acceptSan:['Nc3'],acceptUci:['b1c3'],correctUci:'b1c3',teach:'Nc3 develops the queen’s knight. Both knights out early is strong opening play.'},
+  {topic:'Develop the bishop',text:'Develop the light-squared bishop to c4.',hint:'Bishop f1 → c4. Notation: Bc4',fen:'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',acceptSan:['Bc4'],acceptUci:['f1c4'],correctUci:'f1c4',teach:'Bc4 develops the bishop actively. B means bishop.'},
+  {topic:'Develop the bishop',text:'Develop the light-squared bishop to b5 (pin idea).',hint:'Bishop f1 → b5. Notation: Bb5',fen:'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',acceptSan:['Bb5'],acceptUci:['f1b5'],correctUci:'f1b5',teach:'Bb5 develops the bishop and can pin a knight on c6. Active development!'},
+  {topic:'Develop the bishop',text:'Free the dark-squared bishop: play Be3.',hint:'Bishop c1 → e3.',fen:'r1bqkbnr/ppp2ppp/2n5/3pp3/4P3/2N2N2/PPPP1PPP/R1BQKB1R w KQkq d6 0 4',acceptSan:['Be3'],acceptUci:['c1e3'],correctUci:'c1e3',teach:'Be3 develops the queen’s bishop after the d-pawn has moved or the path is open enough in this setup.'},
+  {topic:'Castling kingside',text:'Castle kingside to keep the king safe.',hint:'Notation: O-O',fen:'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4',acceptSan:['O-O','0-0'],acceptUci:['e1g1'],correctUci:'e1g1',teach:'Kingside castling is O-O. King to g1, rook to f1 — safety first!'},
+  {topic:'Castling kingside',text:'Castle kingside again from this position.',hint:'King and h-rook. O-O',fen:'rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',acceptSan:['O-O','0-0'],acceptUci:['e1g1'],correctUci:'e1g1',teach:'You can only castle if the path is clear and the king has not moved. Here O-O needs the bishop out first — wait, check path: f1 bishop blocks!'},
+];
+
+// Fix Q10 - bishop on f1 blocks O-O. Use position with bishop developed
+QUESTIONS[9]={topic:'Castling kingside',text:'The bishop is out. Castle kingside now.',hint:'Path is clear. Notation: O-O',fen:'rnbqkb1r/pppp1ppp/5n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4',acceptSan:['O-O','0-0'],acceptUci:['e1g1'],correctUci:'e1g1',teach:'O-O is kingside castling. Remember: path empty, king and rook unmoved, not in check.'};
+
+QUESTIONS.push(
+  {topic:'Queenside castling',text:'Castle on the queenside — the long castle.',hint:'Notation: O-O-O',fen:'r3kbnr/ppp1pppp/2nq4/3p4/3P4/2N5/PPP1PPPP/R3KBNR w KQkq - 2 5',acceptSan:['O-O-O','0-0-0'],acceptUci:['e1c1'],correctUci:'e1c1',teach:'Queenside castling is O-O-O — three O’s. Same idea, other wing!'},
+  {topic:'Connect the rooks',text:'Move the queen to e2 so the rooks can connect.',hint:'Queen d1 → e2. Notation: Qe2',fen:'r1bq1rk1/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQ1RK1 w - - 6 6',acceptSan:['Qe2'],acceptUci:['d1e2'],correctUci:'d1e2',teach:'Qe2 clears the back rank so rooks can connect and protect each other.'},
+  {topic:'Connect the rooks',text:'Slide the rook toward its partner: play Re1.',hint:'Rook f1 → e1 after castling.',fen:'r1bq1rk1/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPPQPPP/RNB2RK1 w - - 8 7',acceptSan:['Re1'],acceptUci:['f1e1'],correctUci:'f1e1',teach:'Re1 helps connect ideas and eyes the open or semi-open file.'},
+  {topic:'Open files',text:'Put a rook on the open e-file: Re1.',hint:'Rook f1 → e1',fen:'rnbq1rk1/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQ1RK1 w - - 2 4',acceptSan:['Re1'],acceptUci:['f1e1'],correctUci:'f1e1',teach:'Re1 — rooks belong on open files so they control the whole column.'},
+  {topic:'Open files',text:'Another rook lift idea: bring the a-rook into the game with Rd1.',hint:'Rook a1 → d1',fen:'rnbq1rk1/ppp2ppp/3p1n2/4p3/4P3/5N2/PPPP1PPP/RNBQR1K1 w - - 0 5',acceptSan:['Rd1'],acceptUci:['a1d1'],correctUci:'a1d1',teach:'Rd1 places a rook on a central file. Rooks should work, not sleep on a1/h1!'},
+  {topic:'Algebraic notation',text:'Play the move written Nf3.',hint:'N = knight. g1 → f3',fen:START,acceptSan:['Nf3'],acceptUci:['g1f3'],correctUci:'g1f3',teach:'Nf3 is correct notation. Piece letter N, then square f3.'},
+  {topic:'Algebraic notation',text:'Play the move written Bc4.',hint:'After e4 e5, bishop f1 → c4',fen:'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2',acceptSan:['Bc4'],acceptUci:['f1c4'],correctUci:'f1c4',teach:'Bc4 means bishop to c4. Capital B for bishop.'},
+  {topic:'Algebraic notation',text:'Play the move written Nc6 (as Black).',hint:'You are Black. Knight b8 → c6.',fen:'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',acceptSan:['Nc6'],acceptUci:['b8c6'],correctUci:'b8c6',teach:'Nc6 develops Black’s knight. Same rule: N for knight, then the square.'},
+  {topic:'Algebraic notation',text:'Black to move: play the move written Nf6.',hint:'Knight g8 → f6',fen:'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2',acceptSan:['Nf6'],acceptUci:['g8f6'],correctUci:'g8f6',teach:'Nf6 mirrors White’s development. Notation stays the same for both colours!'},
+  {topic:'Opening plan',text:'Finish with a classic: play O-O from this Italian-style position.',hint:'Castle kingside. O-O',fen:'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4',acceptSan:['O-O','0-0'],acceptUci:['e1g1'],correctUci:'e1g1',teach:'Great opening plan: pawns, knights, bishops, castle, connect rooks. You are becoming a Mind Master!'}
+);
+
+let student={name:'',className:''},qIndex=0,score=0,streak=0,bestStreak=0,answered=false,scoreFilter='all';
+let game=null,board=null,sourceSquare=null,boardLocked=false,pendingNext=false;
+
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
+function speakTeacher(text){try{if(!window.speechSynthesis||!text)return;window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=0.92;u.pitch=1.05;const voices=speechSynthesis.getVoices()||[];const en=voices.filter(v=>/^en/i.test(v.lang));const prefer=en.find(v=>/female|samantha|zira|google uk english female|moira|susan/i.test(v.name))||en[0];if(prefer)u.voice=prefer;speechSynthesis.speak(u);}catch(e){}}
+function speakDotunWin(){try{const src=DOTUN_WIN[Math.floor(Math.random()*DOTUN_WIN.length)];new Audio(src).play().catch(()=>{});}catch(e){}}
+function spawnConfetti(){const colors=['#fbbf24','#f472b6','#60a5fa','#34d399','#a78bfa','#fb923c'];for(let i=0;i<48;i++){const el=document.createElement('div');el.className='confetti-piece';el.style.left=Math.random()*100+'vw';el.style.background=colors[i%colors.length];el.style.animationDelay=(Math.random()*0.35)+'s';document.body.appendChild(el);setTimeout(()=>el.remove(),2300);}}
+
+function starsFromScore(s,total){const p=s/total;if(p>=0.9)return '⭐⭐⭐';if(p>=0.7)return '⭐⭐☆';if(p>=0.4)return '⭐☆☆';return '☆☆☆';}
+function updateHud(){
+  document.getElementById('hud-q').textContent=(qIndex+1)+'/'+QUESTIONS.length;
+  document.getElementById('hud-score').textContent=score;
+  document.getElementById('hud-streak').textContent=streak+'🔥';
+  const liveTotal=Math.max(qIndex,1);
+  document.getElementById('hud-stars').textContent=starsFromScore(score,Math.max(qIndex+(answered?1:0),1));
+  document.getElementById('mascot-tip').textContent=MASCOT_TIPS[qIndex%MASCOT_TIPS.length];
+  document.getElementById('mascot-face').textContent=streak>=3?'🤩':(streak>=1?'🦊':'🧐');
+}
+
+function clearHighlights(){$('#board .square-55d63').removeClass('highlight-select highlight-legal highlight-correct highlight-wrong');}
+function setLocked(lock){boardLocked=lock;const w=document.getElementById('board-wrap');if(w)w.classList.toggle('board-lock',lock);}
+
+function initBoard(fen){
+  game=new Chess(fen);sourceSquare=null;
+  if(!board){
+    board=ChessBoard('board',{position:fen,draggable:false,pieceTheme:pieceThemeUrl()});
+    $('#board').on('click','[class*="square-"]',function(){const sq=$(this).attr('data-square');if(sq)onSquareClick(sq);});
+  } else board.position(fen,false);
+  clearHighlights();document.getElementById('move-san').textContent='—';setLocked(false);
+}
+
+function onSquareClick(sq){
+  if(boardLocked||answered||!game)return;
+  const piece=game.get(sq);
+  if(sourceSquare){
+    if(sourceSquare===sq){sourceSquare=null;clearHighlights();return;}
+    tryPlayerMove(sourceSquare,sq);return;
+  }
+  if(piece&&piece.color===game.turn()){
+    sourceSquare=sq;clearHighlights();
+    $('#board .square-'+sq).addClass('highlight-select');
+    game.moves({square:sq,verbose:true}).forEach(m=>{$('#board .square-'+m.to).addClass('highlight-legal');});
+  }
+}
+
+function tryPlayerMove(from,to){
+  const legal=game.moves({verbose:true}).find(m=>m.from===from&&m.to===to);
+  sourceSquare=null;clearHighlights();
+  if(!legal){toast('Not a legal move — try again');return;}
+  const move=game.move({from,to,promotion:legal.flags.includes('p')?'q':undefined});
+  if(!move)return;
+  board.position(game.fen());
+  document.getElementById('move-san').textContent=move.san;
+  evaluateMove(move);
+}
+
+function normalizeSan(san){return String(san||'').replace(/0/g,'O').replace(/\+$/,'').replace(/#$/,'');}
+
+function evaluateMove(move){
+  if(answered)return;
+  const q=QUESTIONS[qIndex];
+  const ok=(q.acceptSan||[]).some(s=>normalizeSan(s)===normalizeSan(move.san))||(q.acceptUci||[]).some(u=>u===move.from+move.to);
+  answered=true;setLocked(true);
+  document.getElementById('btn-reset').classList.add('hidden');
+  const fb=document.getElementById('q-feedback');
+  if(ok){
+    score++;streak++;if(streak>bestStreak)bestStreak=streak;
+    updateHud();
+    $('#board .square-'+move.from).addClass('highlight-correct');
+    $('#board .square-'+move.to).addClass('highlight-correct');
+    fb.className='feedback-box show ok';
+    fb.innerHTML='✅ Correct! <span class="notation">'+move.san+'</span>';
+    speakDotunWin();
+    showCongrats(move.san);
+  } else {
+    streak=0;updateHud();
+    $('#board .square-'+move.from).addClass('highlight-wrong');
+    $('#board .square-'+move.to).addClass('highlight-wrong');
+    fb.className='feedback-box show bad';
+    fb.innerHTML='❌ Not that move. Watch the correct piece…';
+    setTimeout(function(){game.undo();board.position(game.fen());clearHighlights();playCorrectSlowly(q);},650);
+  }
+}
+
+function showCongrats(san){
+  const title=PRAISE[Math.floor(Math.random()*PRAISE.length)];
+  const emojis=['🌟','🎉','🏆','⚡','🦊','🥇','✨','👑'];
+  document.getElementById('congrats-emoji').textContent=emojis[Math.floor(Math.random()*emojis.length)];
+  document.getElementById('congrats-title').textContent=title;
+  document.getElementById('congrats-sub').textContent=streak>=3?('You are on fire — '+streak+' in a row!'):'You found the right opening move.';
+  document.getElementById('congrats-san').textContent=san;
+  document.getElementById('congrats-streak').textContent=streak>=2?('🔥 Streak × '+streak):'Keep going for a streak!';
+  document.getElementById('congrats-modal').classList.add('open');
+  spawnConfetti();
+  pendingNext=true;
+}
+
+function closeCongrats(){
+  document.getElementById('congrats-modal').classList.remove('open');
+  document.getElementById('q-next').classList.remove('hidden');
+}
+
+function playCorrectSlowly(q){
+  const uci=q.correctUci;
+  if(!uci||uci.length<4){finishWrong(q,null);return;}
+  const from=uci.slice(0,2),to=uci.slice(2,4);
+  $('#board .square-'+from).addClass('highlight-select');
+  speakTeacher(q.teach);
+  setTimeout(function(){
+    const move=game.move({from:from,to:to,promotion:'q'});
+    if(move){
+      board.position(game.fen(),true);
+      setTimeout(function(){
+        clearHighlights();
+        $('#board .square-'+from).addClass('highlight-correct');
+        $('#board .square-'+to).addClass('highlight-correct');
+        document.getElementById('move-san').textContent=move.san;
+        finishWrong(q,move);
+      },500);
+    } else finishWrong(q,null);
+  },1500);
+}
+
+function finishWrong(q,move){
+  const fb=document.getElementById('q-feedback');
+  fb.className='feedback-box show bad';
+  const san=move?move.san:((q.acceptSan&&q.acceptSan[0])||q.correctUci);
+  fb.innerHTML='❌ Correct move: <span class="notation">'+san+'</span><br><span class="text-slate-300">'+q.teach+'</span>';
+  document.getElementById('q-next').classList.remove('hidden');
+}
+
+function resetPosition(){if(answered||boardLocked)return;initBoard(QUESTIONS[qIndex].fen);}
+
+function confirmRedo(){
+  if(confirm('Redo the whole assignment from question 1?')) redoAssignment();
+}
+
+function redoAssignment(){
+  qIndex=0;score=0;streak=0;bestStreak=0;answered=false;pendingNext=false;
+  document.getElementById('congrats-modal').classList.remove('open');
+  document.getElementById('screen-result').classList.add('hidden');
+  document.getElementById('screen-scores').classList.add('hidden');
+  document.getElementById('screen-start').classList.add('hidden');
+  document.getElementById('screen-quiz').classList.remove('hidden');
+  speakTeacher('Let us try again! Make each move carefully.');
+  showQuestion();
+}
+
+function startHomework(){
+  const name=(document.getElementById('student-name').value||'').trim();
+  const className=document.getElementById('student-class').value;
+  if(!name){toast('Please type your name');return;}
+  if(!className){toast('Please select your class');return;}
+  student={name,className};qIndex=0;score=0;streak=0;bestStreak=0;
+  document.getElementById('screen-start').classList.add('hidden');
+  document.getElementById('screen-quiz').classList.remove('hidden');
+  speakTeacher('Welcome '+name+'! Twenty challenges. Move the pieces to answer.');
+  showQuestion();
+}
+
+function showQuestion(){
+  answered=false;pendingNext=false;
+  const q=QUESTIONS[qIndex];
+  document.getElementById('q-bar').style.width=Math.round((qIndex/QUESTIONS.length)*100)+'%';
+  document.getElementById('q-topic').textContent=q.topic;
+  document.getElementById('q-text').textContent=q.text;
+  document.getElementById('q-hint').textContent=q.hint||'Tap a piece, then the square.';
+  document.getElementById('q-feedback').className='feedback-box';
+  document.getElementById('q-feedback').innerHTML='';
+  document.getElementById('q-next').classList.add('hidden');
+  document.getElementById('btn-reset').classList.remove('hidden');
+  updateHud();
+  initBoard(q.fen);
+}
+
+function nextQuestion(){
+  qIndex++;
+  document.getElementById('q-bar').style.width=Math.round((qIndex/QUESTIONS.length)*100)+'%';
+  if(qIndex>=QUESTIONS.length)finishHomework();else showQuestion();
+}
+
+async function finishHomework(){
+  document.getElementById('screen-quiz').classList.add('hidden');
+  document.getElementById('screen-result').classList.remove('hidden');
+  const total=QUESTIONS.length,pct=Math.round((score/total)*100),pass=pct>=70;
+  document.getElementById('result-score').textContent=pct+'%';
+  document.getElementById('result-stars').textContent=starsFromScore(score,total);
+  document.getElementById('result-detail').textContent=score+' / '+total+' correct · '+student.className;
+  document.getElementById('result-streak-note').textContent=bestStreak>=3?('Best streak this run: '+bestStreak+' 🔥'):'Try for a 3+ streak next time!';
+  if(pass){
+    document.getElementById('result-emoji').textContent='🏆';
+    document.getElementById('result-title').textContent='You passed!';
+    document.getElementById('result-sub').textContent='Amazing opening skills, '+student.name+'!';
+    spawnConfetti();speakDotunWin();
+    setTimeout(()=>speakTeacher('Congratulations '+student.name+'! You passed all twenty challenges.'),1000);
+  } else {
+    document.getElementById('result-emoji').textContent='💪';
+    document.getElementById('result-title').textContent='Keep practising!';
+    document.getElementById('result-sub').textContent='You need 70% to pass. Hit Redo and beat your score!';
+    speakTeacher('You scored '+pct+' percent. Press redo assignment and try again.');
+  }
+  try{
+    await db.collection(COL).add({name:student.name,className:student.className,score,total,percent:pct,passed:pass,bestStreak,assignment:'opening-grade4-20',timestamp:firebase.firestore.FieldValue.serverTimestamp()});
+  }catch(e){
+    try{const arr=JSON.parse(localStorage.getItem('mm_g4_opening_scores')||'[]');arr.unshift({name:student.name,className:student.className,score,total,percent:pct,passed:pass,at:Date.now()});localStorage.setItem('mm_g4_opening_scores',JSON.stringify(arr.slice(0,100)));}catch(e2){}
+  }
+}
+
+function classBadge(c){if(/Blue/i.test(c))return 'class-blue';if(/Red/i.test(c))return 'class-red';if(/White/i.test(c))return 'class-white';if(/Green/i.test(c))return 'class-green';return 'class-blue';}
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function showScores(){document.getElementById('screen-start').classList.add('hidden');document.getElementById('screen-quiz').classList.add('hidden');document.getElementById('screen-result').classList.add('hidden');document.getElementById('screen-scores').classList.remove('hidden');loadScores();}
+function hideScores(){document.getElementById('screen-scores').classList.add('hidden');document.getElementById('screen-start').classList.remove('hidden');}
+function filterScores(f){scoreFilter=f;document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.filter===f));loadScores();}
+async function loadScores(){
+  const box=document.getElementById('scores-list');box.innerHTML='<p class="text-slate-500 text-sm">Loading…</p>';
+  try{
+    const snap=await db.collection(COL).orderBy('timestamp','desc').limit(80).get();
+    let rows=[];snap.forEach(doc=>rows.push(doc.data()));
+    if(scoreFilter!=='all')rows=rows.filter(r=>r.className===scoreFilter);
+    if(!rows.length){box.innerHTML='<p class="text-slate-500 text-sm">No scores yet.</p>';return;}
+    box.innerHTML=rows.map(r=>{const pct=r.percent!=null?r.percent:Math.round((r.score/(r.total||20))*100);const pass=r.passed||pct>=70;
+      return `<div class="panel p-3 flex items-center justify-between gap-3"><div class="min-w-0"><div class="font-black text-white truncate">${esc(r.name)}</div><div class="mt-1"><span class="badge ${classBadge(r.className)}">${esc(r.className)}</span></div></div><div class="text-right"><div class="font-black ${pass?'text-emerald-400':'text-amber-400'}">${pct}%</div><div class="text-[10px] text-slate-500">${r.score}/${r.total||20} · ${pass?'PASS':'TRY AGAIN'}</div></div></div>`;}).join('');
+  }catch(e){box.innerHTML='<p class="text-rose-300 text-sm">Cloud scores unavailable.</p>';}
+}
+if(typeof speechSynthesis!=='undefined'){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=function(){speechSynthesis.getVoices();};}
+</script>
+</body>
+</html>
