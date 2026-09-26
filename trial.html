@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>MCPS Trial · Brain Chess National Warmup 2026</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+<style>
+:root{--bg:#07090f;--gold:#e8c547}
+*{box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8f0;margin:0;min-height:100vh;overflow-x:hidden}
+.panel{background:linear-gradient(160deg,#1a2234,#0e1219);border:1px solid rgba(232,197,71,.18);border-radius:1.2rem}
+.btn-gold{background:linear-gradient(135deg,#fbbf24,#eab308);color:#000;font-weight:900;border-radius:12px;padding:13px 18px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;border:0;cursor:pointer}
+.btn-gold:disabled{opacity:.45;cursor:not-allowed}
+.btn-soft{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:#e2e8f0;font-weight:800;border-radius:12px;padding:12px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+.btn-danger{background:rgba(244,63,94,.18);border:1px solid rgba(244,63,94,.4);color:#fda4af;font-weight:800;border-radius:12px;padding:12px 16px;font-size:12px;cursor:pointer}
+.btn-blue{background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-weight:900;border-radius:12px;padding:13px 18px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;border:0;cursor:pointer}
+input{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#fff;padding:12px 14px;width:100%;outline:none}
+input:focus{border-color:rgba(232,197,71,.5)}
+#board,#spec-board{width:100%;max-width:420px;margin:0 auto;border-radius:12px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.5),0 0 0 3px rgba(232,197,71,.35)}
+.highlight-select{box-shadow:inset 0 0 0 4px rgba(232,197,71,.9)!important}
+.highlight-legal{position:relative}
+.highlight-legal::after{content:'';position:absolute;left:50%;top:50%;width:18%;height:18%;min-width:9px;min-height:9px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(34,197,94,.55);pointer-events:none;z-index:2}
+.side-pill{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:10px;font-size:12px;font-weight:800}
+.side-white{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);color:#f8fafc}
+.side-black{background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.12);color:#e2e8f0}
+.clock{font-variant-numeric:tabular-nums;font-weight:900;font-size:1.35rem}
+.clock.active{color:#fbbf24;text-shadow:0 0 12px rgba(251,191,36,.35)}
+.clock.low{color:#f87171;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+@keyframes spinRing{to{transform:rotate(360deg)}}
+@keyframes softPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.04);opacity:.9}}
+@keyframes shimmer{0%{background-position:0% 50%}100%{background-position:100% 50%}}
+.player-card{background:rgba(255,255,255,.04);border:2px solid rgba(255,255,255,.1);border-radius:14px;padding:14px 16px;cursor:pointer;transition:.2s;text-align:left;width:100%}
+.player-card:hover{border-color:rgba(232,197,71,.45);background:rgba(232,197,71,.08)}
+.player-card.selected{border-color:#fbbf24;background:rgba(251,191,36,.12);box-shadow:0 0 20px rgba(251,191,36,.15)}
+.modal-bg{display:none;position:fixed;inset:0;z-index:200;align-items:center;justify-content:center;background:rgba(5,7,13,.9);backdrop-filter:blur(12px);padding:16px}
+.modal-bg.open{display:flex}
+.modal-card{background:linear-gradient(160deg,#1e1b4b,#0f172a);border:1px solid rgba(232,197,71,.4);border-radius:20px;padding:26px 22px;max-width:400px;width:100%;text-align:center}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.96);border:1px solid rgba(232,197,71,.4);color:#fde68a;padding:10px 18px;border-radius:999px;font-size:12px;font-weight:800;z-index:300;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:1}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;animation:pulse 1.2s infinite}
+.rank-1{color:#fbbf24;font-weight:900}
+.rank-2{color:#e2e8f0;font-weight:900}
+.rank-3{color:#fdba74;font-weight:900}
+.loading-overlay{position:fixed;inset:0;z-index:500;background:#07090f;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.loading-bar{width:220px;height:8px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;margin-top:16px}
+.loading-fill{height:100%;width:0%;background:linear-gradient(90deg,#fbbf24,#f59e0b);transition:width .2s linear}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8;padding:8px;border-bottom:1px solid rgba(255,255,255,.08)}
+td{padding:10px 8px;border-bottom:1px solid rgba(255,255,255,.05)}
+.hero-glow{background:radial-gradient(ellipse at 50% 0%,rgba(251,191,36,.15),transparent 60%)}
+/* Waiting room */
+.wait-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;position:relative;overflow:hidden}
+.wait-wrap::before{content:'';position:absolute;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle,rgba(251,191,36,.12),transparent 70%);top:50%;left:50%;transform:translate(-50%,-55%);animation:softPulse 3s ease-in-out infinite}
+.wait-ring{width:160px;height:160px;border-radius:50%;border:3px solid rgba(251,191,36,.15);border-top-color:#fbbf24;animation:spinRing 1.2s linear infinite;margin:0 auto 20px;position:relative}
+.wait-ring .piece{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:3rem;animation:floaty 2.5s ease-in-out infinite}
+.wait-count{font-size:3.5rem;font-weight:900;color:#fbbf24;font-variant-numeric:tabular-nums;letter-spacing:.04em;text-shadow:0 0 30px rgba(251,191,36,.35)}
+.wait-label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;margin-top:8px}
+.break-banner{background:linear-gradient(135deg,rgba(139,92,246,.25),rgba(59,130,246,.2));border:1px solid rgba(167,139,250,.4);border-radius:16px;padding:18px;text-align:center}
+.break-count{font-size:2.5rem;font-weight:900;color:#c4b5fd;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<!-- 10s piece loader -->
+<div id="loading-overlay" class="loading-overlay">
+  <div class="text-5xl mb-3">♟️</div>
+  <div class="text-lg font-black text-white uppercase italic">MCPS Trial Arena</div>
+  <p class="text-sm text-slate-400 mt-1">Loading pieces…</p>
+  <div class="loading-bar"><div class="loading-fill" id="load-fill"></div></div>
+  <p class="text-xs text-slate-500 mt-3" id="load-sec">10</p>
+</div>
+
+<!-- GATES CLOSED (before 4:58 PM Sun 27 Sep) -->
+<div id="screen-closed" class="hidden wait-wrap hero-glow">
+  <div class="relative z-10 max-w-md">
+    <div class="text-5xl mb-4">🏫</div>
+    <div class="inline-flex items-center gap-2 bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full mb-4">Maryland Convent Private School</div>
+    <h1 class="text-2xl font-black italic uppercase text-white mb-2">Arena opens soon</h1>
+    <p class="text-slate-400 text-sm mb-6">Players may enter from <strong class="text-amber-300">4:58 PM</strong> tomorrow. Round 1 pairs at <strong class="text-amber-300">5:00 PM</strong> WAT.</p>
+    <div class="wait-count" id="closed-count">--:--</div>
+    <div class="wait-label">Until doors open</div>
+  </div>
+</div>
+
+<!-- WAITING ROOM (4:58 – 5:00 PM) -->
+<div id="screen-waiting" class="hidden wait-wrap hero-glow">
+  <div class="relative z-10 max-w-md w-full">
+    <div class="wait-ring"><div class="piece">♞</div></div>
+    <h1 class="text-2xl font-black italic uppercase text-white mb-1">Please wait</h1>
+    <p class="text-slate-400 text-sm mb-2" id="wait-message">Round 1 pairs at 5:00 PM tomorrow. Stretch, breathe, get ready.</p>
+    <div class="wait-count" id="wait-count">--:--</div>
+    <div class="wait-label" id="wait-label">Until Round 1 pairing</div>
+    <div class="rounded-xl overflow-hidden border border-amber-400/30 mx-auto max-w-[200px] mt-5 shadow-lg">
+      <img src="Screenshot_20260516-211346.jpg" alt="MCPS Team" class="w-full h-auto object-cover object-top max-h-36" style="display:block">
+    </div>
+    <div class="panel p-4 mt-6 text-left">
+      <div class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2">Quick reminders</div>
+      <ul class="text-sm text-slate-300 space-y-1.5">
+        <li>⏱️ 10+2 rapid — clock starts when you are paired</li>
+        <li>迟到 Late? Your clock still runs — arrive before 10:00 is gone</li>
+        <li>🔄 5 rounds · full round robin · each opponent once</li>
+        <li>🥇 Winner gets a gold medal on Tuesday</li>
+      </ul>
+    </div>
+    <p class="text-xs text-slate-500 mt-4" id="wait-who"></p>
+  </div>
+</div>
+
+<!-- WELCOME / RULES (after load, before login — only if arena open) -->
+<div id="screen-welcome" class="hidden min-h-screen hero-glow">
+  <div class="max-w-lg mx-auto px-4 py-10">
+    <div class="text-center mb-6">
+      <div class="inline-flex items-center gap-2 bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full mb-4">Maryland Convent Private School</div>
+      <h1 class="text-2xl md:text-3xl font-black italic uppercase text-white leading-tight">Brain Chess National<br><span class="text-amber-400">Warmup Trial 2026</span></h1>
+      <p class="text-sm text-slate-400 mt-3 mb-5">Represent MCPS with pride.</p>
+      <div class="rounded-2xl overflow-hidden border-2 border-amber-400/40 shadow-xl shadow-amber-500/20 mx-auto max-w-sm">
+        <img src="Screenshot_20260516-211346.jpg" alt="MCPS Chess Team" class="w-full h-auto object-cover object-top max-h-80" style="display:block">
+      </div>
+      <p class="text-[11px] font-bold text-amber-300/90 mt-2 uppercase tracking-widest">Our championship squad</p>
+    </div>
+    <div class="panel p-5 mb-4">
+      <div class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-3">Tomorrow’s schedule (WAT) · Sun 27 Sep</div>
+      <ul class="text-sm text-slate-300 space-y-2">
+        <li>🚪 <strong class="text-white">4:58 PM</strong> — Players may join &amp; wait</li>
+        <li>♟️ <strong class="text-white">5:00 PM</strong> — Round 1 pairing (clocks start)</li>
+        <li>☕ <strong class="text-white">2 min break</strong> after each round</li>
+        <li>🏁 <strong class="text-white">5 rounds</strong> · full round robin · each opponent once</li>
+      </ul>
+    </div>
+    <div class="panel p-5 mb-4">
+      <div class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-3">Rules</div>
+      <ul class="text-sm text-slate-300 space-y-2">
+        <li>⏱️ <strong class="text-white">10+2 rapid</strong></li>
+        <li>⏰ Clock runs from pairing — be on time; a late player can still win if time remains</li>
+        <li>📊 Live standings · ratings update each game</li>
+        <li>👀 Visitors may watch any live board</li>
+      </ul>
+    </div>
+    <div class="panel p-5 mb-4 border border-amber-400/30 bg-gradient-to-br from-amber-500/10 to-transparent">
+      <div class="flex items-start gap-3">
+        <div class="text-3xl">🥇</div>
+        <div>
+          <div class="font-black text-amber-300 text-sm uppercase tracking-wide">Gold medal</div>
+          <p class="text-sm text-slate-300 mt-1">The winner receives a <strong class="text-white">gold medal on Tuesday</strong>.</p>
+        </div>
+      </div>
+    </div>
+    <div class="space-y-3">
+      <button type="button" class="btn-gold w-full" onclick="showLogin()">I am a player — enter</button>
+      <button type="button" class="btn-blue w-full" onclick="enterAsVisitor()">Watch live games (visitor)</button>
+      <a href="index.html" class="btn-soft w-full block text-center">← Academy home</a>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div id="screen-login" class="hidden min-h-screen">
+  <div class="max-w-md mx-auto px-4 py-10">
+    <h2 class="text-xl font-black text-white uppercase italic mb-1">Player login</h2>
+    <p class="text-sm text-slate-400 mb-5">Tap your name, then enter the team password.</p>
+    <div id="player-pick-list" class="space-y-2 mb-4"></div>
+    <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Password</label>
+    <input id="login-pass" type="password" placeholder="Team password" class="mb-4" autocomplete="off">
+    <button type="button" class="btn-gold w-full mb-2" onclick="doLogin()">Enter arena</button>
+    <button type="button" class="btn-soft w-full" onclick="showWelcome()">Back</button>
+  </div>
+</div>
+
+<!-- LOBBY -->
+<div id="screen-lobby" class="hidden min-h-screen pb-10">
+  <nav class="sticky top-0 z-40 border-b border-white/5 bg-[#07090f]/95 backdrop-blur-xl px-4 py-3 flex items-center justify-between">
+    <div class="text-xs font-black uppercase tracking-widest text-amber-400">MCPS Trial</div>
+    <div class="text-[11px] font-bold text-slate-400" id="lobby-who">Visitor</div>
+    <button type="button" class="text-xs font-bold text-slate-500 hover:text-white" onclick="location.reload()">Exit</button>
+  </nav>
+  <div class="max-w-2xl mx-auto px-4 py-5 space-y-4">
+    <div class="break-banner hidden" id="break-banner">
+      <div class="text-[10px] font-black uppercase tracking-widest text-violet-300 mb-1">Round complete · break</div>
+      <div class="break-count" id="break-timer">2:00</div>
+      <p class="text-xs text-slate-400 mt-1">Next round pairs when the timer hits zero</p>
+    </div>
+
+    <div class="panel p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-[10px] font-black uppercase tracking-widest text-slate-500">Current round</div>
+          <div class="text-lg font-black text-white" id="lobby-round">Round 1 / 4</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] font-black uppercase tracking-widest text-slate-500">Status</div>
+          <div class="text-sm font-black text-emerald-400" id="lobby-status">Live</div>
+        </div>
+      </div>
+      <div id="pairings-box" class="space-y-2"></div>
+      <div id="my-game-actions" class="mt-3 hidden">
+        <button type="button" class="btn-gold w-full" id="btn-play-my-game">Play my game</button>
+      </div>
+    </div>
+
+    <div class="panel p-4">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="live-dot"></span>
+        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400">Live boards — watch any game</div>
+      </div>
+      <div id="live-games-box" class="space-y-2"></div>
+    </div>
+
+    <div class="panel p-4">
+      <div class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-3">Standings</div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr><th>#</th><th>Player</th><th>Pts</th><th>Rating</th><th>±</th></tr></thead>
+          <tbody id="standings-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel p-4 border border-amber-400/25">
+      <div class="flex items-center gap-2 text-sm text-amber-200"><span class="text-xl">🥇</span> Winner receives a gold medal on Tuesday.</div>
+    </div>
+  </div>
+</div>
+
+<!-- PLAY -->
+<div id="screen-play" class="hidden min-h-screen pb-8">
+  <nav class="sticky top-0 z-40 border-b border-white/5 bg-[#07090f]/95 backdrop-blur-xl px-4 py-3 flex items-center justify-between">
+    <button type="button" class="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-white" onclick="backToLobby()">← Lobby</button>
+    <div class="text-xs font-black text-amber-400">Your board</div>
+    <div class="text-[11px] font-bold text-slate-500" id="play-round-label">R1</div>
+  </nav>
+  <div class="max-w-lg mx-auto px-4 py-4">
+    <div class="flex items-center justify-between mb-2 gap-2">
+      <div class="side-pill side-black" id="play-label-top">⬛ Black</div>
+      <div class="clock" id="clock-top">10:00</div>
+    </div>
+    <div class="panel p-3 mb-2"><div id="board"></div></div>
+    <div class="flex items-center justify-between mb-3 gap-2">
+      <div class="side-pill side-white" id="play-label-bottom">⬜ White</div>
+      <div class="clock" id="clock-bottom">10:00</div>
+    </div>
+    <p class="text-center text-sm font-bold text-slate-300 mb-3" id="play-status">Your turn</p>
+    <div class="grid grid-cols-2 gap-2 mb-2">
+      <button type="button" class="btn-soft" onclick="offerDraw()">🤝 Draw</button>
+      <button type="button" class="btn-danger" onclick="openResignModal()">🏳️ Resign</button>
+    </div>
+  </div>
+</div>
+
+<!-- SPECTATE -->
+<div id="screen-spec" class="hidden min-h-screen pb-8">
+  <nav class="sticky top-0 z-40 border-b border-white/5 bg-[#07090f]/95 backdrop-blur-xl px-4 py-3 flex items-center justify-between">
+    <button type="button" class="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-white" onclick="backToLobby()">← Lobby</button>
+    <div class="flex items-center gap-2 text-xs font-black text-rose-400"><span class="live-dot"></span> LIVE</div>
+    <div class="text-[11px] font-bold text-slate-500">Spectator</div>
+  </nav>
+  <div class="max-w-lg mx-auto px-4 py-4">
+    <div class="flex items-center justify-between mb-2 gap-2">
+      <div class="side-pill side-black" id="spec-label-top">⬛ Black</div>
+      <div class="clock" id="spec-clock-top">10:00</div>
+    </div>
+    <div class="panel p-3 mb-2"><div id="spec-board"></div></div>
+    <div class="flex items-center justify-between mb-3 gap-2">
+      <div class="side-pill side-white" id="spec-label-bottom">⬜ White</div>
+      <div class="clock" id="spec-clock-bottom">10:00</div>
+    </div>
+    <p class="text-center text-sm font-bold text-slate-300" id="spec-status">Watching…</p>
+  </div>
+</div>
+
+<div id="resign-modal" class="modal-bg">
+  <div class="modal-card" style="border-color:rgba(244,63,94,.45)">
+    <div class="text-4xl mb-2">🏳️</div>
+    <h3 class="text-lg font-black text-white">Resign this game?</h3>
+    <p class="text-sm text-slate-300 mt-2 mb-4">Your opponent will score the full point.</p>
+    <button type="button" class="btn-danger w-full mb-2" onclick="confirmResign()">Yes, resign</button>
+    <button type="button" class="btn-soft w-full" onclick="closeModal('resign-modal')">Keep playing</button>
+  </div>
+</div>
+<div id="draw-modal" class="modal-bg">
+  <div class="modal-card">
+    <div class="text-4xl mb-2">🤝</div>
+    <h3 class="text-lg font-black text-white">Draw offered</h3>
+    <p class="text-sm text-slate-300 mt-2 mb-4" id="draw-modal-text">Your opponent offers a draw.</p>
+    <button type="button" class="btn-gold w-full mb-2" onclick="acceptDraw()">Accept draw</button>
+    <button type="button" class="btn-soft w-full" onclick="declineDraw()">Decline</button>
+  </div>
+</div>
+<div id="result-modal" class="modal-bg">
+  <div class="modal-card">
+    <div class="text-5xl mb-2" id="result-emoji">🏆</div>
+    <h3 class="text-xl font-black text-white uppercase" id="result-title">Victory!</h3>
+    <p class="text-sm text-slate-300 mt-2 mb-1" id="result-sub"></p>
+    <p class="text-amber-300 font-black mb-4" id="result-elo"></p>
+    <button type="button" class="btn-gold w-full" onclick="closeModal('result-modal');backToLobby()">Back to lobby</button>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+const firebaseConfig={apiKey:"AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",authDomain:"assignments-de95a.firebaseapp.com",projectId:"assignments-de95a",storageBucket:"assignments-de95a.firebasestorage.app",messagingSenderId:"1088073398299",appId:"1:1088073398299:web:dab1f57ac1d63b10dba0be"};
+if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
+const db=firebase.firestore();
+const DOC_ID='mcps_trial_2026';
+const PASSWORD='MCPS';
+const BASE_TIME=10*60;
+const INC=2;
+const BREAK_SEC=120;
+const K_FACTOR=20;
+const TOTAL_ROUNDS=5; // full RR for 6 players (each plays 5 games)
+const DOTUN=['audio/well-done.mp3','audio/well-done-chap.mp3','audio/great-job.mp3','audio/excellent.mp3','audio/that-was-a-strong-game.mp3'];
+const PIECE_THEME='https://images.chesscomfiles.com/chess-themes/pieces/neo/150/{piece}.png';
+function pieceThemeUrl(){return function(p){const m={wP:'wp',wR:'wr',wN:'wn',wB:'wb',wQ:'wq',wK:'wk',bP:'bp',bR:'br',bN:'bn',bB:'bb',bQ:'bq',bK:'bk'};return PIECE_THEME.replace('{piece}',m[p]||p.toLowerCase());};}
+
+/* ---- Schedule (WAT = Africa/Lagos) ----
+   Doors open  15:55
+   Waiting UI until Round 1 at 16:02
+*/
+// Fixed for Sunday 27 Sep 2026 (WAT = UTC+1)
+function watDateOn(y,mo,d,h,m,s){
+  const iso=y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0')+'T'+
+    String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s||0).padStart(2,'0')+'+01:00';
+  return new Date(iso).getTime();
+}
+const DOORS_OPEN_AT=()=>watDateOn(2026,9,27,16,58,0);  // tomorrow 4:58 PM WAT
+const ROUND1_AT=()=>watDateOn(2026,9,27,17,0,0);       // tomorrow 5:00 PM WAT
+
+const ROSTER=[
+  {id:'p1',name:'Chierika Onele',rating:1623},
+  {id:'p2',name:'Obi Chukwuemeka',rating:1623},
+  {id:'p3',name:'Oluwaseun Ajayi',rating:1332},
+  {id:'p4',name:'Beckley Semilore',rating:1456},
+  {id:'p5',name:'Osafile Sage',rating:1330},
+  {id:'p6',name:'Princewill Isioma.',rating:1330}
+];
+
+let me=null,T=null,unsub=null;
+let board=null,specBoard=null,game=null;
+let activeGameId=null,specGameId=null,sourceSquare=null;
+let clockTimer=null,phaseTimer=null;
+let selectedLoginId=null,resultShownFor={};
+let advancing=false;
+
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function speakDotun(){try{new Audio(DOTUN[Math.floor(Math.random()*DOTUN.length)]).play().catch(()=>{});}catch(e){}}
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function fmtTime(sec){sec=Math.max(0,Math.floor(sec));return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');}
+function playerById(id){return (T&&T.players||ROSTER).find(p=>p.id===id)||{name:'?',rating:0};}
+function expectedScore(ra,rb){return 1/(1+Math.pow(10,(rb-ra)/400));}
+function eloDelta(ra,rb,score){return Math.round(K_FACTOR*(score-expectedScore(ra,rb)));}
+function nowMs(){return Date.now();}
+
+function buildSchedule(players){
+  const ids=players.map(p=>p.id);
+  const arr=ids.slice();
+  if(arr.length%2===1) arr.push(null);
+  const n=arr.length, half=n/2;
+  const schedule=[];
+  const a=arr.slice();
+  // Full circle has n-1 rounds; we only keep TOTAL_ROUNDS
+  for(let r=0;r<n-1 && schedule.length<TOTAL_ROUNDS;r++){
+    const pairings=[];
+    for(let i=0;i<half;i++){
+      const A=a[i], B=a[n-1-i];
+      if(A===null||B===null){
+        pairings.push({bye:true,playerId:A||B,gameId:null});
+      } else {
+        const white=r%2===0?A:B, black=r%2===0?B:A;
+        pairings.push({bye:false,whiteId:white,blackId:black,gameId:'r'+(r+1)+'_'+white+'_'+black});
+      }
+    }
+    schedule.push({round:r+1,pairings});
+    const fixed=a[0], rest=a.slice(1); rest.unshift(rest.pop());
+    a.splice(0,a.length,fixed,...rest);
+  }
+  return schedule;
+}
+
+function emptyGame(whiteId,blackId,round,startClocksAt){
+  return {
+    whiteId,blackId,round,
+    fen:new Chess().fen(),pgn:'',turn:'w',
+    status:'active', // clocks live from pairing
+    result:null,
+    whiteTime:BASE_TIME,blackTime:BASE_TIME,
+    // White's clock starts at pairing (late White loses on time if no moves)
+    clockStartedAt:startClocksAt||Date.now(),
+    lastMoveAt:startClocksAt||Date.now(),
+    drawOfferFrom:null,whiteEloDelta:null,blackEloDelta:null,eloApplied:false
+  };
+}
+
+function applyByesForRound(state,roundNum){
+  const rd=(state.schedule||[]).find(r=>r.round===roundNum);
+  if(!rd) return;
+  rd.pairings.forEach(p=>{
+    if(p.bye&&p.playerId){
+      const pl=state.players.find(x=>x.id===p.playerId);
+      if(pl&&!pl['_bye'+roundNum]){pl.score=(pl.score||0)+1;pl.played=(pl.played||0)+1;pl['_bye'+roundNum]=true;}
+    }
+  });
+}
+
+async function ensureTournamentStarted(){
+  if(advancing) return;
+  advancing=true;
+  try{
+    const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+    await db.runTransaction(async (tx)=>{
+      const snap=await tx.get(ref);
+      if(snap.exists){
+        const d=snap.data()||{};
+        // Already running or finished — do not overwrite (prevents hang/reset mid-event)
+        if(d.status==='playing'||d.status==='break'||d.status==='finished') return;
+      }
+      const startAt=Date.now();
+      const players=ROSTER.map(p=>({...p,startRating:p.rating,score:0,played:0}));
+      const schedule=buildSchedule(players);
+      // Safety: every pair appears at most once
+      const seen=new Set();
+      schedule.forEach(rd=>rd.pairings.forEach(p=>{
+        if(p.bye) return;
+        const key=[p.whiteId,p.blackId].sort().join('|');
+        if(seen.has(key)) throw new Error('Duplicate pairing');
+        seen.add(key);
+      }));
+      const games={};
+      const rd1=schedule[0];
+      if(rd1){
+        rd1.pairings.forEach(p=>{
+          if(!p.bye) games[p.gameId]=emptyGame(p.whiteId,p.blackId,1,startAt);
+        });
+      }
+      const payload={status:'playing',currentRound:1,breakEndsAt:null,players,schedule,games,pairedAt:startAt,updated:firebase.firestore.FieldValue.serverTimestamp()};
+      applyByesForRound(payload,1);
+      tx.set(ref, payload);
+    });
+  } catch(e){ console.error('start', e); }
+  finally { advancing=false; }
+}
+
+/* ---- phase routing ---- */
+function hideAll(){['screen-closed','screen-waiting','screen-welcome','screen-login','screen-lobby','screen-play','screen-spec'].forEach(id=>document.getElementById(id).classList.add('hidden'));}
+
+function routeByTime(){
+  const now=nowMs();
+  const doors=DOORS_OPEN_AT();
+  const r1=ROUND1_AT();
+
+  // Already in play/spec — don't kick out
+  if(!document.getElementById('screen-play').classList.contains('hidden')) return;
+  if(!document.getElementById('screen-spec').classList.contains('hidden')) return;
+
+  if(now<doors){
+    hideAll();document.getElementById('screen-closed').classList.remove('hidden');
+    const left=Math.ceil((doors-now)/1000);
+    document.getElementById('closed-count').textContent=fmtTime(left);
+    return;
+  }
+
+  if(now<r1){
+    // Between doors and pairing — waiting room (after login) or welcome
+    if(me || sessionStorage.getItem('mcps_trial_me')){
+      try{if(!me) me=JSON.parse(sessionStorage.getItem('mcps_trial_me'));}catch(e){}
+      hideAll();document.getElementById('screen-waiting').classList.remove('hidden');
+      document.getElementById('wait-who').textContent=me?('Logged in as '+me.name):'';
+      const left=Math.ceil((r1-now)/1000);
+      document.getElementById('wait-count').textContent=fmtTime(left);
+      document.getElementById('wait-label').textContent='Until Round 1 pairing · 5:00 PM WAT';
+      document.getElementById('wait-message').textContent='Hold tight. At 5:00 PM everyone is paired for Round 1 — clocks start then.';
+    } else {
+      // show welcome so they can login into waiting
+      if(document.getElementById('screen-login').classList.contains('hidden') &&
+         document.getElementById('screen-welcome').classList.contains('hidden')){
+        hideAll();document.getElementById('screen-welcome').classList.remove('hidden');
+      }
+      // update nothing else
+    }
+    return;
+  }
+
+  // Past 5:00 — ensure tournament + lobby
+  ensureTournamentStarted().then(()=>{
+    if(document.getElementById('screen-play').classList.contains('hidden') &&
+       document.getElementById('screen-spec').classList.contains('hidden') &&
+       document.getElementById('screen-login').classList.contains('hidden')){
+      if(me || sessionStorage.getItem('mcps_trial_me')){
+        try{if(!me) me=JSON.parse(sessionStorage.getItem('mcps_trial_me'));}catch(e){}
+        enterLobby();
+      } else if(document.getElementById('screen-welcome').classList.contains('hidden') &&
+                document.getElementById('screen-lobby').classList.contains('hidden')){
+        hideAll();document.getElementById('screen-welcome').classList.remove('hidden');
+      }
+    }
+  });
+}
+
+function showWelcome(){
+  if(nowMs()<DOORS_OPEN_AT()){routeByTime();return;}
+  hideAll();document.getElementById('screen-welcome').classList.remove('hidden');
+}
+function showLogin(){
+  if(nowMs()<DOORS_OPEN_AT()){routeByTime();return;}
+  hideAll();document.getElementById('screen-login').classList.remove('hidden');
+  selectedLoginId=null;
+  document.getElementById('player-pick-list').innerHTML=ROSTER.map(p=>
+    `<button type="button" class="player-card" data-id="${p.id}" onclick="selectPlayer('${p.id}')">
+      <div class="font-black text-white">${esc(p.name)}</div>
+      <div class="text-xs text-amber-300/90 font-bold mt-0.5">Rating ${p.rating}</div>
+    </button>`
+  ).join('');
+}
+function selectPlayer(id){
+  selectedLoginId=id;
+  document.querySelectorAll('.player-card').forEach(el=>el.classList.toggle('selected',el.dataset.id===id));
+}
+function doLogin(){
+  if(!selectedLoginId){toast('Select your name');return;}
+  if((document.getElementById('login-pass').value||'').trim()!==PASSWORD){toast('Wrong password');return;}
+  const p=ROSTER.find(x=>x.id===selectedLoginId);
+  me={id:p.id,name:p.name};
+  sessionStorage.setItem('mcps_trial_me',JSON.stringify(me));
+  if(nowMs()<ROUND1_AT()){
+    hideAll();document.getElementById('screen-waiting').classList.remove('hidden');
+    document.getElementById('wait-who').textContent='Logged in as '+me.name;
+    routeByTime();
+  } else enterLobby();
+}
+function enterAsVisitor(){
+  me=null;sessionStorage.removeItem('mcps_trial_me');
+  if(nowMs()<ROUND1_AT()){
+    hideAll();document.getElementById('screen-waiting').classList.remove('hidden');
+    document.getElementById('wait-who').textContent='Visitor mode — boards open at 5:00 PM';
+    routeByTime();
+  } else enterLobby();
+}
+function enterLobby(){
+  hideAll();document.getElementById('screen-lobby').classList.remove('hidden');
+  document.getElementById('lobby-who').textContent=me?me.name:'Visitor · watching';
+  listenTournament();
+}
+function backToLobby(){
+  activeGameId=null;specGameId=null;
+  if(clockTimer){clearInterval(clockTimer);clockTimer=null;}
+  hideAll();document.getElementById('screen-lobby').classList.remove('hidden');
+  renderLobby();
+}
+
+function listenTournament(){
+  if(unsub) unsub();
+  unsub=db.collection('mcps_tournaments').doc(DOC_ID).onSnapshot(doc=>{
+    if(!doc.exists){T=null;renderLobby();return;}
+    T=doc.data();T.id=doc.id;
+    renderLobby();
+    if(activeGameId && !document.getElementById('screen-play').classList.contains('hidden')) syncPlayBoard();
+    if(specGameId && !document.getElementById('screen-spec').classList.contains('hidden')) syncSpecBoard();
+    maybeAdvanceRound();
+  },err=>{console.error(err);toast('Connection issue');});
+}
+
+function renderLobby(){
+  if(!T){
+    document.getElementById('lobby-round').textContent='Starting…';
+    document.getElementById('lobby-status').textContent='Pairing';
+    document.getElementById('pairings-box').innerHTML='<p class="text-sm text-slate-500">Pairing Round 1…</p>';
+    return;
+  }
+  document.getElementById('lobby-round').textContent='Round '+(T.currentRound||1)+' / '+TOTAL_ROUNDS;
+  const st=T.status||'playing';
+  document.getElementById('lobby-status').textContent=st==='break'?'Break':(st==='finished'?'Finished':'Live');
+  document.getElementById('lobby-status').className='text-sm font-black '+(st==='break'?'text-violet-300':st==='finished'?'text-amber-400':'text-emerald-400');
+
+  const bb=document.getElementById('break-banner');
+  if(st==='break'&&T.breakEndsAt){bb.classList.remove('hidden');updateBreakTimer();}
+  else bb.classList.add('hidden');
+
+  const rd=(T.schedule||[]).find(r=>r.round===(T.currentRound||1));
+  const box=document.getElementById('pairings-box');
+  if(!rd){box.innerHTML='';return;}
+  let myGame=null;
+  box.innerHTML=rd.pairings.map(p=>{
+    if(p.bye){
+      return `<div class="bg-white/5 rounded-xl px-3 py-2.5 text-sm"><span class="font-bold text-white">${esc(playerById(p.playerId).name)}</span> <span class="text-slate-500">bye (1 pt)</span></div>`;
+    }
+    const g=(T.games||{})[p.gameId]||{};
+    const w=playerById(p.whiteId), b=playerById(p.blackId);
+    const res=g.result?` · <span class="text-amber-300 font-black">${g.result}</span>`:'';
+    const live=g.status==='active'?'<span class="live-dot ml-1"></span>':'';
+    if(me&&(p.whiteId===me.id||p.blackId===me.id)) myGame=p;
+    const watchLabel=g.status==='done'?'View':'Watch';
+    return `<div class="bg-white/5 rounded-xl px-3 py-2.5 text-sm flex flex-wrap items-center justify-between gap-2">
+      <div><span class="text-slate-500 text-[10px] font-black uppercase">⬜ White</span> <span class="font-bold text-white">${esc(w.name)}</span>
+      <span class="text-amber-400 font-black mx-1">vs</span>
+      <span class="text-slate-500 text-[10px] font-black uppercase">⬛ Black</span> <span class="font-bold text-white">${esc(b.name)}</span>${res}${live}</div>
+      <button type="button" class="btn-soft" style="padding:6px 10px;font-size:10px" onclick="spectateGame('${p.gameId}')">${watchLabel}</button>
+    </div>`;
+  }).join('');
+
+  const act=document.getElementById('my-game-actions');
+  if(myGame&&me){
+    const g=(T.games||{})[myGame.gameId]||{};
+    if(g.status!=='done'){
+      act.classList.remove('hidden');
+      const btn=document.getElementById('btn-play-my-game');
+      btn.textContent='Open my board — clock is running';
+      btn.onclick=()=>openGame(myGame.gameId);
+    } else act.classList.add('hidden');
+  } else act.classList.add('hidden');
+
+  const liveBox=document.getElementById('live-games-box');
+  const allGames=Object.entries(T.games||{}).sort((a,b)=>(a[1].round||0)-(b[1].round||0));
+  if(!allGames.length) liveBox.innerHTML='<p class="text-sm text-slate-500">No boards yet.</p>';
+  else liveBox.innerHTML=allGames.map(([gid,g])=>{
+    const w=playerById(g.whiteId), b=playerById(g.blackId);
+    const live=g.status==='active';
+    const tag=live?'Live':'Done';
+    const tagCls=live?'text-rose-300':'text-slate-500';
+    return `<button type="button" class="player-card" onclick="spectateGame('${gid}')">
+      <div class="flex items-center gap-2 mb-1">${live?'<span class="live-dot"></span>':''}<span class="text-[10px] font-black uppercase ${tagCls}">${tag} · Round ${g.round}${g.result?' · '+g.result:''}</span></div>
+      <div class="text-sm"><span class="text-slate-400">⬜</span> <strong>${esc(w.name)}</strong> <span class="text-amber-400">vs</span> <span class="text-slate-400">⬛</span> <strong>${esc(b.name)}</strong></div>
+      <div class="text-[10px] text-amber-400/90 mt-1 font-bold">${live?'Watch live':'View game'}</div>
+    </button>`;
+  }).join('');
+
+  const rows=(T.players||[]).slice().sort((a,b)=>{
+    if((b.score||0)!==(a.score||0)) return (b.score||0)-(a.score||0);
+    return (b.rating||0)-(a.rating||0);
+  });
+  document.getElementById('standings-body').innerHTML=rows.map((p,i)=>{
+    const cls=i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
+    const delta=(p.rating||0)-(p.startRating||p.rating||0);
+    return `<tr>
+      <td class="${cls}">${i+1}</td>
+      <td class="font-bold text-white">${esc(p.name)}${me&&me.id===p.id?' <span class="text-amber-400 text-[10px]">YOU</span>':''}</td>
+      <td class="font-black text-amber-300">${p.score||0}</td>
+      <td>${p.rating||0}</td>
+      <td class="${delta>0?'text-emerald-400':delta<0?'text-rose-400':'text-slate-500'}">${(delta>=0?'+':'')+delta}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateBreakTimer(){
+  if(!T||!T.breakEndsAt) return;
+  const end=T.breakEndsAt.toMillis?T.breakEndsAt.toMillis():T.breakEndsAt;
+  document.getElementById('break-timer').textContent=fmtTime(Math.max(0,Math.ceil((end-Date.now())/1000)));
+}
+
+async function maybeAdvanceRound(){
+  if(!T||T.status==='finished'||advancing) return;
+  const rdNum=T.currentRound||1;
+  const rd=(T.schedule||[]).find(r=>r.round===rdNum);
+  if(!rd) return;
+  const allDone=rd.pairings.every(p=>{
+    if(p.bye) return true;
+    const g=(T.games||{})[p.gameId];
+    return g&&g.status==='done';
+  });
+  const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+  if(T.status==='playing'&&allDone){
+    advancing=true;
+    try{
+      await db.runTransaction(async (tx)=>{
+        const snap=await tx.get(ref);
+        if(!snap.exists) return;
+        const d=snap.data();
+        if(d.status!=='playing'||(d.currentRound||1)!==rdNum) return;
+        const rdd=(d.schedule||[]).find(r=>r.round===rdNum);
+        if(!rdd) return;
+        const done=rdd.pairings.every(p=>{
+          if(p.bye) return true;
+          const g=(d.games||{})[p.gameId];
+          return g&&g.status==='done';
+        });
+        if(!done) return;
+        if(rdNum>=TOTAL_ROUNDS){
+          tx.update(ref,{status:'finished',breakEndsAt:null});
+        } else {
+          const ends=firebase.firestore.Timestamp.fromMillis(Date.now()+BREAK_SEC*1000);
+          tx.update(ref,{status:'break',breakEndsAt:ends});
+        }
+      });
+    } catch(e){ console.error('advance', e); }
+    finally {advancing=false;}
+    return;
+  }
+  if(T.status==='break'&&T.breakEndsAt){
+    const end=T.breakEndsAt.toMillis?T.breakEndsAt.toMillis():T.breakEndsAt;
+    if(Date.now()>=end){
+      advancing=true;
+      try{
+        await db.runTransaction(async (tx)=>{
+          const snap=await tx.get(ref);
+          if(!snap.exists) return;
+          const d=snap.data();
+          if(d.status!=='break'||(d.currentRound||1)!==rdNum) return;
+          const next=rdNum+1;
+          const startAt=Date.now();
+          const players=(d.players||[]).map(p=>({...p}));
+          const tmp={players,schedule:d.schedule};
+          applyByesForRound(tmp,next);
+          const updates={status:'playing',currentRound:next,breakEndsAt:null,players:tmp.players};
+          const nrd=(d.schedule||[]).find(r=>r.round===next);
+          if(nrd){
+            nrd.pairings.forEach(p=>{
+              if(!p.bye) updates['games.'+p.gameId]=emptyGame(p.whiteId,p.blackId,next,startAt);
+            });
+          }
+          tx.update(ref, updates);
+        });
+      } catch(e){ console.error('next round', e); }
+      finally {advancing=false;}
+    }
+  }
+}
+
+async function openGame(gameId){
+  if(!me||!T) return;
+  const g=T.games[gameId];
+  if(!g) return;
+  if(g.whiteId!==me.id&&g.blackId!==me.id){toast('Not your board');return;}
+  activeGameId=gameId;
+  hideAll();document.getElementById('screen-play').classList.remove('hidden');
+  document.getElementById('play-round-label').textContent='R'+g.round;
+  initPlayBoard();
+  startClocks();
+}
+
+function initPlayBoard(){
+  const g=T.games[activeGameId];if(!g)return;
+  game=new Chess(g.fen);
+  const myColor=g.whiteId===me.id?'w':'b';
+  const orient=myColor==='b'?'black':'white';
+  if(!board){
+    board=ChessBoard('board',{position:g.fen,orientation:orient,draggable:false,pieceTheme:pieceThemeUrl()});
+    $('#board').on('click','[class*="square-"]',function(){const sq=$(this).attr('data-square');if(sq)onSquareClick(sq);});
+  } else {board.orientation(orient);board.position(g.fen,false);}
+  updatePlayLabels();updatePlayStatus();updateClockDisplay();
+}
+
+function updatePlayLabels(){
+  const g=T.games[activeGameId];if(!g)return;
+  const w=playerById(g.whiteId), b=playerById(g.blackId);
+  const myColor=g.whiteId===me.id?'w':'b';
+  if(myColor==='w'){
+    document.getElementById('play-label-bottom').innerHTML='⬜ White · '+esc(w.name)+' (you)';
+    document.getElementById('play-label-top').innerHTML='⬛ Black · '+esc(b.name);
+  } else {
+    document.getElementById('play-label-bottom').innerHTML='⬛ Black · '+esc(b.name)+' (you)';
+    document.getElementById('play-label-top').innerHTML='⬜ White · '+esc(w.name);
+  }
+  document.getElementById('play-label-bottom').className='side-pill '+(myColor==='w'?'side-white':'side-black');
+  document.getElementById('play-label-top').className='side-pill '+(myColor==='w'?'side-black':'side-white');
+}
+
+function syncPlayBoard(){
+  if(!activeGameId||!T) return;
+  const g=T.games[activeGameId];if(!g)return;
+  if(!game) initPlayBoard();
+  else if(g.fen!==game.fen()){game.load(g.fen);board.position(g.fen,true);}
+  updatePlayLabels();updatePlayStatus();updateClockDisplay();
+  if(g.drawOfferFrom&&g.drawOfferFrom!==me.id&&g.status==='active'){
+    document.getElementById('draw-modal-text').textContent=playerById(g.drawOfferFrom).name+' offers a draw.';
+    openModal('draw-modal');
+  }
+  if(g.status==='done'&&!resultShownFor[activeGameId]){resultShownFor[activeGameId]=true;showGameResult(g);}
+}
+
+function updatePlayStatus(){
+  const g=T.games[activeGameId];if(!g||!game)return;
+  if(g.status==='done'){document.getElementById('play-status').textContent='Game over · '+g.result;return;}
+  const myColor=g.whiteId===me.id?'w':'b';
+  let t=game.turn()===myColor?'Your turn — move a piece':'Waiting for opponent…';
+  if(game.in_check()) t=(game.turn()===myColor?'You are in check! ':'Opponent in check · ')+t;
+  document.getElementById('play-status').textContent=t;
+}
+
+function clearHighlights(){$('#board .square-55d63').removeClass('highlight-select highlight-legal');}
+
+function onSquareClick(sq){
+  if(!game||!me||!activeGameId) return;
+  const g=T.games[activeGameId];
+  if(!g||g.status==='done') return;
+  const myColor=g.whiteId===me.id?'w':'b';
+  if(game.turn()!==myColor){toast('Wait for your turn');return;}
+  const piece=game.get(sq);
+  if(sourceSquare){
+    if(sourceSquare===sq){sourceSquare=null;clearHighlights();return;}
+    const legal=game.moves({square:sourceSquare,verbose:true}).find(m=>m.to===sq);
+    if(legal){
+      const move=game.move({from:sourceSquare,to:sq,promotion:legal.flags.includes('p')?'q':undefined});
+      sourceSquare=null;clearHighlights();
+      if(move){board.position(game.fen());pushMove(move);}
+      return;
+    }
+    if(piece&&piece.color===myColor){sourceSquare=sq;clearHighlights();$('#board .square-'+sq).addClass('highlight-select');game.moves({square:sq,verbose:true}).forEach(m=>{$('#board .square-'+m.to).addClass('highlight-legal');});return;}
+    sourceSquare=null;clearHighlights();return;
+  }
+  if(piece&&piece.color===myColor){
+    sourceSquare=sq;clearHighlights();
+    $('#board .square-'+sq).addClass('highlight-select');
+    game.moves({square:sq,verbose:true}).forEach(m=>{$('#board .square-'+m.to).addClass('highlight-legal');});
+  }
+}
+
+async function pushMove(move){
+  const gid=activeGameId;
+  const localFen=game.fen();
+  const localTurn=game.turn();
+  const localSan=move.san;
+  const moveColor=move.color;
+  let endStatus='active', endResult=null;
+  if(game.in_checkmate()){endStatus='done';endResult=moveColor==='w'?'1-0':'0-1';}
+  else if(game.in_draw()){endStatus='done';endResult='1/2-1/2';}
+  const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+  try{
+    await db.runTransaction(async (tx)=>{
+      const snap=await tx.get(ref);
+      if(!snap.exists) return;
+      const state=snap.data();
+      const g=(state.games||{})[gid];
+      if(!g||g.status==='done') return;
+      // Reject stale move if board already advanced
+      if(g.fen && g.fen!==new Chess(g.fen).fen()){ /* continue */ }
+      const now=Date.now();
+      let wt=g.whiteTime||BASE_TIME, bt=g.blackTime||BASE_TIME;
+      if(g.lastMoveAt&&g.status==='active'){
+        const elapsed=Math.floor((now-g.lastMoveAt)/1000);
+        if(moveColor==='w') wt=Math.max(0,wt-elapsed+INC);
+        else bt=Math.max(0,bt-elapsed+INC);
+      }
+      const updates={
+        ['games.'+gid+'.fen']:localFen,
+        ['games.'+gid+'.pgn']:(g.pgn?g.pgn+' ':'')+localSan,
+        ['games.'+gid+'.turn']:localTurn,
+        ['games.'+gid+'.status']:endStatus,
+        ['games.'+gid+'.whiteTime']:wt,
+        ['games.'+gid+'.blackTime']:bt,
+        ['games.'+gid+'.lastMoveAt']:now,
+        ['games.'+gid+'.drawOfferFrom']:null
+      };
+      if(endResult) updates['games.'+gid+'.result']=endResult;
+      tx.update(ref, updates);
+    });
+  } catch(e){ console.error('move', e); toast('Move failed — try again'); return; }
+  if(endStatus==='done') await finalizeResult(gid, endResult);
+}
+
+async function finalizeResult(gameId, result){
+  const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+  try{
+    await db.runTransaction(async (tx)=>{
+      const snap=await tx.get(ref);
+      if(!snap.exists) return;
+      const state=snap.data();
+      const g=(state.games||{})[gameId];
+      if(!g||g.eloApplied) return; // already counted — ratings stay consistent
+      const players=(state.players||[]).map(p=>({...p}));
+      const w=players.find(p=>p.id===g.whiteId);
+      const b=players.find(p=>p.id===g.blackId);
+      if(!w||!b) return;
+      let scoreW=0.5;
+      if(result==='1-0') scoreW=1; else if(result==='0-1') scoreW=0;
+      const dW=eloDelta(w.rating,b.rating,scoreW);
+      const dB=eloDelta(b.rating,w.rating,1-scoreW);
+      w.rating=(w.rating||1500)+dW;
+      b.rating=(b.rating||1500)+dB;
+      w.score=(w.score||0)+scoreW;
+      b.score=(b.score||0)+(1-scoreW);
+      w.played=(w.played||0)+1;
+      b.played=(b.played||0)+1;
+      tx.update(ref, {
+        players,
+        ['games.'+gameId+'.eloApplied']:true,
+        ['games.'+gameId+'.whiteEloDelta']:dW,
+        ['games.'+gameId+'.blackEloDelta']:dB,
+        ['games.'+gameId+'.status']:'done',
+        ['games.'+gameId+'.result']:result
+      });
+    });
+  } catch(e){ console.error('finalize', e); }
+}
+
+function showGameResult(g){
+  const myColor=g.whiteId===me.id?'w':'b';
+  let won=false,draw=false;
+  if(g.result==='1/2-1/2') draw=true;
+  else if(g.result==='1-0'&&myColor==='w') won=true;
+  else if(g.result==='0-1'&&myColor==='b') won=true;
+  document.getElementById('result-emoji').textContent=draw?'🤝':(won?'🏆':'💪');
+  document.getElementById('result-title').textContent=draw?'Draw':(won?'You win!':'Game over');
+  document.getElementById('result-sub').textContent=draw?'Shared point.':(won?'Great game.':'See standings in the lobby.');
+  const d=myColor==='w'?g.whiteEloDelta:g.blackEloDelta;
+  document.getElementById('result-elo').textContent=d!=null?('Rating '+(d>=0?'+':'')+d):'';
+  if(won) speakDotun();
+  openModal('result-modal');
+}
+
+let flagging=false;
+function startClocks(){
+  if(clockTimer) clearInterval(clockTimer);
+  flagging=false;
+  clockTimer=setInterval(()=>{
+    if(!T||!activeGameId||flagging) return;
+    const g=T.games[activeGameId];
+    if(!g||g.status!=='active'||!g.lastMoveAt) return;
+    updateClockDisplay();
+    const elapsed=Math.floor((Date.now()-g.lastMoveAt)/1000);
+    const remaining=(g.turn==='w'?g.whiteTime:g.blackTime)-elapsed;
+    if(remaining<=0){
+      flagging=true;
+      const result=g.turn==='w'?'0-1':'1-0';
+      const gid=activeGameId;
+      db.collection('mcps_tournaments').doc(DOC_ID).update({
+        ['games.'+gid+'.status']:'done',
+        ['games.'+gid+'.result']:result
+      }).then(()=>finalizeResult(gid,result)).catch(()=>{flagging=false;});
+    }
+  },250);
+}
+
+function updateClockDisplay(){
+  if(!activeGameId||!T) return;
+  const g=T.games[activeGameId];if(!g)return;
+  let wt=g.whiteTime||BASE_TIME, bt=g.blackTime||BASE_TIME;
+  if(g.status==='active'&&g.lastMoveAt){
+    const elapsed=Math.floor((Date.now()-g.lastMoveAt)/1000);
+    if(g.turn==='w') wt=Math.max(0,wt-elapsed); else bt=Math.max(0,bt-elapsed);
+  }
+  const myColor=me&&g.whiteId===me.id?'w':'b';
+  const topIsWhite=myColor==='b';
+  const topEl=document.getElementById('clock-top'), botEl=document.getElementById('clock-bottom');
+  if(topIsWhite){
+    topEl.textContent=fmtTime(wt);botEl.textContent=fmtTime(bt);
+    topEl.className='clock'+(g.turn==='w'&&g.status==='active'?' active':'')+(wt<30?' low':'');
+    botEl.className='clock'+(g.turn==='b'&&g.status==='active'?' active':'')+(bt<30?' low':'');
+  } else {
+    topEl.textContent=fmtTime(bt);botEl.textContent=fmtTime(wt);
+    topEl.className='clock'+(g.turn==='b'&&g.status==='active'?' active':'')+(bt<30?' low':'');
+    botEl.className='clock'+(g.turn==='w'&&g.status==='active'?' active':'')+(wt<30?' low':'');
+  }
+}
+
+function openResignModal(){openModal('resign-modal');}
+async function confirmResign(){
+  closeModal('resign-modal');
+  if(!activeGameId||!me) return;
+  const g=T.games[activeGameId];
+  const result=g.whiteId===me.id?'0-1':'1-0';
+  await db.collection('mcps_tournaments').doc(DOC_ID).update({['games.'+activeGameId+'.status']:'done',['games.'+activeGameId+'.result']:result});
+  await finalizeResult(activeGameId,result);
+}
+async function offerDraw(){
+  if(!activeGameId||!me) return;
+  await db.collection('mcps_tournaments').doc(DOC_ID).update({['games.'+activeGameId+'.drawOfferFrom']:me.id});
+  toast('Draw offered');
+}
+async function acceptDraw(){
+  closeModal('draw-modal');
+  if(!activeGameId) return;
+  await db.collection('mcps_tournaments').doc(DOC_ID).update({['games.'+activeGameId+'.status']:'done',['games.'+activeGameId+'.result']:'1/2-1/2',['games.'+activeGameId+'.drawOfferFrom']:null});
+  await finalizeResult(activeGameId,'1/2-1/2');
+}
+async function declineDraw(){
+  closeModal('draw-modal');
+  if(!activeGameId) return;
+  await db.collection('mcps_tournaments').doc(DOC_ID).update({['games.'+activeGameId+'.drawOfferFrom']:null});
+  toast('Draw declined');
+}
+
+function spectateGame(gameId){
+  specGameId=gameId;
+  hideAll();document.getElementById('screen-spec').classList.remove('hidden');
+  syncSpecBoard(true);
+  if(clockTimer) clearInterval(clockTimer);
+  clockTimer=setInterval(updateSpecClocks,250);
+}
+function syncSpecBoard(){
+  if(!specGameId||!T) return;
+  const g=T.games[specGameId];if(!g)return;
+  const w=playerById(g.whiteId), b=playerById(g.blackId);
+  document.getElementById('spec-label-bottom').innerHTML='⬜ White · '+esc(w.name)+' ('+w.rating+')';
+  document.getElementById('spec-label-top').innerHTML='⬛ Black · '+esc(b.name)+' ('+b.rating+')';
+  if(!specBoard) specBoard=ChessBoard('spec-board',{position:g.fen||'start',draggable:false,pieceTheme:pieceThemeUrl()});
+  else specBoard.position(g.fen||'start',true);
+  document.getElementById('spec-status').textContent=g.status==='done'?('Final '+g.result):((g.turn==='w'?'White':'Black')+' to move');
+  updateSpecClocks();
+}
+function updateSpecClocks(){
+  if(!specGameId||!T) return;
+  const g=T.games[specGameId];if(!g)return;
+  let wt=g.whiteTime||BASE_TIME, bt=g.blackTime||BASE_TIME;
+  if(g.status==='active'&&g.lastMoveAt){
+    const elapsed=Math.floor((Date.now()-g.lastMoveAt)/1000);
+    if(g.turn==='w') wt=Math.max(0,wt-elapsed); else bt=Math.max(0,bt-elapsed);
+  }
+  document.getElementById('spec-clock-bottom').textContent=fmtTime(wt);
+  document.getElementById('spec-clock-top').textContent=fmtTime(bt);
+  document.getElementById('spec-clock-bottom').className='clock'+(g.turn==='w'&&g.status==='active'?' active':'');
+  document.getElementById('spec-clock-top').className='clock'+(g.turn==='b'&&g.status==='active'?' active':'');
+}
+
+/* boot */
+(function boot(){
+  // Reset stale tournament before Round 1 so 5:00 can pair cleanly
+  // (Only clears if still before round 1 time)
+  if(nowMs()<ROUND1_AT()){
+    db.collection('mcps_tournaments').doc(DOC_ID).delete().catch(()=>{});
+  }
+  let left=10;
+  const fill=document.getElementById('load-fill');
+  const sec=document.getElementById('load-sec');
+  const iv=setInterval(()=>{
+    left--;
+    fill.style.width=((10-left)/10*100)+'%';
+    sec.textContent=Math.max(0,left);
+    if(left<=0){
+      clearInterval(iv);
+      fill.style.width='100%';
+      setTimeout(()=>{
+        document.getElementById('loading-overlay').style.display='none';
+        try{const s=sessionStorage.getItem('mcps_trial_me');if(s) me=JSON.parse(s);}catch(e){}
+        routeByTime();
+        phaseTimer=setInterval(routeByTime,500);
+      },250);
+    }
+  },1000);
+  setTimeout(()=>{fill.style.width='10%';},80);
+})();
+</script>
+</body>
+</html>
