@@ -1,0 +1,2075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>MCPS Trial · Brain Chess National Warmup 2026</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+<style>
+:root{--bg:#07090f;--gold:#e8c547}
+*{box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:#e2e8f0;margin:0;min-height:100vh;overflow-x:hidden}
+.panel{background:linear-gradient(160deg,#1a2234,#0e1219);border:1px solid rgba(232,197,71,.18);border-radius:1.2rem}
+.btn-gold{background:linear-gradient(135deg,#fbbf24,#eab308);color:#000;font-weight:900;border-radius:12px;padding:13px 18px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;border:0;cursor:pointer}
+.btn-gold:disabled{opacity:.45;cursor:not-allowed}
+.btn-soft{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:#e2e8f0;font-weight:800;border-radius:12px;padding:12px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+.btn-danger{background:rgba(244,63,94,.18);border:1px solid rgba(244,63,94,.4);color:#fda4af;font-weight:800;border-radius:12px;padding:12px 16px;font-size:12px;cursor:pointer}
+.btn-blue{background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-weight:900;border-radius:12px;padding:13px 18px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;border:0;cursor:pointer}
+input{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#fff;padding:12px 14px;width:100%;outline:none}
+input:focus{border-color:rgba(232,197,71,.5)}
+#board,#spec-board{width:100%;max-width:560px;margin:0 auto;border-radius:14px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 3px rgba(118,150,86,.55)}
+.board-wrap{width:100%;max-width:560px;margin:0 auto}
+/* Chess.com green board squares */
+.board-b72b1 .white-1e1d7{background-color:#eeeed2!important}
+.board-b72b1 .black-3c85d{background-color:#769656!important}
+#board .white-1e1d7,#spec-board .white-1e1d7{background-color:#eeeed2!important}
+#board .black-3c85d,#spec-board .black-3c85d{background-color:#769656!important}
+.highlight-select{box-shadow:inset 0 0 0 4px rgba(255,255,0,.9)!important}
+.highlight-legal{position:relative}
+.highlight-legal::after{content:'';position:absolute;left:50%;top:50%;width:18%;height:18%;min-width:9px;min-height:9px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(0,0,0,.28);pointer-events:none;z-index:2}
+.side-pill{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:10px;font-size:12px;font-weight:800}
+.side-white{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);color:#f8fafc}
+.side-black{background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.12);color:#e2e8f0}
+.player-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
+.player-row .pname{font-weight:900;font-size:14px;color:#fff;line-height:1.2}
+.player-row .prating{font-size:11px;font-weight:800;color:#fbbf24;margin-top:2px}
+.player-row .pside{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8}
+.clock{font-variant-numeric:tabular-nums;font-weight:900;font-size:1.55rem;min-width:4.2rem;text-align:right}
+.clock.active{color:#fbbf24;text-shadow:0 0 12px rgba(251,191,36,.35)}
+.clock.low{color:#f87171;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+@keyframes spinRing{to{transform:rotate(360deg)}}
+@keyframes softPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.04);opacity:.9}}
+@keyframes shimmer{0%{background-position:0% 50%}100%{background-position:100% 50%}}
+.player-card{background:rgba(255,255,255,.04);border:2px solid rgba(255,255,255,.1);border-radius:14px;padding:14px 16px;cursor:pointer;transition:.2s;text-align:left;width:100%}
+.player-card:hover{border-color:rgba(232,197,71,.45);background:rgba(232,197,71,.08)}
+.player-card.selected{border-color:#fbbf24;background:rgba(251,191,36,.12);box-shadow:0 0 20px rgba(251,191,36,.15)}
+.modal-bg{display:none;position:fixed;inset:0;z-index:200;align-items:center;justify-content:center;background:rgba(5,7,13,.9);backdrop-filter:blur(12px);padding:16px}
+.modal-bg.open{display:flex}
+.modal-card{background:linear-gradient(160deg,#1e1b4b,#0f172a);border:1px solid rgba(232,197,71,.4);border-radius:20px;padding:26px 22px;max-width:400px;width:100%;text-align:center}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.96);border:1px solid rgba(232,197,71,.4);color:#fde68a;padding:10px 18px;border-radius:999px;font-size:12px;font-weight:800;z-index:300;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:1}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;animation:pulse 1.2s infinite}
+.rank-1{color:#fbbf24;font-weight:900}
+.rank-2{color:#e2e8f0;font-weight:900}
+.rank-3{color:#fdba74;font-weight:900}
+.loading-overlay{position:fixed;inset:0;z-index:500;background:#07090f;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.loading-bar{width:220px;height:8px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;margin-top:16px}
+.loading-fill{height:100%;width:0%;background:linear-gradient(90deg,#fbbf24,#f59e0b);transition:width .2s linear}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8;padding:8px;border-bottom:1px solid rgba(255,255,255,.08)}
+td{padding:10px 8px;border-bottom:1px solid rgba(255,255,255,.05)}
+.hero-glow{background:radial-gradient(ellipse at 50% 0%,rgba(251,191,36,.15),transparent 60%)}
+/* Waiting room */
+.wait-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;position:relative;overflow:hidden}
+.wait-wrap::before{content:'';position:absolute;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle,rgba(251,191,36,.12),transparent 70%);top:50%;left:50%;transform:translate(-50%,-55%);animation:softPulse 3s ease-in-out infinite}
+.wait-ring{width:160px;height:160px;border-radius:50%;border:3px solid rgba(251,191,36,.15);border-top-color:#fbbf24;animation:spinRing 1.2s linear infinite;margin:0 auto 20px;position:relative}
+.wait-ring .piece{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:3rem;animation:floaty 2.5s ease-in-out infinite}
+.wait-count{font-size:3.5rem;font-weight:900;color:#fbbf24;font-variant-numeric:tabular-nums;letter-spacing:.04em;text-shadow:0 0 30px rgba(251,191,36,.35)}
+.wait-label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;margin-top:8px}
+.break-banner{background:linear-gradient(135deg,rgba(139,92,246,.25),rgba(59,130,246,.2));border:1px solid rgba(167,139,250,.4);border-radius:16px;padding:18px;text-align:center}
+.break-count{font-size:2.5rem;font-weight:900;color:#c4b5fd;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<!-- 10s piece loader -->
+<div id="loading-overlay" class="loading-overlay">
+  <div class="text-5xl mb-3">♟️</div>
+  <div class="text-lg font-black text-white uppercase italic">MCPS Trial Arena</div>
+  <p class="text-sm text-slate-400 mt-1">Loading pieces…</p>
+  <div class="loading-bar"><div class="loading-fill" id="load-fill"></div></div>
+  <p class="text-xs text-slate-500 mt-3" id="load-sec">10</p>
+</div>
+
+<!-- GATES CLOSED (before 10:43 PM Sat 26 Sep) -->
+<div id="screen-closed" class="hidden wait-wrap hero-glow">
+  <div class="relative z-10 max-w-md">
+    <div class="text-5xl mb-4">🏫</div>
+    <div class="inline-flex items-center gap-2 bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full mb-4">Maryland Convent Private School</div>
+    <h1 class="text-2xl font-black italic uppercase text-white mb-2">Arena opens soon</h1>
+    <p class="text-slate-400 text-sm mb-6">Players may enter from <strong class="text-amber-300">10:43 PM</strong>. Round 1 pairs at <strong class="text-amber-300">10:45 PM</strong> WAT.</p>
+    <div class="wait-count" id="closed-count">--:--</div>
+    <div class="wait-label">Until doors open</div>
+  </div>
+</div>
+
+<!-- WAITING ROOM (10:43 – 10:45 PM) -->
+<div id="screen-waiting" class="hidden wait-wrap hero-glow">
+  <div class="relative z-10 max-w-md w-full">
+    <div class="wait-ring"><div class="piece">♞</div></div>
+    <h1 class="text-2xl font-black italic uppercase text-white mb-1">Please wait</h1>
+    <p class="text-slate-400 text-sm mb-2" id="wait-message">Round 1 pairs at 10:45 PM. Stretch, breathe, get ready.</p>
+    <div class="wait-count" id="wait-count">--:--</div>
+    <div class="wait-label" id="wait-label">Until Round 1 pairing</div>
+    <div class="rounded-xl overflow-hidden border border-amber-400/30 mx-auto max-w-[200px] mt-5 shadow-lg">
+      <img src="Screenshot_20260516-211346.jpg" alt="MCPS Team" class="w-full h-auto object-cover object-top max-h-36" style="display:block">
+    </div>
+    <div class="panel p-4 mt-6 text-left">
+      <div class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2">Quick reminders</div>
+      <ul class="text-sm text-slate-300 space-y-1.5">
+        <li>⏱️ 10+2 rapid — clock starts when you are paired</li>
+        <li>迟到 Late? Your clock still runs — arrive before 10:00 is gone</li>
+        <li>🔄 5 rounds · full round robin · each opponent once</li>
+        <li>🥇 Winner gets a gold medal on Tuesday</li>
+      </ul>
+    </div>
+    <p class="text-xs text-slate-500 mt-4" id="wait-who"></p>
+  </div>
+</div>
+
+<!-- WELCOME / RULES (after load, before login — only if arena open) -->
+<div id="screen-welcome" class="hidden min-h-screen hero-glow">
+  <div class="max-w-lg mx-auto px-4 py-10">
+    <div class="text-center mb-6">
+      <div class="inline-flex items-center gap-2 bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full mb-4">Maryland Convent Private School</div>
+      <h1 class="text-2xl md:text-3xl font-black italic uppercase text-white leading-tight">Brain Chess National<br><span class="text-amber-400">Warmup Trial 2026</span></h1>
+      <p class="text-sm text-slate-400 mt-3 mb-5">Represent MCPS with pride.</p>
+      <div class="rounded-2xl overflow-hidden border-2 border-amber-400/40 shadow-xl shadow-amber-500/20 mx-auto max-w-sm">
+        <img src="Screenshot_20260516-211346.jpg" alt="MCPS Chess Team" class="w-full h-auto object-cover object-top max-h-80" style="display:block">
+      </div>
+      <p class="text-[11px] font-bold text-amber-300/90 mt-2 uppercase tracking-widest">Our championship squad</p>
+    </div>
+    <div class="panel p-5 mb-4">
+      <div class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-3">Today’s schedule (WAT)</div>
+      <ul class="text-sm text-slate-300 space-y-2">
+        <li>🚪 <strong class="text-white">10:43 PM</strong> — Players may join &amp; wait</li>
+        <li>♟️ <strong class="text-white">10:45 PM</strong> — Round 1 pairing (clocks start)</li>
+        <li>☕ <strong class="text-white">2 min break</strong> after each round</li>
+        <li>🏁 <strong class="text-white">5 rounds</strong> · full round robin · each opponent once</li>
+      </ul>
+    </div>
+    <div class="panel p-5 mb-4">
+      <div class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-3">Rules</div>
+      <ul class="text-sm text-slate-300 space-y-2">
+        <li>⏱️ <strong class="text-white">10+2 rapid</strong></li>
+        <li>⏰ Clock runs from pairing — be on time; a late player can still win if time remains</li>
+        <li>📊 Live standings · ratings update each game</li>
+        <li>👀 Visitors may watch any live board</li>
+      </ul>
+    </div>
+    <div class="panel p-5 mb-4 border border-amber-400/30 bg-gradient-to-br from-amber-500/10 to-transparent">
+      <div class="flex items-start gap-3">
+        <div class="text-3xl">🥇</div>
+        <div>
+          <div class="font-black text-amber-300 text-sm uppercase tracking-wide">Gold medal</div>
+          <p class="text-sm text-slate-300 mt-1">The winner receives a <strong class="text-white">gold medal on Tuesday</strong>.</p>
+        </div>
+      </div>
+    </div>
+    <div class="space-y-3">
+      <button type="button" class="btn-gold w-full" onclick="showLogin()">I am a player — enter</button>
+      <button type="button" class="btn-blue w-full" onclick="enterAsVisitor()">Watch live games (visitor)</button>
+      <a href="index.html" class="btn-soft w-full block text-center">← Academy home</a>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div id="screen-login" class="hidden min-h-screen">
+  <div class="max-w-md mx-auto px-4 py-10">
+    <h2 class="text-xl font-black text-white uppercase italic mb-1">Player login</h2>
+    <p class="text-sm text-slate-400 mb-5">Tap your name, then enter the team password.</p>
+    <div id="player-pick-list" class="space-y-2 mb-4"></div>
+    <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Password</label>
+    <input id="login-pass" type="password" placeholder="Team password" class="mb-4" autocomplete="off">
+    <button type="button" class="btn-gold w-full mb-2" onclick="doLogin()">Enter arena</button>
+    <button type="button" class="btn-soft w-full" onclick="showWelcome()">Back</button>
+  </div>
+</div>
+
+<!-- LOBBY -->
+<div id="screen-lobby" class="hidden min-h-screen pb-10">
+  <nav class="sticky top-0 z-40 border-b border-white/5 bg-[#07090f]/95 backdrop-blur-xl px-4 py-3 flex items-center justify-between">
+    <div class="text-xs font-black uppercase tracking-widest text-amber-400">MCPS Trial</div>
+    <div class="text-[11px] font-bold text-slate-400" id="lobby-who">Visitor</div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="text-[10px] font-black uppercase tracking-wider text-rose-300/80 hover:text-rose-200" onclick="openResetModal()">Reset data</button>
+      <div class="flex items-center gap-2">
+      <button type="button" class="text-[10px] font-black uppercase tracking-wider text-rose-300/80 hover:text-rose-200" onclick="openResetModal()">Reset data</button>
+      <button type="button" class="text-xs font-bold text-slate-500 hover:text-white" onclick="location.reload()">Exit</button>
+    </div>
+    </div>
+  </nav>
+  <div class="max-w-2xl mx-auto px-4 py-5 space-y-4">
+    <div class="break-banner hidden" id="break-banner">
+      <div class="text-[10px] font-black uppercase tracking-widest text-violet-300 mb-1">Round complete · break</div>
+      <div class="break-count" id="break-timer">2:00</div>
+      <p class="text-xs text-slate-400 mt-1 mb-3" id="break-hint">Next round pairs when the timer hits zero</p>
+      <button type="button" class="btn-gold w-full hidden" id="btn-proceed-round" onclick="proceedToNextRound()">⚡ Proceed to next round</button>
+      <button type="button" class="btn-gold w-full hidden" id="btn-final-standings" onclick="showFinalStandings()">🏆 See final standings</button>
+    </div>
+
+    <div class="panel p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-[10px] font-black uppercase tracking-widest text-slate-500">Current round</div>
+          <div class="text-lg font-black text-white" id="lobby-round">Round 1 / 5</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] font-black uppercase tracking-widest text-slate-500">Status</div>
+          <div class="text-sm font-black text-emerald-400" id="lobby-status">Live</div>
+        </div>
+      </div>
+      <div id="pairings-box" class="space-y-2"></div>
+      <div id="my-game-actions" class="mt-3 hidden">
+        <button type="button" class="btn-gold w-full" id="btn-play-my-game">Play my game</button>
+      </div>
+      <div id="round-complete-actions" class="mt-3 hidden">
+        <button type="button" class="btn-gold w-full" id="btn-finish-round" onclick="forceFinishRound()">✅ All games done — start break / next round</button>
+      </div>
+    </div>
+
+    <div class="panel p-4">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="live-dot"></span>
+        <div class="text-[10px] font-black uppercase tracking-widest text-slate-400">Live boards — watch any game</div>
+      </div>
+      <div id="live-games-box" class="space-y-2"></div>
+    </div>
+
+    <div class="panel p-4">
+      <div class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-3">Standings</div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr><th>#</th><th>Player</th><th>Pts</th><th>Rating</th><th>±</th></tr></thead>
+          <tbody id="standings-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel p-4 border border-amber-400/25">
+      <div class="flex items-center gap-2 text-sm text-amber-200"><span class="text-xl">🥇</span> Winner receives a gold medal on Tuesday.</div>
+    </div>
+  </div>
+</div>
+
+<!-- FINAL RESULTS / PODIUM -->
+<div id="screen-finished" class="hidden min-h-screen pb-12 hero-glow">
+  <nav class="sticky top-0 z-40 border-b border-white/5 bg-[#07090f]/95 backdrop-blur-xl px-4 py-3 flex items-center justify-between">
+    <div class="text-xs font-black uppercase tracking-widest text-amber-400">MCPS Trial</div>
+    <div class="text-[11px] font-bold text-emerald-400">Final results</div>
+    <button type="button" class="text-xs font-bold text-slate-500 hover:text-white" onclick="location.reload()">Exit</button>
+  </nav>
+  <div class="max-w-lg mx-auto px-4 py-8 text-center">
+    <div class="text-5xl mb-2">🏆</div>
+    <div class="text-[10px] font-black uppercase tracking-[0.2em] text-amber-400 mb-2">Tournament complete</div>
+    <h1 class="text-2xl md:text-3xl font-black italic uppercase text-white mb-1">Champion</h1>
+    <p class="text-3xl font-black text-amber-300 mb-1" id="champ-name">—</p>
+    <p class="text-sm text-slate-400 mb-8" id="champ-sub">Gold medal on Tuesday</p>
+    <div class="flex items-end justify-center gap-3 mb-10 px-2">
+      <div class="flex-1 max-w-[110px]">
+        <div class="text-2xl mb-1">🥈</div>
+        <div class="bg-slate-600/40 border border-slate-400/30 rounded-t-xl pt-6 pb-3 px-2 min-h-[90px]">
+          <div class="text-[10px] font-black text-slate-300 uppercase">2nd</div>
+          <div class="text-xs font-black text-white leading-tight mt-1" id="podium-2">—</div>
+          <div class="text-amber-300 font-black text-sm mt-1" id="podium-2-pts"></div>
+        </div>
+      </div>
+      <div class="flex-1 max-w-[130px]">
+        <div class="text-3xl mb-1">🥇</div>
+        <div class="bg-amber-500/25 border-2 border-amber-400/50 rounded-t-xl pt-8 pb-4 px-2 min-h-[120px] shadow-lg shadow-amber-500/20">
+          <div class="text-[10px] font-black text-amber-300 uppercase">1st</div>
+          <div class="text-sm font-black text-white leading-tight mt-1" id="podium-1">—</div>
+          <div class="text-amber-300 font-black text-base mt-1" id="podium-1-pts"></div>
+        </div>
+      </div>
+      <div class="flex-1 max-w-[110px]">
+        <div class="text-2xl mb-1">🥉</div>
+        <div class="bg-orange-700/30 border border-orange-400/30 rounded-t-xl pt-4 pb-3 px-2 min-h-[75px]">
+          <div class="text-[10px] font-black text-orange-300 uppercase">3rd</div>
+          <div class="text-xs font-black text-white leading-tight mt-1" id="podium-3">—</div>
+          <div class="text-amber-300 font-black text-sm mt-1" id="podium-3-pts"></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel p-4 text-left mb-4">
+      <div class="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-3">Final standings</div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr><th>#</th><th>Player</th><th>Pts</th><th>Rating</th><th>±</th></tr></thead>
+          <tbody id="final-standings-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel p-4 border border-amber-400/30 bg-gradient-to-br from-amber-500/10 to-transparent">
+      <div class="flex items-center gap-3 justify-center">
+        <span class="text-3xl">🥇</span>
+        <p class="text-sm text-slate-200"><strong class="text-amber-300">Gold medal</strong> awarded to the champion on Tuesday.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PLAY -->
+<div id="screen-play" class="hidden min-h-screen pb-8">
+  <nav class="sticky top-0 z-40 border-b border-white/5 bg-[#07090f]/95 backdrop-blur-xl px-4 py-3 flex items-center justify-between">
+    <button type="button" class="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-white" onclick="backToLobby()">← Lobby</button>
+    <div class="text-xs font-black text-amber-400">Your board</div>
+    <div class="text-[11px] font-bold text-slate-500" id="play-round-label">R1</div>
+  </nav>
+  <div class="max-w-xl mx-auto px-3 py-3">
+    <div class="player-row mb-2" id="play-row-top">
+      <div class="text-left min-w-0">
+        <div class="pside" id="play-side-top">⬛ Black</div>
+        <div class="pname truncate" id="play-name-top">—</div>
+        <div class="prating" id="play-rating-top"></div>
+      </div>
+      <div class="clock" id="clock-top">10:00</div>
+    </div>
+    <div class="panel p-2 mb-2"><div class="board-wrap"><div id="board"></div></div></div>
+    <div class="player-row mb-3" id="play-row-bottom">
+      <div class="text-left min-w-0">
+        <div class="pside" id="play-side-bottom">⬜ White</div>
+        <div class="pname truncate" id="play-name-bottom">—</div>
+        <div class="prating" id="play-rating-bottom"></div>
+      </div>
+      <div class="clock" id="clock-bottom">10:00</div>
+    </div>
+    <p class="text-center text-sm font-bold text-slate-300 mb-3" id="play-status">Your turn</p>
+    <div class="grid grid-cols-2 gap-2 mb-2">
+      <button type="button" class="btn-soft" onclick="offerDraw()">🤝 Draw</button>
+      <button type="button" class="btn-danger" onclick="openResignModal()">🏳️ Resign</button>
+    </div>
+  </div>
+</div>
+
+<!-- SPECTATE -->
+<div id="screen-spec" class="hidden min-h-screen pb-8">
+  <nav class="sticky top-0 z-40 border-b border-white/5 bg-[#07090f]/95 backdrop-blur-xl px-4 py-3 flex items-center justify-between">
+    <button type="button" class="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-white" onclick="backToLobby()">← Lobby</button>
+    <div class="flex items-center gap-2 text-xs font-black text-rose-400"><span class="live-dot"></span> LIVE</div>
+    <div class="text-[11px] font-bold text-slate-500">Spectator</div>
+  </nav>
+  <div class="max-w-xl mx-auto px-3 py-3">
+    <div class="player-row mb-2">
+      <div class="text-left min-w-0">
+        <div class="pside" id="spec-side-top">⬛ Black</div>
+        <div class="pname truncate" id="spec-name-top">—</div>
+        <div class="prating" id="spec-rating-top"></div>
+      </div>
+      <div class="clock" id="spec-clock-top">10:00</div>
+    </div>
+    <div class="panel p-2 mb-2"><div class="board-wrap"><div id="spec-board"></div></div></div>
+    <div class="player-row mb-3">
+      <div class="text-left min-w-0">
+        <div class="pside" id="spec-side-bottom">⬜ White</div>
+        <div class="pname truncate" id="spec-name-bottom">—</div>
+        <div class="prating" id="spec-rating-bottom"></div>
+      </div>
+      <div class="clock" id="spec-clock-bottom">10:00</div>
+    </div>
+    <p class="text-center text-sm font-bold text-slate-300" id="spec-status">Watching…</p>
+  </div>
+</div>
+
+<div id="resign-modal" class="modal-bg">
+  <div class="modal-card" style="border-color:rgba(244,63,94,.45)">
+    <div class="text-4xl mb-2">🏳️</div>
+    <h3 class="text-lg font-black text-white">Resign this game?</h3>
+    <p class="text-sm text-slate-300 mt-2 mb-4">Your opponent will score the full point.</p>
+    <button type="button" class="btn-danger w-full mb-2" onclick="confirmResign()">Yes, resign</button>
+    <button type="button" class="btn-soft w-full" onclick="closeModal('resign-modal')">Keep playing</button>
+  </div>
+</div>
+<div id="draw-modal" class="modal-bg">
+  <div class="modal-card">
+    <div class="text-4xl mb-2">🤝</div>
+    <h3 class="text-lg font-black text-white">Draw offered</h3>
+    <p class="text-sm text-slate-300 mt-2 mb-4" id="draw-modal-text">Your opponent offers a draw.</p>
+    <button type="button" class="btn-gold w-full mb-2" onclick="acceptDraw()">Accept draw</button>
+    <button type="button" class="btn-soft w-full" onclick="declineDraw()">Decline</button>
+  </div>
+</div>
+<div id="result-modal" class="modal-bg">
+  <div class="modal-card">
+    <div class="text-5xl mb-2" id="result-emoji">🏆</div>
+    <h3 class="text-xl font-black text-white uppercase" id="result-title">Victory!</h3>
+    <p class="text-sm text-slate-300 mt-2 mb-1" id="result-sub"></p>
+    <p class="text-amber-300 font-black mb-4" id="result-elo"></p>
+    <button type="button" class="btn-gold w-full" onclick="closeModal('result-modal');backToLobby()">Back to lobby</button>
+  </div>
+</div>
+<div id="reset-modal" class="modal-bg">
+  <div class="modal-card" style="border-color:rgba(244,63,94,.45)">
+    <div class="text-4xl mb-2">🔐</div>
+    <h3 class="text-lg font-black text-white">Reset tournament data?</h3>
+    <p class="text-sm text-slate-300 mt-2 mb-4">This clears the current tournament state and starts a fresh Round 1.</p>
+    <input id="reset-pass" type="password" placeholder="Reset password" autocomplete="off" class="mb-3">
+    <button type="button" class="btn-danger w-full mb-2" onclick="confirmResetTournament()">Reset to Round 1</button>
+    <button type="button" class="btn-soft w-full" onclick="closeModal('reset-modal')">Cancel</button>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+const firebaseConfig={apiKey:"AIzaSyCcSVTifrJhzXvhQ4m1UyObtCKd8QnKEUw",authDomain:"assignments-de95a.firebaseapp.com",projectId:"assignments-de95a",storageBucket:"assignments-de95a.firebasestorage.app",messagingSenderId:"1088073398299",appId:"1:1088073398299:web:dab1f57ac1d63b10dba0be"};
+if(!firebase.apps.length)firebase.initializeApp(firebaseConfig);
+const db=firebase.firestore();
+const DOC_ID='mcps_try_2026';
+const PASSWORD='MCPS';
+const RESET_PASSWORD='decipher1234';
+const BASE_TIME=10*60;
+const INC=2;
+const BREAK_SEC=120;
+const K_FACTOR=20;
+const TOTAL_ROUNDS=5; // full RR for 6 players (each plays 5 games)
+const DOTUN=['audio/well-done.mp3','audio/well-done-chap.mp3','audio/great-job.mp3','audio/excellent.mp3','audio/that-was-a-strong-game.mp3'];
+const PIECE_THEME=null;
+// Self-contained solid Staunton-style pieces. No third-party image host is required.
+const SOLID_PIECE_SVG={
+ P:`<circle cx="32" cy="12" r="6"/><path d="M27 18h10l-1 8c0 3 5 5 7 9l3 8H16l3-8c2-4 7-6 7-9z"/><path d="M14 45h36l3 6H11z"/><path d="M9 51h46v5H9z"/>`,
+ R:`<path d="M13 10h8v7h5v-7h12v7h5v-7h8v18H45l-2 14H21l-2-14H13z"/><path d="M17 42h30l3 7H14z"/><path d="M10 49h44v7H10z"/>`,
+ N:`<path d="M19 50c2-5 5-8 9-11-5-5-8-10-7-17 1-8 7-14 15-16 3 3 5 6 6 10l7 2-3 6-7-1c2 4 5 7 7 10 2 3 3 7 2 17z"/><path d="M14 50h38l4 6H10z"/><circle cx="34" cy="16" r="1.8" fill="#fff" stroke="none"/>`,
+ B:`<circle cx="32" cy="10" r="5"/><path d="M29 15h6c0 6 7 9 8 16 1 5-1 8-3 11H24c-2-3-4-6-3-11 1-7 8-10 8-16z"/><path d="M31 16l3 12-5 5" fill="none" stroke="currentColor" stroke-width="3"/><path d="M17 42h30l4 7H13z"/><path d="M10 49h44v7H10z"/>`,
+ Q:`<path d="M12 12l8 8 6-10 6 10 6-10 6 10 8-8-5 25H17z"/><path d="M20 37h24l3 9H17z"/><path d="M12 46h40v10H12z"/>`,
+ K:`<path d="M28 5h8v7h7v7h-7v7h-8v-7h-7v-7h7z"/><path d="M24 26h16c0 5 6 8 7 15H17c1-7 7-10 7-15z"/><path d="M15 41h34l3 8H12z"/><path d="M9 49h46v7H9z"/>`
+};
+const SOLID_PIECE_CACHE={};
+function solidPieceDataUrl(code){
+ if(SOLID_PIECE_CACHE[code]) return SOLID_PIECE_CACHE[code];
+ const white=code[0]==='w', type=code[1];
+ const fill=white?'#f7f7f7':'#252525', stroke=white?'#555':'#050505';
+ const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 64 64" fill="${fill}" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">${SOLID_PIECE_SVG[type]}</svg>`;
+ return SOLID_PIECE_CACHE[code]='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+}
+const SOUND_MOVE='https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-self.mp3';
+const SOUND_CAPTURE='https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/capture.mp3';
+const SOUND_CHECK='https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-check.mp3';
+const SOUND_GAMEEND='https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/game-end.mp3';
+const SOUND_NOTIFY='https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/notify.mp3';
+function pieceThemeUrl(){return function(p){return solidPieceDataUrl(p);};}
+function playSfx(url,vol){
+  try{const a=new Audio(url);a.volume=vol==null?0.85:vol;a.play().catch(()=>{});}catch(e){}
+}
+function playMoveSound(isCapture,isCheck){
+  if(isCheck) playSfx(SOUND_CHECK,0.9);
+  else if(isCapture) playSfx(SOUND_CAPTURE,0.9);
+  else playSfx(SOUND_MOVE,0.8);
+}
+
+/* ---- Schedule (WAT = Africa/Lagos) ----
+   Doors open  22:43
+   Waiting UI until Round 1 at 22:45
+*/
+// Fixed for Saturday 26 Sep 2026 (WAT = UTC+1)
+function watDateOn(y,mo,d,h,m,s){
+  const iso=y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0')+'T'+
+    String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s||0).padStart(2,'0')+'+01:00';
+  return new Date(iso).getTime();
+}
+const DOORS_OPEN_AT=()=>watDateOn(2026,9,26,22,43,0);  // today 10:43 PM WAT
+const ROUND1_AT=()=>watDateOn(2026,9,26,22,45,0);       // today 10:45 PM WAT
+
+const ROSTER=[
+  {id:'p1',name:'Chierika Onele',rating:1623},
+  {id:'p2',name:'Obi Chukwuemeka',rating:1623},
+  {id:'p3',name:'Oluwaseun Ajayi',rating:1332},
+  {id:'p4',name:'Beckley Semilore',rating:1456},
+  {id:'p5',name:'Osafile Sage',rating:1330},
+  {id:'p6',name:'Princewill Isioma',rating:1330}
+];
+
+let me=null,T=null,unsub=null;
+let board=null,specBoard=null,game=null;
+let activeGameId=null,specGameId=null,sourceSquare=null;
+let clockTimer=null,phaseTimer=null,forfeitTimer=null;
+let selectedLoginId=null,resultShownFor={};
+let advancing=false;
+let flaggingGames={}; // prevent duplicate time-forfeit writes across clients
+
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function speakDotun(){try{new Audio(DOTUN[Math.floor(Math.random()*DOTUN.length)]).play().catch(()=>{});}catch(e){}}
+
+let femaleVoice=null, lastBreakSpoken=-1, breakVoiceReady=false;
+function pickFemaleVoice(){
+  try{
+    const voices=window.speechSynthesis.getVoices()||[];
+    // Prefer clear female English voices
+    const prefer=['Samantha','Google UK English Female','Google US English','Karen','Moira','Tessa','Victoria','Zira','Female'];
+    for(const name of prefer){
+      const v=voices.find(x=>x.name&&x.name.indexOf(name)>=0);
+      if(v){femaleVoice=v;break;}
+    }
+    if(!femaleVoice){
+      femaleVoice=voices.find(v=>/female/i.test(v.name||''))||
+                  voices.find(v=>v.lang&&v.lang.startsWith('en'))||
+                  voices[0]||null;
+    }
+    breakVoiceReady=true;
+  }catch(e){}
+}
+if(typeof speechSynthesis!=='undefined'){
+  pickFemaleVoice();
+  speechSynthesis.onvoiceschanged=pickFemaleVoice;
+}
+function speakFemale(text){
+  try{
+    if(!window.speechSynthesis) return;
+    if(!breakVoiceReady) pickFemaleVoice();
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.rate=0.95; u.pitch=1.15; u.volume=1;
+    if(femaleVoice) u.voice=femaleVoice;
+    u.lang=(femaleVoice&&femaleVoice.lang)||'en-US';
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+function speakBreakCountdown(leftSec){
+  // Speak at start, every 30s, and final 10/5 seconds — avoids overlapping chatter
+  const left=Math.max(0,leftSec|0);
+  if(left===lastBreakSpoken) return;
+  let msg=null;
+  if(left>=118){ // just started (~2:00)
+    msg='Please wait for the next round. Two minutes remaining.';
+  } else if(left===90){
+    msg='Please wait for the next round. One minute thirty seconds remaining.';
+  } else if(left===60){
+    msg='Please wait for the next round. One minute remaining.';
+  } else if(left===30){
+    msg='Thirty seconds until the next round.';
+  } else if(left===10){
+    msg='Ten seconds. Get ready for the next round.';
+  } else if(left===5){
+    msg='Five seconds.';
+  } else if(left===0){
+    msg='Break over. Please proceed to the next round.';
+  }
+  if(msg){
+    lastBreakSpoken=left;
+    speakFemale(msg);
+  }
+}
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function fmtTime(sec){sec=Math.max(0,Math.floor(sec));return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');}
+function playerById(id){return (T&&T.players||ROSTER).find(p=>p.id===id)||{name:'?',rating:0};}
+function expectedScore(ra,rb){return 1/(1+Math.pow(10,(rb-ra)/400));}
+function eloDelta(ra,rb,score){return Math.round(K_FACTOR*(score-expectedScore(ra,rb)));}
+function nowMs(){return Date.now();}
+
+function buildSchedule(players){
+  const ids=players.map(p=>p.id);
+  const arr=ids.slice();
+  if(arr.length%2===1) arr.push(null);
+  const n=arr.length, half=n/2;
+  const schedule=[];
+  const a=arr.slice();
+  // Full circle has n-1 rounds; we only keep TOTAL_ROUNDS
+  for(let r=0;r<n-1 && schedule.length<TOTAL_ROUNDS;r++){
+    const pairings=[];
+    for(let i=0;i<half;i++){
+      const A=a[i], B=a[n-1-i];
+      if(A===null||B===null){
+        pairings.push({bye:true,playerId:A||B,gameId:null});
+      } else {
+        const white=r%2===0?A:B, black=r%2===0?B:A;
+        pairings.push({bye:false,whiteId:white,blackId:black,gameId:'r'+(r+1)+'_'+white+'_'+black});
+      }
+    }
+    schedule.push({round:r+1,pairings});
+    const fixed=a[0], rest=a.slice(1); rest.unshift(rest.pop());
+    a.splice(0,a.length,fixed,...rest);
+  }
+  return schedule;
+}
+
+function emptyGame(whiteId,blackId,round,startClocksAt,runId){
+  return {
+    whiteId,blackId,round,runId:runId||null,
+    fen:new Chess().fen(),pgn:'',turn:'w',
+    status:'active', // clocks live from pairing
+    result:null,
+    whiteTime:BASE_TIME,blackTime:BASE_TIME,
+    // White's clock starts at pairing (late White loses on time if no moves)
+    clockStartedAt:startClocksAt||Date.now(),
+    lastMoveAt:startClocksAt||Date.now(),
+    drawOfferFrom:null,whiteEloDelta:null,blackEloDelta:null,eloApplied:false
+  };
+}
+
+function applyByesForRound(state,roundNum){
+  const rd=(state.schedule||[]).find(r=>r.round===roundNum);
+  if(!rd) return;
+  rd.pairings.forEach(p=>{
+    if(p.bye&&p.playerId){
+      const pl=state.players.find(x=>x.id===p.playerId);
+      if(pl&&!pl['_bye'+roundNum]){pl.score=(pl.score||0)+1;pl.played=(pl.played||0)+1;pl['_bye'+roundNum]=true;}
+    }
+  });
+}
+
+let startingTournament=false;
+async function forceStartTournament(){
+  startingTournament=false;
+  toast('Starting Round 1…');
+  // Always wipe and create a clean Round 1
+  try{
+    await db.collection('mcps_tournaments').doc(DOC_ID).delete();
+  }catch(e){}
+  await ensureTournamentStarted();
+  if(typeof listenTournament==='function') listenTournament();
+}
+function buildTournamentPayload(){
+  const startAt=Date.now();
+  const runId='run_'+startAt+'_'+Math.random().toString(36).slice(2,8);
+  const players=ROSTER.map(p=>({...p,startRating:p.rating,score:0,played:0}));
+  const schedule=buildSchedule(players);
+  const seen=new Set();
+  schedule.forEach(rd=>rd.pairings.forEach(p=>{
+    if(p.bye) return;
+    const key=[p.whiteId,p.blackId].sort().join('|');
+    if(seen.has(key)) throw new Error('Duplicate pairing');
+    seen.add(key);
+  }));
+  const games={};
+  const rd1=schedule[0];
+  if(rd1){
+    rd1.pairings.forEach(p=>{
+      if(!p.bye) games[p.gameId]=emptyGame(p.whiteId,p.blackId,1,startAt,runId);
+    });
+  }
+  const payload={status:'playing',currentRound:1,breakEndsAt:null,players,schedule,games,pairedAt:startAt,runId};
+  applyByesForRound(payload,1);
+  return payload;
+}
+
+function countFinishedRounds(d){
+  const schedule=d.schedule||[];
+  const games=d.games||{};
+  let done=0;
+  schedule.forEach(rd=>{
+    const all=(rd.pairings||[]).every(p=>{
+      if(p.bye) return true;
+      const g=games[p.gameId];
+      return g&&(g.status==='done'||g.result);
+    });
+    if(all&&rd.pairings&&rd.pairings.length) done++;
+  });
+  return done;
+}
+
+function isTrulyComplete(d){
+  if(!d) return false;
+  // Only complete when ALL scheduled rounds are finished
+  const schedule=d.schedule||[];
+  if(schedule.length<TOTAL_ROUNDS) return false;
+  return countFinishedRounds(d)>=TOTAL_ROUNDS;
+}
+
+async function ensureTournamentStarted(){
+  if(startingTournament) return;
+  if(nowMs()<ROUND1_AT()) return; // too early
+  startingTournament=true;
+  const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+  try{
+    const existing=await ref.get();
+    if(existing.exists){
+      const d=existing.data()||{};
+      // Valid in-progress event — keep it
+      if((d.status==='playing'||d.status==='break')&&d.schedule&&d.schedule.length>=TOTAL_ROUNDS&&d.games){
+        return;
+      }
+      // Truly finished all 5 rounds — keep podium
+      if(d.status==='finished'&&isTrulyComplete(d)){
+        return;
+      }
+      // Finished too early / broken / incomplete — wipe and start fresh
+      console.warn('Resetting incomplete tournament', d.status, countFinishedRounds(d));
+      await ref.delete().catch(()=>{});
+    }
+    const payload=buildTournamentPayload();
+    await ref.set(payload);
+    toast('Round 1 paired — good luck!');
+  } catch(e){
+    console.error('start', e);
+    toast('Pairing failed: '+(e.message||'retrying…'));
+    try{ await ref.set(buildTournamentPayload()); }catch(e2){ console.error('start retry', e2); }
+  } finally {
+    startingTournament=false;
+  }
+}
+
+/* ---- Tournament reset ---- */
+function openResetModal(){
+  const input=document.getElementById('reset-pass');
+  if(input) input.value='';
+  openModal('reset-modal');
+  setTimeout(()=>{try{input&&input.focus();}catch(e){}},50);
+}
+
+async function confirmResetTournament(){
+  const input=document.getElementById('reset-pass');
+  const pass=(input&&input.value||'').trim();
+  if(pass!==RESET_PASSWORD){toast('Wrong reset password');return;}
+  const btn=document.querySelector('#reset-modal .btn-danger');
+  if(btn){btn.disabled=true;btn.textContent='Resetting…';}
+  try{
+    if(clockTimer){clearInterval(clockTimer);clockTimer=null;}
+    activeGameId=null;specGameId=null;resumeAttempted=false;advancing=false;
+    clearSavedGame();
+    const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+    const payload=buildTournamentPayload();
+    await ref.set(payload);
+    T=payload;T.id=DOC_ID;
+    closeModal('reset-modal');
+    hideAll();
+    document.getElementById('screen-lobby').classList.remove('hidden');
+    document.getElementById('lobby-who').textContent=me?me.name:'Visitor · watching';
+    renderLobby();
+    toast('Tournament reset — Round 1 is live');
+  }catch(e){
+    console.error('reset tournament',e);
+    toast('Reset failed: '+(e.message||'try again'));
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Reset to Round 1';}
+  }
+}
+
+/* ---- phase routing ---- */
+function hideAll(){['screen-closed','screen-waiting','screen-welcome','screen-login','screen-lobby','screen-play','screen-spec','screen-finished'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('hidden');});}
+function tsMillis(t){
+  if(!t) return 0;
+  if(typeof t.toMillis==='function') return t.toMillis();
+  if(typeof t==='number') return t;
+  if(t.seconds!=null) return t.seconds*1000+Math.floor((t.nanoseconds||0)/1e6);
+  return Number(t)||0;
+}
+
+function routeByTime(){
+  const now=nowMs();
+  const doors=DOORS_OPEN_AT();
+  const r1=ROUND1_AT();
+
+  // Already in play/spec/finished — don't kick out
+  if(!document.getElementById('screen-play').classList.contains('hidden')) return;
+  if(!document.getElementById('screen-spec').classList.contains('hidden')) return;
+  if(!document.getElementById('screen-finished').classList.contains('hidden')) return;
+  if(T&&T.status==='finished'){ renderFinished(); return; }
+
+  if(now<doors){
+    hideAll();document.getElementById('screen-closed').classList.remove('hidden');
+    const left=Math.ceil((doors-now)/1000);
+    document.getElementById('closed-count').textContent=fmtTime(left);
+    return;
+  }
+
+  if(now<r1){
+    // Between doors and pairing — waiting room (after login) or welcome
+    if(me || loadMe()){
+      hideAll();document.getElementById('screen-waiting').classList.remove('hidden');
+      document.getElementById('wait-who').textContent=me?('Logged in as '+me.name):'';
+      const left=Math.ceil((r1-now)/1000);
+      document.getElementById('wait-count').textContent=fmtTime(left);
+      document.getElementById('wait-label').textContent='Until Round 1 pairing · 10:45 PM WAT';
+      document.getElementById('wait-message').textContent='Hold tight. At 10:45 PM everyone is paired for Round 1 — clocks start then.';
+    } else {
+      // show welcome so they can login into waiting
+      if(document.getElementById('screen-login').classList.contains('hidden') &&
+         document.getElementById('screen-welcome').classList.contains('hidden')){
+        hideAll();document.getElementById('screen-welcome').classList.remove('hidden');
+      }
+      // update nothing else
+    }
+    return;
+  }
+
+  // Past 10:45 — ensure tournament + lobby
+  ensureTournamentStarted().then(()=>{
+    if(document.getElementById('screen-play').classList.contains('hidden') &&
+       document.getElementById('screen-spec').classList.contains('hidden') &&
+       document.getElementById('screen-login').classList.contains('hidden')){
+      if(me || loadMe()){
+        enterLobby();
+      } else if(document.getElementById('screen-welcome').classList.contains('hidden') &&
+                document.getElementById('screen-lobby').classList.contains('hidden')){
+        hideAll();document.getElementById('screen-welcome').classList.remove('hidden');
+      }
+    }
+  });
+}
+
+function showWelcome(){
+  if(nowMs()<DOORS_OPEN_AT()){routeByTime();return;}
+  hideAll();document.getElementById('screen-welcome').classList.remove('hidden');
+}
+function showLogin(){
+  if(nowMs()<DOORS_OPEN_AT()){routeByTime();return;}
+  hideAll();document.getElementById('screen-login').classList.remove('hidden');
+  selectedLoginId=null;
+  document.getElementById('player-pick-list').innerHTML=ROSTER.map(p=>
+    `<button type="button" class="player-card" data-id="${p.id}" onclick="selectPlayer('${p.id}')">
+      <div class="font-black text-white">${esc(p.name)}</div>
+      <div class="text-xs text-amber-300/90 font-bold mt-0.5">Rating ${p.rating}</div>
+    </button>`
+  ).join('');
+}
+function selectPlayer(id){
+  selectedLoginId=id;
+  document.querySelectorAll('.player-card').forEach(el=>el.classList.toggle('selected',el.dataset.id===id));
+}
+function saveMe(){
+  try{
+    const s=JSON.stringify(me);
+    sessionStorage.setItem('mcps_trial_me',s);
+    localStorage.setItem('mcps_trial_me',s);
+  }catch(e){}
+}
+function loadMe(){
+  try{
+    const s=sessionStorage.getItem('mcps_trial_me')||localStorage.getItem('mcps_trial_me');
+    if(s) me=JSON.parse(s);
+  }catch(e){ me=null; }
+  return me;
+}
+function clearMe(){
+  me=null;
+  try{ sessionStorage.removeItem('mcps_trial_me'); localStorage.removeItem('mcps_trial_me'); }catch(e){}
+  clearSavedGame();
+}
+function saveActiveGame(gid){
+  try{
+    if(gid) localStorage.setItem('mcps_trial_game',gid);
+    else localStorage.removeItem('mcps_trial_game');
+  }catch(e){}
+}
+function loadSavedGame(){
+  try{ return localStorage.getItem('mcps_trial_game'); }catch(e){ return null; }
+}
+function clearSavedGame(){
+  try{ localStorage.removeItem('mcps_trial_game'); }catch(e){}
+}
+
+function doLogin(){
+  if(!selectedLoginId){toast('Select your name');return;}
+  if((document.getElementById('login-pass').value||'').trim()!==PASSWORD){toast('Wrong password');return;}
+  const p=ROSTER.find(x=>x.id===selectedLoginId);
+  me={id:p.id,name:p.name};
+  saveMe();
+  if(nowMs()<ROUND1_AT()){
+    hideAll();document.getElementById('screen-waiting').classList.remove('hidden');
+    document.getElementById('wait-who').textContent='Logged in as '+me.name;
+    routeByTime();
+  } else enterLobby();
+}
+function enterAsVisitor(){
+  clearMe();
+  if(nowMs()<ROUND1_AT()){
+    hideAll();document.getElementById('screen-waiting').classList.remove('hidden');
+    document.getElementById('wait-who').textContent='Visitor mode — boards open at 10:45 PM';
+    routeByTime();
+  } else enterLobby();
+}
+function enterLobby(){
+  if(T&&T.status==='finished'){
+    listenTournament();
+    renderFinished();
+    return;
+  }
+  hideAll();document.getElementById('screen-lobby').classList.remove('hidden');
+  document.getElementById('lobby-who').textContent=me?me.name:'Visitor · watching';
+  listenTournament();
+}
+function backToLobby(){
+  // Keep saved game so refresh can resume; only clear if game is over
+  if(activeGameId&&T&&T.games&&T.games[activeGameId]&&(T.games[activeGameId].status==='done'||T.games[activeGameId].result)){
+    clearSavedGame();
+  }
+  activeGameId=null;specGameId=null;
+  if(clockTimer){clearInterval(clockTimer);clockTimer=null;}
+  hideAll();document.getElementById('screen-lobby').classList.remove('hidden');
+  renderLobby();
+}
+
+/** After refresh/exit: reopen the player's unfinished game */
+let resumeAttempted=false;
+function tryResumeMyGame(){
+  if(!me||!T||T.status!=='playing') return false;
+  // Prefer current-round live game
+  let gid=findMyLiveGameId();
+  if(gid==='BYE'){ clearSavedGame(); return false; }
+  if(!gid){
+    const saved=loadSavedGame();
+    if(saved&&T.games&&T.games[saved]){
+      const g=T.games[saved];
+      if(g.status!=='done'&&!g.result&&(g.whiteId===me.id||g.blackId===me.id)) gid=saved;
+      else clearSavedGame();
+    }
+  }
+  if(!gid) return false;
+  // Don't interrupt if already on play/spec for this game
+  if(activeGameId===gid&&!document.getElementById('screen-play').classList.contains('hidden')) return true;
+  openGame(gid);
+  toast('Welcome back — game resumed');
+  return true;
+}
+
+function listenTournament(){
+  if(unsub) unsub();
+  unsub=db.collection('mcps_tournaments').doc(DOC_ID).onSnapshot(doc=>{
+    if(!doc.exists){
+      T=null;
+      renderLobby();
+      if(nowMs()>=ROUND1_AT()) ensureTournamentStarted();
+      return;
+    }
+    T=doc.data();T.id=doc.id;
+    renderLobby();
+    if(activeGameId && !document.getElementById('screen-play').classList.contains('hidden')) syncPlayBoard();
+    if(specGameId && !document.getElementById('screen-spec').classList.contains('hidden')) syncSpecBoard();
+    // Auto-resume after refresh/exit if player has a live game
+    if(me&&T.status==='playing'){
+      const onPlay=!document.getElementById('screen-play').classList.contains('hidden');
+      const onSpec=!document.getElementById('screen-spec').classList.contains('hidden');
+      if(!onPlay&&!onSpec){
+        if(!resumeAttempted){ resumeAttempted=true; tryResumeMyGame(); }
+        else {
+          // Soft check: still show Resume button state via renderLobby
+        }
+      }
+    }
+    checkTimedOutGames().then(()=>maybeAdvanceRound());
+  },err=>{console.error(err);toast('Connection issue');});
+  // Keep checking clocks / break / pending scores even without new snapshots
+  if(forfeitTimer) clearInterval(forfeitTimer);
+  forfeitTimer=setInterval(()=>{
+    if(!T) return;
+    if(T.status==='playing') checkTimedOutGames().then(()=>maybeAdvanceRound());
+    else if(T.status==='break'){ updateBreakTimer(); maybeAdvanceRound(); }
+    else if(T.status==='finished'){
+      // Update numbers only — do not hideAll/show again (prevents flicker)
+      if(document.getElementById('screen-finished')&&
+         !document.getElementById('screen-finished').classList.contains('hidden')){
+        updateFinishedContent();
+      }
+    }
+    else reconcilePendingResults();
+  },500);
+}
+
+/** Result of the direct game between a and b: 1 if a beat b, 0 if b beat a, 0.5 draw/no game */
+function headToHeadScore(aId,bId){
+  const games=T&&T.games||{};
+  for(const g of Object.values(games)){
+    if(!g||g.status!=='done'||!g.result) continue;
+    if(g.whiteId===aId&&g.blackId===bId){
+      if(g.result==='1-0') return 1;
+      if(g.result==='0-1') return 0;
+      if(g.result==='1/2-1/2') return 0.5;
+    }
+    if(g.whiteId===bId&&g.blackId===aId){
+      if(g.result==='0-1') return 1;
+      if(g.result==='1-0') return 0;
+      if(g.result==='1/2-1/2') return 0.5;
+    }
+  }
+  return 0.5;
+}
+
+/** Number of wins while playing Black */
+function blackWins(playerId){
+  const games=T&&T.games||{};
+  let n=0;
+  for(const g of Object.values(games)){
+    if(!g||g.status!=='done'||g.result!=='0-1') continue;
+    if(g.blackId===playerId) n++;
+  }
+  return n;
+}
+
+/**
+ * Standings order:
+ * 1) Points  2) Head-to-head  3) Wins with Black  4) Rating
+ */
+function sortedPlayers(){
+  return (T&&T.players||[]).slice().sort((a,b)=>{
+    const sa=a.score||0, sb=b.score||0;
+    if(sb!==sa) return sb-sa;
+    // Tiebreaker 1: head-to-head
+    const h2h=headToHeadScore(a.id,b.id);
+    if(h2h!==0.5) return h2h>0.5?-1:1;
+    // Tiebreaker 2: more wins as Black ranks higher
+    const ba=blackWins(a.id), bb=blackWins(b.id);
+    if(bb!==ba) return bb-ba;
+    return (b.rating||0)-(a.rating||0);
+  });
+}
+
+let finishedCelebrated=false;
+
+function updateFinishedContent(){
+  const rows=sortedPlayers();
+  const champ=rows[0];
+  const el=id=>document.getElementById(id);
+  if(el('champ-name')) el('champ-name').textContent=champ?champ.name:'—';
+  if(el('champ-sub')) el('champ-sub').textContent=champ?((champ.score||0)+' pts · Rating '+(champ.rating||0)+' · Gold medal on Tuesday'):'';
+  const setP=(n,nameId,ptsId)=>{
+    const p=rows[n];
+    if(el(nameId)) el(nameId).textContent=p?p.name:'—';
+    if(el(ptsId)) el(ptsId).textContent=p?((p.score||0)+' pts'):'';
+  };
+  setP(0,'podium-1','podium-1-pts');
+  setP(1,'podium-2','podium-2-pts');
+  setP(2,'podium-3','podium-3-pts');
+  if(el('final-standings-body')){
+    el('final-standings-body').innerHTML=rows.map((p,i)=>{
+      const cls=i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
+      const delta=(p.rating||0)-(p.startRating||p.rating||0);
+      return `<tr>
+        <td class="${cls}">${i+1}</td>
+        <td class="font-bold text-white">${esc(p.name)}${me&&me.id===p.id?' <span class="text-amber-400 text-[10px]">YOU</span>':''}</td>
+        <td class="font-black text-amber-300">${p.score||0}</td>
+        <td>${p.rating||0}</td>
+        <td class="${delta>0?'text-emerald-400':delta<0?'text-rose-400':'text-slate-500'}">${(delta>=0?'+':'')+delta}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function renderFinished(){
+  const fin=document.getElementById('screen-finished');
+  const already=fin&&!fin.classList.contains('hidden');
+  if(!already){
+    hideAll();
+    fin.classList.remove('hidden');
+  }
+  updateFinishedContent();
+  if(!finishedCelebrated){
+    finishedCelebrated=true;
+    playSfx(SOUND_GAMEEND,0.9);
+    speakDotun();
+  }
+}
+
+async function showFinalStandings(){
+  const btn=document.getElementById('btn-final-standings');
+  if(btn){btn.disabled=true;btn.textContent='Loading…';}
+  try{
+    await recomputeAllScores();
+    await reconcilePendingResults();
+    // Ensure tournament marked finished
+    if(T&&T.status!=='finished'){
+      await db.collection('mcps_tournaments').doc(DOC_ID).update({status:'finished',breakEndsAt:null});
+    }
+    // Wait for snapshot
+    for(let i=0;i<10;i++){
+      await new Promise(r=>setTimeout(r,200));
+      if(T&&T.status==='finished') break;
+    }
+    renderFinished();
+  } catch(e){
+    console.error(e);
+    renderFinished();
+  } finally {
+    if(btn){btn.disabled=false;btn.textContent='🏆 See final standings';}
+  }
+}
+
+function renderLobby(){
+  if(!T){
+    document.getElementById('lobby-round').textContent='Starting…';
+    document.getElementById('lobby-status').textContent='Pairing';
+    document.getElementById('pairings-box').innerHTML='<p class="text-sm text-slate-500">Pairing Round 1…</p><button type="button" class="btn-gold w-full mt-3" onclick="forceStartTournament()">⚡ Start Round 1 now</button>';
+    // Keep trying to create the tournament document
+    if(nowMs()>=ROUND1_AT()) ensureTournamentStarted();
+    return;
+  }
+  const st=T.status||'playing';
+  // Full tournament over → podium ONLY if all 5 rounds really finished
+  if(st==='finished'){
+    if(!isTrulyComplete(T)){
+      // False finish (e.g. after round 1) — reopen as playing/break and continue
+      const rdNum=T.currentRound||1;
+      const rd=(T.schedule||[]).find(r=>r.round===rdNum);
+      const allDone=rd&&roundAllFinished(rd,T.games);
+      const fix=allDone&&rdNum<TOTAL_ROUNDS
+        ? {status:'break',breakEndsAt:firebase.firestore.Timestamp.fromMillis(Date.now()+BREAK_SEC*1000)}
+        : {status:'playing',breakEndsAt:null};
+      db.collection('mcps_tournaments').doc(DOC_ID).update(fix).catch(()=>{});
+      // Fall through to normal lobby with corrected intent
+    } else {
+      const onPlay=!document.getElementById('screen-play').classList.contains('hidden');
+      const onSpec=!document.getElementById('screen-spec').classList.contains('hidden');
+      if(!onPlay&&!onSpec) renderFinished();
+      return;
+    }
+  }
+  // Leave podium only if tournament is no longer finished
+  const fin=document.getElementById('screen-finished');
+  if(fin&&!fin.classList.contains('hidden')){
+    // Keep lobby under for navigation, but don't hide finished if we got here by mistake
+    fin.classList.add('hidden');
+    document.getElementById('screen-lobby').classList.remove('hidden');
+  }
+  document.getElementById('lobby-round').textContent='Round '+(T.currentRound||1)+' / '+TOTAL_ROUNDS;
+  document.getElementById('lobby-status').textContent=st==='break'?'Break':(st==='finished'?'Finished':'Live');
+  document.getElementById('lobby-status').className='text-sm font-black '+(st==='break'?'text-violet-300':st==='finished'?'text-amber-400':'text-emerald-400');
+
+  const bb=document.getElementById('break-banner');
+  const proceedBtn=document.getElementById('btn-proceed-round');
+  const finalBtn=document.getElementById('btn-final-standings');
+  const rdNum=T.currentRound||1;
+  const rdNow=(T.schedule||[]).find(r=>r.round===rdNum);
+  // ONLY true when we are on the last round AND every game in that round is done
+  const lastRoundDone=rdNum>=TOTAL_ROUNDS&&rdNow&&roundAllFinished(rdNow,T.games)&&isTrulyComplete(T);
+
+  if(st==='break'){
+    bb.classList.remove('hidden');
+    if(lastRoundDone){
+      document.getElementById('break-timer').textContent='Done';
+      document.getElementById('break-hint').textContent='All 5 rounds complete — view the podium and final standings';
+      if(proceedBtn) proceedBtn.classList.add('hidden');
+      if(finalBtn) finalBtn.classList.remove('hidden');
+    } else {
+      // Mid-tournament break — never show final standings here
+      if(lastBreakSpoken<0||lastBreakSpoken>120) lastBreakSpoken=-1;
+      updateBreakTimer();
+      if(finalBtn) finalBtn.classList.add('hidden');
+    }
+  } else if(st==='playing'&&lastRoundDone){
+    // Last round games all done while still "playing" → move to finished
+    bb.classList.remove('hidden');
+    document.getElementById('break-timer').textContent='Done';
+    document.getElementById('break-hint').textContent='All 5 rounds complete — view final standings';
+    if(proceedBtn) proceedBtn.classList.add('hidden');
+    if(finalBtn) finalBtn.classList.remove('hidden');
+    recomputeAllScores().then(()=>{
+      db.collection('mcps_tournaments').doc(DOC_ID).update({status:'finished',breakEndsAt:null}).catch(()=>{});
+    });
+  } else {
+    bb.classList.add('hidden');
+    if(proceedBtn) proceedBtn.classList.add('hidden');
+    if(finalBtn) finalBtn.classList.add('hidden');
+    lastBreakSpoken=-1;
+    try{if(window.speechSynthesis) speechSynthesis.cancel();}catch(e){}
+  }
+
+  const rd=(T.schedule||[]).find(r=>r.round===(T.currentRound||1));
+  const box=document.getElementById('pairings-box');
+  if(!rd){box.innerHTML='';return;}
+  let myGame=null;
+  box.innerHTML=rd.pairings.map(p=>{
+    if(p.bye){
+      return `<div class="bg-white/5 rounded-xl px-3 py-2.5 text-sm"><span class="font-bold text-white">${esc(playerById(p.playerId).name)}</span> <span class="text-slate-500">bye (1 pt)</span></div>`;
+    }
+    const g=(T.games||{})[p.gameId]||{};
+    const w=playerById(p.whiteId), b=playerById(p.blackId);
+    const res=g.result?` · <span class="text-amber-300 font-black">${g.result}</span>`:'';
+    const live=g.status==='active'?'<span class="live-dot ml-1"></span>':'';
+    if(me&&(p.whiteId===me.id||p.blackId===me.id)) myGame=p;
+    const watchLabel=g.status==='done'?'View':'Watch';
+    return `<div class="bg-white/5 rounded-xl px-3 py-2.5 text-sm flex flex-wrap items-center justify-between gap-2">
+      <div><span class="text-slate-500 text-[10px] font-black uppercase">⬜ White</span> <span class="font-bold text-white">${esc(w.name)}</span>
+      <span class="text-amber-400 font-black mx-1">vs</span>
+      <span class="text-slate-500 text-[10px] font-black uppercase">⬛ Black</span> <span class="font-bold text-white">${esc(b.name)}</span>${res}${live}</div>
+      <button type="button" class="btn-soft" style="padding:6px 10px;font-size:10px" onclick="spectateGame('${p.gameId}')">${watchLabel}</button>
+    </div>`;
+  }).join('');
+
+  const act=document.getElementById('my-game-actions');
+  if(myGame&&me){
+    const g=(T.games||{})[myGame.gameId]||{};
+    if(g.status!=='done'&&!g.result){
+      act.classList.remove('hidden');
+      const btn=document.getElementById('btn-play-my-game');
+      btn.textContent='▶ Resume my game — clock is running';
+      btn.onclick=()=>openGame(myGame.gameId);
+      saveActiveGame(myGame.gameId);
+    } else {
+      act.classList.add('hidden');
+      clearSavedGame();
+    }
+  } else act.classList.add('hidden');
+
+  // Show unstick button when every pairing has a result but still on "Live"
+  const rca=document.getElementById('round-complete-actions');
+  if(rca){
+    if(st==='playing'&&rd&&roundAllFinished(rd,T.games)){
+      rca.classList.remove('hidden');
+      // Also auto-try advance so it doesn't stay stuck
+      maybeAdvanceRound(true);
+    } else {
+      rca.classList.add('hidden');
+    }
+  }
+
+  const liveBox=document.getElementById('live-games-box');
+  const allGames=Object.entries(T.games||{}).sort((a,b)=>(a[1].round||0)-(b[1].round||0));
+  if(!allGames.length) liveBox.innerHTML='<p class="text-sm text-slate-500">No boards yet.</p>';
+  else liveBox.innerHTML=allGames.map(([gid,g])=>{
+    const w=playerById(g.whiteId), b=playerById(g.blackId);
+    const live=g.status==='active';
+    const tag=live?'Live':'Done';
+    const tagCls=live?'text-rose-300':'text-slate-500';
+    return `<button type="button" class="player-card" onclick="spectateGame('${gid}')">
+      <div class="flex items-center gap-2 mb-1">${live?'<span class="live-dot"></span>':''}<span class="text-[10px] font-black uppercase ${tagCls}">${tag} · Round ${g.round}${g.result?' · '+g.result:''}</span></div>
+      <div class="text-sm"><span class="text-slate-400">⬜</span> <strong>${esc(w.name)}</strong> <span class="text-amber-400">vs</span> <span class="text-slate-400">⬛</span> <strong>${esc(b.name)}</strong></div>
+      <div class="text-[10px] text-amber-400/90 mt-1 font-bold">${live?'Watch live':'View game'}</div>
+    </button>`;
+  }).join('');
+
+  const rows=sortedPlayers();
+  document.getElementById('standings-body').innerHTML=rows.map((p,i)=>{
+    const cls=i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
+    const delta=(p.rating||0)-(p.startRating||p.rating||0);
+    return `<tr>
+      <td class="${cls}">${i+1}</td>
+      <td class="font-bold text-white">${esc(p.name)}${me&&me.id===p.id?' <span class="text-amber-400 text-[10px]">YOU</span>':''}</td>
+      <td class="font-black text-amber-300">${p.score||0}</td>
+      <td>${p.rating||0}</td>
+      <td class="${delta>0?'text-emerald-400':delta<0?'text-rose-400':'text-slate-500'}">${(delta>=0?'+':'')+delta}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateBreakTimer(){
+  if(!T) return;
+  const end=tsMillis(T.breakEndsAt);
+  const left=Math.max(0,Math.ceil((end-Date.now())/1000));
+  const timerEl=document.getElementById('break-timer');
+  const hintEl=document.getElementById('break-hint');
+  const btn=document.getElementById('btn-proceed-round');
+  if(timerEl) timerEl.textContent=fmtTime(left);
+  if(left<=0){
+    if(hintEl) hintEl.textContent='Break over — proceed to the next round';
+    if(btn) btn.classList.remove('hidden');
+  } else {
+    if(hintEl) hintEl.textContent='Next round pairs when the timer hits zero';
+    if(btn) btn.classList.add('hidden');
+  }
+  // Female voice reads the countdown during the break
+  if(T.status==='break') speakBreakCountdown(left);
+}
+
+/** Direct Firestore write: leave break and start the next round (no fragile transaction). */
+async function startNextRoundNow(){
+  const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+  const snap=await ref.get();
+  if(!snap.exists) throw new Error('Tournament not found');
+  const d=snap.data()||{};
+  const cur=d.currentRound||1;
+
+  // Round progression is strictly sequential: 1 → 2 → 3 → 4 → 5.
+  // A finished tournament can only remain finished after all five rounds are complete.
+  if(d.status==='finished') return null;
+  // Never skip a round and never create a new round while the current one is live.
+  if(d.status==='playing') return cur;
+  if(d.status!=='break') return cur;
+
+  // After the LAST round is fully done → finished
+  if(cur>=TOTAL_ROUNDS&&isTrulyComplete(d)){
+    await recomputeAllScores();
+    await ref.update({status:'finished',breakEndsAt:null});
+    return null;
+  }
+  const next=cur+1;
+  if(next>TOTAL_ROUNDS) return null;
+  // The schedule must contain exactly the immediately following round.
+  // If it is missing, do not skip ahead or silently rebuild it.
+  // If still on round < TOTAL and somehow marked past last, start next
+  let nrd=(d.schedule||[]).find(r=>r.round===next);
+  if(!nrd&&next<=TOTAL_ROUNDS){
+    // Schedule incomplete — rebuild schedule without wiping scores/games
+    console.warn('Schedule missing round', next);
+    return null;
+  }
+  if(!nrd){
+    if(isTrulyComplete(d)){
+      await recomputeAllScores();
+      await ref.update({status:'finished',breakEndsAt:null});
+    }
+    return null;
+  }
+  const startAt=Date.now();
+  const players=(d.players||[]).map(p=>({...p}));
+  const tmp={players,schedule:d.schedule};
+  applyByesForRound(tmp,next);
+  const updates={
+    status:'playing',
+    currentRound:next,
+    breakEndsAt:null,
+    players:tmp.players
+  };
+  nrd.pairings.forEach(p=>{
+    if(!p.bye&&p.gameId){
+      updates['games.'+p.gameId]=emptyGame(p.whiteId,p.blackId,next,startAt,d.runId);
+    }
+  });
+  await ref.update(updates);
+  return next;
+}
+
+function findMyLiveGameId(){
+  if(!T||!me) return null;
+  const rdNum=T.currentRound||1;
+  const rd=(T.schedule||[]).find(r=>r.round===rdNum);
+  if(!rd) return null;
+  const bye=rd.pairings.find(p=>p.bye&&p.playerId===me.id);
+  if(bye) return 'BYE';
+  const mine=rd.pairings.find(p=>!p.bye&&(p.whiteId===me.id||p.blackId===me.id));
+  if(!mine||!mine.gameId) return null;
+  const g=(T.games||{})[mine.gameId];
+  if(g&&(g.status==='done'||g.result)) return null;
+  return mine.gameId;
+}
+
+/** After break: force-advance, wait for new pairings, open YOUR board immediately */
+async function proceedToNextRound(){
+  const btn=document.getElementById('btn-proceed-round');
+  if(btn){btn.disabled=true;btn.textContent='Opening your board…';}
+  playSfx(SOUND_NOTIFY,0.9);
+  const prevRound=T?(T.currentRound||1):1;
+  try{
+    advancing=false;
+    let next=null;
+    try{
+      next=await startNextRoundNow();
+    }catch(e){
+      console.error('startNextRoundNow',e);
+      toast('Advance failed: '+(e.message||e));
+      // still try the old path
+      await maybeAdvanceRound(true);
+    }
+    if(next===null&&T&&T.status==='finished'){
+      renderFinished();
+      return;
+    }
+    // Poll until local T shows the new round
+    let myGid=null;
+    for(let i=0;i<30;i++){
+      await new Promise(r=>setTimeout(r,250));
+      if(!T) continue;
+      if(T.status==='finished'){ renderFinished(); return; }
+      if(T.status==='playing'&&(T.currentRound||1)>prevRound){
+        myGid=findMyLiveGameId();
+        if(myGid==='BYE'){ toast('You have a bye this round'); return; }
+        if(myGid) break;
+        // Games map may lag — keep waiting a bit
+      }
+    }
+    if(!myGid) myGid=findMyLiveGameId();
+    if(myGid&&myGid!=='BYE'){
+      await openGame(myGid);
+      playSfx(SOUND_NOTIFY,0.75);
+      return;
+    }
+    if(T&&T.status==='playing'){
+      toast('Round '+(T.currentRound||'')+' is live — open your board');
+      hideAll();document.getElementById('screen-lobby').classList.remove('hidden');
+      renderLobby();
+      return;
+    }
+    toast('Still on break — try Proceed again');
+  } catch(e){
+    console.error('proceed',e);
+    toast('Error: '+(e.message||'try again'));
+  } finally {
+    if(btn){btn.disabled=false;btn.textContent='⚡ Proceed to next round';}
+  }
+}
+
+function gameRemainingSec(g){
+  if(!g||g.status!=='active') return 9999;
+  const base=g.turn==='w'?(g.whiteTime||BASE_TIME):(g.blackTime||BASE_TIME);
+  const anchor=tsMillis(g.lastMoveAt)||tsMillis(g.clockStartedAt)||Date.now();
+  const elapsed=Math.floor((Date.now()-anchor)/1000);
+  return base-elapsed;
+}
+
+/** Any client (lobby / play / spectate) can flag a timed-out game.
+ *  No-shows and abandoned clocks award the point so the round can advance. */
+async function checkTimedOutGames(){
+  if(!T||T.status!=='playing') return;
+  const games=T.games||{};
+  const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+  for(const gid of Object.keys(games)){
+    const g=games[gid];
+    if(!g||g.status!=='active') continue;
+    if(flaggingGames[gid]) continue;
+    if(gameRemainingSec(g)>0) continue;
+    flaggingGames[gid]=true;
+    const result=g.turn==='w'?'0-1':'1-0';
+    try{
+      let applied=false;
+      await db.runTransaction(async (tx)=>{
+        const snap=await tx.get(ref);
+        if(!snap.exists) return;
+        const state=snap.data();
+        if(T&&T.runId&&state.runId!==T.runId) return;
+        const cur=(state.games||{})[gid];
+        if(!cur||cur.status!=='active') return;
+        if(T&&T.runId&&cur.runId!==T.runId) return;
+        if(gameRemainingSec(cur)>0) return;
+        // Apply result + scores in ONE transaction so standings always update
+        const players=(state.players||[]).map(p=>({...p}));
+        const w=players.find(p=>p.id===cur.whiteId);
+        const b=players.find(p=>p.id===cur.blackId);
+        const updates={
+          ['games.'+gid+'.status']:'done',
+          ['games.'+gid+'.result']:result
+        };
+        if(w&&b&&!cur.eloApplied){
+          let scoreW=result==='1-0'?1:(result==='0-1'?0:0.5);
+          const dW=eloDelta(w.rating||1500,b.rating||1500,scoreW);
+          const dB=eloDelta(b.rating||1500,w.rating||1500,1-scoreW);
+          w.rating=(w.rating||1500)+dW;
+          b.rating=(b.rating||1500)+dB;
+          w.score=(w.score||0)+scoreW;
+          b.score=(b.score||0)+(1-scoreW);
+          w.played=(w.played||0)+1;
+          b.played=(b.played||0)+1;
+          updates.players=players;
+          updates['games.'+gid+'.eloApplied']=true;
+          updates['games.'+gid+'.whiteEloDelta']=dW;
+          updates['games.'+gid+'.blackEloDelta']=dB;
+        }
+        tx.update(ref, updates);
+        applied=true;
+      });
+      if(!applied){
+        // Fallback without transaction (still better than stuck)
+        await ref.update({
+          ['games.'+gid+'.status']:'done',
+          ['games.'+gid+'.result']:result
+        }).catch(()=>{});
+        await finalizeResult(gid,result);
+      }
+      // After flagging, try to advance round
+      setTimeout(()=>maybeAdvanceRound(),400);
+    }catch(e){
+      console.error('time forfeit',e);
+      // Last-resort write
+      try{
+        await ref.update({['games.'+gid+'.status']:'done',['games.'+gid+'.result']:result});
+        await finalizeResult(gid,result);
+        setTimeout(()=>maybeAdvanceRound(),400);
+      }catch(e2){ console.error('forfeit fallback',e2); }
+    } finally {
+      setTimeout(()=>{ delete flaggingGames[gid]; },5000);
+    }
+  }
+}
+
+/**
+ * Rebuild every player's score, played count, and rating from scratch
+ * using all finished games + byes. Fixes missing points.
+ */
+async function recomputeAllScores(){
+  const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+  try{
+    await db.runTransaction(async (tx)=>{
+      const snap=await tx.get(ref);
+      if(!snap.exists) return;
+      const state=snap.data();
+      const players=(state.players||[]).map(p=>({
+        ...p,
+        score:0,
+        played:0,
+        rating:p.startRating!=null?p.startRating:(p.rating||1500)
+      }));
+      const byId={};
+      players.forEach(p=>{ byId[p.id]=p; });
+
+      // Byes from schedule
+      (state.schedule||[]).forEach(rd=>{
+        (rd.pairings||[]).forEach(p=>{
+          if(p.bye&&p.playerId&&byId[p.playerId]){
+            byId[p.playerId].score+=1;
+            byId[p.playerId].played+=1;
+          }
+        });
+      });
+
+      // Games in round order
+      const games=Object.entries(state.games||{}).map(([id,g])=>({id,...g}))
+        .filter(g=>g.result&&(g.status==='done'||g.result))
+        .sort((a,b)=>(a.round||0)-(b.round||0));
+
+      const gamePatches={};
+      games.forEach(g=>{
+        const w=byId[g.whiteId], b=byId[g.blackId];
+        if(!w||!b) return;
+        let scoreW=0.5;
+        if(g.result==='1-0') scoreW=1;
+        else if(g.result==='0-1') scoreW=0;
+        const dW=eloDelta(w.rating,b.rating,scoreW);
+        const dB=eloDelta(b.rating,w.rating,1-scoreW);
+        w.rating=w.rating+dW;
+        b.rating=b.rating+dB;
+        w.score+=scoreW;
+        b.score+=(1-scoreW);
+        w.played+=1;
+        b.played+=1;
+        gamePatches['games.'+g.id+'.eloApplied']=true;
+        gamePatches['games.'+g.id+'.whiteEloDelta']=dW;
+        gamePatches['games.'+g.id+'.blackEloDelta']=dB;
+        gamePatches['games.'+g.id+'.status']='done';
+        gamePatches['games.'+g.id+'.result']=g.result;
+      });
+
+      tx.update(ref, Object.assign({players}, gamePatches));
+    });
+  } catch(e){
+    console.error('recompute scores', e);
+    // Fallback non-transaction rebuild of scores only
+    try{
+      const snap=await ref.get();
+      if(!snap.exists) return;
+      const state=snap.data();
+      const players=(state.players||[]).map(p=>({
+        ...p,
+        score:0,
+        played:0,
+        rating:p.startRating!=null?p.startRating:(p.rating||1500)
+      }));
+      const byId={};
+      players.forEach(p=>{ byId[p.id]=p; });
+      (state.schedule||[]).forEach(rd=>{
+        (rd.pairings||[]).forEach(p=>{
+          if(p.bye&&p.playerId&&byId[p.playerId]){ byId[p.playerId].score+=1; byId[p.playerId].played+=1; }
+        });
+      });
+      Object.values(state.games||{}).filter(g=>g&&g.result).forEach(g=>{
+        const w=byId[g.whiteId], b=byId[g.blackId];
+        if(!w||!b) return;
+        let scoreW=0.5;
+        if(g.result==='1-0') scoreW=1; else if(g.result==='0-1') scoreW=0;
+        const dW=eloDelta(w.rating,b.rating,scoreW);
+        const dB=eloDelta(b.rating,w.rating,1-scoreW);
+        w.rating+=dW; b.rating+=dB;
+        w.score+=scoreW; b.score+=(1-scoreW);
+        w.played+=1; b.played+=1;
+      });
+      await ref.update({players});
+    }catch(e2){ console.error('recompute fallback', e2); }
+  }
+}
+
+/** Apply score + Elo for any finished game that still has eloApplied !== true */
+async function reconcilePendingResults(){
+  if(!T||!T.games) return;
+  const pending=Object.keys(T.games).filter(gid=>{
+    const g=T.games[gid];
+    return g&&(g.status==='done'||g.result)&&g.result&&!g.eloApplied;
+  });
+  if(pending.length>=2){
+    // Multiple missing — full recompute is safer
+    await recomputeAllScores();
+    return;
+  }
+  for(const gid of pending){
+    await finalizeResult(gid, T.games[gid].result);
+  }
+}
+
+function isGameFinished(g){
+  return !!(g && (g.status==='done' || g.result));
+}
+
+function roundAllFinished(rd, games){
+  if(!rd) return false;
+  return rd.pairings.every(p=>{
+    if(p.bye) return true;
+    return isGameFinished((games||{})[p.gameId]);
+  });
+}
+
+async function forceFinishRound(){
+  const btn=document.getElementById('btn-finish-round');
+  if(btn){btn.disabled=true;btn.textContent='Advancing…';}
+  advancing=false; // clear any stuck lock
+  try{
+    await reconcilePendingResults();
+    await maybeAdvanceRound(true);
+    toast('Moving to break / next round…');
+  } finally {
+    if(btn){btn.disabled=false;btn.textContent='✅ All games done — start break / next round';}
+  }
+}
+
+async function maybeAdvanceRound(force){
+  if(!T||T.status==='finished') return;
+  await reconcilePendingResults();
+  if(advancing && !force) return;
+  const rdNum=T.currentRound||1;
+  const rd=(T.schedule||[]).find(r=>r.round===rdNum);
+  if(!rd) return;
+  const allDone=roundAllFinished(rd, T.games);
+  const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+
+  // Round complete → break (or finish after last round)
+  if(T.status==='playing'&&allDone){
+    advancing=true;
+    try{
+      let wrote=false;
+      await db.runTransaction(async (tx)=>{
+        const snap=await tx.get(ref);
+        if(!snap.exists) return;
+        const d=snap.data();
+        if(d.status!=='playing') return;
+        if((d.currentRound||1)!==rdNum && !force) return;
+        const rdd=(d.schedule||[]).find(r=>r.round===(d.currentRound||rdNum));
+        if(!rdd) return;
+        // Accept either status done OR a result present
+        if(!roundAllFinished(rdd, d.games)) return;
+        // Ensure every finished game has status 'done'
+        const patch={};
+        rdd.pairings.forEach(p=>{
+          if(p.bye||!p.gameId) return;
+          const g=(d.games||{})[p.gameId];
+          if(g&&g.result&&g.status!=='done'){
+            patch['games.'+p.gameId+'.status']='done';
+          }
+        });
+        // Finish ONLY after the 5th round is fully complete
+        if(rdNum>=TOTAL_ROUNDS){
+          Object.assign(patch,{status:'finished',breakEndsAt:null});
+        } else {
+          const ends=firebase.firestore.Timestamp.fromMillis(Date.now()+BREAK_SEC*1000);
+          Object.assign(patch,{status:'break',breakEndsAt:ends});
+        }
+        patch.updated=firebase.firestore.FieldValue.serverTimestamp();
+        tx.update(ref, patch);
+        wrote=true;
+      });
+      if(!wrote && force){
+        if(rdNum>=TOTAL_ROUNDS){
+          await ref.update({status:'finished',breakEndsAt:null});
+        } else {
+          const ends=firebase.firestore.Timestamp.fromMillis(Date.now()+BREAK_SEC*1000);
+          await ref.update({status:'break',breakEndsAt:ends});
+        }
+      }
+      if(rdNum>=TOTAL_ROUNDS) await recomputeAllScores();
+    } catch(e){
+      console.error('advance', e);
+      if(force){
+        try{
+          if(rdNum>=TOTAL_ROUNDS) await ref.update({status:'finished',breakEndsAt:null});
+          else await ref.update({status:'break',breakEndsAt:firebase.firestore.Timestamp.fromMillis(Date.now()+BREAK_SEC*1000)});
+        }catch(e2){ console.error('advance fallback', e2); }
+      }
+    } finally {
+      advancing=false;
+    }
+    return;
+  }
+
+  // Break timer finished → start next round (direct write — reliable)
+  if(T.status==='break'){
+    const end=tsMillis(T.breakEndsAt);
+    if(!T.breakEndsAt || Date.now()>=end || force){
+      advancing=true;
+      try{
+        await startNextRoundNow();
+      } catch(e){ console.error('next round', e); }
+      finally {advancing=false;}
+    }
+  }
+}
+
+async function openGame(gameId){
+  if(!me||!T) return;
+  const g=T.games[gameId];
+  if(!g) return;
+  if(g.whiteId!==me.id&&g.blackId!==me.id){toast('Not your board');return;}
+  activeGameId=gameId;
+  saveActiveGame(gameId);
+  hideAll();document.getElementById('screen-play').classList.remove('hidden');
+  document.getElementById('play-round-label').textContent='R'+g.round;
+  initPlayBoard();
+  startClocks();
+}
+
+function initPlayBoard(){
+  const g=T.games[activeGameId];if(!g)return;
+  game=new Chess(g.fen);
+  const myColor=g.whiteId===me.id?'w':'b';
+  const orient=myColor==='b'?'black':'white';
+  if(!board){
+    board=ChessBoard('board',{position:g.fen,orientation:orient,draggable:false,pieceTheme:pieceThemeUrl()});
+    $('#board').on('click','[class*="square-"]',function(){const sq=$(this).attr('data-square');if(sq)onSquareClick(sq);});
+  } else {board.orientation(orient);board.position(g.fen,false);}
+  try{if(board.resize) board.resize();}catch(e){}
+  updatePlayLabels();updatePlayStatus();updateClockDisplay();
+}
+
+function updatePlayLabels(){
+  const g=T.games[activeGameId];if(!g)return;
+  const w=playerById(g.whiteId), b=playerById(g.blackId);
+  const myColor=g.whiteId===me.id?'w':'b';
+  const setRow=(sideEl,nameEl,rateEl,side,pl,you)=>{
+    document.getElementById(sideEl).textContent=(side==='w'?'⬜ White':'⬛ Black')+(you?' · you':'');
+    document.getElementById(nameEl).textContent=pl.name||'?';
+    document.getElementById(rateEl).textContent='Rating '+(pl.rating||0);
+  };
+  if(myColor==='w'){
+    setRow('play-side-bottom','play-name-bottom','play-rating-bottom','w',w,true);
+    setRow('play-side-top','play-name-top','play-rating-top','b',b,false);
+  } else {
+    setRow('play-side-bottom','play-name-bottom','play-rating-bottom','b',b,true);
+    setRow('play-side-top','play-name-top','play-rating-top','w',w,false);
+  }
+}
+
+function syncPlayBoard(){
+  if(!activeGameId||!T) return;
+  const g=T.games[activeGameId];if(!g)return;
+  if(!game) initPlayBoard();
+  else if(g.fen!==game.fen()){
+    const lastSan=((g.pgn||'').trim().split(/\s+/).pop())||'';
+    const isCap=lastSan.includes('x');
+    const isChk=lastSan.includes('+')||lastSan.includes('#');
+    playMoveSound(isCap,isChk);
+    game.load(g.fen);board.position(g.fen,true);
+  }
+  updatePlayLabels();updatePlayStatus();updateClockDisplay();
+  if(g.drawOfferFrom&&g.drawOfferFrom!==me.id&&g.status==='active'){
+    document.getElementById('draw-modal-text').textContent=playerById(g.drawOfferFrom).name+' offers a draw.';
+    openModal('draw-modal');
+  }
+  if(g.status==='done'&&!resultShownFor[activeGameId]){resultShownFor[activeGameId]=true;showGameResult(g);}
+}
+
+function updatePlayStatus(){
+  const g=T.games[activeGameId];if(!g||!game)return;
+  if(g.status==='done'){document.getElementById('play-status').textContent='Game over · '+g.result;return;}
+  const myColor=g.whiteId===me.id?'w':'b';
+  let t=game.turn()===myColor?'Your turn — move a piece':'Waiting for opponent…';
+  if(game.in_check()) t=(game.turn()===myColor?'You are in check! ':'Opponent in check · ')+t;
+  document.getElementById('play-status').textContent=t;
+}
+
+function clearHighlights(){$('#board .square-55d63').removeClass('highlight-select highlight-legal');}
+
+function onSquareClick(sq){
+  if(!game||!me||!activeGameId||!T) return;
+  const g=T.games[activeGameId];
+  if(!g||g.status==='done'||g.result) return;
+  const myColor=g.whiteId===me.id?'w':'b';
+  // Trust server turn first, then local
+  const serverTurn=g.turn||game.turn();
+  if(serverTurn!==myColor){toast('Wait for your turn');return;}
+  if(game.turn()!==myColor){
+    // Resync local board to server
+    try{game.load(g.fen);board.position(g.fen,false);}catch(e){}
+    toast('Wait for your turn');return;
+  }
+  const piece=game.get(sq);
+  if(sourceSquare){
+    if(sourceSquare===sq){sourceSquare=null;clearHighlights();return;}
+    const legal=game.moves({square:sourceSquare,verbose:true}).find(m=>m.to===sq);
+    if(legal){
+      const prevFen=game.fen();
+      const move=game.move({from:sourceSquare,to:sq,promotion:legal.flags.includes('p')?'q':undefined});
+      sourceSquare=null;clearHighlights();
+      if(move){
+        playMoveSound(!!move.captured, game.in_check());
+        board.position(game.fen());
+        pushMove(move, prevFen);
+      }
+      return;
+    }
+    if(piece&&piece.color===myColor){sourceSquare=sq;clearHighlights();$('#board .square-'+sq).addClass('highlight-select');game.moves({square:sq,verbose:true}).forEach(m=>{$('#board .square-'+m.to).addClass('highlight-legal');});return;}
+    sourceSquare=null;clearHighlights();return;
+  }
+  if(piece&&piece.color===myColor){
+    sourceSquare=sq;clearHighlights();
+    $('#board .square-'+sq).addClass('highlight-select');
+    game.moves({square:sq,verbose:true}).forEach(m=>{$('#board .square-'+m.to).addClass('highlight-legal');});
+  }
+}
+
+async function pushMove(move, prevFen){
+  const gid=activeGameId;
+  const localFen=game.fen();
+  const localTurn=game.turn();
+  const localSan=move.san;
+  const moveColor=move.color;
+  let endStatus='active', endResult=null;
+  if(game.in_checkmate()){endStatus='done';endResult=moveColor==='w'?'1-0':'0-1';}
+  else if(game.in_draw()){endStatus='done';endResult='1/2-1/2';}
+  const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+
+  function revertLocal(){
+    try{
+      if(prevFen){ game.load(prevFen); board.position(prevFen,false); }
+      else if(T&&T.games&&T.games[gid]){ game.load(T.games[gid].fen); board.position(T.games[gid].fen,false); }
+      updatePlayStatus(); updateClockDisplay();
+    }catch(e){}
+  }
+
+  try{
+    // Read latest game, then write (simple path — more reliable than silent transaction returns)
+    const snap=await ref.get();
+    if(!snap.exists){ toast('Move failed — no tournament'); revertLocal(); return; }
+    const state=snap.data();
+    if(T&&T.runId&&state.runId!==T.runId){ toast('Tournament was reset — refreshing'); revertLocal(); return; }
+    const g=(state.games||{})[gid];
+    if(!g){ toast('Move failed — game missing'); revertLocal(); return; }
+    if(T&&T.runId&&g.runId!==T.runId){ toast('Tournament was reset — refreshing'); revertLocal(); return; }
+    if(g.status==='done'||g.result){ toast('Game already over'); revertLocal(); return; }
+    if((g.turn||'w')!==moveColor){ toast('Wait for your turn'); revertLocal(); return; }
+
+    const now=Date.now();
+    let wt=g.whiteTime||BASE_TIME, bt=g.blackTime||BASE_TIME;
+    const anchor=tsMillis(g.lastMoveAt)||tsMillis(g.clockStartedAt)||now;
+    const elapsed=Math.max(0,Math.floor((now-anchor)/1000));
+    if(moveColor==='w'){
+      // 2s grace so a move is not rejected by clock lag
+      if(wt-elapsed<=-2){ toast('Flag — time is up'); revertLocal(); checkTimedOutGames(); return; }
+      wt=Math.max(0,wt-elapsed)+INC;
+    } else {
+      if(bt-elapsed<=-2){ toast('Flag — time is up'); revertLocal(); checkTimedOutGames(); return; }
+      bt=Math.max(0,bt-elapsed)+INC;
+    }
+
+    const updates={
+      ['games.'+gid+'.fen']:localFen,
+      ['games.'+gid+'.pgn']:(g.pgn?g.pgn+' ':'')+localSan,
+      ['games.'+gid+'.turn']:localTurn,
+      ['games.'+gid+'.status']:endStatus,
+      ['games.'+gid+'.whiteTime']:wt,
+      ['games.'+gid+'.blackTime']:bt,
+      ['games.'+gid+'.lastMoveAt']:now,
+      ['games.'+gid+'.drawOfferFrom']:null
+    };
+    if(endResult) updates['games.'+gid+'.result']=endResult;
+
+    await ref.update(updates);
+
+    // Optimistically update local T so clock switches immediately
+    if(T&&T.games&&T.games[gid]){
+      Object.assign(T.games[gid],{
+        fen:localFen,pgn:(g.pgn?g.pgn+' ':'')+localSan,turn:localTurn,
+        status:endStatus,whiteTime:wt,blackTime:bt,lastMoveAt:now,drawOfferFrom:null,
+        result:endResult||g.result||null
+      });
+    }
+    updatePlayStatus();
+    updateClockDisplay();
+  } catch(e){
+    console.error('move', e);
+    toast('Move failed — '+(e.message||'try again'));
+    revertLocal();
+    return;
+  }
+  if(endStatus==='done') await finalizeResult(gid, endResult);
+}
+
+async function finalizeResult(gameId, result){
+  const ref=db.collection('mcps_tournaments').doc(DOC_ID);
+  try{
+    await db.runTransaction(async (tx)=>{
+      const snap=await tx.get(ref);
+      if(!snap.exists) return;
+      const state=snap.data();
+      if(T&&T.runId&&state.runId!==T.runId) return;
+      const g=(state.games||{})[gameId];
+      if(!g) return;
+      if(T&&T.runId&&g.runId!==T.runId) return;
+      if(g.eloApplied) return; // already counted
+      const finalResult=result||g.result;
+      if(!finalResult) return;
+      const players=(state.players||[]).map(p=>({...p}));
+      const w=players.find(p=>p.id===g.whiteId);
+      const b=players.find(p=>p.id===g.blackId);
+      if(!w||!b) return;
+      let scoreW=0.5;
+      if(finalResult==='1-0') scoreW=1; else if(finalResult==='0-1') scoreW=0;
+      const dW=eloDelta(w.rating||1500,b.rating||1500,scoreW);
+      const dB=eloDelta(b.rating||1500,w.rating||1500,1-scoreW);
+      w.rating=(w.rating||1500)+dW;
+      b.rating=(b.rating||1500)+dB;
+      w.score=(w.score||0)+scoreW;
+      b.score=(b.score||0)+(1-scoreW);
+      w.played=(w.played||0)+1;
+      b.played=(b.played||0)+1;
+      tx.update(ref, {
+        players,
+        ['games.'+gameId+'.eloApplied']:true,
+        ['games.'+gameId+'.whiteEloDelta']:dW,
+        ['games.'+gameId+'.blackEloDelta']:dB,
+        ['games.'+gameId+'.status']:'done',
+        ['games.'+gameId+'.result']:finalResult
+      });
+    });
+  } catch(e){ console.error('finalize', e); }
+}
+
+function showGameResult(g){
+  const myColor=g.whiteId===me.id?'w':'b';
+  let won=false,draw=false;
+  if(g.result==='1/2-1/2') draw=true;
+  else if(g.result==='1-0'&&myColor==='w') won=true;
+  else if(g.result==='0-1'&&myColor==='b') won=true;
+  document.getElementById('result-emoji').textContent=draw?'🤝':(won?'🏆':'💪');
+  document.getElementById('result-title').textContent=draw?'Draw':(won?'You win!':'Game over');
+  document.getElementById('result-sub').textContent=draw?'Shared point.':(won?'Great game.':'See standings in the lobby.');
+  const d=myColor==='w'?g.whiteEloDelta:g.blackEloDelta;
+  document.getElementById('result-elo').textContent=d!=null?('Rating '+(d>=0?'+':'')+d):'';
+  playSfx(SOUND_GAMEEND,0.85);
+  if(won) speakDotun();
+  clearSavedGame();
+  openModal('result-modal');
+}
+
+let flagging=false;
+function startClocks(){
+  if(clockTimer) clearInterval(clockTimer);
+  flagging=false;
+  clockTimer=setInterval(()=>{
+    if(!T||!activeGameId||flagging) return;
+    const g=T.games[activeGameId];
+    if(!g||g.status!=='active') return;
+    updateClockDisplay();
+    if(gameRemainingSec(g)<=0){
+      flagging=true;
+      checkTimedOutGames().then(()=>maybeAdvanceRound()).finally(()=>{ flagging=false; });
+    }
+  },250);
+}
+
+function updateClockDisplay(){
+  if(!activeGameId||!T) return;
+  const g=T.games[activeGameId];if(!g)return;
+  let wt=g.whiteTime||BASE_TIME, bt=g.blackTime||BASE_TIME;
+  if(g.status==='active'){
+    const anchor=tsMillis(g.lastMoveAt)||tsMillis(g.clockStartedAt)||Date.now();
+    const elapsed=Math.floor((Date.now()-anchor)/1000);
+    if(g.turn==='w') wt=Math.max(0,wt-elapsed); else bt=Math.max(0,bt-elapsed);
+  }
+  const myColor=me&&g.whiteId===me.id?'w':'b';
+  const topIsWhite=myColor==='b';
+  const topEl=document.getElementById('clock-top'), botEl=document.getElementById('clock-bottom');
+  if(topIsWhite){
+    topEl.textContent=fmtTime(wt);botEl.textContent=fmtTime(bt);
+    topEl.className='clock'+(g.turn==='w'&&g.status==='active'?' active':'')+(wt<30?' low':'');
+    botEl.className='clock'+(g.turn==='b'&&g.status==='active'?' active':'')+(bt<30?' low':'');
+  } else {
+    topEl.textContent=fmtTime(bt);botEl.textContent=fmtTime(wt);
+    topEl.className='clock'+(g.turn==='b'&&g.status==='active'?' active':'')+(bt<30?' low':'');
+    botEl.className='clock'+(g.turn==='w'&&g.status==='active'?' active':'')+(wt<30?' low':'');
+  }
+}
+
+function openResignModal(){openModal('resign-modal');}
+async function confirmResign(){
+  closeModal('resign-modal');
+  if(!activeGameId||!me) return;
+  const g=T.games[activeGameId];
+  const result=g.whiteId===me.id?'0-1':'1-0';
+  await db.collection('mcps_tournaments').doc(DOC_ID).update({['games.'+activeGameId+'.status']:'done',['games.'+activeGameId+'.result']:result});
+  await finalizeResult(activeGameId,result);
+}
+async function offerDraw(){
+  if(!activeGameId||!me) return;
+  await db.collection('mcps_tournaments').doc(DOC_ID).update({['games.'+activeGameId+'.drawOfferFrom']:me.id});
+  toast('Draw offered');
+}
+async function acceptDraw(){
+  closeModal('draw-modal');
+  if(!activeGameId) return;
+  await db.collection('mcps_tournaments').doc(DOC_ID).update({['games.'+activeGameId+'.status']:'done',['games.'+activeGameId+'.result']:'1/2-1/2',['games.'+activeGameId+'.drawOfferFrom']:null});
+  await finalizeResult(activeGameId,'1/2-1/2');
+}
+async function declineDraw(){
+  closeModal('draw-modal');
+  if(!activeGameId) return;
+  await db.collection('mcps_tournaments').doc(DOC_ID).update({['games.'+activeGameId+'.drawOfferFrom']:null});
+  toast('Draw declined');
+}
+
+function spectateGame(gameId){
+  specGameId=gameId;
+  hideAll();document.getElementById('screen-spec').classList.remove('hidden');
+  syncSpecBoard(true);
+  if(clockTimer) clearInterval(clockTimer);
+  clockTimer=setInterval(()=>{
+    updateSpecClocks();
+    if(T&&T.status==='playing') checkTimedOutGames();
+  },250);
+}
+function syncSpecBoard(){
+  if(!specGameId||!T) return;
+  const g=T.games[specGameId];if(!g)return;
+  const w=playerById(g.whiteId), b=playerById(g.blackId);
+  document.getElementById('spec-side-bottom').textContent='⬜ White';
+  document.getElementById('spec-name-bottom').textContent=w.name||'?';
+  document.getElementById('spec-rating-bottom').textContent='Rating '+(w.rating||0);
+  document.getElementById('spec-side-top').textContent='⬛ Black';
+  document.getElementById('spec-name-top').textContent=b.name||'?';
+  document.getElementById('spec-rating-top').textContent='Rating '+(b.rating||0);
+  if(!specBoard){
+    specBoard=ChessBoard('spec-board',{position:g.fen||'start',draggable:false,pieceTheme:pieceThemeUrl()});
+  } else {
+    const prev=specBoard.fen&&specBoard.fen();
+    const next=g.fen||'start';
+    if(prev&&prev!==next){
+      const lastSan=((g.pgn||'').trim().split(/\s+/).pop())||'';
+      playMoveSound(lastSan.includes('x'), lastSan.includes('+')||lastSan.includes('#'));
+    }
+    specBoard.position(next,true);
+  }
+  document.getElementById('spec-status').textContent=g.status==='done'?('Final '+g.result):((g.turn==='w'?'White':'Black')+' to move');
+  updateSpecClocks();
+}
+function updateSpecClocks(){
+  if(!specGameId||!T) return;
+  const g=T.games[specGameId];if(!g)return;
+  let wt=g.whiteTime||BASE_TIME, bt=g.blackTime||BASE_TIME;
+  if(g.status==='active'){
+    const anchor=tsMillis(g.lastMoveAt)||tsMillis(g.clockStartedAt)||Date.now();
+    const elapsed=Math.floor((Date.now()-anchor)/1000);
+    if(g.turn==='w') wt=Math.max(0,wt-elapsed); else bt=Math.max(0,bt-elapsed);
+  }
+  document.getElementById('spec-clock-bottom').textContent=fmtTime(wt);
+  document.getElementById('spec-clock-top').textContent=fmtTime(bt);
+  document.getElementById('spec-clock-bottom').className='clock'+(g.turn==='w'&&g.status==='active'?' active':'')+(wt<30&&g.status==='active'?' low':'');
+  document.getElementById('spec-clock-top').className='clock'+(g.turn==='b'&&g.status==='active'?' active':'')+(bt<30&&g.status==='active'?' low':'');
+  // Spectator also flags timed-out games so the round never stalls
+  if(g.status==='active'&&(wt<=0||bt<=0)) checkTimedOutGames();
+}
+
+/* boot */
+(function boot(){
+  const fill=document.getElementById('load-fill');
+  const sec=document.getElementById('load-sec');
+  const overlay=document.getElementById('loading-overlay');
+  let finished=false;
+  const finishBoot=()=>{
+    if(finished)return;
+    finished=true;
+    fill.style.width='100%';
+    sec.textContent='✓';
+    overlay.style.display='none';
+    loadMe();
+    resumeAttempted=false;
+    routeByTime();
+    phaseTimer=setInterval(routeByTime,500);
+  };
+  // Pieces are embedded SVGs, so no image download is needed. Allow a brief paint period,
+  // then continue. The hard timeout prevents a loading screen from ever blocking the app.
+  const started=Date.now();
+  const tick=()=>{
+    if(finished)return;
+    const elapsed=Date.now()-started;
+    fill.style.width=Math.min(100,Math.round(elapsed/700*100))+'%';
+    sec.textContent=elapsed<700?Math.ceil((700-elapsed)/1000):'0';
+    if(elapsed>=700) finishBoot(); else setTimeout(tick,50);
+  };
+  tick();
+  setTimeout(finishBoot,2500);
+})();
+</script>
+</body>
+</html>
