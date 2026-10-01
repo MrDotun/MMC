@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master Pro | Decipher Chess Academy</title>
-    
+    <title>GM Variation Master Pro (RO) v1.4 | Decipher Chess Academy</title>
+    <!-- build: 2026-09-08-e -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -33,8 +33,8 @@
     <div class="max-w-7xl mx-auto">
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
-                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Idea-Focused Annotation Engine</p>
+                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (RO)</span></h1>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Simple English · FEN-only · GM symbols · v1.4</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -95,7 +95,7 @@
                 <div class="lg:w-2/3 glass p-4 rounded-xl">
                     <div class="mb-3 text-xs text-slate-400 italic">
                         <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>. 
-                        The tool includes every variation start &amp; end, all moves with !?/$ symbols, plus a few random samples. Each position is sent with the exact move played + correct FEN. Engine ideas are supplied on branch ends so the AI can explain the <span class="text-white">intention</span> behind the move in natural GM style.
+                        Includes every variation start &amp; end, moves with !?/$ symbols, plus samples. Each position is sent with last-3 / next moves of that variation, exact FEN only, GM symbols, and (on branch ends or critical moves) plan ideas. The AI is a 2700+ style annotator writing simple correct English; it must trust GM signs, never quote the next PGN move, and use the local variation line to understand why a move is good or bad.
                     </div>
                     <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
                 </div>
@@ -404,16 +404,51 @@
             }
         }
 
+        function buildPlanHint(evalVal, cont) {
+            const evalNum = parseFloat(evalVal);
+            const isMate = /mate|#/i.test(String(evalVal)) || /#/.test(cont || "");
+            if (isMate) return "Forced mate sequence exists.";
+            if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) return "Large advantage — concrete attack or decisive material/positional gain.";
+            if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) return "Clear plus — lasting pressure or structural advantage.";
+            return "Small edge or equal — positional idea.";
+        }
+
+        function parseEngineLine(data) {
+            if (!data || data.error || (data.text && /wrong FEN|Cannot evaluate/i.test(data.text))) {
+                return null;
+            }
+            let cont = "";
+            if (data.continuationArr && data.continuationArr.length) {
+                cont = data.continuationArr.slice(0, 7).join(" ");
+            } else if (data.continuation) {
+                cont = String(data.continuation).split(" ").slice(0, 7).join(" ");
+            }
+            const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
+            return {
+                eval: data.eval,
+                san: firstMove,
+                continuation: cont,
+                text: data.text || "",
+                planHint: buildPlanHint(data.eval, cont),
+                invalid: false
+            };
+        }
+
         async function getEngineRefutation(fen, retries = 3) {
             if (!isValidFen(fen)) {
-                return { eval: null, san: "", continuation: "", text: "INVALID FEN", invalid: true };
+                return { lines: [], invalid: true, text: "INVALID FEN" };
             }
             for (let attempt = 0; attempt <= retries; attempt++) {
                 try {
                     const response = await fetch("https://chess-api.com/v1", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ fen: fen, depth: 18, maxThinkingTime: 90 })
+                        body: JSON.stringify({
+                            fen: fen,
+                            depth: 18,
+                            maxThinkingTime: 90,
+                            variants: 3
+                        })
                     });
                     
                     if (response.status === 429) {
@@ -424,41 +459,32 @@
                     if (!response.ok) return null;
                     const data = await response.json();
 
-                    if (data.error || (data.text && /wrong FEN|Cannot evaluate/i.test(data.text))) {
-                        return { eval: null, san: "", continuation: "", text: data.text || "Engine rejected FEN", invalid: true };
+                    // Support both single-object and array responses (MultiPV)
+                    let lines = [];
+                    if (Array.isArray(data)) {
+                        lines = data.map(parseEngineLine).filter(Boolean).slice(0, 3);
+                    } else if (data.lines && Array.isArray(data.lines)) {
+                        lines = data.lines.map(parseEngineLine).filter(Boolean).slice(0, 3);
+                    } else if (data.pvs && Array.isArray(data.pvs)) {
+                        lines = data.pvs.map(parseEngineLine).filter(Boolean).slice(0, 3);
+                    } else {
+                        const one = parseEngineLine(data);
+                        if (one) lines = [one];
                     }
 
-                    let cont = "";
-                    if (data.continuationArr && data.continuationArr.length) {
-                        cont = data.continuationArr.slice(0, 7).join(" ");
-                    } else if (data.continuation) {
-                        cont = String(data.continuation).split(" ").slice(0, 7).join(" ");
+                    if (lines.length === 0) {
+                        return { lines: [], invalid: true, text: (data && data.text) || "Engine rejected FEN" };
                     }
 
-                    const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
-
-                    // Build a short human-readable plan hint from the line
-                    let planHint = "";
-                    if (firstMove) {
-                        const evalNum = parseFloat(data.eval);
-                        const isMate = /mate|#/i.test(String(data.eval)) || /#/.test(cont);
-                        if (isMate) {
-                            planHint = "Forced mate sequence exists.";
-                        } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) {
-                            planHint = "Large advantage — concrete attack or decisive material/positional gain.";
-                        } else if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) {
-                            planHint = "Clear plus — lasting pressure or structural advantage.";
-                        } else {
-                            planHint = "Small edge or equal — positional idea.";
-                        }
-                    }
-
+                    // Keep backward-compatible top-line fields for any leftover callers
+                    const top = lines[0];
                     return {
-                        eval: data.eval,
-                        san: firstMove,
-                        continuation: cont,
-                        text: data.text || "",
-                        planHint: planHint,
+                        lines: lines,
+                        eval: top.eval,
+                        san: top.san,
+                        continuation: top.continuation,
+                        text: top.text,
+                        planHint: top.planHint,
                         invalid: false
                     };
                 } catch (e) {
@@ -484,7 +510,11 @@
                 };
                 let whiteKing = "", blackKing = "";
                 const pieces = [];
-                const byType = { whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [], whiteRooks: [], blackRooks: [] };
+                const byType = {
+                    whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [],
+                    whiteRooks: [], blackRooks: [], whiteQueens: [], blackQueens: [],
+                    whitePawns: [], blackPawns: []
+                };
                 for (let r = 0; r < 8; r++) {
                     let file = 0;
                     for (const ch of rows[r]) {
@@ -499,6 +529,10 @@
                         if (ch === "n") byType.blackKnights.push(sq);
                         if (ch === "R") byType.whiteRooks.push(sq);
                         if (ch === "r") byType.blackRooks.push(sq);
+                        if (ch === "Q") byType.whiteQueens.push(sq);
+                        if (ch === "q") byType.blackQueens.push(sq);
+                        if (ch === "P") byType.whitePawns.push(sq);
+                        if (ch === "p") byType.blackPawns.push(sq);
                         file++;
                     }
                 }
@@ -513,9 +547,15 @@
                 if (byType.whiteBishops.length) notes.push(`White bishops on ${byType.whiteBishops.join(",")}`);
                 else notes.push("NO white bishop on the board");
                 if (byType.blackKnights.length) notes.push(`Black knights on ${byType.blackKnights.join(",")}`);
+                else notes.push("NO black knight on the board");
                 if (byType.whiteKnights.length) notes.push(`White knights on ${byType.whiteKnights.join(",")}`);
-                // compact piece list for verification
-                notes.push(`PIECES: ${pieces.join("; ")}`);
+                else notes.push("NO white knight on the board");
+                if (byType.blackQueens.length) notes.push(`Black queen on ${byType.blackQueens.join(",")}`);
+                if (byType.whiteQueens.length) notes.push(`White queen on ${byType.whiteQueens.join(",")}`);
+                if (byType.blackRooks.length) notes.push(`Black rooks on ${byType.blackRooks.join(",")}`);
+                if (byType.whiteRooks.length) notes.push(`White rooks on ${byType.whiteRooks.join(",")}`);
+                // compact piece list for verification — AI must use ONLY these pieces
+                notes.push(`FULL PIECE LIST (use only these): ${pieces.join("; ")}`);
                 return notes.join(" | ");
             } catch (e) {
                 return "";
@@ -547,13 +587,36 @@
             let stateStack = [];
             let currentFEN = chess.fen();
             let fenBeforeLastMove = currentFEN;
+            // Track move path so AI sees what was played before each move
+            let pathStack = [[]]; // path of SANs at each variation level
+            let currentPath = [];
+
+            const normalizeFen = (f) => {
+                if (!f || typeof f !== "string") return f;
+                try {
+                    const tmp = new Chess();
+                    if (tmp.load(f)) return tmp.fen();
+                } catch (e) {}
+                return f;
+            };
 
             pgnTokens.forEach((token, index) => {
                 if (token === "(") {
                     variationLevel++;
                     depthPlyCounts[variationLevel] = 0; 
+                    // Save full state (including path WITH the main-line move that this variation replaces)
                     stateStack.push({ current: currentFEN, beforeLast: fenBeforeLastMove });
-                    chess.load(fenBeforeLastMove);
+                    pathStack.push([...currentPath]);
+                    // Variation is an ALTERNATIVE to the last move → drop that move from the path
+                    // and load the position that existed before it
+                    if (currentPath.length > 0) {
+                        currentPath = currentPath.slice(0, -1);
+                    }
+                    const loaded = chess.load(fenBeforeLastMove);
+                    if (!loaded) {
+                        console.warn("Failed to load FEN for variation start:", fenBeforeLastMove);
+                    }
+                    currentFEN = normalizeFen(chess.fen());
                     return; 
                 }
                 if (token === ")") {
@@ -562,11 +625,18 @@
                     }
                     variationLevel--;
                     let state = stateStack.pop();
-                    if(state) {
-                        chess.load(state.current);
-                        currentFEN = state.current;
-                        fenBeforeLastMove = state.beforeLast;
+                    if (state) {
+                        const loaded = chess.load(state.current);
+                        if (loaded) {
+                            currentFEN = normalizeFen(chess.fen());
+                            fenBeforeLastMove = normalizeFen(state.beforeLast);
+                        } else {
+                            currentFEN = normalizeFen(state.current);
+                            fenBeforeLastMove = normalizeFen(state.beforeLast);
+                        }
                     }
+                    // Restore path that includes the main-line move we branched from
+                    currentPath = pathStack.pop() || [];
                     return; 
                 }
                 
@@ -580,7 +650,7 @@
                 
                 if (isMove) {
                     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
-                    fenBeforeLastMove = chess.fen();
+                    fenBeforeLastMove = normalizeFen(chess.fen());
 
                     let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O]/g, ''); 
                     let moveObj = chess.move(cleanMove, { sloppy: true });
@@ -595,23 +665,17 @@
                         }
                     }
                     let parsedOk = !!moveObj;
+                    let sanUsed = "";
                     if (moveObj) {
-                        currentFEN = chess.fen();
+                        currentFEN = normalizeFen(chess.fen());
+                        sanUsed = moveObj.san;
+                        currentPath.push(sanUsed);
                     } else {
                         currentFEN = fenBeforeLastMove;
+                        sanUsed = token.replace(/[!?$].*$/,'').trim();
+                        currentPath.push(sanUsed);
                         console.warn("Move failed to parse:", token, "at", fenBeforeLastMove);
                     }
-
-                    const normalizeFen = (f) => {
-                        if (!f || typeof f !== "string") return f;
-                        try {
-                            const tmp = new Chess();
-                            if (tmp.load(f)) return tmp.fen();
-                        } catch (e) {}
-                        return f;
-                    };
-                    fenBeforeLastMove = normalizeFen(fenBeforeLastMove);
-                    currentFEN = normalizeFen(currentFEN);
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
@@ -620,6 +684,18 @@
                     }
 
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
+
+                    // Full path array (up to and including this move) for precise last-3 / next-move logic
+                    const pathArray = [...currentPath];
+                    // Short path string (last ~12 plies) for the prompt
+                    const pathStr = pathArray.length > 12
+                        ? "..." + pathArray.slice(-12).join(" ")
+                        : pathArray.join(" ");
+
+                    // Last 3 moves BEFORE the current move (so AI sees the immediate history)
+                    const last3 = pathArray.length > 1
+                        ? pathArray.slice(Math.max(0, pathArray.length - 4), pathArray.length - 1)
+                        : [];
 
                     let newChunk = {
                         id: `CHK_${chunks.length}_M${moveNumber}_V${variationLevel}`,
@@ -632,7 +708,11 @@
                         fen: fenBeforeLastMove,
                         fenAfter: currentFEN,
                         moveParsed: parsedOk,
-                        variationLevel: variationLevel
+                        variationLevel: variationLevel,
+                        pathToHere: pathStr,
+                        pathArray: pathArray,
+                        last3Moves: last3,
+                        san: sanUsed
                     };
 
                     chunks.push(newChunk);
@@ -642,6 +722,30 @@
 
             if (lastChunkAtLevel[0]) {
                 lastChunkAtLevel[0].isVariationEnd = true;
+            }
+
+            // Post-process: next moves of THIS variation only (same level, skip nested branches)
+            // Nested ( ) side-lines are skipped so "NEXT MOVES" stays on the pure continuation.
+            // Exactly up to 8 moves of the current branch — no sibling or nested lines mixed in.
+            for (let i = 0; i < chunks.length; i++) {
+                const c = chunks[i];
+                const nextSans = [];
+                let j = i + 1;
+                while (j < chunks.length && nextSans.length < 8) {
+                    const nxt = chunks[j];
+                    // Left this variation entirely
+                    if (nxt.variationLevel < c.variationLevel) break;
+                    // Nested variation — skip until we return to our level
+                    if (nxt.variationLevel > c.variationLevel) {
+                        j++;
+                        continue;
+                    }
+                    // Same level: sibling variation start ends our continuation
+                    if (nxt.isVariationStart) break;
+                    nextSans.push(nxt.san || nxt.target.replace(/[!?$].*$/, '').trim());
+                    j++;
+                }
+                c.nextMoves = nextSans;
             }
 
             globalChunks = chunks;
@@ -715,9 +819,9 @@
                 if (/[?!$]|\$\d+/.test(c.target)) mustInclude.add(i);
             });
 
-            // A handful of random ordinary moves (max ~8 extra) so the AI still sees middle positions
+            // Lighter sample of ordinary moves (~50% of previous volume) so batches stay smaller
             const remaining = rangeIndices.filter(i => !mustInclude.has(i));
-            const randomCount = Math.min(8, Math.max(2, Math.floor(remaining.length * 0.15)));
+            const randomCount = Math.min(12, Math.max(3, Math.floor(remaining.length * 0.20)));
             for (let k = 0; k < randomCount && remaining.length; k++) {
                 const r = Math.floor(Math.random() * remaining.length);
                 mustInclude.add(remaining.splice(r, 1)[0]);
@@ -741,6 +845,7 @@
                 const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
 
                 // --- GM assessment from symbols (never from engine score) ---
+                // Chess convention: ? = mistake, ?? = blunder, ?! = dubious, !? = interesting, ! = good, !! = brilliant
                 const gmSym = `${c.target || ""} ${(c.gmNotes && c.gmNotes.evalMarks) ? c.gmNotes.evalMarks.join(" ") : ""}`;
                 let favouredSide = null; // who is better according to GM
                 if (/\+\/\-|\+\-|±|\+\/\=|\$16|\$18|\$14|\$20/.test(gmSym)) {
@@ -750,58 +855,80 @@
                 } else if (/\$10|\$11|\$13|=\/=/.test(gmSym) || /(^|[^+\-\/])=(?=[^+\-\/]|$)/.test(gmSym)) {
                     favouredSide = null; // equal
                 }
-                // ? / ?? on a move = that side played a BAD move → the OTHER side is better
-                const hasDubious = /\?\?|\?/.test(c.target || "");
-                const hasGood = /!!|!/.test(c.target || "") && !hasDubious;
-                if (hasDubious) {
-                    // Black played Nd4? → White is better. NEVER say Black is better.
+
+                const tgt = c.target || "";
+                const hasBlunder = /\?\?/.test(tgt);
+                const hasDubious = /\?!/.test(tgt);
+                const hasInteresting = /!\?/.test(tgt);
+                const hasBrilliant = /!!/.test(tgt);
+                // single ? that is not part of ?? or ?!
+                const hasMistake = /\?/.test(tgt) && !hasBlunder && !hasDubious;
+                // single ! that is not part of !! or !?
+                const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
+                const isBadMove = hasBlunder || hasMistake; // side that played it is worse
+
+                if (isBadMove) {
+                    // Black played Nd4? or Nd4?? → White is better
                     favouredSide = sideJustPlayed === "White" ? "Black" : "White";
                 } else if (favouredSide == null && hasGood) {
                     favouredSide = sideJustPlayed;
                 }
 
-                const planSide = favouredSide || (hasDubious ? (sideJustPlayed === "White" ? "Black" : "White") : sideJustPlayed);
+                const planSide = favouredSide || (isBadMove ? (sideJustPlayed === "White" ? "Black" : "White") : sideJustPlayed);
                 let gmVerdict = "no clear GM edge mark";
-                if (hasDubious) {
-                    gmVerdict = `${sideJustPlayed} just played a DUBIOUS/BAD move (?). ${planSide} is better. NEVER say ${sideJustPlayed} is better.`;
+                if (hasBlunder) {
+                    gmVerdict = `${sideJustPlayed} just played a BLUNDER (??). ${planSide} is better. NEVER say ${sideJustPlayed} is better.`;
+                } else if (hasMistake) {
+                    gmVerdict = `${sideJustPlayed} just played a MISTAKE (?). ${planSide} is better. NEVER say ${sideJustPlayed} is better.`;
+                } else if (hasDubious) {
+                    gmVerdict = `${sideJustPlayed} just played a DUBIOUS move (?!). Position may still be playable but the idea is questionable.`;
                 } else if (favouredSide) {
-                    gmVerdict = `GM marks ${favouredSide} better. Plan for ${favouredSide} only.`;
+                    gmVerdict = `GM marks ${favouredSide} better.`;
                 } else if (/\$10|\$11|\$13|=/.test(gmSym)) {
                     gmVerdict = "GM marks the position equal.";
                 }
 
-                // Clear statement of the move that was played — the AI must know this
+                // Variation context: last 3 moves + this move + next moves of THIS variation only
+                const last3Str = (c.last3Moves && c.last3Moves.length)
+                    ? c.last3Moves.join(" ")
+                    : "(start of line)";
+                const nextStr = (c.nextMoves && c.nextMoves.length)
+                    ? c.nextMoves.join(" ")
+                    : "(end of this variation)";
+                // Compact view of the local variation line so AI sees why a move is good/bad
+                const localLine = [
+                    last3Str !== "(start of line)" ? last3Str : "",
+                    c.san || c.target.replace(/[!?$].*$/,'').trim(),
+                    nextStr !== "(end of this variation)" ? nextStr : ""
+                ].filter(Boolean).join(" → ");
+
                 let lineOutput = `[ID: ${c.id}]
+THIS VARIATION LINE (local only): ${localLine || "(single move)"}
+LAST 3 MOVES: ${last3Str}
 MOVE PLAYED: ${c.moveNum}. ${c.target}
+NEXT MOVES IN THIS VARIATION: ${nextStr}
 PLAYED BY: ${sideJustPlayed}
 SIDE TO MOVE AFTER: ${sideToMoveAfter}
-REPERTOIRE SIDE ("we"): ${weSide}
-OPPONENT ("${theySide}"): ${theySide}
-MAIN LINE: ${c.isMainLine} | VARIATION START: ${c.isVariationStart} | VARIATION END: ${c.isVariationEnd} | DEPTH: ${c.variationLevel}
-FEN OK: ${fenOk}
-GM VERDICT: ${gmVerdict}
-PLAN SIDE: ${planSide}
-USE "we" ONLY FOR: ${weSide}`;
+REPERTOIRE ("we"): ${weSide}
+MAIN LINE: ${c.isMainLine} | VARIATION START: ${c.isVariationStart} | VARIATION END: ${c.isVariationEnd}
+GM VERDICT (from PGN symbols only): ${gmVerdict}`;
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
                 
                 statsText.innerText = `Preparing: ${c.moveNum}. ${c.target}`;
 
-                // Always give the true FEN after the move + positional features
+                // Board state = FEN only (no piece lists)
                 if (fenOk) {
-                    lineOutput += `\nFEN AFTER THE MOVE: ${c.fenAfter}`;
-                    const posDesc = describePositionFromFen(c.fenAfter);
-                    if (posDesc) {
-                        lineOutput += `\nPOSITION FEATURES: ${posDesc}`;
-                    }
+                    lineOutput += `\nFEN: ${c.fenAfter}`;
                 } else {
-                    lineOutput += `\nFEN AFTER THE MOVE: UNRELIABLE (do not invent a position)`;
+                    lineOutput += `\nFEN: UNRELIABLE (do not invent a position)`;
                 }
 
-                // Engine on variation ends, critical symbols, GM marks
-                const isCritical = /[?!$]|\$\d+|[\+\-=±∓]/.test(c.target) || hasDubious || hasGood || !!favouredSide;
-                const needsEngine = fenOk && (c.isVariationEnd || isCritical);
+                // Engine only for plan ideas at variation ends / critical moves.
+                // Never treat engine numbers as the truth — GM symbols are the truth.
+                const isCritical = /[?!$]|\$\d+|[\+\-=±∓]/.test(c.target) || isBadMove || hasDubious || hasGood || !!favouredSide;
+                const needsEngine = fenOk && (c.isVariationEnd || isCritical || !(c.nextMoves && c.nextMoves.length));
                 
                 if (needsEngine) {
                     engineCalls++;
@@ -810,64 +937,52 @@ USE "we" ONLY FOR: ${weSide}`;
                     
                     let engineData = await getEngineRefutation(c.fenAfter);
 
-                    if (engineData && !engineData.invalid && engineData.eval != null) {
-                        const bestLine = `${engineData.san || ""} ${engineData.continuation || ""}`.trim();
-                        // Split PV by colour so AI never mixes White/Black moves
-                        const pvMoves = bestLine.split(/\s+/).filter(Boolean);
-                        const stm = sideToMoveAfter; // first move in PV belongs to this side
-                        const stmMoves = [];
-                        const oppMoves = [];
-                        pvMoves.forEach((m, idx) => {
-                            if (idx % 2 === 0) stmMoves.push(m);
-                            else oppMoves.push(m);
+                    if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
+                        const lines = engineData.lines;
+                        const stm = sideToMoveAfter;
+
+                        // Ideas only — no eval numbers shown to the annotator model
+                        lineOutput += `\nPLAN IDEAS (from engine, for inspiration only — ignore numbers, trust GM symbols):`;
+                        lines.forEach((ln, idx) => {
+                            const rank = idx + 1;
+                            const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
+                            lineOutput += `\n  IDEA ${rank}: ${fullPv || "(none)"}`;
                         });
-                        const whiteMoves = stm === "White" ? stmMoves : oppMoves;
-                        const blackMoves = stm === "Black" ? stmMoves : oppMoves;
 
-                        lineOutput += `\nENGINE EVAL (ideas only — do NOT use for who is better): ${engineData.eval}`;
-                        lineOutput += `\nBEST CONTINUATION (full PV): ${bestLine || "(none)"}`;
-                        if (engineData.planHint) {
-                            lineOutput += `\nENGINE HINT: ${engineData.planHint}`;
-                        }
-                        const planMoves = (planSide === "Black" ? blackMoves : whiteMoves).slice(0, 3);
+                        const allWhite = [];
+                        const allBlack = [];
+                        lines.forEach(ln => {
+                            const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
+                            const pvMoves = fullPv.split(/\s+/).filter(Boolean);
+                            const stmMoves = [];
+                            const oppMoves = [];
+                            pvMoves.forEach((m, i) => {
+                                if (i % 2 === 0) stmMoves.push(m);
+                                else oppMoves.push(m);
+                            });
+                            const w = stm === "White" ? stmMoves : oppMoves;
+                            const b = stm === "Black" ? stmMoves : oppMoves;
+                            w.forEach(m => { if (!allWhite.includes(m)) allWhite.push(m); });
+                            b.forEach(m => { if (!allBlack.includes(m)) allBlack.push(m); });
+                        });
 
-                        lineOutput += `\nWHITE MOVES FROM PV (max 3): ${whiteMoves.slice(0, 3).join(", ") || "(none)"}`;
-                        lineOutput += `\nBLACK MOVES FROM PV (max 3): ${blackMoves.slice(0, 3).join(", ") || "(none)"}`;
-                        lineOutput += `\nFILTERED PLAN MOVES (for ${planSide} only — use at most 1–3): ${planMoves.length ? planMoves.join(", ") : "(use FEN ideas)"}`;
-                        lineOutput += `\nINSTRUCTION: Trust GM VERDICT above — ignore engine numbers for who is better.`;
-                        lineOutput += `\n- "we" = ${weSide} only. Never use "we" for ${theySide}.`;
-                        lineOutput += `\n- PLAN SIDE is ${planSide}. Name only ${planSide}'s moves; at most 1–3 moves in the plan.`;
-                        if (hasDubious) {
-                            lineOutput += `\n- CRITICAL: ${sideJustPlayed} played a ? move. ${planSide} is better. FORBIDDEN to write "${sideJustPlayed} is better".`;
-                        }
-                        lineOutput += `\n- BOARD TRUTH: Only mention pieces listed in POSITION FEATURES / PIECES for THIS FEN. If it says "NO black bishop on the board", you MUST NOT write about a black bishop on g4 or pinning. Nested variations have different pieces — never borrow a piece from a sibling line.`;
-                        lineOutput += `\n- Never write +-, ±, +/=. Never repeat the next PGN move. Never dump more than 3 plan moves.`;
-                        lineOutput += `\n- REQUIRED: (1) WHY ${planSide} is better or equal. (2) WHAT ${planSide} plays — 1–3 moves woven into a natural sentence.`;
-
-                        if (isCritical || favouredSide || hasDubious) {
-                            lineOutput += `\n[TACTICAL / CRITICAL]: Follow GM VERDICT. WHY + WHAT for ${planSide}.`;
-                        }
-                        if (/[\+\-=]|\$\d+/.test(c.target) || favouredSide || hasDubious) {
-                            lineOutput += `\n[EVAL SYMBOL — REQUIRED]: GM says ${gmVerdict}. Explain WHY and WHAT ${planSide} continues with.`;
-                        }
+                        lineOutput += `\nWHITE PLAN IDEAS: ${allWhite.slice(0, 4).join(", ") || "(none)"}`;
+                        lineOutput += `\nBLACK PLAN IDEAS: ${allBlack.slice(0, 4).join(", ") || "(none)"}`;
 
                         if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: GM VERDICT + WHY + WHAT for ${planSide}. 1–3 sentences. No eval symbols. No raw dump.`;
+                            lineOutput += `\nVARIATION END: Explain the GM sign in plain words. Use the NEXT MOVES (if any) and/or PLAN IDEAS to say why the move is good, bad or dubious. Do not quote the next PGN move by name.`;
+                        } else if (isCritical) {
+                            lineOutput += `\nCRITICAL: Comment on the idea. Look at NEXT MOVES IN THIS VARIATION to understand the point. Use PLAN IDEAS only as inspiration.`;
                         }
-                        statsText.innerText = `[${c.moveNum}.${c.target}] ${engineData.san || "ok"}`;
+                        const topSan = lines[0].san || "ok";
+                        statsText.innerText = `[${c.moveNum}.${c.target}] ${topSan} (+${lines.length - 1} more)`;
                     } else {
-                        lineOutput += `\nENGINE: No usable data for this position.`;
+                        lineOutput += `\nPLAN IDEAS: none available.`;
                         if (c.isVariationEnd) {
-                            lineOutput += `\n[VARIATION END — REQUIRED]: WHY (structure/activity) + WHAT can be played next from the FEN (concrete ideas).`;
+                            lineOutput += `\nVARIATION END: Explain the GM sign in plain words. Use NEXT MOVES IN THIS VARIATION (if any) to understand why.`;
                         }
                     }
                 } else {
-                    if (c.isVariationEnd) {
-                        lineOutput += `\n[VARIATION END — REQUIRED]: WHY + WHAT can be played next. Correct colour only.`;
-                    }
-                    if (c.isVariationStart && !c.isVariationEnd) {
-                        lineOutput += `\n[VARIATION START]: Short present-tense note only if intention is not obvious.`;
-                    }
                     await delay(15);
                 }
                 
@@ -877,107 +992,50 @@ USE "we" ONLY FOR: ${weSide}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are the repertoire author (Annotator: sheva). PRESENT TENSE only. Calm practical coaching English (~65–70% British spelling).
+            const fullPrompt = `You are a 2700+ GM repertoire annotator. You write in simple but correct English (about 70% English level). Short everyday words. No fancy or complex vocabulary. Grammar must still be correct.
 
-REPERTOIRE SIDE: ${weSide}
-- Every batch line includes REPERTOIRE SIDE ("we"): ${weSide}. Obey it.
-- Always use "we" / "our" for ${weSide} only.
-- Always use "${theySide}" (never "we") for the opponent.
-- If repertoire is White: "we capture on d4" / "Black is left with doubled pawns".
-- If repertoire is Black: "we play ...c5" / "White wants Be3 and Rc1".
-- Never switch "we" mid-batch.
+REPERTOIRE: we = ${weSide}. Always say "we / our" for ${weSide} and "${theySide}" for the opponent. Never switch sides.
 
-STARTING FEN OF THE BATCH: ${startingFen}
+STRICT RULES:
+1. Board state = ONLY the FEN given for that move. Trust that FEN. Do not invent pieces, pins, attacks or ideas from memory or from other lines.
+2. GM symbols on the move (! ? !! ?? ?! $n +- etc.) are the truth about quality and who is better. The GM does not use an engine. Never decide who is better from engine numbers.
+3. Look at THIS VARIATION LINE, LAST 3 MOVES and NEXT MOVES IN THIS VARIATION. They show the local idea and why a move is good, bad or dubious. Especially at VARIATION END, the following moves (or the lack of them) explain the reason.
+4. You may use PLAN IDEAS only as inspiration for a short verbal plan when the variation has no further moves. Never quote engine names or numbers.
+5. Never name or quote the next move that already appears in the PGN. Never repeat the move that was just played.
 
-=== BOARD TRUTH (NESTED VARIATIONS) ===
-Each position has its own FEN and PIECES list. Nested brackets are different positions.
-- ONLY mention pieces that appear in POSITION FEATURES / PIECES for THAT line.
-- If the list says "NO black bishop on the board", do NOT write "question the bishop" or "the pin on g4".
-- Example: after 7...O-O there is no bishop on g4. After 7...Bg4 there is. Never mix sibling lines.
-- Do not invent pins, attacks, or captures that the FEN does not support.
+STYLE (concrete, not vague — short, clear, instructional):
+- 1–3 sentences.
+- Be specific: name the piece, the square, the break, the plan. Not abstract.
+- Good (concrete): "We reroute the knight to d7, preparing the ...c5 break."
+- Bad (vague): "We develop the knight and prepare active operations."
+- Good: "We take with the queen so the knight can stay flexible for ...e5 later."
+- Bad: "We recapture and keep the initiative."
+- Sample style (match this tone):
+  "We will reroute the knight to d7, preparing the ...c5 break against White's center."
+  "We recapture with the queen, since e7 is not a good square for our knight."
+  "A useful prophylactic move. We stop White from playing b4 and grabbing space on the queenside."
+  "The position is equal. We continue with ...Be6 and ...Qd7, then castle long."
+  "This is a mistake. After ...dxe4 and ...Bg4 White's king becomes exposed and we get a lasting attack."
+  "Dubious. White can simply play Bxf6 and keep the extra pawn while our pieces stay passive."
+- Comment especially on variation starts, variation ends, and moves with ! ? !! ?? ?!.
 
-=== COLOUR OF NAMED MOVES (ZERO MIX-UPS) ===
-- WHITE MOVES FROM PV = only White's moves. BLACK MOVES FROM PV = only Black's moves.
-- FORBIDDEN: mixing colours in one plan.
-- Plans: at most 1–3 moves, woven into a sentence (e.g. "continue with Nc3 and Be3"), never a long API dump.
+NEVER DO:
+- Repeat the move that was just played.
+- Name the next move already written in the PGN.
+- Write long move lists or mini-games inside the comment.
+- Quote engine names, eval numbers, or symbols like +-, ±, =, $n.
+- Use vague filler ("continues development", "keeps the initiative", "active operations", "improves the position").
+- Invent a pin, sacrifice or piece that is not on the given FEN.
 
-=== TENSE ===
-PRESENT only: "we develop", "White wants", "the idea is".
-Not: "we developed", "White continued", "we managed to reach".
+When you describe a plan, respect legal move order (for example the c1-bishop must move before queenside castling is possible).
 
-=== HOW TO THINK ===
-1. Read MOVE PLAYED, FEN, PLAYED BY, SIDE TO MOVE AFTER.
-2. If engine PV lists exist, pick moves only from the correct colour list.
-3. If one side is better, say WHY: bishop pair, control of a square, piece activity, pawn structure, king safety, open file, weak pawn.
-4. Write 1–3 short present-tense sentences.
+OUTPUT: Return ONLY a pure JSON object.
+Keys = the chunk IDs (for example "CHK_0_M5_V0").
+Values = the comment text only (simple correct English).
+Omit any key that needs no comment.
+No markdown, no thinking, no extra text outside the JSON.
 
-=== GM ASSESSMENT OVERRIDES ENGINE ===
-Trust GM VERDICT / PLAN SIDE from each batch item (symbols like +-, -+, +/=, =, ?, !!). Do NOT use the engine number to decide who is better. The engine PV is only for concrete move ideas for PLAN SIDE.
-
-=== DUBIOUS MOVES (?) — ZERO CONFUSION ===
-If Black played 3...Nd4?, GM VERDICT says White is better. You MUST NOT write "Black is better" or "Black consolidates".
-Correct: "A dubious early knight jump. We capture on d4 and leave Black with a damaged structure; White is better and will continue with O-O and Re1."
-If White played a ? move, Black is better — never the reverse.
-A ? move never makes the side that played it better.
-
-=== WHY + WHAT (MANDATORY ON VARIATION ENDS AND WHEN GM SAYS ONE SIDE IS BETTER) ===
-Always give a reason AND a concrete plan. Use FILTERED PLAN MOVES / the correct colour PV list. Weave moves into natural English — do not list them like an API dump.
-
-GOOD:
-"White is better thanks to the bishop pair and will press with the c4-c5 push or with Nc3 ideas."
-"We’re slightly better; next we continue with ...Nd7 and ...c5."
-"White is better due to the superior structure and will continue with O-O and Re1."
-
-BAD:
-"White is better." (no reason, no plan)
-"White plays c4, c5, Nc3, Be3, Qd2, O-O-O." (too many moves / raw dump — max 1–3)
-"We question the bishop on g4" when PIECES says no black bishop (wrong board / sibling line)
-"Continue with development." (vague)
-
-=== STYLE SAMPLES ===
-"One of the key ideas in these structures is to achieve the ...c5 break, not allowing White to build a strong centre and at the same time activating our pieces. Nd7 is played specifically to reinforce the c5-square and to prepare ...c5 as quickly as possible."
-
-"White immediately takes the initiative in the centre."
-
-"So, of course, we develop our bishop, aiming to exchange White’s active pieces."
-
-"We recapture with the queen, since e7 is not the most favourable square for our knight."
-
-"An aggressive continuation. White wants to launch an immediate attack on the kingside."
-
-"Of course, we strike with ...c5, there’s no other way."
-
-"White continues with Be3 and Rc1, putting pressure on the c-file."
-
-"The idea is f4-f5 next, opening lines against the black king."
-
-=== HARD RULES ===
-1. Comments only after the move. Most moves get no comment.
-2. MUST comment [VARIATION END], [TACTICAL / CRITICAL], [EVAL SYMBOL], ?, ??, !!, !?, $2, $4.
-3. On every [VARIATION END] and when one side is better: MUST state WHY + WHAT (natural plan with 1–3 filtered moves for the stronger side).
-4. Never begin by repeating the move just played.
-5. Never mention engine, Stockfish, eval numbers, depth.
-6. NEVER write evaluation symbols in the comment text. Forbidden: +-, -+, +/=, =/+, ±, ∓, +, -, =, =+, +/-, -/=, ∞, $1–$6, $11, $13, $15–$19.
-7. Banned filler: delve, crucial, fascinating, testament, symphony, orchestrate, tuck, clamp, secure, dynamic, nuanced, paradigm, leverage, robust, seamless, "keeps the initiative", "continue with development" (without naming moves).
-8. Spelling: centre, d4-square, pair of bishops, favour, analyse, defence, colour.
-9. Length: 1–2 sentences preferred; max three.
-
-=== DO NOT SPOIL / DO NOT DUMP THE LINE ===
-- Do NOT name the move that is already the next move in this PGN variation.
-  Bad: on 3...Nd4? writing "We immediately capture with Nxd4" when 4.Nxd4 is the next PGN move.
-  Good: "A dubious early knight jump that allows us to damage Black's structure."
-- Do NOT paste a sequence of upcoming PGN moves into the comment (e.g. "4.Nxd4 exd4 5.O-O c6 6.Re1").
-- Do NOT write a mini-game score inside the comment.
-- You MAY name longer-term ideas from WHITE MOVES FROM PV / BLACK MOVES FROM PV only when those moves are NOT the immediate next PGN move.
-- Prefer structural reasons (doubled pawns, superior structure, bishop pair, control of a square) over listing the next two developing moves that are already in the book line.
-
-=== OUTPUT ===
-Return ONLY a pure JSON object.
-Keys = chunk IDs. Values = comment text only — pure English, no eval symbols, no move lists from the PGN.
-Omit keys with no comment.
-No markdown, no thought process, no extra text.
-
-=== BATCH TO ANALYZE ===
+=== BATCH ===
 ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
@@ -1032,19 +1090,65 @@ ${batchString}`;
         function rebuildPgn() {
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
-            
+
+            // --- Robust extraction: tolerate extra text, markdown fences, trailing commas, missing commas, single quotes ---
+            function tryParseJson(str) {
+                try { return JSON.parse(str); } catch (e) { return null; }
+            }
+
+            function extractChunkMap(text) {
+                const map = {};
+                // 1. Prefer a clean JSON object if present
+                const firstBrace = text.indexOf('{');
+                const lastBrace = text.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace > firstBrace) {
+                    let candidate = text.substring(firstBrace, lastBrace + 1);
+                    // Fix common AI issues: trailing commas before } or ]
+                    candidate = candidate.replace(/,\s*([}\]])/g, '$1');
+                    // Convert single-quoted keys/values to double quotes (simple heuristic)
+                    candidate = candidate.replace(/'([^']*)'/g, '"$1"');
+                    let parsed = tryParseJson(candidate);
+                    if (parsed && typeof parsed === 'object') {
+                        Object.assign(map, parsed);
+                        return map;
+                    }
+                }
+
+                // 2. Fallback: regex-extract every "CHK_...": "comment" pair (handles broken JSON)
+                // Matches both "key": "value" and 'key': 'value' and key: "value"
+                const pairRe = /["']?(CHK_\d+_M\d+_V\d+)["']?\s*:\s*["']((?:\\.|[^"\\])*?)["']/gs;
+                let m;
+                while ((m = pairRe.exec(text)) !== null) {
+                    const id = m[1];
+                    // Unescape common sequences
+                    let comment = m[2]
+                        .replace(/\\"/g, '"')
+                        .replace(/\\n/g, ' ')
+                        .replace(/\\t/g, ' ')
+                        .replace(/\\\\/g, '\\')
+                        .trim();
+                    if (id && comment) map[id] = comment;
+                }
+
+                // 3. Even more permissive: lines that look like CHK_0_M5_V0: some text
+                if (Object.keys(map).length === 0) {
+                    const lineRe = /(CHK_\d+_M\d+_V\d+)\s*[:=]\s*["']?(.+?)["']?\s*(?:,|$)/gm;
+                    while ((m = lineRe.exec(text)) !== null) {
+                        const id = m[1];
+                        let comment = m[2].replace(/["']\s*,?\s*$/, '').trim();
+                        if (id && comment) map[id] = comment;
+                    }
+                }
+                return map;
+            }
+
             try {
-                const firstBrace = raw.indexOf('{');
-                const lastBrace = raw.lastIndexOf('}');
-                
-                if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-                    const jsonStr = raw.substring(firstBrace, lastBrace + 1);
-                    aiData = JSON.parse(jsonStr);
-                } else {
-                    aiData = JSON.parse(raw);
+                aiData = extractChunkMap(raw);
+                if (!aiData || Object.keys(aiData).length === 0) {
+                    throw new Error("No chunk IDs found");
                 }
             } catch (e) {
-                alert("Failed to parse the JSON. Please ensure the AI provided a valid JSON object mapping chunk IDs to comments.");
+                alert("Failed to parse the AI output. Paste the full response (even with thinking text). The tool will extract CHK_… keys automatically.");
                 console.error("JSON Parse Error:", e);
                 return;
             }
@@ -1059,8 +1163,12 @@ ${batchString}`;
             // Always place comments AFTER the move (never before)
             sortedIds.forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
-                if (chunk) {
-                    workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
+                if (chunk && aiData[id]) {
+                    // Clean any residual braces the user might have left
+                    const cleanComment = String(aiData[id]).replace(/^[{[\s]+|[}\]\s]+$/g, '').trim();
+                    if (cleanComment) {
+                        workingTokens[chunk.tokenIndex] += ` { ${cleanComment} }`;
+                    }
                 }
             });
 
