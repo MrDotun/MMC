@@ -419,9 +419,9 @@
             }
             let cont = "";
             if (data.continuationArr && data.continuationArr.length) {
-                cont = data.continuationArr.slice(0, 7).join(" ");
+                cont = data.continuationArr.slice(0, 6).join(" ");
             } else if (data.continuation) {
-                cont = String(data.continuation).split(" ").slice(0, 7).join(" ");
+                cont = String(data.continuation).split(" ").slice(0, 6).join(" ");
             }
             const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
             return {
@@ -726,12 +726,11 @@
 
             // Post-process: next moves of THIS variation only (same level, skip nested branches)
             // Nested ( ) side-lines are skipped so "NEXT MOVES" stays on the pure continuation.
-            // Exactly up to 8 moves of the current branch — no sibling or nested lines mixed in.
             for (let i = 0; i < chunks.length; i++) {
                 const c = chunks[i];
                 const nextSans = [];
                 let j = i + 1;
-                while (j < chunks.length && nextSans.length < 8) {
+                while (j < chunks.length && nextSans.length < 6) {
                     const nxt = chunks[j];
                     // Left this variation entirely
                     if (nxt.variationLevel < c.variationLevel) break;
@@ -902,6 +901,10 @@
                     nextStr !== "(end of this variation)" ? nextStr : ""
                 ].filter(Boolean).join(" → ");
 
+                const commentAs = (sideJustPlayed === weSide)
+                    ? `OUR move — only say what WE will do / our plan (use "we / our")`
+                    : `OPPONENT move — only say what ${theySide} plans or intends (do not say "we will...")`;
+
                 let lineOutput = `[ID: ${c.id}]
 THIS VARIATION LINE (local only): ${localLine || "(single move)"}
 LAST 3 MOVES: ${last3Str}
@@ -910,6 +913,7 @@ NEXT MOVES IN THIS VARIATION: ${nextStr}
 PLAYED BY: ${sideJustPlayed}
 SIDE TO MOVE AFTER: ${sideToMoveAfter}
 REPERTOIRE ("we"): ${weSide}
+COMMENT AS: ${commentAs}
 MAIN LINE: ${c.isMainLine} | VARIATION START: ${c.isVariationStart} | VARIATION END: ${c.isVariationEnd}
 GM VERDICT (from PGN symbols only): ${gmVerdict}`;
 
@@ -941,19 +945,20 @@ GM VERDICT (from PGN symbols only): ${gmVerdict}`;
                         const lines = engineData.lines;
                         const stm = sideToMoveAfter;
 
-                        // Ideas only — no eval numbers shown to the annotator model
-                        lineOutput += `\nPLAN IDEAS (from engine, for inspiration only — ignore numbers, trust GM symbols):`;
+                        // Ideas only — no eval numbers shown to the annotator model. Show up to 7 moves per line.
+                        lineOutput += `\nPLAN IDEAS (from engine API, for inspiration only — ignore numbers, trust GM symbols; each line shows up to 7 moves):`;
                         lines.forEach((ln, idx) => {
                             const rank = idx + 1;
                             const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            lineOutput += `\n  IDEA ${rank}: ${fullPv || "(none)"}`;
+                            const pv7 = fullPv.split(/\s+/).filter(Boolean).slice(0, 7).join(" ");
+                            lineOutput += `\n  IDEA ${rank}: ${pv7 || "(none)"}`;
                         });
 
                         const allWhite = [];
                         const allBlack = [];
                         lines.forEach(ln => {
                             const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            const pvMoves = fullPv.split(/\s+/).filter(Boolean);
+                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 7);
                             const stmMoves = [];
                             const oppMoves = [];
                             pvMoves.forEach((m, i) => {
@@ -970,7 +975,9 @@ GM VERDICT (from PGN symbols only): ${gmVerdict}`;
                         lineOutput += `\nBLACK PLAN IDEAS: ${allBlack.slice(0, 4).join(", ") || "(none)"}`;
 
                         if (c.isVariationEnd) {
+                            const ourPlanMoves = weSide === "White" ? allWhite : allBlack;
                             lineOutput += `\nVARIATION END: Explain the GM sign in plain words. Use the NEXT MOVES (if any) and/or PLAN IDEAS to say why the move is good, bad or dubious. Do not quote the next PGN move by name.`;
+                            lineOutput += `\nOUR NEXT PLAN (from engine API — use for a short verbal plan of what we will do next): ${ourPlanMoves.slice(0, 5).join(", ") || "(none)"}`;
                         } else if (isCritical) {
                             lineOutput += `\nCRITICAL: Comment on the idea. Look at NEXT MOVES IN THIS VARIATION to understand the point. Use PLAN IDEAS only as inspiration.`;
                         }
@@ -980,6 +987,7 @@ GM VERDICT (from PGN symbols only): ${gmVerdict}`;
                         lineOutput += `\nPLAN IDEAS: none available.`;
                         if (c.isVariationEnd) {
                             lineOutput += `\nVARIATION END: Explain the GM sign in plain words. Use NEXT MOVES IN THIS VARIATION (if any) to understand why.`;
+                            lineOutput += `\nOUR NEXT PLAN (from engine API): none available.`;
                         }
                     }
                 } else {
@@ -1000,16 +1008,20 @@ STRICT RULES:
 1. Board state = ONLY the FEN given for that move. Trust that FEN. Do not invent pieces, pins, attacks or ideas from memory or from other lines.
 2. GM symbols on the move (! ? !! ?? ?! $n +- etc.) are the truth about quality and who is better. The GM does not use an engine. Never decide who is better from engine numbers.
 3. Look at THIS VARIATION LINE, LAST 3 MOVES and NEXT MOVES IN THIS VARIATION. They show the local idea and why a move is good, bad or dubious. Especially at VARIATION END, the following moves (or the lack of them) explain the reason.
-4. You may use PLAN IDEAS only as inspiration for a short verbal plan when the variation has no further moves. Never quote engine names or numbers.
+4. You may use PLAN IDEAS (and OUR NEXT PLAN at variation ends) only as inspiration for a short verbal plan. Never quote engine names or numbers. Each IDEA line shows up to 7 moves.
 5. Never name or quote the next move that already appears in the PGN. Never repeat the move that was just played.
+6. SIDE-AWARE COMMENTING (very important):
+   - When PLAYED BY is ${weSide} (our move): only say what WE will do / our plan. Use "we / our". Do not describe the opponent's next move as something we will do.
+   - When PLAYED BY is ${theySide} (opponent's move): only say what the OPPONENT plans or intends. Use "${theySide}" or "they". Do not say "we will do X" about their move.
+   - Never mix: do not write our plans on the opponent's move, and do not write their plans as if they were ours.
 
 STYLE (concrete, not vague — short, clear, instructional):
 - 1–3 sentences.
 - Be specific: name the piece, the square, the break, the plan. Not abstract.
-- Good (concrete): "We reroute the knight to d7, preparing the ...c5 break."
-- Bad (vague): "We develop the knight and prepare active operations."
-- Good: "We take with the queen so the knight can stay flexible for ...e5 later."
-- Bad: "We recapture and keep the initiative."
+- On our moves — Good: "We reroute the knight to d7, preparing the ...c5 break."
+- On our moves — Bad: "We develop the knight and prepare active operations."
+- On opponent's moves — Good: "White plans to grab space with b4 and pressure the queenside."
+- On opponent's moves — Bad: "We will stop b4" (wrong side — that is our reply, not their plan).
 - Sample style (match this tone):
   "We will reroute the knight to d7, preparing the ...c5 break against White's center."
   "We recapture with the queen, since e7 is not a good square for our knight."
@@ -1017,7 +1029,9 @@ STYLE (concrete, not vague — short, clear, instructional):
   "The position is equal. We continue with ...Be6 and ...Qd7, then castle long."
   "This is a mistake. After ...dxe4 and ...Bg4 White's king becomes exposed and we get a lasting attack."
   "Dubious. White can simply play Bxf6 and keep the extra pawn while our pieces stay passive."
+  "White intends to push e5 and open the centre before we finish development."
 - Comment especially on variation starts, variation ends, and moves with ! ? !! ?? ?!.
+- At VARIATION END: use OUR NEXT PLAN (from the engine API) to briefly say what we will do next — still in simple words, no move lists.
 
 NEVER DO:
 - Repeat the move that was just played.
@@ -1026,6 +1040,7 @@ NEVER DO:
 - Quote engine names, eval numbers, or symbols like +-, ±, =, $n.
 - Use vague filler ("continues development", "keeps the initiative", "active operations", "improves the position").
 - Invent a pin, sacrifice or piece that is not on the given FEN.
+- Say "we will..." when describing the opponent's move. On their move, describe their plan only.
 
 When you describe a plan, respect legal move order (for example the c1-bishop must move before queenside castling is possible).
 
