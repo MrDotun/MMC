@@ -740,14 +740,13 @@
                 lastChunkAtLevel[0].isVariationEnd = true;
             }
 
-            // Post-process: next moves of THIS variation only (same level, skip nested branches)
-            // Keep full targets (with !?/+- signs) so the AI sees GM marks on the continuation.
+            // Post-process: next 5–7 moves of THIS variation only, keeping GM signs (!?/+- etc.)
             for (let i = 0; i < chunks.length; i++) {
                 const c = chunks[i];
                 const nextSans = [];
-                const nextFull = []; // SAN + symbols, e.g. "Bg4" or "Be7 +-"
+                const nextFull = [];
                 let j = i + 1;
-                while (j < chunks.length && nextSans.length < 6) {
+                while (j < chunks.length && nextFull.length < 7) {
                     const nxt = chunks[j];
                     if (nxt.variationLevel < c.variationLevel) break;
                     if (nxt.variationLevel > c.variationLevel) {
@@ -903,105 +902,26 @@
                     gmVerdict = "GM marks the position equal.";
                 }
 
-                // Variation context: last 3 moves + this move + next moves of THIS variation only
-                const last3Str = (c.last3Moves && c.last3Moves.length)
-                    ? c.last3Moves.join(" ")
-                    : "(start of line)";
-                const nextStr = (c.nextMoves && c.nextMoves.length)
-                    ? c.nextMoves.join(" ")
-                    : "(end of this variation)";
-                // Compact view of the local variation line so AI sees why a move is good/bad
-                const localLine = [
-                    last3Str !== "(start of line)" ? last3Str : "",
-                    c.san || c.target.replace(/[!?$].*$/,'').trim(),
-                    nextStr !== "(end of this variation)" ? nextStr : ""
-                ].filter(Boolean).join(" → ");
-
-                // Build full game line from move 1: "1. e4 e5 2. Nf3 Nc6 3. d4 a6"
-                const pathArr = c.pathArray || [];
-                const gameParts = [];
-                for (let pi = 0; pi < pathArr.length; pi++) {
-                    if (pi % 2 === 0) {
-                        gameParts.push(`${Math.floor(pi / 2) + 1}. ${pathArr[pi]}`);
-                    } else {
-                        gameParts.push(pathArr[pi]);
-                    }
-                }
-                // Mark the move being annotated with its GM symbols
-                let gameLine = gameParts.join(" ");
-                if (c.target && pathArr.length) {
-                    const lastSan = pathArr[pathArr.length - 1];
-                    const annotated = (c.target || "").trim();
-                    if (annotated && annotated !== lastSan) {
-                        // replace last occurrence of the bare SAN with the annotated form
-                        const idx = gameLine.lastIndexOf(lastSan);
-                        if (idx !== -1) {
-                            gameLine = gameLine.slice(0, idx) + annotated + gameLine.slice(idx + lastSan.length);
-                        }
-                    }
-                }
-
-                // Next 5–6 moves with their signs, numbered if possible
+                // Only FEN + next 5–7 moves with signs — nothing else
                 const nextFull = (c.nextMovesFull && c.nextMovesFull.length)
-                    ? c.nextMovesFull
-                    : (c.nextMoves || []);
-                let nextLine = "(end of line)";
-                if (nextFull.length) {
-                    const nextParts = [];
-                    // Continue move numbering from after the annotated move
-                    let plyStart = pathArr.length; // next ply index
-                    for (let ni = 0; ni < nextFull.length; ni++) {
-                        const ply = plyStart + ni;
-                        if (ply % 2 === 0) {
-                            nextParts.push(`${Math.floor(ply / 2) + 1}. ${nextFull[ni]}`);
-                        } else {
-                            nextParts.push(nextFull[ni]);
-                        }
-                    }
-                    nextLine = nextParts.join(" ");
-                }
+                    ? c.nextMovesFull.join(" ")
+                    : ((c.nextMoves && c.nextMoves.length) ? c.nextMoves.join(" ") : "(end of line)");
 
-                const who = sideJustPlayed === weSide ? "us" : "them";
+                // FEN after the move (exact board the note is about). Validated.
+                const fenToSend = (c.moveParsed !== false && isValidFen(c.fenAfter))
+                    ? c.fenAfter
+                    : (isValidFen(c.fen) ? c.fen : null);
 
-                // Simple game-style block for the AI
                 let lineOutput = `[ID: ${c.id}]
-GAME: ${gameLine || "(start)"}
-ANNOTATE: ${c.moveNum}. ${c.target}  (played by ${sideJustPlayed}, ${who})
-NEXT: ${nextLine}
-GM: ${gmVerdict}`;
+MOVE: ${c.moveNum}. ${c.target}
+BY: ${sideJustPlayed} | we = ${weSide}
+NEXT: ${nextFull}
+FEN: ${fenToSend || "UNRELIABLE"}`;
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
-                
                 statsText.innerText = `Preparing: ${c.moveNum}. ${c.target}`;
-
-                // FEN before the move (position where the move was chosen) — clearer for "why this move"
-                if (fenOk && isValidFen(c.fen)) {
-                    lineOutput += `\nFEN: ${c.fen}`;
-                } else if (fenOk) {
-                    lineOutput += `\nFEN: ${c.fenAfter}`;
-                } else {
-                    lineOutput += `\nFEN: UNRELIABLE`;
-                }
-
-                // Engine only at bare variation ends — short verbal hint, no move lists
-                const hasPgnContinuation = nextFull.length > 0;
-                const needsEngine = fenOk && c.isVariationEnd && !hasPgnContinuation;
-
-                if (needsEngine) {
-                    engineCalls++;
-                    btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(300);
-                    let engineData = await getEngineRefutation(c.fenAfter);
-                    if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
-                        lineOutput += `\nHINT: ${engineData.lines[0].planHint || "positional idea"}`;
-                        statsText.innerText = `[${c.moveNum}.${c.target}] plan ok`;
-                    } else {
-                        statsText.innerText = `[${c.moveNum}.${c.target}] no engine`;
-                    }
-                } else {
-                    await delay(15);
-                }
+                await delay(15);
 
                 batchData.push(lineOutput);
             }
@@ -1009,45 +929,26 @@ GM: ${gmVerdict}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a 2700+ human GM writing notes for a chess course. We play ${weSide}. They play ${theySide}.
+            const fullPrompt = `You are a 2700+ human GM writing notes for a chess course. We play ${weSide}.
 
-Each item is a simple game fragment:
-- GAME: the line from move 1 up to and including the move to annotate (with any ! ? +- signs)
-- ANNOTATE: the move you must comment on
-- NEXT: the following 5–6 moves of this same line (with signs) — this shows the plan and why the move was played
-- FEN: the exact board before that move
-- GM: short reading of the symbols
-- HINT: only present at dead ends; soft idea only
+Each item gives you:
+- MOVE: the move to annotate (with any ! ? !! ?? ?! =/∞ +- signs)
+- BY: who played it
+- NEXT: the next 5–7 moves of this line (with signs) — use these to see the plan
+- FEN: the exact board after that move (standard chess FEN, White at bottom of the rank numbers)
 
-Annotate freely, like a strong human GM. Use simple but correct English. 1–3 sentences.
+Annotate freely like a strong human GM. Simple but correct English. 1–3 short sentences.
+Trust the FEN and the signs. Use NEXT to understand why the move was played.
+For our moves say "we / our". For their moves say what they want.
 
-How to think:
-1. Look at the FEN — that is the real board.
-2. Trust the GM signs on the move and on NEXT (! ? !! ?? ?! =/∞ +- ± etc.).
-3. Use NEXT to understand the idea (e.g. if NEXT has axb5 and the rook sits on a2, the plan is to open the a-file and hit the queen). Do not list those moves in your note.
-4. Write the idea in plain words.
-
-Style:
-- Our moves → "we / our"
-- Their moves → "${theySide}" or "they" (never "we will..." on their move)
-- Concrete: piece, square, plan
-- No move lists, no SANs, no engine numbers
-- No vague filler ("active operations", "keeps the initiative")
-
-Examples:
-"White puts the rook on a2 so that after taking on b5 the a-file opens and the rook hits our queen."
-"We push the b-pawn to gain space and keep their pieces passive."
-"This is a mistake. Our king becomes exposed and they get a lasting attack."
-"Equal. We develop the bishop and prepare to castle."
-
-Return ONLY a JSON object. Keys = the IDs. Values = the comment text only. Nothing else.
+Return ONLY a JSON object. Keys = the IDs. Values = the comment text only.
 
 === BATCH ===
 ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
                 resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions (variation starts/ends + critical + samples)\n${engineCalls} engine calls on branch ends / critical moves.`);
+                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions (FEN + next moves with signs).`);
             }).catch(err => {
                 const textArea = document.createElement("textarea");
                 textArea.value = fullPrompt;
@@ -1056,7 +957,7 @@ ${batchString}`;
                 try {
                     document.execCommand('copy');
                     resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                    alert(`Selected Batch Copied!\n${totalSelectedMoves} positions\n${engineCalls} engine calls.`);
+                    alert(`Selected Batch Copied!\n${totalSelectedMoves} positions.`);
                 } catch (e) {
                     alert("Clipboard error. Please try again or copy manually.");
                     resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
