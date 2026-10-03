@@ -652,14 +652,24 @@
                     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
                     fenBeforeLastMove = normalizeFen(chess.fen());
 
-                    let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O]/g, ''); 
+                    // Strip annotation symbols so chess.js gets a clean SAN (handles Ng5=/∞, Nd4??, etc.)
+                    let cleanMove = token
+                        .replace(/\$\d+/g, '')
+                        .replace(/[!?]+/g, '')
+                        .replace(/[±∓∞]/g, '')
+                        .replace(/[=\/+\-]+$/g, '')
+                        .replace(/[^a-zA-Z0-9=\+\-#O]/g, '')
+                        .trim();
+                    // Keep promotion equals only when followed by piece letter (e.g. e8=Q)
+                    if (/=$/.test(cleanMove)) cleanMove = cleanMove.replace(/=$/, '');
+
                     let moveObj = chess.move(cleanMove, { sloppy: true });
                     if (!moveObj) {
-                        cleanMove = cleanMove.replace(/[+#]/g, '');
-                        moveObj = chess.move(cleanMove, { sloppy: true });
+                        const noCheck = cleanMove.replace(/[+#]/g, '');
+                        if (noCheck !== cleanMove) moveObj = chess.move(noCheck, { sloppy: true });
                     }
                     if (!moveObj) {
-                        const alt = token.replace(/[!?]+$/g, '').replace(/\$\d+$/g, '').trim();
+                        const alt = token.replace(/[!?$±∓∞=\/\+\-].*$/g, '').trim();
                         if (alt && alt !== cleanMove) {
                             moveObj = chess.move(alt, { sloppy: true });
                         }
@@ -671,15 +681,21 @@
                         sanUsed = moveObj.san;
                         currentPath.push(sanUsed);
                     } else {
+                        // Do NOT advance the board on a failed parse — keep FEN reliable for later moves
                         currentFEN = fenBeforeLastMove;
-                        sanUsed = token.replace(/[!?$].*$/,'').trim();
+                        sanUsed = token.replace(/[!?$±∓∞].*$/,'').replace(/[=\/+\-]+$/,'').trim();
                         currentPath.push(sanUsed);
-                        console.warn("Move failed to parse:", token, "at", fenBeforeLastMove);
+                        console.warn("Move failed to parse:", token, "→ tried:", cleanMove, "at", fenBeforeLastMove);
                     }
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
-                    if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken) || /^[\+\-=]+$/.test(nextToken))) {
+                    if (nextToken && (
+                        nextToken.startsWith('$') ||
+                        /^[!?]+$/.test(nextToken) ||
+                        /^[\+\-=±∓∞\/]+$/.test(nextToken) ||
+                        /[=+\-±∓]\/[∞=+\-±∓]/.test(nextToken)
+                    )) {
                         evalSymbol = ` ${nextToken}`;
                     }
 
@@ -730,7 +746,7 @@
                 const c = chunks[i];
                 const nextSans = [];
                 let j = i + 1;
-                while (j < chunks.length && nextSans.length < 6) {
+                while (j < chunks.length && nextSans.length < 8) {
                     const nxt = chunks[j];
                     // Left this variation entirely
                     if (nxt.variationLevel < c.variationLevel) break;
@@ -922,18 +938,25 @@ GM VERDICT (from PGN symbols only): ${gmVerdict}`;
                 
                 statsText.innerText = `Preparing: ${c.moveNum}. ${c.target}`;
 
-                // Board state = FEN only (no piece lists)
+                // Exact board state = FEN only (no piece list — keeps the prompt clean)
                 if (fenOk) {
                     lineOutput += `\nFEN: ${c.fenAfter}`;
                 } else {
                     lineOutput += `\nFEN: UNRELIABLE (do not invent a position)`;
                 }
 
-                // Engine only for plan ideas at variation ends / critical moves.
-                // Never treat engine numbers as the truth — GM symbols are the truth.
-                const isCritical = /[?!$]|\$\d+|[\+\-=±∓]/.test(c.target) || isBadMove || hasDubious || hasGood || !!favouredSide;
-                const needsEngine = fenOk && (c.isVariationEnd || isCritical || !(c.nextMoves && c.nextMoves.length));
+                // Engine only at variation ends / critical moves when there is no PGN continuation.
+                // Never dump move lists to the AI — they confuse it. GM symbols + FEN are the truth.
+                const isCritical = /[?!$]|\$\d+|[\+\-=±∓∞]|[=\/]/.test(c.target) || isBadMove || hasDubious || hasGood || !!favouredSide;
+                const hasPgnContinuation = c.nextMoves && c.nextMoves.length > 0;
+                const needsEngine = fenOk && (c.isVariationEnd || isCritical) && !hasPgnContinuation;
                 
+                if (c.isVariationEnd) {
+                    lineOutput += `\nVARIATION END: Explain the GM sign in plain words. Use NEXT MOVES IN THIS VARIATION (if any) to understand the idea. Do not quote any move by name.`;
+                } else if (isCritical) {
+                    lineOutput += `\nCRITICAL: Comment on the idea from NEXT MOVES IN THIS VARIATION and the GM sign. Do not quote moves by name.`;
+                }
+
                 if (needsEngine) {
                     engineCalls++;
                     btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
@@ -942,53 +965,19 @@ GM VERDICT (from PGN symbols only): ${gmVerdict}`;
                     let engineData = await getEngineRefutation(c.fenAfter);
 
                     if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
-                        const lines = engineData.lines;
-                        const stm = sideToMoveAfter;
-
-                        // Ideas only — no eval numbers shown to the annotator model. Show up to 7 moves per line.
-                        lineOutput += `\nPLAN IDEAS (from engine API, for inspiration only — ignore numbers, trust GM symbols; each line shows up to 7 moves):`;
-                        lines.forEach((ln, idx) => {
-                            const rank = idx + 1;
-                            const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            const pv7 = fullPv.split(/\s+/).filter(Boolean).slice(0, 7).join(" ");
-                            lineOutput += `\n  IDEA ${rank}: ${pv7 || "(none)"}`;
-                        });
-
-                        const allWhite = [];
-                        const allBlack = [];
-                        lines.forEach(ln => {
-                            const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 7);
-                            const stmMoves = [];
-                            const oppMoves = [];
-                            pvMoves.forEach((m, i) => {
-                                if (i % 2 === 0) stmMoves.push(m);
-                                else oppMoves.push(m);
-                            });
-                            const w = stm === "White" ? stmMoves : oppMoves;
-                            const b = stm === "Black" ? stmMoves : oppMoves;
-                            w.forEach(m => { if (!allWhite.includes(m)) allWhite.push(m); });
-                            b.forEach(m => { if (!allBlack.includes(m)) allBlack.push(m); });
-                        });
-
-                        lineOutput += `\nWHITE PLAN IDEAS: ${allWhite.slice(0, 4).join(", ") || "(none)"}`;
-                        lineOutput += `\nBLACK PLAN IDEAS: ${allBlack.slice(0, 4).join(", ") || "(none)"}`;
-
+                        // Verbal plan hint only — NO move lists (they confuse the annotator)
+                        const top = engineData.lines[0];
+                        const hint = top.planHint || "positional idea";
+                        lineOutput += `\nPLAN HINT (verbal only, no moves to quote): ${hint}`;
                         if (c.isVariationEnd) {
-                            const ourPlanMoves = weSide === "White" ? allWhite : allBlack;
-                            lineOutput += `\nVARIATION END: Explain the GM sign in plain words. Use the NEXT MOVES (if any) and/or PLAN IDEAS to say why the move is good, bad or dubious. Do not quote the next PGN move by name.`;
-                            lineOutput += `\nOUR NEXT PLAN (from engine API — use for a short verbal plan of what we will do next): ${ourPlanMoves.slice(0, 5).join(", ") || "(none)"}`;
-                        } else if (isCritical) {
-                            lineOutput += `\nCRITICAL: Comment on the idea. Look at NEXT MOVES IN THIS VARIATION to understand the point. Use PLAN IDEAS only as inspiration.`;
+                            lineOutput += `\nOUR NEXT PLAN: describe in plain words what we aim for next (use the plan hint only as inspiration). Do not list moves.`;
                         }
-                        const topSan = lines[0].san || "ok";
-                        statsText.innerText = `[${c.moveNum}.${c.target}] ${topSan} (+${lines.length - 1} more)`;
+                        statsText.innerText = `[${c.moveNum}.${c.target}] plan ok`;
                     } else {
-                        lineOutput += `\nPLAN IDEAS: none available.`;
                         if (c.isVariationEnd) {
-                            lineOutput += `\nVARIATION END: Explain the GM sign in plain words. Use NEXT MOVES IN THIS VARIATION (if any) to understand why.`;
-                            lineOutput += `\nOUR NEXT PLAN (from engine API): none available.`;
+                            lineOutput += `\nOUR NEXT PLAN: none from engine — explain the GM sign from the position alone.`;
                         }
+                        statsText.innerText = `[${c.moveNum}.${c.target}] no engine`;
                     }
                 } else {
                     await delay(15);
@@ -1006,41 +995,44 @@ REPERTOIRE: we = ${weSide}. Always say "we / our" for ${weSide} and "${theySide}
 
 STRICT RULES:
 1. Board state = ONLY the FEN given for that move. Trust that FEN. Do not invent pieces, pins, attacks or ideas from memory or from other lines.
-2. GM symbols on the move (! ? !! ?? ?! $n +- etc.) are the truth about quality and who is better. The GM does not use an engine. Never decide who is better from engine numbers.
-3. Look at THIS VARIATION LINE, LAST 3 MOVES and NEXT MOVES IN THIS VARIATION. They show the local idea and why a move is good, bad or dubious. Especially at VARIATION END, the following moves (or the lack of them) explain the reason.
-4. You may use PLAN IDEAS (and OUR NEXT PLAN at variation ends) only as inspiration for a short verbal plan. Never quote engine names or numbers. Each IDEA line shows up to 7 moves.
-5. Never name or quote the next move that already appears in the PGN. Never repeat the move that was just played.
+2. GM symbols on the move (! ? !! ?? ?! $n +- =/∞ etc.) are the truth about quality and who is better. Convey the GM's judgment. Never decide who is better from any other source.
+3. NEXT MOVES IN THIS VARIATION show why the move was played and the real plan of this line. Use them to understand the idea — but NEVER quote or list those moves in your comment. Describe the idea in plain words only.
+4. PLAN HINT (if present) is a short verbal idea only. Never invent or list moves from it.
+5. Never name or quote any move (not the one just played, not the next one, not any SAN). Describe ideas with piece + square + plan in words only.
 6. SIDE-AWARE COMMENTING (very important):
-   - When PLAYED BY is ${weSide} (our move): only say what WE will do / our plan. Use "we / our". Do not describe the opponent's next move as something we will do.
+   - When PLAYED BY is ${weSide} (our move): only say what WE will do / our plan. Use "we / our".
    - When PLAYED BY is ${theySide} (opponent's move): only say what the OPPONENT plans or intends. Use "${theySide}" or "they". Do not say "we will do X" about their move.
-   - Never mix: do not write our plans on the opponent's move, and do not write their plans as if they were ours.
+7. Finish every comment as a complete sentence. Do not stop mid-word or mid-phrase.
+8. Never write move lists, SANs, or mini-variations inside the comment.
 
 STYLE (concrete, not vague — short, clear, instructional):
 - 1–3 sentences.
-- Be specific: name the piece, the square, the break, the plan. Not abstract.
-- On our moves — Good: "We reroute the knight to d7, preparing the ...c5 break."
+- Be specific: name the piece, the square, the break, the plan. Not abstract. No SAN move lists.
+- On our moves — Good: "We reroute the knight to d7, preparing the c5 break."
 - On our moves — Bad: "We develop the knight and prepare active operations."
-- On opponent's moves — Good: "White plans to grab space with b4 and pressure the queenside."
+- On opponent's moves — Good: "White plans to grab space on the queenside and pressure our structure."
 - On opponent's moves — Bad: "We will stop b4" (wrong side — that is our reply, not their plan).
 - Sample style (match this tone):
-  "We will reroute the knight to d7, preparing the ...c5 break against White's center."
+  "We will reroute the knight to d7, preparing the c5 break against White's center."
   "We recapture with the queen, since e7 is not a good square for our knight."
-  "A useful prophylactic move. We stop White from playing b4 and grabbing space on the queenside."
-  "The position is equal. We continue with ...Be6 and ...Qd7, then castle long."
-  "This is a mistake. After ...dxe4 and ...Bg4 White's king becomes exposed and we get a lasting attack."
-  "Dubious. White can simply play Bxf6 and keep the extra pawn while our pieces stay passive."
-  "White intends to push e5 and open the centre before we finish development."
+  "A useful prophylactic move. We stop White from grabbing space on the queenside."
+  "The position is equal. We continue developing the bishop and queen, then castle long."
+  "This is a mistake. After the exchanges White's king becomes exposed and we get a lasting attack."
+  "Dubious. White can simply take on f6 and keep the extra pawn while our pieces stay passive."
+  "White intends to open the centre before we finish development."
 - Comment especially on variation starts, variation ends, and moves with ! ? !! ?? ?!.
-- At VARIATION END: use OUR NEXT PLAN (from the engine API) to briefly say what we will do next — still in simple words, no move lists.
+- At VARIATION END: briefly say what we aim for next in plain words only — no moves.
 
 NEVER DO:
 - Repeat the move that was just played.
-- Name the next move already written in the PGN.
-- Write long move lists or mini-games inside the comment.
+- Name, quote, or list any next move (SAN or otherwise).
+- Write move lists, SANs, or mini-games inside the comment.
 - Quote engine names, eval numbers, or symbols like +-, ±, =, $n.
 - Use vague filler ("continues development", "keeps the initiative", "active operations", "improves the position").
 - Invent a pin, sacrifice or piece that is not on the given FEN.
 - Say "we will..." when describing the opponent's move. On their move, describe their plan only.
+- Invent a plan that contradicts the FEN or the local variation idea.
+- Cut a comment short mid-sentence. Always finish the thought in 1–3 full sentences.
 
 When you describe a plan, respect legal move order (for example the c1-bishop must move before queenside castling is possible).
 
@@ -1130,12 +1122,11 @@ ${batchString}`;
                 }
 
                 // 2. Fallback: regex-extract every "CHK_...": "comment" pair (handles broken JSON)
-                // Matches both "key": "value" and 'key': 'value' and key: "value"
-                const pairRe = /["']?(CHK_\d+_M\d+_V\d+)["']?\s*:\s*["']((?:\\.|[^"\\])*?)["']/gs;
+                // Greedy enough to capture full sentences; allows escaped quotes inside
+                const pairRe = /["']?(CHK_\d+_M\d+_V\d+)["']?\s*:\s*"((?:\\.|[^"\\])*)"/gs;
                 let m;
                 while ((m = pairRe.exec(text)) !== null) {
                     const id = m[1];
-                    // Unescape common sequences
                     let comment = m[2]
                         .replace(/\\"/g, '"')
                         .replace(/\\n/g, ' ')
@@ -1145,9 +1136,25 @@ ${batchString}`;
                     if (id && comment) map[id] = comment;
                 }
 
-                // 3. Even more permissive: lines that look like CHK_0_M5_V0: some text
+                // 2b. Single-quoted values
                 if (Object.keys(map).length === 0) {
-                    const lineRe = /(CHK_\d+_M\d+_V\d+)\s*[:=]\s*["']?(.+?)["']?\s*(?:,|$)/gm;
+                    const pairRe2 = /["']?(CHK_\d+_M\d+_V\d+)["']?\s*:\s*'((?:\\.|[^'\\])*)'/gs;
+                    while ((m = pairRe2.exec(text)) !== null) {
+                        const id = m[1];
+                        let comment = m[2]
+                            .replace(/\\'/g, "'")
+                            .replace(/\\n/g, ' ')
+                            .replace(/\\t/g, ' ')
+                            .replace(/\\\\/g, '\\')
+                            .trim();
+                        if (id && comment) map[id] = comment;
+                    }
+                }
+
+                // 3. Even more permissive: lines that look like CHK_0_M5_V0: some text
+                // Capture until next CHK_ key or end of line block (not non-greedy early stop)
+                if (Object.keys(map).length === 0) {
+                    const lineRe = /(CHK_\d+_M\d+_V\d+)\s*[:=]\s*["']?([^\n]+?)["']?\s*(?=,?\s*(?:CHK_|\n\s*\}|\n\s*$|$))/gm;
                     while ((m = lineRe.exec(text)) !== null) {
                         const id = m[1];
                         let comment = m[2].replace(/["']\s*,?\s*$/, '').trim();
