@@ -741,26 +741,26 @@
             }
 
             // Post-process: next moves of THIS variation only (same level, skip nested branches)
-            // Nested ( ) side-lines are skipped so "NEXT MOVES" stays on the pure continuation.
+            // Keep full targets (with !?/+- signs) so the AI sees GM marks on the continuation.
             for (let i = 0; i < chunks.length; i++) {
                 const c = chunks[i];
                 const nextSans = [];
+                const nextFull = []; // SAN + symbols, e.g. "Bg4" or "Be7 +-"
                 let j = i + 1;
-                while (j < chunks.length && nextSans.length < 8) {
+                while (j < chunks.length && nextSans.length < 6) {
                     const nxt = chunks[j];
-                    // Left this variation entirely
                     if (nxt.variationLevel < c.variationLevel) break;
-                    // Nested variation — skip until we return to our level
                     if (nxt.variationLevel > c.variationLevel) {
                         j++;
                         continue;
                     }
-                    // Same level: sibling variation start ends our continuation
                     if (nxt.isVariationStart) break;
                     nextSans.push(nxt.san || nxt.target.replace(/[!?$].*$/, '').trim());
+                    nextFull.push((nxt.target || nxt.san || "").trim());
                     j++;
                 }
                 c.nextMoves = nextSans;
+                c.nextMovesFull = nextFull;
             }
 
             globalChunks = chunks;
@@ -917,130 +917,130 @@
                     nextStr !== "(end of this variation)" ? nextStr : ""
                 ].filter(Boolean).join(" → ");
 
-                const commentAs = (sideJustPlayed === weSide)
-                    ? `OUR move — only say what WE will do / our plan (use "we / our")`
-                    : `OPPONENT move — only say what ${theySide} plans or intends (do not say "we will...")`;
+                // Build full game line from move 1: "1. e4 e5 2. Nf3 Nc6 3. d4 a6"
+                const pathArr = c.pathArray || [];
+                const gameParts = [];
+                for (let pi = 0; pi < pathArr.length; pi++) {
+                    if (pi % 2 === 0) {
+                        gameParts.push(`${Math.floor(pi / 2) + 1}. ${pathArr[pi]}`);
+                    } else {
+                        gameParts.push(pathArr[pi]);
+                    }
+                }
+                // Mark the move being annotated with its GM symbols
+                let gameLine = gameParts.join(" ");
+                if (c.target && pathArr.length) {
+                    const lastSan = pathArr[pathArr.length - 1];
+                    const annotated = (c.target || "").trim();
+                    if (annotated && annotated !== lastSan) {
+                        // replace last occurrence of the bare SAN with the annotated form
+                        const idx = gameLine.lastIndexOf(lastSan);
+                        if (idx !== -1) {
+                            gameLine = gameLine.slice(0, idx) + annotated + gameLine.slice(idx + lastSan.length);
+                        }
+                    }
+                }
 
+                // Next 5–6 moves with their signs, numbered if possible
+                const nextFull = (c.nextMovesFull && c.nextMovesFull.length)
+                    ? c.nextMovesFull
+                    : (c.nextMoves || []);
+                let nextLine = "(end of line)";
+                if (nextFull.length) {
+                    const nextParts = [];
+                    // Continue move numbering from after the annotated move
+                    let plyStart = pathArr.length; // next ply index
+                    for (let ni = 0; ni < nextFull.length; ni++) {
+                        const ply = plyStart + ni;
+                        if (ply % 2 === 0) {
+                            nextParts.push(`${Math.floor(ply / 2) + 1}. ${nextFull[ni]}`);
+                        } else {
+                            nextParts.push(nextFull[ni]);
+                        }
+                    }
+                    nextLine = nextParts.join(" ");
+                }
+
+                const who = sideJustPlayed === weSide ? "us" : "them";
+
+                // Simple game-style block for the AI
                 let lineOutput = `[ID: ${c.id}]
-THIS VARIATION LINE (local only): ${localLine || "(single move)"}
-LAST 3 MOVES: ${last3Str}
-MOVE PLAYED: ${c.moveNum}. ${c.target}
-NEXT MOVES IN THIS VARIATION: ${nextStr}
-PLAYED BY: ${sideJustPlayed}
-SIDE TO MOVE AFTER: ${sideToMoveAfter}
-REPERTOIRE ("we"): ${weSide}
-COMMENT AS: ${commentAs}
-MAIN LINE: ${c.isMainLine} | VARIATION START: ${c.isVariationStart} | VARIATION END: ${c.isVariationEnd}
-GM VERDICT (from PGN symbols only): ${gmVerdict}`;
+GAME: ${gameLine || "(start)"}
+ANNOTATE: ${c.moveNum}. ${c.target}  (played by ${sideJustPlayed}, ${who})
+NEXT: ${nextLine}
+GM: ${gmVerdict}`;
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
                 
                 statsText.innerText = `Preparing: ${c.moveNum}. ${c.target}`;
 
-                // Exact board state = FEN only (no piece list — keeps the prompt clean)
-                if (fenOk) {
+                // FEN before the move (position where the move was chosen) — clearer for "why this move"
+                if (fenOk && isValidFen(c.fen)) {
+                    lineOutput += `\nFEN: ${c.fen}`;
+                } else if (fenOk) {
                     lineOutput += `\nFEN: ${c.fenAfter}`;
                 } else {
-                    lineOutput += `\nFEN: UNRELIABLE (do not invent a position)`;
+                    lineOutput += `\nFEN: UNRELIABLE`;
                 }
 
-                // Engine only at variation ends / critical moves when there is no PGN continuation.
-                // Never dump move lists to the AI — they confuse it. GM symbols + FEN are the truth.
-                const isCritical = /[?!$]|\$\d+|[\+\-=±∓∞]|[=\/]/.test(c.target) || isBadMove || hasDubious || hasGood || !!favouredSide;
-                const hasPgnContinuation = c.nextMoves && c.nextMoves.length > 0;
-                const needsEngine = fenOk && (c.isVariationEnd || isCritical) && !hasPgnContinuation;
-                
-                if (c.isVariationEnd) {
-                    lineOutput += `\nVARIATION END: Explain the GM sign in plain words. Use NEXT MOVES IN THIS VARIATION (if any) to understand the idea. Do not quote any move by name.`;
-                } else if (isCritical) {
-                    lineOutput += `\nCRITICAL: Comment on the idea from NEXT MOVES IN THIS VARIATION and the GM sign. Do not quote moves by name.`;
-                }
+                // Engine only at bare variation ends — short verbal hint, no move lists
+                const hasPgnContinuation = nextFull.length > 0;
+                const needsEngine = fenOk && c.isVariationEnd && !hasPgnContinuation;
 
                 if (needsEngine) {
                     engineCalls++;
                     btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(300); 
-                    
+                    await delay(300);
                     let engineData = await getEngineRefutation(c.fenAfter);
-
                     if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
-                        // Verbal plan hint only — NO move lists (they confuse the annotator)
-                        const top = engineData.lines[0];
-                        const hint = top.planHint || "positional idea";
-                        lineOutput += `\nPLAN HINT (verbal only, no moves to quote): ${hint}`;
-                        if (c.isVariationEnd) {
-                            lineOutput += `\nOUR NEXT PLAN: describe in plain words what we aim for next (use the plan hint only as inspiration). Do not list moves.`;
-                        }
+                        lineOutput += `\nHINT: ${engineData.lines[0].planHint || "positional idea"}`;
                         statsText.innerText = `[${c.moveNum}.${c.target}] plan ok`;
                     } else {
-                        if (c.isVariationEnd) {
-                            lineOutput += `\nOUR NEXT PLAN: none from engine — explain the GM sign from the position alone.`;
-                        }
                         statsText.innerText = `[${c.moveNum}.${c.target}] no engine`;
                     }
                 } else {
                     await delay(15);
                 }
-                
+
                 batchData.push(lineOutput);
             }
 
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a 2700+ GM repertoire annotator. You write in simple but correct English (about 70% English level). Short everyday words. No fancy or complex vocabulary. Grammar must still be correct.
+            const fullPrompt = `You are a 2700+ human GM writing notes for a chess course. We play ${weSide}. They play ${theySide}.
 
-REPERTOIRE: we = ${weSide}. Always say "we / our" for ${weSide} and "${theySide}" for the opponent. Never switch sides.
+Each item is a simple game fragment:
+- GAME: the line from move 1 up to and including the move to annotate (with any ! ? +- signs)
+- ANNOTATE: the move you must comment on
+- NEXT: the following 5–6 moves of this same line (with signs) — this shows the plan and why the move was played
+- FEN: the exact board before that move
+- GM: short reading of the symbols
+- HINT: only present at dead ends; soft idea only
 
-STRICT RULES:
-1. Board state = ONLY the FEN given for that move. Trust that FEN. Do not invent pieces, pins, attacks or ideas from memory or from other lines.
-2. GM symbols on the move (! ? !! ?? ?! $n +- =/∞ etc.) are the truth about quality and who is better. Convey the GM's judgment. Never decide who is better from any other source.
-3. NEXT MOVES IN THIS VARIATION show why the move was played and the real plan of this line. Use them to understand the idea — but NEVER quote or list those moves in your comment. Describe the idea in plain words only.
-4. PLAN HINT (if present) is a short verbal idea only. Never invent or list moves from it.
-5. Never name or quote any move (not the one just played, not the next one, not any SAN). Describe ideas with piece + square + plan in words only.
-6. SIDE-AWARE COMMENTING (very important):
-   - When PLAYED BY is ${weSide} (our move): only say what WE will do / our plan. Use "we / our".
-   - When PLAYED BY is ${theySide} (opponent's move): only say what the OPPONENT plans or intends. Use "${theySide}" or "they". Do not say "we will do X" about their move.
-7. Finish every comment as a complete sentence. Do not stop mid-word or mid-phrase.
-8. Never write move lists, SANs, or mini-variations inside the comment.
+Annotate freely, like a strong human GM. Use simple but correct English. 1–3 sentences.
 
-STYLE (concrete, not vague — short, clear, instructional):
-- 1–3 sentences.
-- Be specific: name the piece, the square, the break, the plan. Not abstract. No SAN move lists.
-- On our moves — Good: "We reroute the knight to d7, preparing the c5 break."
-- On our moves — Bad: "We develop the knight and prepare active operations."
-- On opponent's moves — Good: "White plans to grab space on the queenside and pressure our structure."
-- On opponent's moves — Bad: "We will stop b4" (wrong side — that is our reply, not their plan).
-- Sample style (match this tone):
-  "We will reroute the knight to d7, preparing the c5 break against White's center."
-  "We recapture with the queen, since e7 is not a good square for our knight."
-  "A useful prophylactic move. We stop White from grabbing space on the queenside."
-  "The position is equal. We continue developing the bishop and queen, then castle long."
-  "This is a mistake. After the exchanges White's king becomes exposed and we get a lasting attack."
-  "Dubious. White can simply take on f6 and keep the extra pawn while our pieces stay passive."
-  "White intends to open the centre before we finish development."
-- Comment especially on variation starts, variation ends, and moves with ! ? !! ?? ?!.
-- At VARIATION END: briefly say what we aim for next in plain words only — no moves.
+How to think:
+1. Look at the FEN — that is the real board.
+2. Trust the GM signs on the move and on NEXT (! ? !! ?? ?! =/∞ +- ± etc.).
+3. Use NEXT to understand the idea (e.g. if NEXT has axb5 and the rook sits on a2, the plan is to open the a-file and hit the queen). Do not list those moves in your note.
+4. Write the idea in plain words.
 
-NEVER DO:
-- Repeat the move that was just played.
-- Name, quote, or list any next move (SAN or otherwise).
-- Write move lists, SANs, or mini-games inside the comment.
-- Quote engine names, eval numbers, or symbols like +-, ±, =, $n.
-- Use vague filler ("continues development", "keeps the initiative", "active operations", "improves the position").
-- Invent a pin, sacrifice or piece that is not on the given FEN.
-- Say "we will..." when describing the opponent's move. On their move, describe their plan only.
-- Invent a plan that contradicts the FEN or the local variation idea.
-- Cut a comment short mid-sentence. Always finish the thought in 1–3 full sentences.
+Style:
+- Our moves → "we / our"
+- Their moves → "${theySide}" or "they" (never "we will..." on their move)
+- Concrete: piece, square, plan
+- No move lists, no SANs, no engine numbers
+- No vague filler ("active operations", "keeps the initiative")
 
-When you describe a plan, respect legal move order (for example the c1-bishop must move before queenside castling is possible).
+Examples:
+"White puts the rook on a2 so that after taking on b5 the a-file opens and the rook hits our queen."
+"We push the b-pawn to gain space and keep their pieces passive."
+"This is a mistake. Our king becomes exposed and they get a lasting attack."
+"Equal. We develop the bishop and prepare to castle."
 
-OUTPUT: Return ONLY a pure JSON object.
-Keys = the chunk IDs (for example "CHK_0_M5_V0").
-Values = the comment text only (simple correct English).
-Omit any key that needs no comment.
-No markdown, no thinking, no extra text outside the JSON.
+Return ONLY a JSON object. Keys = the IDs. Values = the comment text only. Nothing else.
 
 === BATCH ===
 ${batchString}`;
