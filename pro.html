@@ -404,6 +404,33 @@
             }
         }
 
+        // Compact ASCII board from FEN so the AI actually sees the position
+        // Rank 8 at top, rank 1 at bottom (standard diagram). Uppercase = White, lowercase = Black.
+        function fenToAsciiBoard(fen) {
+            if (!fen || !isValidFen(fen)) return "";
+            try {
+                const rows = fen.trim().split(/\s+/)[0].split("/");
+                if (rows.length !== 8) return "";
+                const lines = ["  a b c d e f g h"];
+                for (let r = 0; r < 8; r++) {
+                    let row = "";
+                    for (const ch of rows[r]) {
+                        if (ch >= "1" && ch <= "8") {
+                            row += " .".repeat(parseInt(ch, 10));
+                        } else {
+                            row += " " + ch;
+                        }
+                    }
+                    lines.push(`${8 - r}${row}`);
+                }
+                const turn = fen.trim().split(/\s+/)[1] === "b" ? "Black" : "White";
+                lines.push(`Side to move: ${turn}`);
+                return lines.join("\n");
+            } catch (e) {
+                return "";
+            }
+        }
+
         function buildPlanHint(evalVal, cont) {
             const evalNum = parseFloat(evalVal);
             const isMate = /mate|#/i.test(String(evalVal)) || /#/.test(cont || "");
@@ -419,9 +446,9 @@
             }
             let cont = "";
             if (data.continuationArr && data.continuationArr.length) {
-                cont = data.continuationArr.slice(0, 6).join(" ");
+                cont = data.continuationArr.slice(0, 7).join(" ");
             } else if (data.continuation) {
-                cont = String(data.continuation).split(" ").slice(0, 6).join(" ");
+                cont = String(data.continuation).split(" ").slice(0, 7).join(" ");
             }
             const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
             return {
@@ -575,7 +602,8 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g) || [];
+            // Tokenize: keep ( ) move-numbers NAGs SANs; drop headers/comments as skipped tokens
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[O0]-[O0](?:-[O0])?[+#]?|[a-hRNBQK][a-hRNBQK1-8x\-=+#]*[?!]*|[a-h][1-8](?:=[RNBQ])?[+#]?[?!]*)/g) || [];
             
             let chunks = [];
             let moveNumber = 0;
@@ -584,12 +612,14 @@
             let lastChunkAtLevel = {};
 
             let chess = new Chess();
-            let stateStack = [];
-            let currentFEN = chess.fen();
-            let fenBeforeLastMove = currentFEN;
-            // Track move path so AI sees what was played before each move
-            let pathStack = [[]]; // path of SANs at each variation level
-            let currentPath = [];
+            const startFen = chess.fen();
+
+            // Ply stack = sequence of moves on the CURRENT line (main or variation).
+            // Each entry: { san, fenBefore, fenAfter }
+            // On '(': save stack, undo last ply (variation replaces that move), continue.
+            // On ')': restore saved stack so deeper nests and siblings keep correct FENs.
+            let plyStack = [];
+            let branchStack = []; // { plies, level }
 
             const normalizeFen = (f) => {
                 if (!f || typeof f !== "string") return f;
@@ -600,59 +630,66 @@
                 return f;
             };
 
+            const fenAtTip = () => {
+                if (plyStack.length === 0) return startFen;
+                return plyStack[plyStack.length - 1].fenAfter;
+            };
+
+            const loadTip = () => {
+                const f = fenAtTip();
+                const ok = chess.load(f);
+                if (!ok) console.warn("Failed to load tip FEN:", f);
+                return normalizeFen(chess.fen());
+            };
+
             pgnTokens.forEach((token, index) => {
+                if (token.startsWith('[') || token.startsWith('{')) return; // skip headers / comments
+
                 if (token === "(") {
+                    // Save full line state (including the move this variation replaces)
+                    branchStack.push({
+                        plies: plyStack.map(p => ({ san: p.san, fenBefore: p.fenBefore, fenAfter: p.fenAfter })),
+                        level: variationLevel
+                    });
+                    // Variation = alternative to the last move → undo that ply
+                    if (plyStack.length > 0) {
+                        plyStack.pop();
+                    }
+                    loadTip();
                     variationLevel++;
-                    depthPlyCounts[variationLevel] = 0; 
-                    // Save full state (including path WITH the main-line move that this variation replaces)
-                    stateStack.push({ current: currentFEN, beforeLast: fenBeforeLastMove });
-                    pathStack.push([...currentPath]);
-                    // Variation is an ALTERNATIVE to the last move → drop that move from the path
-                    // and load the position that existed before it
-                    if (currentPath.length > 0) {
-                        currentPath = currentPath.slice(0, -1);
-                    }
-                    const loaded = chess.load(fenBeforeLastMove);
-                    if (!loaded) {
-                        console.warn("Failed to load FEN for variation start:", fenBeforeLastMove);
-                    }
-                    currentFEN = normalizeFen(chess.fen());
-                    return; 
+                    depthPlyCounts[variationLevel] = 0;
+                    return;
                 }
                 if (token === ")") {
                     if (lastChunkAtLevel[variationLevel]) {
                         lastChunkAtLevel[variationLevel].isVariationEnd = true;
                     }
-                    variationLevel--;
-                    let state = stateStack.pop();
-                    if (state) {
-                        const loaded = chess.load(state.current);
-                        if (loaded) {
-                            currentFEN = normalizeFen(chess.fen());
-                            fenBeforeLastMove = normalizeFen(state.beforeLast);
-                        } else {
-                            currentFEN = normalizeFen(state.current);
-                            fenBeforeLastMove = normalizeFen(state.beforeLast);
-                        }
+                    const saved = branchStack.pop();
+                    if (saved) {
+                        plyStack = saved.plies;
+                        variationLevel = saved.level;
+                    } else {
+                        variationLevel = Math.max(0, variationLevel - 1);
                     }
-                    // Restore path that includes the main-line move we branched from
-                    currentPath = pathStack.pop() || [];
-                    return; 
+                    loadTip();
+                    return;
                 }
                 
                 const isMoveNum = /^\d+\./.test(token);
                 if (isMoveNum) {
-                    moveNumber = parseInt(token);
-                    return; 
+                    moveNumber = parseInt(token, 10);
+                    return;
                 }
 
-                const isMove = /^[a-hA-ZRKNQBO]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                if (token.startsWith('$')) return; // NAG handled via look-ahead on moves
+
+                const isMove = /^([a-hRNBQK]|[O0]-)/.test(token);
                 
                 if (isMove) {
                     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
-                    fenBeforeLastMove = normalizeFen(chess.fen());
+                    const fenBefore = normalizeFen(loadTip());
 
-                    // Strip annotation symbols so chess.js gets a clean SAN (handles Ng5=/∞, Nd4??, etc.)
+                    // Clean SAN for chess.js
                     let cleanMove = token
                         .replace(/\$\d+/g, '')
                         .replace(/[!?]+/g, '')
@@ -660,8 +697,9 @@
                         .replace(/[=\/+\-]+$/g, '')
                         .replace(/[^a-zA-Z0-9=\+\-#O]/g, '')
                         .trim();
-                    // Keep promotion equals only when followed by piece letter (e.g. e8=Q)
                     if (/=$/.test(cleanMove)) cleanMove = cleanMove.replace(/=$/, '');
+                    // Castling: accept 0-0 as O-O
+                    cleanMove = cleanMove.replace(/0/g, 'O');
 
                     let moveObj = chess.move(cleanMove, { sloppy: true });
                     if (!moveObj) {
@@ -669,23 +707,21 @@
                         if (noCheck !== cleanMove) moveObj = chess.move(noCheck, { sloppy: true });
                     }
                     if (!moveObj) {
-                        const alt = token.replace(/[!?$±∓∞=\/\+\-].*$/g, '').trim();
-                        if (alt && alt !== cleanMove) {
-                            moveObj = chess.move(alt, { sloppy: true });
-                        }
+                        const alt = token.replace(/[!?$±∓∞=\/\+\-].*$/g, '').replace(/0/g, 'O').trim();
+                        if (alt && alt !== cleanMove) moveObj = chess.move(alt, { sloppy: true });
                     }
+
                     let parsedOk = !!moveObj;
                     let sanUsed = "";
+                    let fenAfter = fenBefore;
                     if (moveObj) {
-                        currentFEN = normalizeFen(chess.fen());
+                        fenAfter = normalizeFen(chess.fen());
                         sanUsed = moveObj.san;
-                        currentPath.push(sanUsed);
+                        plyStack.push({ san: sanUsed, fenBefore, fenAfter });
                     } else {
-                        // Do NOT advance the board on a failed parse — keep FEN reliable for later moves
-                        currentFEN = fenBeforeLastMove;
+                        // Failed parse: do not push a fake ply (keeps later FENs correct)
                         sanUsed = token.replace(/[!?$±∓∞].*$/,'').replace(/[=\/+\-]+$/,'').trim();
-                        currentPath.push(sanUsed);
-                        console.warn("Move failed to parse:", token, "→ tried:", cleanMove, "at", fenBeforeLastMove);
+                        console.warn("Move failed to parse:", token, "→ tried:", cleanMove, "at", fenBefore);
                     }
 
                     let evalSymbol = "";
@@ -700,15 +736,10 @@
                     }
 
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
-
-                    // Full path array (up to and including this move) for precise last-3 / next-move logic
-                    const pathArray = [...currentPath];
-                    // Short path string (last ~12 plies) for the prompt
+                    const pathArray = plyStack.map(p => p.san);
                     const pathStr = pathArray.length > 12
                         ? "..." + pathArray.slice(-12).join(" ")
                         : pathArray.join(" ");
-
-                    // Last 3 moves BEFORE the current move (so AI sees the immediate history)
                     const last3 = pathArray.length > 1
                         ? pathArray.slice(Math.max(0, pathArray.length - 4), pathArray.length - 1)
                         : [];
@@ -721,8 +752,8 @@
                         isMainLine: variationLevel === 0,
                         isVariationStart: isFirstMoveOfVariation,
                         isVariationEnd: false,
-                        fen: fenBeforeLastMove,
-                        fenAfter: currentFEN,
+                        fen: fenBefore,
+                        fenAfter: fenAfter,
                         moveParsed: parsedOk,
                         variationLevel: variationLevel,
                         pathToHere: pathStr,
@@ -902,7 +933,7 @@
                     gmVerdict = "GM marks the position equal.";
                 }
 
-                // Only FEN + next 5–7 moves with signs — nothing else
+                // FEN + ASCII board + next moves with signs; at variation end also OUR PLAN from engine
                 const nextFull = (c.nextMovesFull && c.nextMovesFull.length)
                     ? c.nextMovesFull.join(" ")
                     : ((c.nextMoves && c.nextMoves.length) ? c.nextMoves.join(" ") : "(end of line)");
@@ -912,16 +943,51 @@
                     ? c.fenAfter
                     : (isValidFen(c.fen) ? c.fen : null);
 
+                const asciiBoard = fenToSend ? fenToAsciiBoard(fenToSend) : "";
+
                 let lineOutput = `[ID: ${c.id}]
 MOVE: ${c.moveNum}. ${c.target}
 BY: ${sideJustPlayed} | we = ${weSide}
 NEXT: ${nextFull}
 FEN: ${fenToSend || "UNRELIABLE"}`;
+                if (asciiBoard) {
+                    lineOutput += `\nBOARD:\n${asciiBoard}`;
+                }
+
+                // End of a closed variation → engine gives our next ideas (up to 7 moves)
+                if (c.isVariationEnd && fenToSend) {
+                    engineCalls++;
+                    btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
+                    await delay(300);
+                    const engineData = await getEngineRefutation(fenToSend);
+                    if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
+                        const stm = sideToMoveAfter; // side to move after this move
+                        const ourMoves = [];
+                        const ideas = [];
+                        engineData.lines.forEach((ln, idx) => {
+                            const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
+                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 7);
+                            ideas.push(pvMoves.join(" "));
+                            // Collect our side's moves from the PV (every other move depending on stm)
+                            pvMoves.forEach((m, i) => {
+                                const isOur = (stm === weSide) ? (i % 2 === 0) : (i % 2 === 1);
+                                if (isOur && !ourMoves.includes(m)) ourMoves.push(m);
+                            });
+                        });
+                        lineOutput += `\nOUR PLAN (engine ideas after this line ends — up to 7 moves): ${ideas.filter(Boolean).join(" | ") || "(none)"}`;
+                        lineOutput += `\nOUR MOVES: ${ourMoves.slice(0, 7).join(" ") || "(none)"}`;
+                        statsText.innerText = `[${c.moveNum}.${c.target}] plan ok`;
+                    } else {
+                        lineOutput += `\nOUR PLAN: (none)`;
+                        statsText.innerText = `[${c.moveNum}.${c.target}] no engine`;
+                    }
+                } else {
+                    await delay(15);
+                    statsText.innerText = `Preparing: ${c.moveNum}. ${c.target}`;
+                }
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
-                statsText.innerText = `Preparing: ${c.moveNum}. ${c.target}`;
-                await delay(15);
 
                 batchData.push(lineOutput);
             }
@@ -931,17 +997,12 @@ FEN: ${fenToSend || "UNRELIABLE"}`;
             
             const fullPrompt = `You are a 2700+ human GM writing notes for a chess course. We play ${weSide}.
 
-Each item gives you:
-- MOVE: the move to annotate (with any ! ? !! ?? ?! =/∞ +- signs)
-- BY: who played it
-- NEXT: the next 5–7 moves of this line (with signs) — use these to see the plan
-- FEN: the exact board after that move (standard chess FEN)
+Each item has MOVE (with signs), BY, NEXT (the plan of the line), FEN, and BOARD.
+BOARD: uppercase = White, lowercase = Black. Rank 8 at top, rank 1 at bottom. a-file left, h-file right.
+At the end of a closed variation you also get OUR PLAN / OUR MOVES — ideas for how we continue after the line ends. Use them to say how we can proceed (e.g. kingside attack, piece activity). You may name those idea moves.
 
-Annotate freely like a strong human GM. Simple but correct English. 1–3 short sentences.
-Trust the FEN and the signs. Use NEXT to understand why the move was played.
-For our moves say "we / our". For their moves say what they want.
-
-Do NOT repeat or name the move itself (never write "...Na6", "Ra2", or any SAN). Start freely — e.g. "We…", "White…", "This move…", "A useful idea…", "Equal…".
+Look at the BOARD. Annotate freely like a strong GM. Use very simple but correct English — short everyday words only. 1–3 short sentences.
+Our moves: "we / our". Their moves: say what they want.
 
 Return ONLY a JSON object. Keys = the IDs. Values = the comment text only.
 
@@ -950,7 +1011,7 @@ ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
                 resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions (FEN + next moves with signs).`);
+                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions\n${engineCalls} engine plans at variation ends.`);
             }).catch(err => {
                 const textArea = document.createElement("textarea");
                 textArea.value = fullPrompt;
