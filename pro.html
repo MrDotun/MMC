@@ -89,6 +89,15 @@
                             <label class="text-[10px] font-bold text-slate-500 uppercase">FEN (Feed to AI)</label>
                             <input type="text" id="fen-output" class="w-full p-3 rounded-lg text-xs mt-1 text-emerald-400" readonly placeholder="FEN will appear here...">
                         </div>
+                        <div id="main-engine" class="mt-3 glass p-3 rounded-xl text-left">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Stockfish</span>
+                                <span id="main-engine-status" class="text-[10px] text-slate-500">—</span>
+                            </div>
+                            <div id="main-engine-lines" class="space-y-1.5 text-xs font-mono text-slate-300 min-h-[3rem]">
+                                <p class="text-slate-600 italic">Click a move to see engine lines…</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -117,7 +126,21 @@
                             <div id="review-board" style="width: 100%;"></div>
                         </div>
                         <p id="review-move-label" class="mt-3 text-sm text-emerald-400 font-semibold text-center"></p>
-                        <p id="review-fen" class="mt-1 text-[10px] text-slate-500 break-all text-center"></p>
+                        <div class="mt-2 flex items-center justify-center gap-2">
+                            <button type="button" id="btn-review-prev" onclick="reviewStep(-1)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase disabled:opacity-30 disabled:cursor-not-allowed" title="Previous move">◀ Prev</button>
+                            <span id="review-ply-label" class="text-[10px] text-slate-500 min-w-[4rem] text-center">—</span>
+                            <button type="button" id="btn-review-next" onclick="reviewStep(1)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase disabled:opacity-30 disabled:cursor-not-allowed" title="Next move">Next ▶</button>
+                        </div>
+                        <p id="review-fen" class="mt-2 text-[10px] text-slate-500 break-all text-center"></p>
+                        <div id="review-engine" class="mt-3 glass p-3 rounded-xl text-left">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Stockfish</span>
+                                <span id="review-engine-status" class="text-[10px] text-slate-500">—</span>
+                            </div>
+                            <div id="review-engine-lines" class="space-y-1.5 text-xs font-mono text-slate-300 min-h-[4.5rem]">
+                                <p class="text-slate-600 italic">Select a move to load engine lines…</p>
+                            </div>
+                        </div>
                     </div>
                     <div class="lg:w-2/3 space-y-3">
                         <label class="text-xs font-bold uppercase text-slate-500">Batch moves (click one)</label>
@@ -168,6 +191,11 @@
         let reviewIndex = null; // which selected move is shown on review board
         let userNotes = {}; // chunkId -> short note from the player
         let dynamicMasterDb = {};
+        let engineCache = {}; // fen -> engine result
+        let reviewEngineToken = 0; // cancel stale async fetches
+        let mainEngineToken = 0;
+        let reviewLine = []; // [{fen, label, isFocus}] built for current review chunk
+        let reviewLineIdx = 0;
 
         const delay = ms => new Promise(res => setTimeout(res, ms));
 
@@ -897,23 +925,119 @@
             });
         }
 
+        function formatEngineLines(engineData) {
+            if (!engineData || engineData.invalid || !engineData.lines || !engineData.lines.length) {
+                return '<p class="text-slate-500 italic">No engine lines</p>';
+            }
+            return engineData.lines.slice(0, 3).map((ln, i) => {
+                const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : '?';
+                const moves = `${ln.san || ''} ${ln.continuation || ''}`.trim().split(/\s+/).filter(Boolean).slice(0, 4).join(' ');
+                const rank = i === 0 ? 'text-emerald-400' : 'text-slate-300';
+                return `<div class="${rank}"><span class="text-slate-500">#${i + 1}</span> <span class="gold-text font-bold">${ev}</span> <span>${moves || '—'}</span></div>`;
+            }).join('');
+        }
+
+        async function loadEngineForPanel(fen, linesElId, statusElId, tokenRef) {
+            const linesEl = document.getElementById(linesElId);
+            const statusEl = document.getElementById(statusElId);
+            if (!linesEl || !statusEl) return;
+            if (!fen || !isValidFen(fen)) {
+                linesEl.innerHTML = '<p class="text-slate-500 italic">Invalid FEN</p>';
+                statusEl.innerText = '—';
+                return;
+            }
+            const myToken = ++tokenRef.n;
+            if (engineCache[fen]) {
+                linesEl.innerHTML = formatEngineLines(engineCache[fen]);
+                statusEl.innerText = 'cached';
+                return;
+            }
+            linesEl.innerHTML = '<p class="text-slate-500"><span class="spinner"></span>Analyzing…</p>';
+            statusEl.innerText = 'depth 18…';
+            const data = await getEngineRefutation(fen);
+            if (myToken !== tokenRef.n) return; // stale
+            if (data && !data.invalid) engineCache[fen] = data;
+            linesEl.innerHTML = formatEngineLines(data);
+            statusEl.innerText = (data && !data.invalid) ? 'ready' : 'failed';
+        }
+
+        function buildReviewLine(chunkIndex) {
+            const c = globalChunks[chunkIndex];
+            if (!c) return { positions: [], focusIdx: 0 };
+            const chess = new Chess();
+            const positions = [{ fen: chess.fen(), label: "Start", ply: 0 }];
+            const path = c.pathArray || [];
+            let focusIdx = 0;
+            for (let i = 0; i < path.length; i++) {
+                const m = chess.move(path[i], { sloppy: true });
+                if (!m) break;
+                const moveNum = Math.floor(i / 2) + 1;
+                const label = (i % 2 === 0) ? `${moveNum}. ${m.san}` : `${moveNum}... ${m.san}`;
+                positions.push({ fen: chess.fen(), label, ply: i + 1 });
+                // focus = position AFTER the reviewed move
+                if (i === path.length - 1) focusIdx = positions.length - 1;
+            }
+            // append next moves of this variation (for stepping forward)
+            const nextArr = (c.nextMoves && c.nextMoves.length) ? c.nextMoves : [];
+            for (let i = 0; i < nextArr.length; i++) {
+                const m = chess.move(nextArr[i], { sloppy: true });
+                if (!m) break;
+                const ply = path.length + i;
+                const moveNum = Math.floor(ply / 2) + 1;
+                const label = (ply % 2 === 0) ? `${moveNum}. ${m.san}` : `${moveNum}... ${m.san}`;
+                positions.push({ fen: chess.fen(), label, ply: ply + 1 });
+            }
+            // if path was empty, try fenAfter as focus
+            if (path.length === 0 && c.fenAfter && isValidFen(c.fenAfter)) {
+                positions.push({ fen: c.fenAfter, label: `${c.moveNum}. ${c.target}`, ply: 1 });
+                focusIdx = positions.length - 1;
+            }
+            return { positions, focusIdx };
+        }
+
+        function applyReviewLinePosition() {
+            if (!reviewLine.length) return;
+            reviewLineIdx = Math.max(0, Math.min(reviewLineIdx, reviewLine.length - 1));
+            const pos = reviewLine[reviewLineIdx];
+            const fen = pos.fen;
+            document.getElementById('review-move-label').innerText = pos.label || "";
+            document.getElementById('review-fen').innerText = fen || "";
+            const plyLabel = document.getElementById('review-ply-label');
+            if (plyLabel) plyLabel.innerText = `${reviewLineIdx + 1} / ${reviewLine.length}`;
+            const prevBtn = document.getElementById('btn-review-prev');
+            const nextBtn = document.getElementById('btn-review-next');
+            if (prevBtn) prevBtn.disabled = reviewLineIdx <= 0;
+            if (nextBtn) nextBtn.disabled = reviewLineIdx >= reviewLine.length - 1;
+            if (fen && isValidFen(fen) && reviewBoard) {
+                reviewBoard.position(fen, false);
+            }
+            loadEngineForPanel(fen, 'review-engine-lines', 'review-engine-status', { get n() { return reviewEngineToken; }, set n(v) { reviewEngineToken = v; } });
+        }
+
+        function reviewStep(delta) {
+            if (!reviewLine.length) return;
+            const next = reviewLineIdx + delta;
+            if (next < 0 || next >= reviewLine.length) return;
+            reviewLineIdx = next;
+            applyReviewLinePosition();
+        }
+
         function showReviewPosition(chunkIndex) {
             // save note for previous move before switching
             saveCurrentMoveNote();
             reviewIndex = chunkIndex;
             const c = globalChunks[chunkIndex];
             if (!c) return;
-            const fen = (c.moveParsed !== false && isValidFen(c.fenAfter)) ? c.fenAfter : c.fen;
-            document.getElementById('review-move-label').innerText = `${c.moveNum}. ${c.target}`;
-            document.getElementById('review-fen').innerText = fen || "";
             const noteEl = document.getElementById('move-note');
             if (noteEl) noteEl.value = userNotes[c.id] || "";
-            if (fen && isValidFen(fen) && reviewBoard) {
-                reviewBoard.position(fen, false);
-            }
             document.querySelectorAll('#review-move-list .review-item').forEach(el => {
                 el.classList.toggle('selected-start', parseInt(el.dataset.idx, 10) === chunkIndex);
             });
+            // Build replay line (path to this move + next moves) and land on the focus position
+            const built = buildReviewLine(chunkIndex);
+            reviewLine = built.positions;
+            reviewLineIdx = built.focusIdx;
+            applyReviewLinePosition();
         }
 
         function updateBatchReview() {
@@ -958,6 +1082,7 @@
                 if (isValidFen(fen)) {
                     board.position(fen, false);
                 }
+                loadEngineForPanel(fen, 'main-engine-lines', 'main-engine-status', { get n() { return mainEngineToken; }, set n(v) { mainEngineToken = v; } });
                 document.getElementById('batch-review').classList.add('hidden');
             } else {
                 selEnd = Math.max(selStart, index);
@@ -1048,14 +1173,35 @@
                     gmVerdict = "GM marks the position equal.";
                 }
 
-                // Next moves with clear White/Black labels so the AI knows whose move each is
+                // Previous 2 moves (context) and next 4 moves with White/Black labels
+                const pathArr = c.pathArray || [];
+                // pathArr includes the move just played; previous moves = all but last
+                const prevSans = pathArr.length > 1 ? pathArr.slice(Math.max(0, pathArr.length - 3), pathArr.length - 1) : [];
+                let prevFull = "(start of line)";
+                if (prevSans.length) {
+                    // ply index of first prev move = pathArr.length - 1 - prevSans.length
+                    let ply = pathArr.length - 1 - prevSans.length;
+                    const parts = [];
+                    for (let pi = 0; pi < prevSans.length; pi++) {
+                        const moveNum = Math.floor(ply / 2) + 1;
+                        const isWhite = (ply % 2 === 0);
+                        if (isWhite) {
+                            parts.push(`${moveNum}. ${prevSans[pi]} (White)`);
+                        } else {
+                            parts.push(`${moveNum}... ${prevSans[pi]} (Black)`);
+                        }
+                        ply++;
+                    }
+                    prevFull = parts.join("  ");
+                }
+
                 const nextArr = (c.nextMovesFull && c.nextMovesFull.length)
                     ? c.nextMovesFull
                     : (c.nextMoves || []);
                 let nextFull = "(end of line)";
                 if (nextArr.length) {
                     // pathArray includes the move just played; next ply index = path length
-                    let ply = (c.pathArray && c.pathArray.length) ? c.pathArray.length : 0;
+                    let ply = pathArr.length;
                     const parts = [];
                     for (let ni = 0; ni < nextArr.length; ni++) {
                         const moveNum = Math.floor(ply / 2) + 1;
@@ -1078,6 +1224,7 @@
                 let lineOutput = `[ID: ${c.id}]
 MOVE: ${c.moveNum}. ${c.target}
 BY: ${sideJustPlayed} (${sideJustPlayed === weSide ? "our move" : "their move"}) | we = ${weSide}
+PREV: ${prevFull}
 NEXT: ${nextFull}`;
                 if (fenToSend) {
                     lineOutput += `\nFEN: ${fenToSend}`;
@@ -1132,10 +1279,10 @@ NEXT: ${nextFull}`;
             
             const fullPrompt = `You are a 2700+ human GM writing notes for a chess course. We play ${weSide}. They play ${theySide}.
 
-Each item has MOVE (with signs), BY (who played it), NEXT (next 4 moves of this variation, each labeled White or Black), and FEN.
+Each item has MOVE (with signs), BY (who played it), PREV (last 2 moves before this one), NEXT (next 4 moves of this variation, each labeled White or Black), and FEN.
 FEN is the exact board after the move (standard FEN: piece placement, side to move, castling, en passant, halfmove, fullmove). Use only this FEN — do not invent pieces or squares from other lines.
 
-Look at the FEN carefully, then at NEXT (White/Black labels), to see why the move was played.
+Look at the FEN carefully, then at PREV and NEXT (White/Black labels), to see why the move was played.
 At variation ends, OUR PLAN shows engine ideas (up to 4 moves) to help assess the position.
 
 Side rule:
