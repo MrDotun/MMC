@@ -488,9 +488,9 @@
             }
             let cont = "";
             if (data.continuationArr && data.continuationArr.length) {
-                cont = data.continuationArr.slice(0, 7).join(" ");
+                cont = data.continuationArr.slice(0, 4).join(" ");
             } else if (data.continuation) {
-                cont = String(data.continuation).split(" ").slice(0, 7).join(" ");
+                cont = String(data.continuation).split(" ").slice(0, 4).join(" ");
             }
             const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
             return {
@@ -819,7 +819,7 @@
                 const nextSans = [];
                 const nextFull = [];
                 let j = i + 1;
-                while (j < chunks.length && nextFull.length < 10) {
+                while (j < chunks.length && nextFull.length < 4) {
                     const nxt = chunks[j];
                     if (nxt.variationLevel < c.variationLevel) break;
                     if (nxt.variationLevel > c.variationLevel) {
@@ -1075,23 +1075,21 @@
                     ? c.fenAfter
                     : (isValidFen(c.fen) ? c.fen : null);
 
-                const asciiBoard = fenToSend ? fenToAsciiBoard(fenToSend) : "";
-
                 let lineOutput = `[ID: ${c.id}]
 MOVE: ${c.moveNum}. ${c.target}
 BY: ${sideJustPlayed} (${sideJustPlayed === weSide ? "our move" : "their move"}) | we = ${weSide}
 NEXT: ${nextFull}`;
-                if (asciiBoard) {
-                    lineOutput += `\nBOARD:\n${asciiBoard}`;
+                if (fenToSend) {
+                    lineOutput += `\nFEN: ${fenToSend}`;
                 } else {
-                    lineOutput += `\nBOARD: unavailable`;
+                    lineOutput += `\nFEN: unavailable`;
                 }
                 // Optional note from the player on key moves only
                 if (userNotes[c.id]) {
                     lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
                 }
 
-                // End of a closed variation → engine gives our next ideas (up to 7 moves)
+                // End of a closed variation → engine gives our next ideas (up to 4 moves)
                 if (c.isVariationEnd && fenToSend) {
                     engineCalls++;
                     btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
@@ -1103,7 +1101,7 @@ NEXT: ${nextFull}`;
                         const ideas = [];
                         engineData.lines.forEach((ln, idx) => {
                             const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 7);
+                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 4);
                             ideas.push(pvMoves.join(" "));
                             // Collect our side's moves from the PV (every other move depending on stm)
                             pvMoves.forEach((m, i) => {
@@ -1111,8 +1109,8 @@ NEXT: ${nextFull}`;
                                 if (isOur && !ourMoves.includes(m)) ourMoves.push(m);
                             });
                         });
-                        lineOutput += `\nOUR PLAN (engine ideas after this line ends — up to 7 moves): ${ideas.filter(Boolean).join(" | ") || "(none)"}`;
-                        lineOutput += `\nOUR MOVES: ${ourMoves.slice(0, 7).join(" ") || "(none)"}`;
+                        lineOutput += `\nOUR PLAN (engine ideas after this line ends — up to 4 moves): ${ideas.filter(Boolean).join(" | ") || "(none)"}`;
+                        lineOutput += `\nOUR MOVES: ${ourMoves.slice(0, 4).join(" ") || "(none)"}`;
                         statsText.innerText = `[${c.moveNum}.${c.target}] plan ok`;
                     } else {
                         lineOutput += `\nOUR PLAN: (none)`;
@@ -1134,16 +1132,17 @@ NEXT: ${nextFull}`;
             
             const fullPrompt = `You are a 2700+ human GM writing notes for a chess course. We play ${weSide}. They play ${theySide}.
 
-Each item has MOVE (with signs), BY (who played it), NEXT (next 8–10 moves, each labeled White or Black), and BOARD.
-BOARD is the only board state. Rank 8 at top, rank 1 at bottom. a-file left, h-file right. UPPERCASE = White, lowercase = Black.
+Each item has MOVE (with signs), BY (who played it), NEXT (next 4 moves of this variation, each labeled White or Black), and FEN.
+FEN is the exact board after the move (standard FEN: piece placement, side to move, castling, en passant, halfmove, fullmove). Use only this FEN — do not invent pieces or squares from other lines.
 
-Look at the BOARD carefully, then at NEXT (White/Black labels), to see why the move was played.
+Look at the FEN carefully, then at NEXT (White/Black labels), to see why the move was played.
+At variation ends, OUR PLAN shows engine ideas (up to 4 moves) to help assess the position.
 
 Side rule:
 - BY = ${weSide}: only what WE want. Use "we / our".
 - BY = ${theySide}: only what THEY want. Use "${theySide}" or "they". Never write our plans on their move.
 
-You may name idea moves from NEXT (e.g. Nh5-f4 ideas). Very simple but correct English. 1–3 short sentences.
+You may name idea moves from NEXT or OUR PLAN (e.g. Nh5-f4 ideas). Very simple but correct English. 1–3 short sentences.
 If YOUR NOTE is present, keep those ideas and fix the English.
 
 Return ONLY a JSON object. Keys = the IDs. Values = the comment text only.
