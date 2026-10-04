@@ -1048,10 +1048,27 @@
                     gmVerdict = "GM marks the position equal.";
                 }
 
-                // FEN + ASCII board + next moves with signs; at variation end also OUR PLAN from engine
-                const nextFull = (c.nextMovesFull && c.nextMovesFull.length)
-                    ? c.nextMovesFull.join(" ")
-                    : ((c.nextMoves && c.nextMoves.length) ? c.nextMoves.join(" ") : "(end of line)");
+                // Next moves with clear White/Black labels so the AI knows whose move each is
+                const nextArr = (c.nextMovesFull && c.nextMovesFull.length)
+                    ? c.nextMovesFull
+                    : (c.nextMoves || []);
+                let nextFull = "(end of line)";
+                if (nextArr.length) {
+                    // pathArray includes the move just played; next ply index = path length
+                    let ply = (c.pathArray && c.pathArray.length) ? c.pathArray.length : 0;
+                    const parts = [];
+                    for (let ni = 0; ni < nextArr.length; ni++) {
+                        const moveNum = Math.floor(ply / 2) + 1;
+                        const isWhite = (ply % 2 === 0);
+                        if (isWhite) {
+                            parts.push(`${moveNum}. ${nextArr[ni]} (White)`);
+                        } else {
+                            parts.push(`${moveNum}... ${nextArr[ni]} (Black)`);
+                        }
+                        ply++;
+                    }
+                    nextFull = parts.join("  ");
+                }
 
                 // FEN after the move (exact board the note is about). Validated.
                 const fenToSend = (c.moveParsed !== false && isValidFen(c.fenAfter))
@@ -1117,10 +1134,10 @@ NEXT: ${nextFull}`;
             
             const fullPrompt = `You are a 2700+ human GM writing notes for a chess course. We play ${weSide}. They play ${theySide}.
 
-Each item has MOVE (with signs), BY (who played it), NEXT (next 8–10 moves), and BOARD.
+Each item has MOVE (with signs), BY (who played it), NEXT (next 8–10 moves, each labeled White or Black), and BOARD.
 BOARD is the only board state. Rank 8 at top, rank 1 at bottom. a-file left, h-file right. UPPERCASE = White, lowercase = Black.
 
-Look at the BOARD carefully, then at NEXT, to see why the move was played.
+Look at the BOARD carefully, then at NEXT (White/Black labels), to see why the move was played.
 
 Side rule:
 - BY = ${weSide}: only what WE want. Use "we / our".
