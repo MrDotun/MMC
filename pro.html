@@ -516,9 +516,13 @@
             }
             let cont = "";
             if (data.continuationArr && data.continuationArr.length) {
-                cont = data.continuationArr.slice(0, 8).join(" ");
+                cont = data.continuationArr.slice(0, 10).join(" ");
             } else if (data.continuation) {
-                cont = String(data.continuation).split(" ").slice(0, 8).join(" ");
+                cont = String(data.continuation).split(" ").slice(0, 10).join(" ");
+            } else if (data.pv && Array.isArray(data.pv)) {
+                cont = data.pv.slice(0, 10).join(" ");
+            } else if (data.moves && Array.isArray(data.moves)) {
+                cont = data.moves.slice(0, 10).join(" ");
             }
             const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
             return {
@@ -543,8 +547,8 @@
                         body: JSON.stringify({
                             fen: fen,
                             depth: 18,
-                            maxThinkingTime: 90,
-                            variants: 6
+                            maxThinkingTime: 120,
+                            variants: 8
                         })
                     });
                     
@@ -559,11 +563,11 @@
                     // Support both single-object and array responses (MultiPV)
                     let lines = [];
                     if (Array.isArray(data)) {
-                        lines = data.map(parseEngineLine).filter(Boolean).slice(0, 6);
+                        lines = data.map(parseEngineLine).filter(Boolean).slice(0, 8);
                     } else if (data.lines && Array.isArray(data.lines)) {
-                        lines = data.lines.map(parseEngineLine).filter(Boolean).slice(0, 6);
+                        lines = data.lines.map(parseEngineLine).filter(Boolean).slice(0, 8);
                     } else if (data.pvs && Array.isArray(data.pvs)) {
-                        lines = data.pvs.map(parseEngineLine).filter(Boolean).slice(0, 6);
+                        lines = data.pvs.map(parseEngineLine).filter(Boolean).slice(0, 8);
                     } else {
                         const one = parseEngineLine(data);
                         if (one) lines = [one];
@@ -1211,33 +1215,42 @@ NEXT: ${nextFull}`;
                     await delay(250);
                     const engineData = await getEngineRefutation(fenToSend);
                     if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
-                        // fullmove number from FEN for numbering
+                        // fullmove number from FEN for SAN numbering
                         const fenBits = fenToSend.split(/\s+/);
                         let fullMove = parseInt(fenBits[5], 10);
                         if (isNaN(fullMove) || fullMove < 1) fullMove = c.moveNum || 1;
-                        // ply index: if White to move, even-ish: startPly = (fullMove-1)*2; if Black, +1
                         const stmIsWhite = fenBits[1] === "w";
                         const startPly = stmIsWhite ? (fullMove - 1) * 2 : (fullMove - 1) * 2 + 1;
 
                         const allPv = engineData.lines.map((ln, idx) => {
-                            const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 6);
+                            // Prefer long continuation arrays when API provides them
+                            let pvMoves = [];
+                            if (ln.continuation && String(ln.continuation).trim()) {
+                                pvMoves = `${ln.san || ""} ${ln.continuation}`.trim().split(/\s+/).filter(Boolean);
+                            } else {
+                                pvMoves = `${ln.san || ""}`.trim().split(/\s+/).filter(Boolean);
+                            }
+                            // Always aim for 6 plies of SAN (not UCI)
+                            pvMoves = pvMoves.filter(m => !/^[a-h][1-8][a-h][1-8]/.test(m) || /[NBRQK=]/.test(m)).slice(0, 6);
+                            // Pad note if short
                             const numbered = formatPvNumbered(pvMoves, startPly);
                             const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : "";
-                            return { idx: idx + 1, ev, numbered, raw: pvMoves };
+                            return { idx: idx + 1, ev, numbered, nMoves: pvMoves.length };
                         });
 
-                        // Prefer 4th–6th choices; if fewer lines, show what we have from #4 up, else #1–3 fallback
-                        let altLines = allPv.filter(p => p.idx >= 4 && p.idx <= 6);
-                        if (altLines.length === 0) altLines = allPv.slice(0, 3);
+                        // 5th–8th choices (weaker lines reveal plans). If API returns fewer, take the last 3 lines.
+                        let altLines = allPv.filter(p => p.idx >= 5 && p.idx <= 8);
+                        if (altLines.length < 3) {
+                            altLines = allPv.slice(-3); // weakest available
+                        }
                         const engStr = altLines.map(p => {
-                            const evPart = p.ev ? ` [${p.ev}]` : "";
-                            return `${p.idx}. ${p.numbered}${evPart}`;
-                        }).join(" | ");
-                        lineOutput += `\nENGINE (choices 4–6, SAN): ${engStr || "(none)"}`;
-                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] engine ok`;
+                            const evPart = p.ev ? `  eval ${p.ev}` : "  eval ?";
+                            return `#${p.idx}${evPart}  ${p.numbered}`;
+                        }).join("\n");
+                        lineOutput += `\nENGINE (choices 5–8, each up to 6 SAN moves + eval):\n${engStr || "(none)"}`;
+                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] engine ${altLines.length} lines`;
                     } else {
-                        lineOutput += `\nENGINE (choices 4–6, SAN): (none)`;
+                        lineOutput += `\nENGINE (choices 5–8): (none)`;
                         statsText.innerText = `[${c.moveNum}.${sanDisplay}] no engine`;
                     }
                 } else {
@@ -1259,7 +1272,7 @@ NEXT: ${nextFull}`;
 Each item is neat:
 MOVE — the move to annotate (symbol only if present: ? ?? ! !! ?! !?)
 NEXT — next 3–4 moves in the PGN (clue only)
-ENGINE (choices 4–6) — alternative lines in normal SAN (e.g. 26. Nxe6 c4). These weaker choices often show what happens if a side is careless.
+ENGINE (choices 5–8) — weaker lines, each with up to 6 SAN moves and an eval (e.g. #5 eval +1.4  26. Nxe6 fxe6 27. c4). Eval shows how serious the line is; use for threats if a side is careless, not as the main PGN line.
 FEN — exact board after the move
 YOUR NOTE — optional human idea
 
