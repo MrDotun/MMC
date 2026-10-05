@@ -544,7 +544,7 @@
                             fen: fen,
                             depth: 18,
                             maxThinkingTime: 90,
-                            variants: 5
+                            variants: 6
                         })
                     });
                     
@@ -559,11 +559,11 @@
                     // Support both single-object and array responses (MultiPV)
                     let lines = [];
                     if (Array.isArray(data)) {
-                        lines = data.map(parseEngineLine).filter(Boolean).slice(0, 5);
+                        lines = data.map(parseEngineLine).filter(Boolean).slice(0, 6);
                     } else if (data.lines && Array.isArray(data.lines)) {
-                        lines = data.lines.map(parseEngineLine).filter(Boolean).slice(0, 5);
+                        lines = data.lines.map(parseEngineLine).filter(Boolean).slice(0, 6);
                     } else if (data.pvs && Array.isArray(data.pvs)) {
-                        lines = data.pvs.map(parseEngineLine).filter(Boolean).slice(0, 5);
+                        lines = data.pvs.map(parseEngineLine).filter(Boolean).slice(0, 6);
                     } else {
                         const one = parseEngineLine(data);
                         if (one) lines = [one];
@@ -1129,207 +1129,120 @@
                 const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
                 const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
 
-                // --- GM assessment from symbols (never from engine score) ---
-                // Chess convention: ? = mistake, ?? = blunder, ?! = dubious, !? = interesting, ! = good, !! = brilliant
-                const gmSym = `${c.target || ""} ${(c.gmNotes && c.gmNotes.evalMarks) ? c.gmNotes.evalMarks.join(" ") : ""}`;
-                let favouredSide = null; // who is better according to GM
-                if (/\+\/\-|\+\-|±|\+\/\=|\$16|\$18|\$14|\$20/.test(gmSym)) {
-                    favouredSide = "White";
-                } else if (/\-\/\+|\-\+|∓|\=\/\+|\$17|\$19|\$15|\$21/.test(gmSym)) {
-                    favouredSide = "Black";
-                } else if (/\$10|\$11|\$13|=\/=/.test(gmSym) || /(^|[^+\-\/])=(?=[^+\-\/]|$)/.test(gmSym)) {
-                    favouredSide = null; // equal
-                }
-
+                // Sign on the move only (no long GM essay)
                 const tgt = c.target || "";
                 const hasBlunder = /\?\?/.test(tgt);
                 const hasDubious = /\?!/.test(tgt);
                 const hasInteresting = /!\?/.test(tgt);
                 const hasBrilliant = /!!/.test(tgt);
-                // single ? that is not part of ?? or ?!
                 const hasMistake = /\?/.test(tgt) && !hasBlunder && !hasDubious;
-                // single ! that is not part of !! or !?
                 const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
-                const isBadMove = hasBlunder || hasMistake; // side that played it is worse
+                const isBadMove = hasBlunder || hasMistake;
 
-                if (isBadMove) {
-                    // Black played Nd4? or Nd4?? → White is better
-                    favouredSide = sideJustPlayed === "White" ? "Black" : "White";
-                } else if (favouredSide == null && hasGood) {
-                    favouredSide = sideJustPlayed;
-                }
+                let signOnly = "";
+                if (hasBlunder) signOnly = "??";
+                else if (hasDubious) signOnly = "?!";
+                else if (hasInteresting) signOnly = "!?";
+                else if (hasBrilliant) signOnly = "!!";
+                else if (hasMistake) signOnly = "?";
+                else if (hasGood) signOnly = "!";
 
-                const planSide = favouredSide || (isBadMove ? (sideJustPlayed === "White" ? "Black" : "White") : sideJustPlayed);
-                let gmVerdict = "no clear GM edge mark";
-                if (hasBlunder) {
-                    gmVerdict = `${sideJustPlayed} just played a BLUNDER (??). ${planSide} is better. NEVER say ${sideJustPlayed} is better.`;
-                } else if (hasMistake) {
-                    gmVerdict = `${sideJustPlayed} just played a MISTAKE (?). ${planSide} is better. NEVER say ${sideJustPlayed} is better.`;
-                } else if (hasDubious) {
-                    gmVerdict = `${sideJustPlayed} just played a DUBIOUS move (?!). Position may still be playable but the idea is questionable.`;
-                } else if (favouredSide) {
-                    gmVerdict = `GM marks ${favouredSide} better.`;
-                } else if (/\$10|\$11|\$13|=/.test(gmSym)) {
-                    gmVerdict = "GM marks the position equal.";
-                }
+                // Clean SAN for display (strip signs already shown separately if duplicated)
+                let sanDisplay = (c.san || tgt).replace(/[!?]+/g, "").replace(/\$\d+/g, "").trim() || tgt;
+                const moveWithSign = signOnly ? `${sanDisplay}${signOnly}` : sanDisplay;
 
-                // Previous 2 moves (context) and next 4 moves with White/Black labels
+                // NEXT: 3–4 moves from this variation (PGN), labeled White/Black
                 const pathArr = c.pathArray || [];
-                // pathArr includes the move just played; previous moves = all but last
-                const prevSans = pathArr.length > 1 ? pathArr.slice(Math.max(0, pathArr.length - 3), pathArr.length - 1) : [];
-                let prevFull = "(start of line)";
-                if (prevSans.length) {
-                    // ply index of first prev move = pathArr.length - 1 - prevSans.length
-                    let ply = pathArr.length - 1 - prevSans.length;
-                    const parts = [];
-                    for (let pi = 0; pi < prevSans.length; pi++) {
-                        const moveNum = Math.floor(ply / 2) + 1;
-                        const isWhite = (ply % 2 === 0);
-                        if (isWhite) {
-                            parts.push(`${moveNum}. ${prevSans[pi]} (White)`);
-                        } else {
-                            parts.push(`${moveNum}... ${prevSans[pi]} (Black)`);
-                        }
-                        ply++;
-                    }
-                    prevFull = parts.join("  ");
-                }
-
                 const nextArr = (c.nextMovesFull && c.nextMovesFull.length)
-                    ? c.nextMovesFull
-                    : (c.nextMoves || []);
+                    ? c.nextMovesFull.slice(0, 4)
+                    : (c.nextMoves || []).slice(0, 4);
                 let nextFull = "(end of line)";
                 if (nextArr.length) {
-                    // pathArray includes the move just played; next ply index = path length
                     let ply = pathArr.length;
                     const parts = [];
                     for (let ni = 0; ni < nextArr.length; ni++) {
                         const moveNum = Math.floor(ply / 2) + 1;
                         const isWhite = (ply % 2 === 0);
-                        if (isWhite) {
-                            parts.push(`${moveNum}. ${nextArr[ni]} (White)`);
-                        } else {
-                            parts.push(`${moveNum}... ${nextArr[ni]} (Black)`);
-                        }
+                        const raw = String(nextArr[ni]).trim();
+                        if (isWhite) parts.push(`${moveNum}. ${raw} (White)`);
+                        else parts.push(`${moveNum}... ${raw} (Black)`);
                         ply++;
                     }
                     nextFull = parts.join("  ");
                 }
 
-                // FEN after the move (exact board the note is about). Validated.
+                // FEN after the move
                 const fenToSend = (c.moveParsed !== false && isValidFen(c.fenAfter))
                     ? c.fenAfter
                     : (isValidFen(c.fen) ? c.fen : null);
 
-                // Explicit sign label so AI cannot miss ? / ?? / ! / !!
-                let signLabel = "none";
-                if (hasBlunder) signLabel = "BLUNDER (??)";
-                else if (hasMistake) signLabel = "MISTAKE (?)";
-                else if (hasDubious) signLabel = "DUBIOUS (?!)";
-                else if (hasInteresting) signLabel = "INTERESTING (!?)";
-                else if (hasBrilliant) signLabel = "BRILLIANT (!!)";
-                else if (hasGood) signLabel = "GOOD (!)";
+                // Helper: format a PV in normal SAN with move numbers (not UCI)
+                function formatPvNumbered(pvMoves, startPly) {
+                    let ply = startPly;
+                    const parts = [];
+                    for (let k = 0; k < pvMoves.length; k++) {
+                        const m = pvMoves[k];
+                        // skip UCI-looking tokens if any slip through
+                        if (/^[a-h][1-8][a-h][1-8]/.test(m) && !/[NBRQK]/.test(m) && m.length <= 5) continue;
+                        const moveNum = Math.floor(ply / 2) + 1;
+                        if (ply % 2 === 0) parts.push(`${moveNum}. ${m}`);
+                        else parts.push(m);
+                        ply++;
+                    }
+                    return parts.join(" ");
+                }
 
                 let lineOutput = `[ID: ${c.id}]
-MOVE: ${c.moveNum}. ${c.target}
-SIGN: ${signLabel}
-GM VERDICT: ${gmVerdict}
-BY: ${sideJustPlayed} (${sideJustPlayed === weSide ? "our move" : "their move"}) | we = ${weSide}
-PREV: ${prevFull}
+MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}
 NEXT: ${nextFull}`;
                 if (fenToSend) {
                     lineOutput += `\nFEN: ${fenToSend}`;
                 } else {
                     lineOutput += `\nFEN: unavailable`;
                 }
-                // Optional note from the player on key moves only
                 if (userNotes[c.id]) {
                     lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
                 }
 
-                // Multi-PV Stockfish: best line + weaker replies often reveal the tactical plan
-                // (e.g. after Qf3+Bc4, a passive reply shows mate on f7). Run on our moves,
-                // variation ends, and annotated critical moves.
-                const wantEngine = !!fenToSend && (
-                    c.isVariationEnd ||
-                    sideJustPlayed === weSide ||
-                    isBadMove ||
-                    hasGood ||
-                    hasBrilliant ||
-                    hasDubious
-                );
-                if (wantEngine) {
+                // Engine: always try when we have FEN — show 4th, 5th, 6th choices (threat-revealing alts)
+                if (fenToSend) {
                     engineCalls++;
                     btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
                     await delay(250);
                     const engineData = await getEngineRefutation(fenToSend);
                     if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
-                        const stm = sideToMoveAfter;
-                        const theyToMove = (stm !== weSide); // after our move, they must answer our threats
-                        const ourMoves = [];
-                        const threatShots = []; // our checks/captures/mates from the PVs
-                        const threatLines = []; // "If they play X, we have Y..."
-                        const pvBlocks = [];
-                        engineData.lines.forEach((ln, idx) => {
+                        // fullmove number from FEN for numbering
+                        const fenBits = fenToSend.split(/\s+/);
+                        let fullMove = parseInt(fenBits[5], 10);
+                        if (isNaN(fullMove) || fullMove < 1) fullMove = c.moveNum || 1;
+                        // ply index: if White to move, even-ish: startPly = (fullMove-1)*2; if Black, +1
+                        const stmIsWhite = fenBits[1] === "w";
+                        const startPly = stmIsWhite ? (fullMove - 1) * 2 : (fullMove - 1) * 2 + 1;
+
+                        const allPv = engineData.lines.map((ln, idx) => {
                             const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 8);
-                            const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : "?";
-                            pvBlocks.push(`#${idx + 1} [${ev}] ${pvMoves.join(" ")}`);
-
-                            // Split PV into their move (if they to move) then our replies
-                            let theirMove = "";
-                            const ourInLine = [];
-                            pvMoves.forEach((m, i) => {
-                                const isOur = (stm === weSide) ? (i % 2 === 0) : (i % 2 === 1);
-                                if (isOur) {
-                                    if (!ourMoves.includes(m)) ourMoves.push(m);
-                                    ourInLine.push(m);
-                                    // Tactical shots: checks, captures, mate
-                                    if (/[+#x]/.test(m) || /O-O/.test(m)) {
-                                        if (!threatShots.includes(m)) threatShots.push(m);
-                                    }
-                                } else if (i === 0) {
-                                    theirMove = m;
-                                }
-                            });
-
-                            // From weaker / decisive lines, spell out the threat sequence
-                            const evNum = parseFloat(ev);
-                            const isDecisive = /mate|#/i.test(ev) || (!isNaN(evNum) && Math.abs(evNum) >= 2.5);
-                            if (theyToMove && theirMove && ourInLine.length) {
-                                const seq = ourInLine.slice(0, 4).join(" ");
-                                const tag = isDecisive ? " (crushing)" : "";
-                                threatLines.push(`If ${stm} plays ${theirMove}, we have ${seq}${tag}`);
-                            } else if (!theyToMove && ourInLine.length && isDecisive) {
-                                threatLines.push(`Forcing: ${ourInLine.slice(0, 4).join(" ")} [${ev}]`);
-                            }
+                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 6);
+                            const numbered = formatPvNumbered(pvMoves, startPly);
+                            const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : "";
+                            return { idx: idx + 1, ev, numbered, raw: pvMoves };
                         });
 
-                        lineOutput += `\nENGINE multi-PV (side to move: ${stm}; #1 = best defence): ${pvBlocks.join(" | ")}`;
-
-                        // Explicit threats so AI cannot miss Qb5+, Rxd3+, mate ideas buried in mate lines
-                        if (threatShots.length || threatLines.length) {
-                            const shotStr = threatShots.slice(0, 8).join(" ") || "(see lines)";
-                            lineOutput += `\nTHREATS (tactical shots from engine — checks/captures/mates): ${shotStr}`;
-                            if (threatLines.length) {
-                                lineOutput += `\nTHREAT LINES: ${threatLines.slice(0, 5).join(" | ")}`;
-                            }
-                        }
-
-                        if (c.isVariationEnd || sideJustPlayed === weSide) {
-                            lineOutput += `\nOUR MOVES from engine: ${ourMoves.slice(0, 8).join(" ") || "(none)"}`;
-                        }
-                        if (c.isVariationEnd) {
-                            lineOutput += `\nOUR PLAN (end of variation): ${pvBlocks.slice(0, 3).join(" | ")}`;
-                        }
-                        statsText.innerText = `[${c.moveNum}.${c.target}] engine ok`;
+                        // Prefer 4th–6th choices; if fewer lines, show what we have from #4 up, else #1–3 fallback
+                        let altLines = allPv.filter(p => p.idx >= 4 && p.idx <= 6);
+                        if (altLines.length === 0) altLines = allPv.slice(0, 3);
+                        const engStr = altLines.map(p => {
+                            const evPart = p.ev ? ` [${p.ev}]` : "";
+                            return `${p.idx}. ${p.numbered}${evPart}`;
+                        }).join(" | ");
+                        lineOutput += `\nENGINE (choices 4–6, SAN): ${engStr || "(none)"}`;
+                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] engine ok`;
                     } else {
-                        lineOutput += `\nENGINE: (none)`;
-                        statsText.innerText = `[${c.moveNum}.${c.target}] no engine`;
+                        lineOutput += `\nENGINE (choices 4–6, SAN): (none)`;
+                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] no engine`;
                     }
                 } else {
                     await delay(15);
-                    statsText.innerText = `Preparing: ${c.moveNum}. ${c.target}`;
+                    statsText.innerText = `Preparing: ${c.moveNum}. ${sanDisplay}`;
                 }
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
@@ -1341,37 +1254,23 @@ NEXT: ${nextFull}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a 2700+ human GM writing notes for a chess course. We play ${weSide}. They play ${theySide}.
+            const fullPrompt = `You are a 2700+ GM writing short chess notes for a course. We play ${weSide}. They play ${theySide}.
 
-Each item has MOVE, SIGN, GM VERDICT, BY, PREV, NEXT, FEN, and often ENGINE / THREATS.
+Each item is neat:
+MOVE — the move to annotate (symbol only if present: ? ?? ! !! ?! !?)
+NEXT — next 3–4 moves in the PGN (clue only)
+ENGINE (choices 4–6) — alternative lines in normal SAN (e.g. 26. Nxe6 c4). These weaker choices often show what happens if a side is careless.
+FEN — exact board after the move
+YOUR NOTE — optional human idea
 
-=== YOUR JOB (one move only) ===
-Explain WHY this single MOVE was played — the reason the piece went to that square (file pressure, regroup, stop a threat, prepare a concrete idea).
-Do NOT narrate the rest of the game.
+Your job: explain WHY this one move was played (why the piece went there, what break or reroute it prepares). Use NEXT only as a silent clue (e.g. preparing e6, knight toward g3). Use ENGINE only for general threats if someone is careless.
 
-=== FORBIDDEN (spoils the course) ===
-- Do NOT say what we/they will play next from the PGN ("then we castle", "Nxc3 and Be7 follow", "after ...O-O we play Ne5").
-- Do NOT list the NEXT moves as a future plan. The student already sees those moves on the board.
-- Do NOT write a multi-move script of the variation.
-
-=== HOW TO USE EACH FIELD ===
-- FEN: exact board after the move. Use only these pieces.
-- PREV: context only.
-- NEXT: silent clue to understand WHY the current piece moved — never copy those moves into the note as "we will do X then Y".
-- ENGINE / THREATS / THREAT LINES: what happens if a side is careless (hanging piece, Qb5+, mate). Use these for threats, not as a move-order forecast of the PGN.
-- YOUR NOTE: keep the idea, fix English, still obey SIGN and the forbidden rules above.
-
-=== SIGN / GM VERDICT (mandatory) ===
-- ? or ??: call it a mistake/blunder; explain the punishment from ENGINE. Never a cheerful plan for a bad move.
-- ! or !!: short praise + the real threat.
-- ?! / !?: honest risk or creative idea.
-- none: one clean positional reason for this move.
-
-=== SIDE RULE ===
-- BY = ${weSide}: "we / our" only. Why WE moved this piece.
-- BY = ${theySide}: "${theySide}" / "they" only. Why THEY moved it (or why it fails). No our-plans on their move except the refutation of their error.
-
-Style: simple correct English. 1–2 short sentences. One idea. No move-lists.
+Rules:
+- Do NOT narrate the next PGN moves ("then we castle", "Nxc3 and Be7 follow").
+- Do NOT invent pieces; trust FEN only.
+- BY side: if the move is by ${weSide}, use "we/our". If by ${theySide}, use "${theySide}"/they.
+- Keep the symbol meaning if present (? = mistake, etc.) without a long lecture.
+- Simple correct English. 1–2 short sentences. One idea.
 
 Return ONLY a JSON object. Keys = the IDs. Values = the comment text only.
 
@@ -1380,7 +1279,7 @@ ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
                 resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions\n${engineCalls} engine multi-PV analyses (plan reveal).`);
+                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions\n${engineCalls} engine analyses.`);
             }).catch(err => {
                 const textArea = document.createElement("textarea");
                 textArea.value = fullPrompt;
