@@ -516,9 +516,9 @@
             }
             let cont = "";
             if (data.continuationArr && data.continuationArr.length) {
-                cont = data.continuationArr.slice(0, 4).join(" ");
+                cont = data.continuationArr.slice(0, 5).join(" ");
             } else if (data.continuation) {
-                cont = String(data.continuation).split(" ").slice(0, 4).join(" ");
+                cont = String(data.continuation).split(" ").slice(0, 5).join(" ");
             }
             const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
             return {
@@ -544,7 +544,7 @@
                             fen: fen,
                             depth: 18,
                             maxThinkingTime: 90,
-                            variants: 3
+                            variants: 5
                         })
                     });
                     
@@ -559,11 +559,11 @@
                     // Support both single-object and array responses (MultiPV)
                     let lines = [];
                     if (Array.isArray(data)) {
-                        lines = data.map(parseEngineLine).filter(Boolean).slice(0, 3);
+                        lines = data.map(parseEngineLine).filter(Boolean).slice(0, 5);
                     } else if (data.lines && Array.isArray(data.lines)) {
-                        lines = data.lines.map(parseEngineLine).filter(Boolean).slice(0, 3);
+                        lines = data.lines.map(parseEngineLine).filter(Boolean).slice(0, 5);
                     } else if (data.pvs && Array.isArray(data.pvs)) {
-                        lines = data.pvs.map(parseEngineLine).filter(Boolean).slice(0, 3);
+                        lines = data.pvs.map(parseEngineLine).filter(Boolean).slice(0, 5);
                     } else {
                         const one = parseEngineLine(data);
                         if (one) lines = [one];
@@ -929,7 +929,7 @@
             if (!engineData || engineData.invalid || !engineData.lines || !engineData.lines.length) {
                 return '<p class="text-slate-500 italic">No engine lines</p>';
             }
-            return engineData.lines.slice(0, 3).map((ln, i) => {
+            return engineData.lines.slice(0, 5).map((ln, i) => {
                 const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : '?';
                 const moves = `${ln.san || ''} ${ln.continuation || ''}`.trim().split(/\s+/).filter(Boolean).slice(0, 4).join(' ');
                 const rank = i === 0 ? 'text-emerald-400' : 'text-slate-300';
@@ -1236,31 +1236,47 @@ NEXT: ${nextFull}`;
                     lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
                 }
 
-                // End of a closed variation → engine gives our next ideas (up to 4 moves)
-                if (c.isVariationEnd && fenToSend) {
+                // Multi-PV Stockfish: best line + weaker replies often reveal the tactical plan
+                // (e.g. after Qf3+Bc4, a passive reply shows mate on f7). Run on our moves,
+                // variation ends, and annotated critical moves.
+                const wantEngine = !!fenToSend && (
+                    c.isVariationEnd ||
+                    sideJustPlayed === weSide ||
+                    isBadMove ||
+                    hasGood ||
+                    hasBrilliant ||
+                    hasDubious
+                );
+                if (wantEngine) {
                     engineCalls++;
                     btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(300);
+                    await delay(250);
                     const engineData = await getEngineRefutation(fenToSend);
                     if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
-                        const stm = sideToMoveAfter; // side to move after this move
+                        const stm = sideToMoveAfter;
                         const ourMoves = [];
-                        const ideas = [];
+                        const pvBlocks = [];
                         engineData.lines.forEach((ln, idx) => {
                             const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 4);
-                            ideas.push(pvMoves.join(" "));
-                            // Collect our side's moves from the PV (every other move depending on stm)
+                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 5);
+                            const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : "?";
+                            pvBlocks.push(`#${idx + 1} [${ev}] ${pvMoves.join(" ")}`);
                             pvMoves.forEach((m, i) => {
                                 const isOur = (stm === weSide) ? (i % 2 === 0) : (i % 2 === 1);
                                 if (isOur && !ourMoves.includes(m)) ourMoves.push(m);
                             });
                         });
-                        lineOutput += `\nOUR PLAN (engine ideas after this line ends — up to 4 moves): ${ideas.filter(Boolean).join(" | ") || "(none)"}`;
-                        lineOutput += `\nOUR MOVES: ${ourMoves.slice(0, 4).join(" ") || "(none)"}`;
-                        statsText.innerText = `[${c.moveNum}.${c.target}] plan ok`;
+                        // Weaker PVs (2+) vs best (#1) — these often expose the threat if the opponent errs
+                        lineOutput += `\nENGINE multi-PV (side to move: ${stm}; #1 = best defence, weaker lines often reveal the threat/plan): ${pvBlocks.join(" | ")}`;
+                        if (c.isVariationEnd || sideJustPlayed === weSide) {
+                            lineOutput += `\nOUR MOVES from engine: ${ourMoves.slice(0, 5).join(" ") || "(none)"}`;
+                        }
+                        if (c.isVariationEnd) {
+                            lineOutput += `\nOUR PLAN (end of variation): ${pvBlocks.slice(0, 3).join(" | ")}`;
+                        }
+                        statsText.innerText = `[${c.moveNum}.${c.target}] engine ok`;
                     } else {
-                        lineOutput += `\nOUR PLAN: (none)`;
+                        lineOutput += `\nENGINE: (none)`;
                         statsText.innerText = `[${c.moveNum}.${c.target}] no engine`;
                     }
                 } else {
@@ -1279,17 +1295,20 @@ NEXT: ${nextFull}`;
             
             const fullPrompt = `You are a 2700+ human GM writing notes for a chess course. We play ${weSide}. They play ${theySide}.
 
-Each item has MOVE (with signs), BY (who played it), PREV (last 2 moves before this one), NEXT (next 4 moves of this variation, each labeled White or Black), and FEN.
-FEN is the exact board after the move (standard FEN: piece placement, side to move, castling, en passant, halfmove, fullmove). Use only this FEN — do not invent pieces or squares from other lines.
+Each item has MOVE (with signs), BY (who played it), PREV (last 2 moves), NEXT (next 4 moves of this variation, White/Black labeled), FEN, and often ENGINE multi-PV.
 
-Look at the FEN carefully, then at PREV and NEXT (White/Black labels), to see why the move was played.
-At variation ends, OUR PLAN shows engine ideas (up to 4 moves) to help assess the position.
+FEN is the exact board after the move. Use only this FEN — do not invent pieces or squares from other lines.
+
+How to see WHY the move was played:
+- Read FEN, PREV, NEXT.
+- ENGINE multi-PV: #1 is the best defence. Weaker lines (#2–#5) often reveal the plan — e.g. after Qf3 and Bc4, a passive reply can show mate on f7. Use those weaker replies to name the real threat (mate, win of material, binding pressure).
+- At variation ends, OUR PLAN / OUR MOVES are engine ideas for us.
 
 Side rule:
 - BY = ${weSide}: only what WE want. Use "we / our".
 - BY = ${theySide}: only what THEY want. Use "${theySide}" or "they". Never write our plans on their move.
 
-You may name idea moves from NEXT or OUR PLAN (e.g. Nh5-f4 ideas). Very simple but correct English. 1–3 short sentences.
+Name concrete idea moves when useful (e.g. Qxf7+, Nh5-f4). Very simple but correct English. 1–3 short sentences.
 If YOUR NOTE is present, keep those ideas and fix the English.
 
 Return ONLY a JSON object. Keys = the IDs. Values = the comment text only.
@@ -1299,7 +1318,7 @@ ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
                 resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions\n${engineCalls} engine plans at variation ends.`);
+                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions\n${engineCalls} engine multi-PV analyses (plan reveal).`);
             }).catch(err => {
                 const textArea = document.createElement("textarea");
                 textArea.value = fullPrompt;
