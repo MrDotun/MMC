@@ -516,9 +516,9 @@
             }
             let cont = "";
             if (data.continuationArr && data.continuationArr.length) {
-                cont = data.continuationArr.slice(0, 5).join(" ");
+                cont = data.continuationArr.slice(0, 8).join(" ");
             } else if (data.continuation) {
-                cont = String(data.continuation).split(" ").slice(0, 5).join(" ");
+                cont = String(data.continuation).split(" ").slice(0, 8).join(" ");
             }
             const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
             return {
@@ -1221,8 +1221,19 @@
                     ? c.fenAfter
                     : (isValidFen(c.fen) ? c.fen : null);
 
+                // Explicit sign label so AI cannot miss ? / ?? / ! / !!
+                let signLabel = "none";
+                if (hasBlunder) signLabel = "BLUNDER (??)";
+                else if (hasMistake) signLabel = "MISTAKE (?)";
+                else if (hasDubious) signLabel = "DUBIOUS (?!)";
+                else if (hasInteresting) signLabel = "INTERESTING (!?)";
+                else if (hasBrilliant) signLabel = "BRILLIANT (!!)";
+                else if (hasGood) signLabel = "GOOD (!)";
+
                 let lineOutput = `[ID: ${c.id}]
 MOVE: ${c.moveNum}. ${c.target}
+SIGN: ${signLabel}
+GM VERDICT: ${gmVerdict}
 BY: ${sideJustPlayed} (${sideJustPlayed === weSide ? "our move" : "their move"}) | we = ${weSide}
 PREV: ${prevFull}
 NEXT: ${nextFull}`;
@@ -1254,22 +1265,59 @@ NEXT: ${nextFull}`;
                     const engineData = await getEngineRefutation(fenToSend);
                     if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
                         const stm = sideToMoveAfter;
+                        const theyToMove = (stm !== weSide); // after our move, they must answer our threats
                         const ourMoves = [];
+                        const threatShots = []; // our checks/captures/mates from the PVs
+                        const threatLines = []; // "If they play X, we have Y..."
                         const pvBlocks = [];
                         engineData.lines.forEach((ln, idx) => {
                             const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 5);
+                            const pvMoves = fullPv.split(/\s+/).filter(Boolean).slice(0, 8);
                             const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : "?";
                             pvBlocks.push(`#${idx + 1} [${ev}] ${pvMoves.join(" ")}`);
+
+                            // Split PV into their move (if they to move) then our replies
+                            let theirMove = "";
+                            const ourInLine = [];
                             pvMoves.forEach((m, i) => {
                                 const isOur = (stm === weSide) ? (i % 2 === 0) : (i % 2 === 1);
-                                if (isOur && !ourMoves.includes(m)) ourMoves.push(m);
+                                if (isOur) {
+                                    if (!ourMoves.includes(m)) ourMoves.push(m);
+                                    ourInLine.push(m);
+                                    // Tactical shots: checks, captures, mate
+                                    if (/[+#x]/.test(m) || /O-O/.test(m)) {
+                                        if (!threatShots.includes(m)) threatShots.push(m);
+                                    }
+                                } else if (i === 0) {
+                                    theirMove = m;
+                                }
                             });
+
+                            // From weaker / decisive lines, spell out the threat sequence
+                            const evNum = parseFloat(ev);
+                            const isDecisive = /mate|#/i.test(ev) || (!isNaN(evNum) && Math.abs(evNum) >= 2.5);
+                            if (theyToMove && theirMove && ourInLine.length) {
+                                const seq = ourInLine.slice(0, 4).join(" ");
+                                const tag = isDecisive ? " (crushing)" : "";
+                                threatLines.push(`If ${stm} plays ${theirMove}, we have ${seq}${tag}`);
+                            } else if (!theyToMove && ourInLine.length && isDecisive) {
+                                threatLines.push(`Forcing: ${ourInLine.slice(0, 4).join(" ")} [${ev}]`);
+                            }
                         });
-                        // Weaker PVs (2+) vs best (#1) — these often expose the threat if the opponent errs
-                        lineOutput += `\nENGINE multi-PV (side to move: ${stm}; #1 = best defence, weaker lines often reveal the threat/plan): ${pvBlocks.join(" | ")}`;
+
+                        lineOutput += `\nENGINE multi-PV (side to move: ${stm}; #1 = best defence): ${pvBlocks.join(" | ")}`;
+
+                        // Explicit threats so AI cannot miss Qb5+, Rxd3+, mate ideas buried in mate lines
+                        if (threatShots.length || threatLines.length) {
+                            const shotStr = threatShots.slice(0, 8).join(" ") || "(see lines)";
+                            lineOutput += `\nTHREATS (tactical shots from engine — checks/captures/mates): ${shotStr}`;
+                            if (threatLines.length) {
+                                lineOutput += `\nTHREAT LINES: ${threatLines.slice(0, 5).join(" | ")}`;
+                            }
+                        }
+
                         if (c.isVariationEnd || sideJustPlayed === weSide) {
-                            lineOutput += `\nOUR MOVES from engine: ${ourMoves.slice(0, 5).join(" ") || "(none)"}`;
+                            lineOutput += `\nOUR MOVES from engine: ${ourMoves.slice(0, 8).join(" ") || "(none)"}`;
                         }
                         if (c.isVariationEnd) {
                             lineOutput += `\nOUR PLAN (end of variation): ${pvBlocks.slice(0, 3).join(" | ")}`;
@@ -1295,21 +1343,29 @@ NEXT: ${nextFull}`;
             
             const fullPrompt = `You are a 2700+ human GM writing notes for a chess course. We play ${weSide}. They play ${theySide}.
 
-Each item has MOVE (with signs), BY (who played it), PREV (last 2 moves), NEXT (next 4 moves of this variation, White/Black labeled), FEN, and often ENGINE multi-PV.
+Each item has MOVE, SIGN, GM VERDICT, BY, PREV, NEXT, FEN, and often ENGINE multi-PV.
 
 FEN is the exact board after the move. Use only this FEN — do not invent pieces or squares from other lines.
 
-How to see WHY the move was played:
-- Read FEN, PREV, NEXT.
-- ENGINE multi-PV: #1 is the best defence. Weaker lines (#2–#5) often reveal the plan — e.g. after Qf3 and Bc4, a passive reply can show mate on f7. Use those weaker replies to name the real threat (mate, win of material, binding pressure).
-- At variation ends, OUR PLAN / OUR MOVES are engine ideas for us.
+SIGN / GM VERDICT are mandatory:
+- If SIGN is MISTAKE (?) or BLUNDER (??): you MUST say it is a mistake/blunder. Explain what goes wrong using ENGINE (e.g. the queen hits an unprotected rook, a fork, a mate threat). NEVER write a positive plan as if the bad move was a good idea. NEVER say the side that played ?/?? is better.
+- If SIGN is GOOD (!) or BRILLIANT (!!): praise the idea briefly and name the threat.
+- If SIGN is DUBIOUS (?!) or INTERESTING (!?): mention the risk or the creative idea honestly.
+- If SIGN is none: normal positional note.
+
+How to see WHY (or why it fails):
+- Read FEN, PREV, NEXT, ENGINE multi-PV, and especially THREATS / THREAT LINES.
+- THREATS lists our tactical shots (checks like Qb5+, captures, mates) mined from the engine. Use these — do not invent other tactics.
+- THREAT LINES spell it out: "If they play X, we have Qb5+ ..." — that is the real idea behind the move.
+- ENGINE #1 = their best defence. Weaker / mate lines show what happens if they fail to meet the threat.
+- Name concrete tactics only when supported: Qb5+, Rxd3+, hanging rook, mate, etc.
 
 Side rule:
-- BY = ${weSide}: only what WE want. Use "we / our".
-- BY = ${theySide}: only what THEY want. Use "${theySide}" or "they". Never write our plans on their move.
+- BY = ${weSide}: only what WE want. Use "we / our". On our ?/?? still admit the mistake.
+- BY = ${theySide}: only what THEY want (or why their move fails). Use "${theySide}" or "they". Never write our plans on their move except as the punishment that refutes their error.
 
-Name concrete idea moves when useful (e.g. Qxf7+, Nh5-f4). Very simple but correct English. 1–3 short sentences.
-If YOUR NOTE is present, keep those ideas and fix the English.
+Very simple but correct English. 1–3 short sentences.
+If YOUR NOTE is present, keep those ideas and fix the English — but still respect SIGN.
 
 Return ONLY a JSON object. Keys = the IDs. Values = the comment text only.
 
