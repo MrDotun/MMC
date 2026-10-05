@@ -1252,7 +1252,7 @@
                 const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
                 const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
 
-                // Sign on the move only (no long GM essay)
+                // Symbol only if present on the move
                 const tgt = c.target || "";
                 const hasBlunder = /\?\?/.test(tgt);
                 const hasDubious = /\?!/.test(tgt);
@@ -1260,7 +1260,6 @@
                 const hasBrilliant = /!!/.test(tgt);
                 const hasMistake = /\?/.test(tgt) && !hasBlunder && !hasDubious;
                 const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
-                const isBadMove = hasBlunder || hasMistake;
 
                 let signOnly = "";
                 if (hasBlunder) signOnly = "??";
@@ -1270,16 +1269,36 @@
                 else if (hasMistake) signOnly = "?";
                 else if (hasGood) signOnly = "!";
 
-                // Clean SAN for display (strip signs already shown separately if duplicated)
                 let sanDisplay = (c.san || tgt).replace(/[!?]+/g, "").replace(/\$\d+/g, "").trim() || tgt;
                 const moveWithSign = signOnly ? `${sanDisplay}${signOnly}` : sanDisplay;
 
-                // NEXT: 3–4 moves from this variation (PGN), labeled White/Black
+                // FENs: before move, after move, and ~4 plies later along THIS variation
+                const fenBefore = isValidFen(c.fen) ? c.fen : null;
+                const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter))
+                    ? c.fenAfter
+                    : (isValidFen(c.fen) ? c.fen : null);
+
+                let fenPlus4 = null;
+                if (fenAfter) {
+                    try {
+                        const ch = new Chess();
+                        if (ch.load(fenAfter)) {
+                            const nextSans = (c.nextMoves || []).slice(0, 4);
+                            for (const m of nextSans) {
+                                const ok = ch.move(String(m).replace(/[!?$].*$/, "").trim(), { sloppy: true });
+                                if (!ok) break;
+                            }
+                            fenPlus4 = ch.fen();
+                        }
+                    } catch (e) {}
+                }
+
+                // Short NEXT clue (3 moves) — idea only, not a script to narrate
                 const pathArr = c.pathArray || [];
                 const nextArr = (c.nextMovesFull && c.nextMovesFull.length)
-                    ? c.nextMovesFull.slice(0, 4)
-                    : (c.nextMoves || []).slice(0, 4);
-                let nextFull = "(end of line)";
+                    ? c.nextMovesFull.slice(0, 3)
+                    : (c.nextMoves || []).slice(0, 3);
+                let nextClue = "";
                 if (nextArr.length) {
                     let ply = pathArr.length;
                     const parts = [];
@@ -1287,74 +1306,52 @@
                         const moveNum = Math.floor(ply / 2) + 1;
                         const isWhite = (ply % 2 === 0);
                         const raw = String(nextArr[ni]).trim();
-                        if (isWhite) parts.push(`${moveNum}. ${raw} (White)`);
-                        else parts.push(`${moveNum}... ${raw} (Black)`);
+                        parts.push(isWhite ? `${moveNum}. ${raw}` : `${moveNum}... ${raw}`);
                         ply++;
                     }
-                    nextFull = parts.join("  ");
-                }
-
-                // FEN after the move
-                const fenToSend = (c.moveParsed !== false && isValidFen(c.fenAfter))
-                    ? c.fenAfter
-                    : (isValidFen(c.fen) ? c.fen : null);
-
-                // Helper: format a PV in normal SAN with move numbers (not UCI)
-                function formatPvNumbered(pvMoves, startPly) {
-                    let ply = startPly;
-                    const parts = [];
-                    for (let k = 0; k < pvMoves.length; k++) {
-                        const m = pvMoves[k];
-                        // skip UCI-looking tokens if any slip through
-                        if (/^[a-h][1-8][a-h][1-8]/.test(m) && !/[NBRQK]/.test(m) && m.length <= 5) continue;
-                        const moveNum = Math.floor(ply / 2) + 1;
-                        if (ply % 2 === 0) parts.push(`${moveNum}. ${m}`);
-                        else parts.push(m);
-                        ply++;
-                    }
-                    return parts.join(" ");
+                    nextClue = parts.join(" ");
                 }
 
                 let lineOutput = `[ID: ${c.id}]
 MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}
-NEXT: ${nextFull}`;
-                if (fenToSend) {
-                    lineOutput += `\nFEN: ${fenToSend}`;
-                } else {
-                    lineOutput += `\nFEN: unavailable`;
+FEN BEFORE: ${fenBefore || "unavailable"}
+FEN AFTER: ${fenAfter || "unavailable"}
+FEN +4: ${fenPlus4 || "unavailable"}`;
+                if (nextClue) {
+                    lineOutput += `\nNEXT (clue only): ${nextClue}`;
                 }
                 if (userNotes[c.id]) {
                     lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
                 }
 
-                // Engine: always try when we have FEN — show 4th, 5th, 6th choices (threat-revealing alts)
-                if (fenToSend) {
+                // End of variation only: strong Stockfish line (4 moves + eval) as plan / assessment
+                if (c.isVariationEnd && fenAfter) {
                     engineCalls++;
-                    btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(250);
-                    const engineData = await getEngineRefutation(fenToSend);
+                    btnText.innerHTML = `<div class="spinner"></div>Engine end [${currentStep}/${totalSelectedMoves}]...`;
+                    await delay(200);
+                    const engineData = await getEngineRefutation(fenAfter);
                     if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
-                        // lines already sorted best→worst for side to move; each has numbered SAN (up to 6) + eval
-                        const allPv = engineData.lines.map((ln, idx) => {
-                            const numbered = ln.numbered || formatPvNumberedSans(
-                                (ln.allSan && ln.allSan.length) ? ln.allSan : `${ln.san || ""} ${ln.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 6),
-                                fenToSend
-                            );
-                            const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : "?";
-                            return { idx: idx + 1, ev, numbered };
-                        });
-                        // Weaker choices: last 3 lines (API max 5 MultiPV). If only 1–2, show all.
-                        let altLines = allPv.length >= 3 ? allPv.slice(-3) : allPv;
-                        const engStr = altLines.map(p => `#${p.idx} eval ${p.ev}  ${p.numbered}`).join("\n");
-                        lineOutput += `\nENGINE (weaker choices, each up to 6 SAN moves + eval):\n${engStr || "(none)"}`;
-                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] engine ${altLines.length} lines`;
+                        const top = engineData.lines[0];
+                        const sans = (top.allSan && top.allSan.length)
+                            ? top.allSan.slice(0, 4)
+                            : `${top.san || ""} ${top.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 4);
+                        const numbered = top.numbered
+                            ? top.numbered.split(/\s+/).slice(0, 8).join(" ") // keep move numbers, ~4 plies
+                            : formatPvNumberedSans(sans, fenAfter);
+                        // Prefer clean 4-move SAN with numbers
+                        const planSans = formatPvNumberedSans(sans, fenAfter);
+                        const ev = (top.eval !== undefined && top.eval !== null) ? String(top.eval) : "?";
+                        // Side to move after this end-of-line move
+                        const stm = sideToMoveAfter;
+                        lineOutput += `\nPLAN (Stockfish at end of line, ${stm} to move, eval ${ev}): ${planSans}`;
+                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] plan eval ${ev}`;
                     } else {
-                        lineOutput += `\nENGINE: (none)`;
-                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] no engine`;
+                        lineOutput += `\nPLAN: (none)`;
+                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] no plan`;
                     }
                 } else {
-                    await delay(15);
                     statsText.innerText = `Preparing: ${c.moveNum}. ${sanDisplay}`;
+                    await delay(10);
                 }
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
@@ -1366,23 +1363,26 @@ NEXT: ${nextFull}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a 2700+ GM writing short chess notes for a course. We play ${weSide}. They play ${theySide}.
+            const fullPrompt = `You are a 2700+ GM writing notes for a chess course (like Modern Chess / Chessable style). We play ${weSide}. They play ${theySide}.
 
-Each item is neat:
-MOVE — the move to annotate (symbol only if present: ? ?? ! !! ?! !?)
-NEXT — next 3–4 moves in the PGN (clue only)
-ENGINE — 3 weaker alternative lines (not the top choice), each with up to 6 SAN moves and eval (e.g. #3 eval +1.4  26. Nxe6 fxe6 27. c4 Be7). Eval = severity. Use only for threats if a side is careless.
-FEN — exact board after the move
-YOUR NOTE — optional human idea
+Each item:
+MOVE — annotate this move only (symbol ? ?? ! !! ?! !? if present)
+FEN BEFORE — board before the move
+FEN AFTER — board right after the move
+FEN +4 — board about four plies later in this line (see the idea)
+NEXT — silent clue only; do not list these moves in your text
+PLAN — only on the last move of a variation: Stockfish best line (4 moves + eval). Use it only to say if the end is equal, better, or worse and the main idea — not a long engine lecture.
+YOUR NOTE — optional; keep the idea, fix English
 
-Your job: explain WHY this one move was played (why the piece went there, what break or reroute it prepares). Use NEXT only as a silent clue (e.g. preparing e6, knight toward g3). Use ENGINE only for general threats if someone is careless.
-
-Rules:
-- Do NOT narrate the next PGN moves ("then we castle", "Nxc3 and Be7 follow").
-- Do NOT invent pieces; trust FEN only.
-- BY side: if the move is by ${weSide}, use "we/our". If by ${theySide}, use "${theySide}"/they.
-- Keep the symbol meaning if present (? = mistake, etc.) without a long lecture.
-- Simple correct English. 1–2 short sentences. One idea.
+Write like a strong GM course note:
+- Very simple, correct English.
+- 1–2 short sentences.
+- Say WHY this piece moved (square, break, regroup, stop a threat).
+- If there is a symbol, respect it (? = mistake, ! = strong, etc.) without a long lecture.
+- On variation ends, one short verdict from PLAN/eval (equal / better / worse + main idea).
+- Do NOT narrate the next moves ("then we castle", "Nxc3 follows").
+- Do NOT invent pieces; trust the FENs.
+- If BY is ${weSide}: "we/our". If ${theySide}: "${theySide}"/they.
 
 Return ONLY a JSON object. Keys = the IDs. Values = the comment text only.
 
@@ -1391,7 +1391,7 @@ ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
                 resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions\n${engineCalls} engine analyses.`);
+                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions.`);
             }).catch(err => {
                 const textArea = document.createElement("textarea");
                 textArea.value = fullPrompt;
