@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master Pro (3-Line Engine) | Decipher Chess Academy</title>
-    
+    <title>GM Variation Master Pro (MRO) v1.7 | Decipher Chess Academy</title>
+    <!-- build: 2026-10-05-mro-v1.7 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -33,8 +33,8 @@
     <div class="max-w-7xl mx-auto">
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
-                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Idea-Focused Annotation Engine · 3 Engine Lines</p>
+                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">FEN only · Stockfish only at variation ends · v1.7</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -89,17 +89,67 @@
                             <label class="text-[10px] font-bold text-slate-500 uppercase">FEN (Feed to AI)</label>
                             <input type="text" id="fen-output" class="w-full p-3 rounded-lg text-xs mt-1 text-emerald-400" readonly placeholder="FEN will appear here...">
                         </div>
+                        <div id="main-engine" class="mt-3 glass p-3 rounded-xl text-left">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Stockfish</span>
+                                <span id="main-engine-status" class="text-[10px] text-slate-500">—</span>
+                            </div>
+                            <div id="main-engine-lines" class="space-y-1.5 text-xs font-mono text-slate-300 min-h-[3rem]">
+                                <p class="text-slate-600 italic">Click a move to see engine lines…</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="lg:w-2/3 glass p-4 rounded-xl">
                     <div class="mb-3 text-xs text-slate-400 italic">
-                        <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>. 
-                        The tool includes every variation start &amp; end, all moves with !?/$ symbols, plus a few random samples. Each position is sent with the exact move played + correct FEN. Engine ideas are supplied on branch ends so the AI can explain the <span class="text-white">intention</span> behind the move in natural GM style.
+                        <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>.
+                        Then review each position below, write your ideas, and copy for the AI.
                     </div>
                     <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
                 </div>
                 
+            </div>
+
+            <!-- Batch review: note only key moves -->
+            <div id="batch-review" class="hidden glass p-6 rounded-2xl space-y-4">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-lg font-bold gold-text">Help the AI on key moves</h2>
+                        <p class="text-xs text-slate-400">Click a move → see the board → write a short note only if the idea is hard. Leave empty for clear moves. The AI will use your notes and write simple correct English.</p>
+                    </div>
+                    <span id="batch-count" class="text-[10px] uppercase tracking-widest text-slate-500"></span>
+                </div>
+                <div class="flex flex-col lg:flex-row gap-6">
+                    <div class="lg:w-1/3">
+                        <div class="board-container">
+                            <div id="review-board" style="width: 100%;"></div>
+                        </div>
+                        <p id="review-move-label" class="mt-3 text-sm text-emerald-400 font-semibold text-center"></p>
+                        <div class="mt-2 flex items-center justify-center gap-2">
+                            <button type="button" id="btn-review-prev" onclick="reviewStep(-1)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase disabled:opacity-30 disabled:cursor-not-allowed" title="Previous move">◀ Prev</button>
+                            <span id="review-ply-label" class="text-[10px] text-slate-500 min-w-[4rem] text-center">—</span>
+                            <button type="button" id="btn-review-next" onclick="reviewStep(1)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold uppercase disabled:opacity-30 disabled:cursor-not-allowed" title="Next move">Next ▶</button>
+                        </div>
+                        <p id="review-fen" class="mt-2 text-[10px] text-slate-500 break-all text-center"></p>
+                        <div id="review-engine" class="mt-3 glass p-3 rounded-xl text-left">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Stockfish</span>
+                                <span id="review-engine-status" class="text-[10px] text-slate-500">—</span>
+                            </div>
+                            <div id="review-engine-lines" class="space-y-1.5 text-xs font-mono text-slate-300 min-h-[4.5rem]">
+                                <p class="text-slate-600 italic">Select a move to load engine lines…</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:w-2/3 space-y-3">
+                        <label class="text-xs font-bold uppercase text-slate-500">Batch moves (click one)</label>
+                        <div id="review-move-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[220px] overflow-y-auto pr-1"></div>
+                        <label class="text-xs font-bold uppercase text-slate-500">Your note for this move only (optional)</label>
+                        <textarea id="move-note" rows="4" class="w-full p-4 rounded-xl text-sm" placeholder="Only for key moves. Example: rook goes to a2 so after axb5 the a-file opens and hits our queen. Leave empty if obvious."></textarea>
+                        <p id="notes-saved-count" class="text-[10px] text-slate-500">0 notes saved</p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -134,10 +184,18 @@
         let globalChunks = [];
         let pgnTokens = [];
         let board = null;
+        let reviewBoard = null;
         let selStart = null;
         let selEnd = null;
         let isDbLoaded = false;
+        let reviewIndex = null; // which selected move is shown on review board
+        let userNotes = {}; // chunkId -> short note from the player
         let dynamicMasterDb = {};
+        let engineCache = {}; // fen -> engine result
+        let reviewEngineToken = 0; // cancel stale async fetches
+        let mainEngineToken = 0;
+        let reviewLine = []; // [{fen, label, isFocus}] built for current review chunk
+        let reviewLineIdx = 0;
 
         const delay = ms => new Promise(res => setTimeout(res, ms));
 
@@ -343,6 +401,10 @@
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 position: 'start'
             });
+            reviewBoard = Chessboard('review-board', {
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+                position: 'start'
+            });
 
             loadZippedDatabase();
 
@@ -404,6 +466,41 @@
             }
         }
 
+        // One clear board diagram from FEN (only format sent to the AI)
+        // Standard orientation: Black's rank 8 at TOP, White's rank 1 at BOTTOM. a-file LEFT, h-file RIGHT.
+        // Uppercase = White piece, lowercase = Black piece. a1 is a dark square.
+        function fenToAsciiBoard(fen) {
+            if (!fen || !isValidFen(fen)) return "";
+            try {
+                const parts = fen.trim().split(/\s+/);
+                const rows = parts[0].split("/");
+                if (rows.length !== 8) return "";
+                const lines = [
+                    "Orientation: rank 8 top, rank 1 bottom | a-file left, h-file right | a1 dark",
+                    "UPPERCASE=White  lowercase=Black  .=empty",
+                    "  +-----------------+",
+                ];
+                for (let r = 0; r < 8; r++) {
+                    let row = "";
+                    for (const ch of rows[r]) {
+                        if (ch >= "1" && ch <= "8") {
+                            row += " .".repeat(parseInt(ch, 10));
+                        } else {
+                            row += " " + ch;
+                        }
+                    }
+                    lines.push(`${8 - r} |${row} |`);
+                }
+                lines.push("  +-----------------+");
+                lines.push("    a b c d e f g h");
+                const turn = parts[1] === "b" ? "Black" : "White";
+                lines.push(`Side to move: ${turn}`);
+                return lines.join("\n");
+            } catch (e) {
+                return "";
+            }
+        }
+
         function buildPlanHint(evalVal, cont) {
             const evalNum = parseFloat(evalVal);
             const isMate = /mate|#/i.test(String(evalVal)) || /#/.test(cont || "");
@@ -419,9 +516,13 @@
             }
             let cont = "";
             if (data.continuationArr && data.continuationArr.length) {
-                cont = data.continuationArr.slice(0, 7).join(" ");
+                cont = data.continuationArr.slice(0, 10).join(" ");
             } else if (data.continuation) {
-                cont = String(data.continuation).split(" ").slice(0, 7).join(" ");
+                cont = String(data.continuation).split(" ").slice(0, 10).join(" ");
+            } else if (data.pv && Array.isArray(data.pv)) {
+                cont = data.pv.slice(0, 10).join(" ");
+            } else if (data.moves && Array.isArray(data.moves)) {
+                cont = data.moves.slice(0, 10).join(" ");
             }
             const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
             return {
@@ -434,66 +535,185 @@
             };
         }
 
-        async function getEngineRefutation(fen, retries = 3) {
+        // Convert UCI move list to SAN from a starting FEN (chess.js)
+        function uciListToSan(fen, uciMoves, maxPlies) {
+            const out = [];
+            try {
+                const ch = new Chess();
+                if (!ch.load(fen)) return out;
+                const limit = maxPlies || 6;
+                for (let i = 0; i < uciMoves.length && out.length < limit; i++) {
+                    const u = String(uciMoves[i] || "").trim();
+                    if (!u || u.length < 4) continue;
+                    const from = u.slice(0, 2);
+                    const to = u.slice(2, 4);
+                    const promo = u.length > 4 ? u[4] : undefined;
+                    const mv = ch.move({ from, to, promotion: promo || "q" });
+                    if (!mv) break;
+                    out.push(mv.san);
+                }
+            } catch (e) {}
+            return out;
+        }
+
+        function formatPvNumberedSans(sans, fen) {
+            const parts = [];
+            try {
+                const bits = (fen || "").split(/\s+/);
+                let fullMove = parseInt(bits[5], 10);
+                if (isNaN(fullMove) || fullMove < 1) fullMove = 1;
+                let isWhite = bits[1] !== "b";
+                for (let i = 0; i < sans.length; i++) {
+                    if (isWhite) parts.push(fullMove + ". " + sans[i]);
+                    else parts.push(sans[i]);
+                    if (!isWhite) fullMove++;
+                    isWhite = !isWhite;
+                }
+            } catch (e) {
+                return sans.join(" ");
+            }
+            return parts.join(" ");
+        }
+
+        // MultiPV via WebSocket (REST only returns 1 line). variants max 5 on chess-api.com
+        async function getEngineRefutation(fen, retries = 2) {
             if (!isValidFen(fen)) {
                 return { lines: [], invalid: true, text: "INVALID FEN" };
             }
+            const wantVariants = 5; // API max
+            const depthWant = 14;
+            const thinkMs = 100;
+
             for (let attempt = 0; attempt <= retries; attempt++) {
                 try {
-                    const response = await fetch("https://chess-api.com/v1", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            fen: fen,
-                            depth: 18,
-                            maxThinkingTime: 90,
-                            variants: 3
-                        })
+                    const result = await new Promise((resolve) => {
+                        let settled = false;
+                        const byKey = {}; // first-move UCI or SAN -> best depth message
+                        let ws;
+                        const finish = () => {
+                            if (settled) return;
+                            settled = true;
+                            try { ws && ws.close(); } catch (e) {}
+                            const rows = Object.values(byKey);
+                            // Sort: best for side-to-move first
+                            const bits = fen.split(/\s+/);
+                            const blackToMove = bits[1] === "b";
+                            rows.sort((a, b) => {
+                                const ea = typeof a.eval === "number" ? a.eval : 0;
+                                const eb = typeof b.eval === "number" ? b.eval : 0;
+                                // White POV eval: Black wants lower, White wants higher
+                                return blackToMove ? (ea - eb) : (eb - ea);
+                            });
+                            const lines = rows.slice(0, wantVariants).map((data) => {
+                                const uciCont = Array.isArray(data.continuationArr)
+                                    ? data.continuationArr
+                                    : [];
+                                // first move: prefer SAN from API, else convert UCI
+                                let firstSan = data.san || "";
+                                if (!firstSan && data.move && data.move.length >= 4) {
+                                    firstSan = uciListToSan(fen, [data.move], 1)[0] || data.move;
+                                }
+                                const restSan = uciListToSan(
+                                    // position after first move
+                                    (() => {
+                                        try {
+                                            const ch = new Chess();
+                                            ch.load(fen);
+                                            if (firstSan) ch.move(firstSan, { sloppy: true });
+                                            else if (data.move) {
+                                                const u = data.move;
+                                                ch.move({ from: u.slice(0,2), to: u.slice(2,4), promotion: u[4] || "q" });
+                                            }
+                                            return ch.fen();
+                                        } catch (e) { return fen; }
+                                    })(),
+                                    uciCont,
+                                    5
+                                );
+                                const allSan = [firstSan].concat(restSan).filter(Boolean).slice(0, 6);
+                                const numbered = formatPvNumberedSans(allSan, fen);
+                                return {
+                                    eval: data.eval,
+                                    san: firstSan,
+                                    continuation: restSan.join(" "),
+                                    numbered,
+                                    allSan,
+                                    text: data.text || "",
+                                    planHint: buildPlanHint(data.eval, restSan.join(" ")),
+                                    invalid: false
+                                };
+                            });
+                            if (!lines.length) {
+                                resolve({ lines: [], invalid: true, text: "No engine lines" });
+                                return;
+                            }
+                            const top = lines[0];
+                            resolve({
+                                lines,
+                                eval: top.eval,
+                                san: top.san,
+                                continuation: top.continuation,
+                                text: top.text,
+                                planHint: top.planHint,
+                                invalid: false
+                            });
+                        };
+
+                        const timer = setTimeout(finish, 4500);
+                        try {
+                            ws = new WebSocket("wss://chess-api.com/v1");
+                        } catch (e) {
+                            clearTimeout(timer);
+                            resolve(null);
+                            return;
+                        }
+                        ws.onopen = () => {
+                            ws.send(JSON.stringify({
+                                fen,
+                                variants: wantVariants,
+                                depth: depthWant,
+                                maxThinkingTime: thinkMs
+                            }));
+                        };
+                        ws.onmessage = (ev) => {
+                            try {
+                                const data = JSON.parse(ev.data);
+                                if (data.type !== "move" && data.type !== "bestmove") return;
+                                const key = data.move || data.san || data.lan;
+                                if (!key) return;
+                                const prev = byKey[key];
+                                if (!prev || (data.depth || 0) >= (prev.depth || 0)) {
+                                    byKey[key] = data;
+                                }
+                                // enough distinct lines at decent depth
+                                const deep = Object.values(byKey).filter(x => (x.depth || 0) >= 10);
+                                if (deep.length >= wantVariants && data.type === "bestmove") {
+                                    clearTimeout(timer);
+                                    setTimeout(finish, 200);
+                                }
+                            } catch (e) {}
+                        };
+                        ws.onerror = () => {
+                            clearTimeout(timer);
+                            finish();
+                        };
+                        ws.onclose = () => {
+                            clearTimeout(timer);
+                            finish();
+                        };
                     });
-                    
-                    if (response.status === 429) {
-                        await delay(1800 * (attempt + 1));
-                        continue;
+
+                    if (result && !result.invalid && result.lines && result.lines.length) {
+                        return result;
                     }
-
-                    if (!response.ok) return null;
-                    const data = await response.json();
-
-                    // Support both single-object and array responses (MultiPV)
-                    let lines = [];
-                    if (Array.isArray(data)) {
-                        lines = data.map(parseEngineLine).filter(Boolean).slice(0, 3);
-                    } else if (data.lines && Array.isArray(data.lines)) {
-                        lines = data.lines.map(parseEngineLine).filter(Boolean).slice(0, 3);
-                    } else if (data.pvs && Array.isArray(data.pvs)) {
-                        lines = data.pvs.map(parseEngineLine).filter(Boolean).slice(0, 3);
-                    } else {
-                        const one = parseEngineLine(data);
-                        if (one) lines = [one];
-                    }
-
-                    if (lines.length === 0) {
-                        return { lines: [], invalid: true, text: (data && data.text) || "Engine rejected FEN" };
-                    }
-
-                    // Keep backward-compatible top-line fields for any leftover callers
-                    const top = lines[0];
-                    return {
-                        lines: lines,
-                        eval: top.eval,
-                        san: top.san,
-                        continuation: top.continuation,
-                        text: top.text,
-                        planHint: top.planHint,
-                        invalid: false
-                    };
                 } catch (e) {
                     if (attempt === retries) return null;
-                    await delay(1200);
+                    await delay(800);
                 }
             }
             return null;
         }
+
 
         // Full board inventory + features from FEN so AI never invents pieces from sibling lines
         function describePositionFromFen(fen) {
@@ -510,7 +730,11 @@
                 };
                 let whiteKing = "", blackKing = "";
                 const pieces = [];
-                const byType = { whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [], whiteRooks: [], blackRooks: [] };
+                const byType = {
+                    whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [],
+                    whiteRooks: [], blackRooks: [], whiteQueens: [], blackQueens: [],
+                    whitePawns: [], blackPawns: []
+                };
                 for (let r = 0; r < 8; r++) {
                     let file = 0;
                     for (const ch of rows[r]) {
@@ -525,6 +749,10 @@
                         if (ch === "n") byType.blackKnights.push(sq);
                         if (ch === "R") byType.whiteRooks.push(sq);
                         if (ch === "r") byType.blackRooks.push(sq);
+                        if (ch === "Q") byType.whiteQueens.push(sq);
+                        if (ch === "q") byType.blackQueens.push(sq);
+                        if (ch === "P") byType.whitePawns.push(sq);
+                        if (ch === "p") byType.blackPawns.push(sq);
                         file++;
                     }
                 }
@@ -539,9 +767,15 @@
                 if (byType.whiteBishops.length) notes.push(`White bishops on ${byType.whiteBishops.join(",")}`);
                 else notes.push("NO white bishop on the board");
                 if (byType.blackKnights.length) notes.push(`Black knights on ${byType.blackKnights.join(",")}`);
+                else notes.push("NO black knight on the board");
                 if (byType.whiteKnights.length) notes.push(`White knights on ${byType.whiteKnights.join(",")}`);
-                // compact piece list for verification
-                notes.push(`PIECES: ${pieces.join("; ")}`);
+                else notes.push("NO white knight on the board");
+                if (byType.blackQueens.length) notes.push(`Black queen on ${byType.blackQueens.join(",")}`);
+                if (byType.whiteQueens.length) notes.push(`White queen on ${byType.whiteQueens.join(",")}`);
+                if (byType.blackRooks.length) notes.push(`Black rooks on ${byType.blackRooks.join(",")}`);
+                if (byType.whiteRooks.length) notes.push(`White rooks on ${byType.whiteRooks.join(",")}`);
+                // compact piece list for verification — AI must use ONLY these pieces
+                notes.push(`FULL PIECE LIST (use only these): ${pieces.join("; ")}`);
                 return notes.join(" | ");
             } catch (e) {
                 return "";
@@ -561,7 +795,8 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[a-zA-Z0-9\-+=#\/]+[?!]*)/g) || [];
+            // Tokenize: keep ( ) move-numbers NAGs SANs; drop headers/comments as skipped tokens
+            pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[O0]-[O0](?:-[O0])?[+#]?|[a-hRNBQK][a-hRNBQK1-8x\-=+#]*[?!]*|[a-h][1-8](?:=[RNBQ])?[+#]?[?!]*)/g) || [];
             
             let chunks = [];
             let moveNumber = 0;
@@ -570,82 +805,137 @@
             let lastChunkAtLevel = {};
 
             let chess = new Chess();
-            let stateStack = [];
-            let currentFEN = chess.fen();
-            let fenBeforeLastMove = currentFEN;
+            const startFen = chess.fen();
+
+            // Ply stack = sequence of moves on the CURRENT line (main or variation).
+            // Each entry: { san, fenBefore, fenAfter }
+            // On '(': save stack, undo last ply (variation replaces that move), continue.
+            // On ')': restore saved stack so deeper nests and siblings keep correct FENs.
+            let plyStack = [];
+            let branchStack = []; // { plies, level }
+
+            const normalizeFen = (f) => {
+                if (!f || typeof f !== "string") return f;
+                try {
+                    const tmp = new Chess();
+                    if (tmp.load(f)) return tmp.fen();
+                } catch (e) {}
+                return f;
+            };
+
+            const fenAtTip = () => {
+                if (plyStack.length === 0) return startFen;
+                return plyStack[plyStack.length - 1].fenAfter;
+            };
+
+            const loadTip = () => {
+                const f = fenAtTip();
+                const ok = chess.load(f);
+                if (!ok) console.warn("Failed to load tip FEN:", f);
+                return normalizeFen(chess.fen());
+            };
 
             pgnTokens.forEach((token, index) => {
+                if (token.startsWith('[') || token.startsWith('{')) return; // skip headers / comments
+
                 if (token === "(") {
+                    // Save full line state (including the move this variation replaces)
+                    branchStack.push({
+                        plies: plyStack.map(p => ({ san: p.san, fenBefore: p.fenBefore, fenAfter: p.fenAfter })),
+                        level: variationLevel
+                    });
+                    // Variation = alternative to the last move → undo that ply
+                    if (plyStack.length > 0) {
+                        plyStack.pop();
+                    }
+                    loadTip();
                     variationLevel++;
-                    depthPlyCounts[variationLevel] = 0; 
-                    stateStack.push({ current: currentFEN, beforeLast: fenBeforeLastMove });
-                    chess.load(fenBeforeLastMove);
-                    return; 
+                    depthPlyCounts[variationLevel] = 0;
+                    return;
                 }
                 if (token === ")") {
                     if (lastChunkAtLevel[variationLevel]) {
                         lastChunkAtLevel[variationLevel].isVariationEnd = true;
                     }
-                    variationLevel--;
-                    let state = stateStack.pop();
-                    if(state) {
-                        chess.load(state.current);
-                        currentFEN = state.current;
-                        fenBeforeLastMove = state.beforeLast;
+                    const saved = branchStack.pop();
+                    if (saved) {
+                        plyStack = saved.plies;
+                        variationLevel = saved.level;
+                    } else {
+                        variationLevel = Math.max(0, variationLevel - 1);
                     }
-                    return; 
+                    loadTip();
+                    return;
                 }
                 
                 const isMoveNum = /^\d+\./.test(token);
                 if (isMoveNum) {
-                    moveNumber = parseInt(token);
-                    return; 
+                    moveNumber = parseInt(token, 10);
+                    return;
                 }
 
-                const isMove = /^[a-hA-ZRKNQBO]/.test(token) && !token.startsWith('{') && !token.startsWith('[');
+                if (token.startsWith('$')) return; // NAG handled via look-ahead on moves
+
+                const isMove = /^([a-hRNBQK]|[O0]-)/.test(token);
                 
                 if (isMove) {
                     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
-                    fenBeforeLastMove = chess.fen();
+                    const fenBefore = normalizeFen(loadTip());
 
-                    let cleanMove = token.replace(/[^a-zA-Z0-9=\+\-#O]/g, ''); 
+                    // Clean SAN for chess.js
+                    let cleanMove = token
+                        .replace(/\$\d+/g, '')
+                        .replace(/[!?]+/g, '')
+                        .replace(/[±∓∞]/g, '')
+                        .replace(/[=\/+\-]+$/g, '')
+                        .replace(/[^a-zA-Z0-9=\+\-#O]/g, '')
+                        .trim();
+                    if (/=$/.test(cleanMove)) cleanMove = cleanMove.replace(/=$/, '');
+                    // Castling: accept 0-0 as O-O
+                    cleanMove = cleanMove.replace(/0/g, 'O');
+
                     let moveObj = chess.move(cleanMove, { sloppy: true });
                     if (!moveObj) {
-                        cleanMove = cleanMove.replace(/[+#]/g, '');
-                        moveObj = chess.move(cleanMove, { sloppy: true });
+                        const noCheck = cleanMove.replace(/[+#]/g, '');
+                        if (noCheck !== cleanMove) moveObj = chess.move(noCheck, { sloppy: true });
                     }
                     if (!moveObj) {
-                        const alt = token.replace(/[!?]+$/g, '').replace(/\$\d+$/g, '').trim();
-                        if (alt && alt !== cleanMove) {
-                            moveObj = chess.move(alt, { sloppy: true });
-                        }
-                    }
-                    let parsedOk = !!moveObj;
-                    if (moveObj) {
-                        currentFEN = chess.fen();
-                    } else {
-                        currentFEN = fenBeforeLastMove;
-                        console.warn("Move failed to parse:", token, "at", fenBeforeLastMove);
+                        const alt = token.replace(/[!?$±∓∞=\/\+\-].*$/g, '').replace(/0/g, 'O').trim();
+                        if (alt && alt !== cleanMove) moveObj = chess.move(alt, { sloppy: true });
                     }
 
-                    const normalizeFen = (f) => {
-                        if (!f || typeof f !== "string") return f;
-                        try {
-                            const tmp = new Chess();
-                            if (tmp.load(f)) return tmp.fen();
-                        } catch (e) {}
-                        return f;
-                    };
-                    fenBeforeLastMove = normalizeFen(fenBeforeLastMove);
-                    currentFEN = normalizeFen(currentFEN);
+                    let parsedOk = !!moveObj;
+                    let sanUsed = "";
+                    let fenAfter = fenBefore;
+                    if (moveObj) {
+                        fenAfter = normalizeFen(chess.fen());
+                        sanUsed = moveObj.san;
+                        plyStack.push({ san: sanUsed, fenBefore, fenAfter });
+                    } else {
+                        // Failed parse: do not push a fake ply (keeps later FENs correct)
+                        sanUsed = token.replace(/[!?$±∓∞].*$/,'').replace(/[=\/+\-]+$/,'').trim();
+                        console.warn("Move failed to parse:", token, "→ tried:", cleanMove, "at", fenBefore);
+                    }
 
                     let evalSymbol = "";
                     let nextToken = pgnTokens[index + 1];
-                    if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken) || /^[\+\-=]+$/.test(nextToken))) {
+                    if (nextToken && (
+                        nextToken.startsWith('$') ||
+                        /^[!?]+$/.test(nextToken) ||
+                        /^[\+\-=±∓∞\/]+$/.test(nextToken) ||
+                        /[=+\-±∓]\/[∞=+\-±∓]/.test(nextToken)
+                    )) {
                         evalSymbol = ` ${nextToken}`;
                     }
 
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
+                    const pathArray = plyStack.map(p => p.san);
+                    const pathStr = pathArray.length > 12
+                        ? "..." + pathArray.slice(-12).join(" ")
+                        : pathArray.join(" ");
+                    const last3 = pathArray.length > 1
+                        ? pathArray.slice(Math.max(0, pathArray.length - 4), pathArray.length - 1)
+                        : [];
 
                     let newChunk = {
                         id: `CHK_${chunks.length}_M${moveNumber}_V${variationLevel}`,
@@ -655,10 +945,14 @@
                         isMainLine: variationLevel === 0,
                         isVariationStart: isFirstMoveOfVariation,
                         isVariationEnd: false,
-                        fen: fenBeforeLastMove,
-                        fenAfter: currentFEN,
+                        fen: fenBefore,
+                        fenAfter: fenAfter,
                         moveParsed: parsedOk,
-                        variationLevel: variationLevel
+                        variationLevel: variationLevel,
+                        pathToHere: pathStr,
+                        pathArray: pathArray,
+                        last3Moves: last3,
+                        san: sanUsed
                     };
 
                     chunks.push(newChunk);
@@ -670,38 +964,259 @@
                 lastChunkAtLevel[0].isVariationEnd = true;
             }
 
+            // Post-process: next 5–7 moves of THIS variation only, keeping GM signs (!?/+- etc.)
+            for (let i = 0; i < chunks.length; i++) {
+                const c = chunks[i];
+                const nextSans = [];
+                const nextFull = [];
+                let j = i + 1;
+                while (j < chunks.length && nextFull.length < 4) {
+                    const nxt = chunks[j];
+                    if (nxt.variationLevel < c.variationLevel) break;
+                    if (nxt.variationLevel > c.variationLevel) {
+                        j++;
+                        continue;
+                    }
+                    if (nxt.isVariationStart) break;
+                    nextSans.push(nxt.san || nxt.target.replace(/[!?$].*$/, '').trim());
+                    nextFull.push((nxt.target || nxt.san || "").trim());
+                    j++;
+                }
+                c.nextMoves = nextSans;
+                c.nextMovesFull = nextFull;
+            }
+
             globalChunks = chunks;
             document.getElementById('workspace').classList.remove('hidden');
             document.getElementById('copy-btn').classList.remove('hidden');
             
             selStart = null;
             selEnd = null;
+            reviewIndex = null;
             board.position('start', false);
             document.getElementById('fen-output').value = "";
+            document.getElementById('batch-review').classList.add('hidden');
+            userNotes = {};
+            const mn = document.getElementById('move-note');
+            if (mn) mn.value = "";
+            const nsc = document.getElementById('notes-saved-count');
+            if (nsc) nsc.innerText = "0 notes saved";
 
             updateUI();
             saveState();
+        }
+
+        function getSelectedIndices() {
+            if (selStart === null) return [];
+            const endIdx = selEnd !== null ? selEnd : selStart;
+            const rangeIndices = [];
+            for (let i = selStart; i <= endIdx; i++) rangeIndices.push(i);
+
+            const mustInclude = new Set();
+            mustInclude.add(selStart);
+            mustInclude.add(endIdx);
+            rangeIndices.forEach(i => {
+                const c = globalChunks[i];
+                if (c.isVariationStart || c.isVariationEnd) mustInclude.add(i);
+                if (/[?!$]|\$\d+/.test(c.target)) mustInclude.add(i);
+            });
+            const remaining = rangeIndices.filter(i => !mustInclude.has(i));
+            const randomCount = Math.min(12, Math.max(3, Math.floor(remaining.length * 0.20)));
+            for (let k = 0; k < randomCount && remaining.length; k++) {
+                const r = Math.floor(Math.random() * remaining.length);
+                mustInclude.add(remaining.splice(r, 1)[0]);
+            }
+            return Array.from(mustInclude).sort((a, b) => a - b);
+        }
+
+        function saveCurrentMoveNote() {
+            if (reviewIndex === null) return;
+            const c = globalChunks[reviewIndex];
+            if (!c) return;
+            const val = (document.getElementById('move-note')?.value || "").trim();
+            if (val) userNotes[c.id] = val;
+            else delete userNotes[c.id];
+            const n = Object.keys(userNotes).length;
+            const el = document.getElementById('notes-saved-count');
+            if (el) el.innerText = n === 0 ? "0 notes saved" : `${n} note${n > 1 ? "s" : ""} saved`;
+            // mark list items that have notes
+            document.querySelectorAll('#review-move-list .review-item').forEach(el2 => {
+                const idx = parseInt(el2.dataset.idx, 10);
+                const id = globalChunks[idx]?.id;
+                el2.classList.toggle('ring-1', !!(id && userNotes[id]));
+                el2.classList.toggle('ring-yellow-500', !!(id && userNotes[id]));
+            });
+        }
+
+        function formatEngineLines(engineData) {
+            if (!engineData || engineData.invalid || !engineData.lines || !engineData.lines.length) {
+                return '<p class="text-slate-500 italic">No engine lines</p>';
+            }
+            return engineData.lines.slice(0, 5).map((ln, i) => {
+                const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : '?';
+                const moves = `${ln.san || ''} ${ln.continuation || ''}`.trim().split(/\s+/).filter(Boolean).slice(0, 4).join(' ');
+                const rank = i === 0 ? 'text-emerald-400' : 'text-slate-300';
+                return `<div class="${rank}"><span class="text-slate-500">#${i + 1}</span> <span class="gold-text font-bold">${ev}</span> <span>${moves || '—'}</span></div>`;
+            }).join('');
+        }
+
+        async function loadEngineForPanel(fen, linesElId, statusElId, tokenRef) {
+            const linesEl = document.getElementById(linesElId);
+            const statusEl = document.getElementById(statusElId);
+            if (!linesEl || !statusEl) return;
+            if (!fen || !isValidFen(fen)) {
+                linesEl.innerHTML = '<p class="text-slate-500 italic">Invalid FEN</p>';
+                statusEl.innerText = '—';
+                return;
+            }
+            const myToken = ++tokenRef.n;
+            if (engineCache[fen]) {
+                linesEl.innerHTML = formatEngineLines(engineCache[fen]);
+                statusEl.innerText = 'cached';
+                return;
+            }
+            linesEl.innerHTML = '<p class="text-slate-500"><span class="spinner"></span>Analyzing…</p>';
+            statusEl.innerText = 'depth 18…';
+            const data = await getEngineRefutation(fen);
+            if (myToken !== tokenRef.n) return; // stale
+            if (data && !data.invalid) engineCache[fen] = data;
+            linesEl.innerHTML = formatEngineLines(data);
+            statusEl.innerText = (data && !data.invalid) ? 'ready' : 'failed';
+        }
+
+        function buildReviewLine(chunkIndex) {
+            const c = globalChunks[chunkIndex];
+            if (!c) return { positions: [], focusIdx: 0 };
+            const chess = new Chess();
+            const positions = [{ fen: chess.fen(), label: "Start", ply: 0 }];
+            const path = c.pathArray || [];
+            let focusIdx = 0;
+            for (let i = 0; i < path.length; i++) {
+                const m = chess.move(path[i], { sloppy: true });
+                if (!m) break;
+                const moveNum = Math.floor(i / 2) + 1;
+                const label = (i % 2 === 0) ? `${moveNum}. ${m.san}` : `${moveNum}... ${m.san}`;
+                positions.push({ fen: chess.fen(), label, ply: i + 1 });
+                // focus = position AFTER the reviewed move
+                if (i === path.length - 1) focusIdx = positions.length - 1;
+            }
+            // append next moves of this variation (for stepping forward)
+            const nextArr = (c.nextMoves && c.nextMoves.length) ? c.nextMoves : [];
+            for (let i = 0; i < nextArr.length; i++) {
+                const m = chess.move(nextArr[i], { sloppy: true });
+                if (!m) break;
+                const ply = path.length + i;
+                const moveNum = Math.floor(ply / 2) + 1;
+                const label = (ply % 2 === 0) ? `${moveNum}. ${m.san}` : `${moveNum}... ${m.san}`;
+                positions.push({ fen: chess.fen(), label, ply: ply + 1 });
+            }
+            // if path was empty, try fenAfter as focus
+            if (path.length === 0 && c.fenAfter && isValidFen(c.fenAfter)) {
+                positions.push({ fen: c.fenAfter, label: `${c.moveNum}. ${c.target}`, ply: 1 });
+                focusIdx = positions.length - 1;
+            }
+            return { positions, focusIdx };
+        }
+
+        function applyReviewLinePosition() {
+            if (!reviewLine.length) return;
+            reviewLineIdx = Math.max(0, Math.min(reviewLineIdx, reviewLine.length - 1));
+            const pos = reviewLine[reviewLineIdx];
+            const fen = pos.fen;
+            document.getElementById('review-move-label').innerText = pos.label || "";
+            document.getElementById('review-fen').innerText = fen || "";
+            const plyLabel = document.getElementById('review-ply-label');
+            if (plyLabel) plyLabel.innerText = `${reviewLineIdx + 1} / ${reviewLine.length}`;
+            const prevBtn = document.getElementById('btn-review-prev');
+            const nextBtn = document.getElementById('btn-review-next');
+            if (prevBtn) prevBtn.disabled = reviewLineIdx <= 0;
+            if (nextBtn) nextBtn.disabled = reviewLineIdx >= reviewLine.length - 1;
+            if (fen && isValidFen(fen) && reviewBoard) {
+                reviewBoard.position(fen, false);
+            }
+            loadEngineForPanel(fen, 'review-engine-lines', 'review-engine-status', { get n() { return reviewEngineToken; }, set n(v) { reviewEngineToken = v; } });
+        }
+
+        function reviewStep(delta) {
+            if (!reviewLine.length) return;
+            const next = reviewLineIdx + delta;
+            if (next < 0 || next >= reviewLine.length) return;
+            reviewLineIdx = next;
+            applyReviewLinePosition();
+        }
+
+        function showReviewPosition(chunkIndex) {
+            // save note for previous move before switching
+            saveCurrentMoveNote();
+            reviewIndex = chunkIndex;
+            const c = globalChunks[chunkIndex];
+            if (!c) return;
+            const noteEl = document.getElementById('move-note');
+            if (noteEl) noteEl.value = userNotes[c.id] || "";
+            document.querySelectorAll('#review-move-list .review-item').forEach(el => {
+                el.classList.toggle('selected-start', parseInt(el.dataset.idx, 10) === chunkIndex);
+            });
+            // Build replay line (path to this move + next moves) and land on the focus position
+            const built = buildReviewLine(chunkIndex);
+            reviewLine = built.positions;
+            reviewLineIdx = built.focusIdx;
+            applyReviewLinePosition();
+        }
+
+        function updateBatchReview() {
+            const panel = document.getElementById('batch-review');
+            if (selStart === null || selEnd === null) {
+                panel.classList.add('hidden');
+                return;
+            }
+            const indices = getSelectedIndices();
+            panel.classList.remove('hidden');
+            document.getElementById('batch-count').innerText = `${indices.length} positions`;
+            const list = document.getElementById('review-move-list');
+            list.innerHTML = "";
+            indices.forEach(i => {
+                const c = globalChunks[i];
+                const div = document.createElement('div');
+                div.className = 'review-item chunk-card glass p-2 rounded-lg cursor-pointer';
+                if (userNotes[c.id]) {
+                    div.className += ' ring-1 ring-yellow-500';
+                }
+                div.dataset.idx = i;
+                div.innerHTML = `<p class="text-[9px] gold-text font-bold">${c.id}</p><p class="text-xs font-semibold truncate">${c.moveNum}. ${c.target}</p>`;
+                div.onclick = () => showReviewPosition(i);
+                list.appendChild(div);
+            });
+            if (indices.length) showReviewPosition(indices[0]);
+            setTimeout(() => { if (reviewBoard) reviewBoard.resize(); }, 50);
+            // autosave note while typing
+            const noteEl = document.getElementById('move-note');
+            if (noteEl && !noteEl._bound) {
+                noteEl.addEventListener('input', saveCurrentMoveNote);
+                noteEl._bound = true;
+            }
         }
 
         function selectChunk(index) {
             if (selStart === null || (selStart !== null && selEnd !== null)) {
                 selStart = index;
                 selEnd = null;
-                // Show the position AFTER the move (what the AI receives) so the board matches the FEN fed to the model
                 let fen = globalChunks[index].fenAfter || globalChunks[index].fen;
                 document.getElementById('fen-output').value = fen;
                 if (isValidFen(fen)) {
                     board.position(fen, false);
                 }
+                loadEngineForPanel(fen, 'main-engine-lines', 'main-engine-status', { get n() { return mainEngineToken; }, set n(v) { mainEngineToken = v; } });
+                document.getElementById('batch-review').classList.add('hidden');
             } else {
                 selEnd = Math.max(selStart, index);
                 selStart = Math.min(selStart, index);
+                updateBatchReview();
             }
             updateUI();
         }
 
         async function copySelectedBatch() {
-            if (selStart === null) {
+            if (selStart === null || selEnd === null) {
                 alert("Please click on a starting move and an ending move first!");
                 return;
             }
@@ -714,42 +1229,13 @@
             btn.classList.add('opacity-80', 'cursor-not-allowed');
             btn.disabled = true;
 
-            let endIdx = selEnd !== null ? selEnd : selStart;
-            let startingFen = globalChunks[selStart].fen;
             const repertoireSide = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
             const weSide = repertoireSide === 'white' ? 'White' : 'Black';
             const theySide = repertoireSide === 'white' ? 'Black' : 'White';
+            // save note for the move currently open in the review panel
+            saveCurrentMoveNote();
 
-            // --- Smart selection: first/last of every variation, all critical/symbol moves, plus a few random ---
-            const rangeIndices = [];
-            for (let i = selStart; i <= endIdx; i++) rangeIndices.push(i);
-
-            const mustInclude = new Set();
-            // Always first and last of the whole selection
-            mustInclude.add(selStart);
-            mustInclude.add(endIdx);
-
-            // Every variation start and variation end inside the range
-            rangeIndices.forEach(i => {
-                const c = globalChunks[i];
-                if (c.isVariationStart || c.isVariationEnd) mustInclude.add(i);
-            });
-
-            // All moves carrying evaluation symbols / NAG / !? etc.
-            rangeIndices.forEach(i => {
-                const c = globalChunks[i];
-                if (/[?!$]|\$\d+/.test(c.target)) mustInclude.add(i);
-            });
-
-            // Larger sample of ordinary moves so batches cover more of the selected range
-            const remaining = rangeIndices.filter(i => !mustInclude.has(i));
-            const randomCount = Math.min(25, Math.max(5, Math.floor(remaining.length * 0.40)));
-            for (let k = 0; k < randomCount && remaining.length; k++) {
-                const r = Math.floor(Math.random() * remaining.length);
-                mustInclude.add(remaining.splice(r, 1)[0]);
-            }
-
-            const selectedIndices = Array.from(mustInclude).sort((a, b) => a - b);
+            const selectedIndices = getSelectedIndices();
             let batchData = [];
             let totalSelectedMoves = selectedIndices.length;
             let engineCalls = 0;
@@ -766,176 +1252,138 @@
                 const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
                 const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
 
-                // --- GM assessment from symbols (never from engine score) ---
-                // Chess convention: ? = mistake, ?? = blunder, ?! = dubious, !? = interesting, ! = good, !! = brilliant
-                const gmSym = `${c.target || ""} ${(c.gmNotes && c.gmNotes.evalMarks) ? c.gmNotes.evalMarks.join(" ") : ""}`;
-                let favouredSide = null; // who is better according to GM
-                if (/\+\/\-|\+\-|±|\+\/\=|\$16|\$18|\$14|\$20/.test(gmSym)) {
-                    favouredSide = "White";
-                } else if (/\-\/\+|\-\+|∓|\=\/\+|\$17|\$19|\$15|\$21/.test(gmSym)) {
-                    favouredSide = "Black";
-                } else if (/\$10|\$11|\$13|=\/=/.test(gmSym) || /(^|[^+\-\/])=(?=[^+\-\/]|$)/.test(gmSym)) {
-                    favouredSide = null; // equal
-                }
-
+                // Symbol only if present on the move
                 const tgt = c.target || "";
                 const hasBlunder = /\?\?/.test(tgt);
                 const hasDubious = /\?!/.test(tgt);
                 const hasInteresting = /!\?/.test(tgt);
                 const hasBrilliant = /!!/.test(tgt);
-                // single ? that is not part of ?? or ?!
                 const hasMistake = /\?/.test(tgt) && !hasBlunder && !hasDubious;
-                // single ! that is not part of !! or !?
                 const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
-                const isBadMove = hasBlunder || hasMistake; // side that played it is worse
 
-                if (isBadMove) {
-                    // Black played Nd4? or Nd4?? → White is better
-                    favouredSide = sideJustPlayed === "White" ? "Black" : "White";
-                } else if (favouredSide == null && hasGood) {
-                    favouredSide = sideJustPlayed;
+                let signOnly = "";
+                if (hasBlunder) signOnly = "??";
+                else if (hasDubious) signOnly = "?!";
+                else if (hasInteresting) signOnly = "!?";
+                else if (hasBrilliant) signOnly = "!!";
+                else if (hasMistake) signOnly = "?";
+                else if (hasGood) signOnly = "!";
+
+                let sanDisplay = (c.san || tgt).replace(/[!?]+/g, "").replace(/\$\d+/g, "").trim() || tgt;
+                const moveWithSign = signOnly ? `${sanDisplay}${signOnly}` : sanDisplay;
+
+                // FENs: before move, after move, and ~4 plies later along THIS variation
+                const fenBefore = isValidFen(c.fen) ? c.fen : null;
+                const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter))
+                    ? c.fenAfter
+                    : (isValidFen(c.fen) ? c.fen : null);
+
+                // FEN after each of the next up to 4 plies of THIS variation
+                const fenSteps = [];
+                if (fenAfter) {
+                    try {
+                        const ch = new Chess();
+                        if (ch.load(fenAfter)) {
+                            const nextSans = (c.nextMoves || []).slice(0, 4);
+                            for (let si = 0; si < nextSans.length; si++) {
+                                const ok = ch.move(String(nextSans[si]).replace(/[!?$].*$/, "").trim(), { sloppy: true });
+                                if (!ok) break;
+                                fenSteps.push(ch.fen());
+                            }
+                        }
+                    } catch (e) {}
                 }
 
-                const planSide = favouredSide || (isBadMove ? (sideJustPlayed === "White" ? "Black" : "White") : sideJustPlayed);
-                let gmVerdict = "no clear GM edge mark";
-                if (hasBlunder) {
-                    gmVerdict = `${sideJustPlayed} just played a BLUNDER (??). ${planSide} is better. NEVER say ${sideJustPlayed} is better.`;
-                } else if (hasMistake) {
-                    gmVerdict = `${sideJustPlayed} just played a MISTAKE (?). ${planSide} is better. NEVER say ${sideJustPlayed} is better.`;
-                } else if (hasDubious) {
-                    gmVerdict = `${sideJustPlayed} just played a DUBIOUS move (?!). Position may still be playable but the idea is questionable.`;
-                } else if (favouredSide) {
-                    gmVerdict = `GM marks ${favouredSide} better.`;
-                } else if (/\$10|\$11|\$13|=/.test(gmSym)) {
-                    gmVerdict = "GM marks the position equal.";
+                // Short NEXT clue (3 moves) — idea only, not a script to narrate
+                const pathArr = c.pathArray || [];
+                const nextArr = (c.nextMovesFull && c.nextMovesFull.length)
+                    ? c.nextMovesFull.slice(0, 3)
+                    : (c.nextMoves || []).slice(0, 3);
+                let nextClue = "";
+                if (nextArr.length) {
+                    let ply = pathArr.length;
+                    const parts = [];
+                    for (let ni = 0; ni < nextArr.length; ni++) {
+                        const moveNum = Math.floor(ply / 2) + 1;
+                        const isWhite = (ply % 2 === 0);
+                        const raw = String(nextArr[ni]).trim();
+                        parts.push(isWhite ? `${moveNum}. ${raw}` : `${moveNum}... ${raw}`);
+                        ply++;
+                    }
+                    nextClue = parts.join(" ");
                 }
 
-                // Clear statement of the move that was played
                 let lineOutput = `[ID: ${c.id}]
-MOVE PLAYED: ${c.moveNum}. ${c.target}
-PLAYED BY: ${sideJustPlayed}
-SIDE TO MOVE AFTER: ${sideToMoveAfter}
-REPERTOIRE ("we"): ${weSide}
-MAIN LINE: ${c.isMainLine} | VARIATION START: ${c.isVariationStart} | VARIATION END: ${c.isVariationEnd}
-GM VERDICT: ${gmVerdict}`;
+MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}
+FEN BEFORE: ${fenBefore || "unavailable"}
+FEN AFTER: ${fenAfter || "unavailable"}`;
+                for (let si = 0; si < fenSteps.length; si++) {
+                    lineOutput += `\nFEN +${si + 1}: ${fenSteps[si]}`;
+                }
+                if (nextClue) {
+                    lineOutput += `\nNEXT (clue only): ${nextClue}`;
+                }
+                if (userNotes[c.id]) {
+                    lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
+                }
+
+                // ONLY last move of a variation: one Stockfish line (4 moves + eval)
+                if (c.isVariationEnd && fenAfter) {
+                    engineCalls++;
+                    btnText.innerHTML = `<div class="spinner"></div>End plan [${currentStep}/${totalSelectedMoves}]...`;
+                    await delay(200);
+                    const engineData = await getEngineRefutation(fenAfter);
+                    if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
+                        const top = engineData.lines[0];
+                        const sans = (top.allSan && top.allSan.length)
+                            ? top.allSan.slice(0, 4)
+                            : `${top.san || ""} ${top.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 4);
+                        const planSans = formatPvNumberedSans(sans, fenAfter);
+                        const ev = (top.eval !== undefined && top.eval !== null) ? String(top.eval) : "?";
+                        const stm = sideToMoveAfter;
+                        lineOutput += `\nEND PLAN: eval ${ev} | ${stm} to move | ${planSans}`;
+                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] end plan ${ev}`;
+                    } else {
+                        lineOutput += `\nEND PLAN: (none)`;
+                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] no end plan`;
+                    }
+                } else {
+                    statsText.innerText = `Preparing: ${c.moveNum}. ${sanDisplay}`;
+                    await delay(10);
+                }
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
-                
-                statsText.innerText = `Preparing: ${c.moveNum}. ${c.target}`;
 
-                // Always give the true FEN after the move + positional features
-                if (fenOk) {
-                    lineOutput += `\nFEN AFTER THE MOVE: ${c.fenAfter}`;
-                    const posDesc = describePositionFromFen(c.fenAfter);
-                    if (posDesc) {
-                        lineOutput += `\nPOSITION FEATURES: ${posDesc}`;
-                    }
-                } else {
-                    lineOutput += `\nFEN AFTER THE MOVE: UNRELIABLE (do not invent a position)`;
-                }
-
-                // Engine on variation ends, critical symbols, GM marks
-                const isCritical = /[?!$]|\$\d+|[\+\-=±∓]/.test(c.target) || isBadMove || hasDubious || hasGood || !!favouredSide;
-                const needsEngine = fenOk && (c.isVariationEnd || isCritical);
-                
-                if (needsEngine) {
-                    engineCalls++;
-                    btnText.innerHTML = `<div class="spinner"></div>Engine [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(300); 
-                    
-                    let engineData = await getEngineRefutation(c.fenAfter);
-
-                    if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
-                        const lines = engineData.lines;
-                        const stm = sideToMoveAfter;
-
-                        lineOutput += `\nENGINE LINES (ideas only — do NOT decide who is better from the numbers):`;
-                        lines.forEach((ln, idx) => {
-                            const rank = idx + 1;
-                            const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            lineOutput += `\n  LINE ${rank}${rank === 1 ? " (BEST)" : rank === 2 ? " (2ND)" : " (3RD)"}: eval ${ln.eval} | ${fullPv || "(none)"}`;
-                        });
-
-                        // Aggregate colour-split moves from all lines
-                        const allWhite = [];
-                        const allBlack = [];
-                        lines.forEach(ln => {
-                            const fullPv = `${ln.san || ""} ${ln.continuation || ""}`.trim();
-                            const pvMoves = fullPv.split(/\s+/).filter(Boolean);
-                            const stmMoves = [];
-                            const oppMoves = [];
-                            pvMoves.forEach((m, i) => {
-                                if (i % 2 === 0) stmMoves.push(m);
-                                else oppMoves.push(m);
-                            });
-                            const w = stm === "White" ? stmMoves : oppMoves;
-                            const b = stm === "Black" ? stmMoves : oppMoves;
-                            w.forEach(m => { if (!allWhite.includes(m)) allWhite.push(m); });
-                            b.forEach(m => { if (!allBlack.includes(m)) allBlack.push(m); });
-                        });
-
-                        lineOutput += `\nWHITE IDEAS FROM ENGINE: ${allWhite.slice(0, 4).join(", ") || "(none)"}`;
-                        lineOutput += `\nBLACK IDEAS FROM ENGINE: ${allBlack.slice(0, 4).join(", ") || "(none)"}`;
-
-                        if (c.isVariationEnd || isCritical) {
-                            lineOutput += `\nNOTE: Variation end / critical — comment if the idea is useful. Use engine lines only as inspiration.`;
-                        }
-                        const topSan = lines[0].san || "ok";
-                        statsText.innerText = `[${c.moveNum}.${c.target}] ${topSan} (+${lines.length - 1} more)`;
-                    } else {
-                        lineOutput += `\nENGINE: No usable data for this position.`;
-                    }
-                } else {
-                    await delay(15);
-                }
-                
                 batchData.push(lineOutput);
             }
 
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a strong repertoire GM annotator with only 70% English skills. 
+            const fullPrompt = `You are a 2700+ GM writing notes for a chess course. We play ${weSide}. They play ${theySide}.
 
-REPERTOIRE: we = ${weSide}. Always use "we/our" for ${weSide} and "${theySide}" for the opponent. Never switch.
+Each item has:
+MOVE (with symbol if any: ? ?? ! !! ?! !?)
+FEN BEFORE, FEN AFTER, and FEN +1 … FEN +4 (board after each of the next plies)
+NEXT (clue only — do not copy into the note)
+END PLAN (only on the last move of a variation: one eval and 4 moves — equal/better/worse only)
+YOUR NOTE (optional)
 
-For each position you receive:
-- The exact move just played, the FEN after it, and a piece list (POSITION FEATURES). Trust only that board — never invent pieces from other variations.
-- For the last move of a variation, you MUST USE the 3 ENGINE LINES (best / 2nd / 3rd). Use them only to understand ideas, activity and possible plans. Do NOT quote eval numbers or decide who is better from them.
-- GM VERDICT when present (from symbols). Trust it over the engine:
-  • ? = mistake, ?? = blunder → the side that played it is worse
-  • ?! = dubious
-  • ! / !! = good / brilliant
-  • +-, ±, etc. mark the favoured side
+Write like a GM course note: very simple correct English, 1–2 short sentences.
+Explain WHY this one move was played. Respect the symbol if present.
+Do not list the next moves. Do not invent pieces — use the FENs.
+On variation ends, one short equal/better/worse from END PLAN.
+Side: ${weSide} → we/our; ${theySide} → ${theySide}/they.
 
-Annotate freely and naturally. Prefer short notes (1–2 sentences). Comment on 70% of the moves at least. Comment especially on variation ends, mistakes, critical moments and evaluation symbols.
-
-Good style:
-- "We recapture with the queen, keeping the knight free for a better square, preparing c4-break. "
-- "White is better thanks to the space advantage and will develop the bishop before castling queenside."
-- "A dubious early knight jump that allows us to damage the pawn structure and follow up with Re1-e4 ideas. "
-Make sure you use the Engine moves for the next plan only for the last move of the variation. 
-Avoid:
-- Repeating the move just played. 
-- Naming the immediate next move already in the PGN. THIS IS IMPORTANT 
-- Long move lists or mini-games inside the comment
-- Engine names, eval numbers, or symbols like +-, ±, =, $n
-- Vague filler ("continues with development", "keeps the initiative")
-
-When describing a plan, respect legal move order (e.g. the c1-bishop must move before queenside castling is possible).
-
-OUTPUT: Return ONLY a pure JSON object.
-Keys = chunk IDs. Values = comment text only.
-Omit keys that need no comment.
-No markdown, no thinking, no extra text.
+Return ONLY JSON. Keys = IDs. Values = comment text only.
 
 === BATCH ===
 ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
                 resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions (variation starts/ends + critical + samples)\n${engineCalls} engine calls on branch ends / critical moves.`);
+                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions.`);
             }).catch(err => {
                 const textArea = document.createElement("textarea");
                 textArea.value = fullPrompt;
@@ -944,7 +1392,7 @@ ${batchString}`;
                 try {
                     document.execCommand('copy');
                     resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                    alert(`Selected Batch Copied!\n${totalSelectedMoves} positions\n${engineCalls} engine calls.`);
+                    alert(`Selected Batch Copied!\n${totalSelectedMoves} positions.`);
                 } catch (e) {
                     alert("Clipboard error. Please try again or copy manually.");
                     resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
@@ -985,19 +1433,80 @@ ${batchString}`;
         function rebuildPgn() {
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
-            
+
+            // --- Robust extraction: tolerate extra text, markdown fences, trailing commas, missing commas, single quotes ---
+            function tryParseJson(str) {
+                try { return JSON.parse(str); } catch (e) { return null; }
+            }
+
+            function extractChunkMap(text) {
+                const map = {};
+                // 1. Prefer a clean JSON object if present
+                const firstBrace = text.indexOf('{');
+                const lastBrace = text.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace > firstBrace) {
+                    let candidate = text.substring(firstBrace, lastBrace + 1);
+                    // Fix common AI issues: trailing commas before } or ]
+                    candidate = candidate.replace(/,\s*([}\]])/g, '$1');
+                    // Convert single-quoted keys/values to double quotes (simple heuristic)
+                    candidate = candidate.replace(/'([^']*)'/g, '"$1"');
+                    let parsed = tryParseJson(candidate);
+                    if (parsed && typeof parsed === 'object') {
+                        Object.assign(map, parsed);
+                        return map;
+                    }
+                }
+
+                // 2. Fallback: regex-extract every "CHK_...": "comment" pair (handles broken JSON)
+                // Greedy enough to capture full sentences; allows escaped quotes inside
+                const pairRe = /["']?(CHK_\d+_M\d+_V\d+)["']?\s*:\s*"((?:\\.|[^"\\])*)"/gs;
+                let m;
+                while ((m = pairRe.exec(text)) !== null) {
+                    const id = m[1];
+                    let comment = m[2]
+                        .replace(/\\"/g, '"')
+                        .replace(/\\n/g, ' ')
+                        .replace(/\\t/g, ' ')
+                        .replace(/\\\\/g, '\\')
+                        .trim();
+                    if (id && comment) map[id] = comment;
+                }
+
+                // 2b. Single-quoted values
+                if (Object.keys(map).length === 0) {
+                    const pairRe2 = /["']?(CHK_\d+_M\d+_V\d+)["']?\s*:\s*'((?:\\.|[^'\\])*)'/gs;
+                    while ((m = pairRe2.exec(text)) !== null) {
+                        const id = m[1];
+                        let comment = m[2]
+                            .replace(/\\'/g, "'")
+                            .replace(/\\n/g, ' ')
+                            .replace(/\\t/g, ' ')
+                            .replace(/\\\\/g, '\\')
+                            .trim();
+                        if (id && comment) map[id] = comment;
+                    }
+                }
+
+                // 3. Even more permissive: lines that look like CHK_0_M5_V0: some text
+                // Capture until next CHK_ key or end of line block (not non-greedy early stop)
+                if (Object.keys(map).length === 0) {
+                    const lineRe = /(CHK_\d+_M\d+_V\d+)\s*[:=]\s*["']?([^\n]+?)["']?\s*(?=,?\s*(?:CHK_|\n\s*\}|\n\s*$|$))/gm;
+                    while ((m = lineRe.exec(text)) !== null) {
+                        const id = m[1];
+                        let comment = m[2].replace(/["']\s*,?\s*$/, '').trim();
+                        if (id && comment) map[id] = comment;
+                    }
+                }
+                return map;
+            }
+
             try {
-                const firstBrace = raw.indexOf('{');
-                const lastBrace = raw.lastIndexOf('}');
-                
-                if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-                    const jsonStr = raw.substring(firstBrace, lastBrace + 1);
-                    aiData = JSON.parse(jsonStr);
-                } else {
-                    aiData = JSON.parse(raw);
+                aiData = extractChunkMap(raw);
+                if (!aiData || Object.keys(aiData).length === 0) {
+                    throw new Error("No chunk IDs found");
                 }
             } catch (e) {
-                alert("Failed to parse the JSON. Please ensure the AI provided a valid JSON object mapping chunk IDs to comments.");
+                alert("Failed to parse the AI output. Paste the full response (even with thinking text). The tool will extract CHK_… keys automatically.");
                 console.error("JSON Parse Error:", e);
                 return;
             }
@@ -1012,8 +1521,12 @@ ${batchString}`;
             // Always place comments AFTER the move (never before)
             sortedIds.forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
-                if (chunk) {
-                    workingTokens[chunk.tokenIndex] += ` { ${aiData[id]} }`;
+                if (chunk && aiData[id]) {
+                    // Clean any residual braces the user might have left
+                    const cleanComment = String(aiData[id]).replace(/^[{[\s]+|[}\]\s]+$/g, '').trim();
+                    if (cleanComment) {
+                        workingTokens[chunk.tokenIndex] += ` { ${cleanComment} }`;
+                    }
                 }
             });
 
