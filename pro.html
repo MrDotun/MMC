@@ -535,66 +535,185 @@
             };
         }
 
-        async function getEngineRefutation(fen, retries = 3) {
+        // Convert UCI move list to SAN from a starting FEN (chess.js)
+        function uciListToSan(fen, uciMoves, maxPlies) {
+            const out = [];
+            try {
+                const ch = new Chess();
+                if (!ch.load(fen)) return out;
+                const limit = maxPlies || 6;
+                for (let i = 0; i < uciMoves.length && out.length < limit; i++) {
+                    const u = String(uciMoves[i] || "").trim();
+                    if (!u || u.length < 4) continue;
+                    const from = u.slice(0, 2);
+                    const to = u.slice(2, 4);
+                    const promo = u.length > 4 ? u[4] : undefined;
+                    const mv = ch.move({ from, to, promotion: promo || "q" });
+                    if (!mv) break;
+                    out.push(mv.san);
+                }
+            } catch (e) {}
+            return out;
+        }
+
+        function formatPvNumberedSans(sans, fen) {
+            const parts = [];
+            try {
+                const bits = (fen || "").split(/\s+/);
+                let fullMove = parseInt(bits[5], 10);
+                if (isNaN(fullMove) || fullMove < 1) fullMove = 1;
+                let isWhite = bits[1] !== "b";
+                for (let i = 0; i < sans.length; i++) {
+                    if (isWhite) parts.push(fullMove + ". " + sans[i]);
+                    else parts.push(sans[i]);
+                    if (!isWhite) fullMove++;
+                    isWhite = !isWhite;
+                }
+            } catch (e) {
+                return sans.join(" ");
+            }
+            return parts.join(" ");
+        }
+
+        // MultiPV via WebSocket (REST only returns 1 line). variants max 5 on chess-api.com
+        async function getEngineRefutation(fen, retries = 2) {
             if (!isValidFen(fen)) {
                 return { lines: [], invalid: true, text: "INVALID FEN" };
             }
+            const wantVariants = 5; // API max
+            const depthWant = 14;
+            const thinkMs = 100;
+
             for (let attempt = 0; attempt <= retries; attempt++) {
                 try {
-                    const response = await fetch("https://chess-api.com/v1", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            fen: fen,
-                            depth: 18,
-                            maxThinkingTime: 120,
-                            variants: 8
-                        })
+                    const result = await new Promise((resolve) => {
+                        let settled = false;
+                        const byKey = {}; // first-move UCI or SAN -> best depth message
+                        let ws;
+                        const finish = () => {
+                            if (settled) return;
+                            settled = true;
+                            try { ws && ws.close(); } catch (e) {}
+                            const rows = Object.values(byKey);
+                            // Sort: best for side-to-move first
+                            const bits = fen.split(/\s+/);
+                            const blackToMove = bits[1] === "b";
+                            rows.sort((a, b) => {
+                                const ea = typeof a.eval === "number" ? a.eval : 0;
+                                const eb = typeof b.eval === "number" ? b.eval : 0;
+                                // White POV eval: Black wants lower, White wants higher
+                                return blackToMove ? (ea - eb) : (eb - ea);
+                            });
+                            const lines = rows.slice(0, wantVariants).map((data) => {
+                                const uciCont = Array.isArray(data.continuationArr)
+                                    ? data.continuationArr
+                                    : [];
+                                // first move: prefer SAN from API, else convert UCI
+                                let firstSan = data.san || "";
+                                if (!firstSan && data.move && data.move.length >= 4) {
+                                    firstSan = uciListToSan(fen, [data.move], 1)[0] || data.move;
+                                }
+                                const restSan = uciListToSan(
+                                    // position after first move
+                                    (() => {
+                                        try {
+                                            const ch = new Chess();
+                                            ch.load(fen);
+                                            if (firstSan) ch.move(firstSan, { sloppy: true });
+                                            else if (data.move) {
+                                                const u = data.move;
+                                                ch.move({ from: u.slice(0,2), to: u.slice(2,4), promotion: u[4] || "q" });
+                                            }
+                                            return ch.fen();
+                                        } catch (e) { return fen; }
+                                    })(),
+                                    uciCont,
+                                    5
+                                );
+                                const allSan = [firstSan].concat(restSan).filter(Boolean).slice(0, 6);
+                                const numbered = formatPvNumberedSans(allSan, fen);
+                                return {
+                                    eval: data.eval,
+                                    san: firstSan,
+                                    continuation: restSan.join(" "),
+                                    numbered,
+                                    allSan,
+                                    text: data.text || "",
+                                    planHint: buildPlanHint(data.eval, restSan.join(" ")),
+                                    invalid: false
+                                };
+                            });
+                            if (!lines.length) {
+                                resolve({ lines: [], invalid: true, text: "No engine lines" });
+                                return;
+                            }
+                            const top = lines[0];
+                            resolve({
+                                lines,
+                                eval: top.eval,
+                                san: top.san,
+                                continuation: top.continuation,
+                                text: top.text,
+                                planHint: top.planHint,
+                                invalid: false
+                            });
+                        };
+
+                        const timer = setTimeout(finish, 4500);
+                        try {
+                            ws = new WebSocket("wss://chess-api.com/v1");
+                        } catch (e) {
+                            clearTimeout(timer);
+                            resolve(null);
+                            return;
+                        }
+                        ws.onopen = () => {
+                            ws.send(JSON.stringify({
+                                fen,
+                                variants: wantVariants,
+                                depth: depthWant,
+                                maxThinkingTime: thinkMs
+                            }));
+                        };
+                        ws.onmessage = (ev) => {
+                            try {
+                                const data = JSON.parse(ev.data);
+                                if (data.type !== "move" && data.type !== "bestmove") return;
+                                const key = data.move || data.san || data.lan;
+                                if (!key) return;
+                                const prev = byKey[key];
+                                if (!prev || (data.depth || 0) >= (prev.depth || 0)) {
+                                    byKey[key] = data;
+                                }
+                                // enough distinct lines at decent depth
+                                const deep = Object.values(byKey).filter(x => (x.depth || 0) >= 10);
+                                if (deep.length >= wantVariants && data.type === "bestmove") {
+                                    clearTimeout(timer);
+                                    setTimeout(finish, 200);
+                                }
+                            } catch (e) {}
+                        };
+                        ws.onerror = () => {
+                            clearTimeout(timer);
+                            finish();
+                        };
+                        ws.onclose = () => {
+                            clearTimeout(timer);
+                            finish();
+                        };
                     });
-                    
-                    if (response.status === 429) {
-                        await delay(1800 * (attempt + 1));
-                        continue;
+
+                    if (result && !result.invalid && result.lines && result.lines.length) {
+                        return result;
                     }
-
-                    if (!response.ok) return null;
-                    const data = await response.json();
-
-                    // Support both single-object and array responses (MultiPV)
-                    let lines = [];
-                    if (Array.isArray(data)) {
-                        lines = data.map(parseEngineLine).filter(Boolean).slice(0, 8);
-                    } else if (data.lines && Array.isArray(data.lines)) {
-                        lines = data.lines.map(parseEngineLine).filter(Boolean).slice(0, 8);
-                    } else if (data.pvs && Array.isArray(data.pvs)) {
-                        lines = data.pvs.map(parseEngineLine).filter(Boolean).slice(0, 8);
-                    } else {
-                        const one = parseEngineLine(data);
-                        if (one) lines = [one];
-                    }
-
-                    if (lines.length === 0) {
-                        return { lines: [], invalid: true, text: (data && data.text) || "Engine rejected FEN" };
-                    }
-
-                    // Keep backward-compatible top-line fields for any leftover callers
-                    const top = lines[0];
-                    return {
-                        lines: lines,
-                        eval: top.eval,
-                        san: top.san,
-                        continuation: top.continuation,
-                        text: top.text,
-                        planHint: top.planHint,
-                        invalid: false
-                    };
                 } catch (e) {
                     if (attempt === retries) return null;
-                    await delay(1200);
+                    await delay(800);
                 }
             }
             return null;
         }
+
 
         // Full board inventory + features from FEN so AI never invents pieces from sibling lines
         function describePositionFromFen(fen) {
@@ -1215,42 +1334,22 @@ NEXT: ${nextFull}`;
                     await delay(250);
                     const engineData = await getEngineRefutation(fenToSend);
                     if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
-                        // fullmove number from FEN for SAN numbering
-                        const fenBits = fenToSend.split(/\s+/);
-                        let fullMove = parseInt(fenBits[5], 10);
-                        if (isNaN(fullMove) || fullMove < 1) fullMove = c.moveNum || 1;
-                        const stmIsWhite = fenBits[1] === "w";
-                        const startPly = stmIsWhite ? (fullMove - 1) * 2 : (fullMove - 1) * 2 + 1;
-
+                        // lines already sorted best→worst for side to move; each has numbered SAN (up to 6) + eval
                         const allPv = engineData.lines.map((ln, idx) => {
-                            // Prefer long continuation arrays when API provides them
-                            let pvMoves = [];
-                            if (ln.continuation && String(ln.continuation).trim()) {
-                                pvMoves = `${ln.san || ""} ${ln.continuation}`.trim().split(/\s+/).filter(Boolean);
-                            } else {
-                                pvMoves = `${ln.san || ""}`.trim().split(/\s+/).filter(Boolean);
-                            }
-                            // Always aim for 6 plies of SAN (not UCI)
-                            pvMoves = pvMoves.filter(m => !/^[a-h][1-8][a-h][1-8]/.test(m) || /[NBRQK=]/.test(m)).slice(0, 6);
-                            // Pad note if short
-                            const numbered = formatPvNumbered(pvMoves, startPly);
-                            const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : "";
-                            return { idx: idx + 1, ev, numbered, nMoves: pvMoves.length };
+                            const numbered = ln.numbered || formatPvNumberedSans(
+                                (ln.allSan && ln.allSan.length) ? ln.allSan : `${ln.san || ""} ${ln.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 6),
+                                fenToSend
+                            );
+                            const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : "?";
+                            return { idx: idx + 1, ev, numbered };
                         });
-
-                        // 5th–8th choices (weaker lines reveal plans). If API returns fewer, take the last 3 lines.
-                        let altLines = allPv.filter(p => p.idx >= 5 && p.idx <= 8);
-                        if (altLines.length < 3) {
-                            altLines = allPv.slice(-3); // weakest available
-                        }
-                        const engStr = altLines.map(p => {
-                            const evPart = p.ev ? `  eval ${p.ev}` : "  eval ?";
-                            return `#${p.idx}${evPart}  ${p.numbered}`;
-                        }).join("\n");
-                        lineOutput += `\nENGINE (choices 5–8, each up to 6 SAN moves + eval):\n${engStr || "(none)"}`;
+                        // Weaker choices: last 3 lines (API max 5 MultiPV). If only 1–2, show all.
+                        let altLines = allPv.length >= 3 ? allPv.slice(-3) : allPv;
+                        const engStr = altLines.map(p => `#${p.idx} eval ${p.ev}  ${p.numbered}`).join("\n");
+                        lineOutput += `\nENGINE (weaker choices, each up to 6 SAN moves + eval):\n${engStr || "(none)"}`;
                         statsText.innerText = `[${c.moveNum}.${sanDisplay}] engine ${altLines.length} lines`;
                     } else {
-                        lineOutput += `\nENGINE (choices 5–8): (none)`;
+                        lineOutput += `\nENGINE: (none)`;
                         statsText.innerText = `[${c.moveNum}.${sanDisplay}] no engine`;
                     }
                 } else {
@@ -1272,7 +1371,7 @@ NEXT: ${nextFull}`;
 Each item is neat:
 MOVE — the move to annotate (symbol only if present: ? ?? ! !! ?! !?)
 NEXT — next 3–4 moves in the PGN (clue only)
-ENGINE (choices 5–8) — weaker lines, each with up to 6 SAN moves and an eval (e.g. #5 eval +1.4  26. Nxe6 fxe6 27. c4). Eval shows how serious the line is; use for threats if a side is careless, not as the main PGN line.
+ENGINE — 3 weaker alternative lines (not the top choice), each with up to 6 SAN moves and eval (e.g. #3 eval +1.4  26. Nxe6 fxe6 27. c4 Be7). Eval = severity. Use only for threats if a side is careless.
 FEN — exact board after the move
 YOUR NOTE — optional human idea
 
