@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GM Variation Master Pro (MRO) v1.7 | Decipher Chess Academy</title>
-    <!-- build: 2026-10-06-mro-v1.9 -->
+    <!-- build: 2026-10-06-mro-v1.10-voice -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -34,7 +34,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">GM translate · 2 FENs · v1.9</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">GM translate · voice notes · v1.10</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -145,9 +145,15 @@
                     <div class="lg:w-2/3 space-y-3">
                         <label class="text-xs font-bold uppercase text-slate-500">Batch moves (click one)</label>
                         <div id="review-move-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[220px] overflow-y-auto pr-1"></div>
-                        <label class="text-xs font-bold uppercase text-slate-500">Your note for this move only (optional)</label>
-                        <textarea id="move-note" rows="4" class="w-full p-4 rounded-xl text-sm" placeholder="Only for key moves. Example: rook goes to a2 so after axb5 the a-file opens and hits our queen. Leave empty if obvious."></textarea>
+                        <div class="flex items-center justify-between gap-2">
+                            <label class="text-xs font-bold uppercase text-slate-500">Your note (optional) — look at the board, then speak or type</label>
+                            <button type="button" id="btn-voice-note" onclick="toggleVoiceNote()" class="px-3 py-1.5 bg-slate-800 hover:bg-emerald-800 rounded-lg text-[10px] font-bold uppercase tracking-wide flex items-center gap-1">
+                                <span id="voice-note-icon">🎤</span> <span id="voice-note-label">Speak</span>
+                            </button>
+                        </div>
+                        <textarea id="move-note" rows="4" class="w-full p-4 rounded-xl text-sm" placeholder="Look at the board on the left. Speak or type the idea only. Example: rook to a2 so after axb5 the a-file opens. Leave empty if obvious."></textarea>
                         <p id="notes-saved-count" class="text-[10px] text-slate-500">0 notes saved</p>
+                        <p id="voice-note-status" class="text-[10px] text-slate-500 hidden"></p>
                     </div>
                 </div>
             </div>
@@ -1027,6 +1033,89 @@
                 mustInclude.add(remaining.splice(r, 1)[0]);
             }
             return Array.from(mustInclude).sort((a, b) => a - b);
+        }
+
+
+        let voiceRecognition = null;
+        let voiceListening = false;
+
+        function toggleVoiceNote() {
+            const status = document.getElementById('voice-note-status');
+            const label = document.getElementById('voice-note-label');
+            const icon = document.getElementById('voice-note-icon');
+            const noteEl = document.getElementById('move-note');
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) {
+                if (status) {
+                    status.classList.remove('hidden');
+                    status.innerText = "Voice not supported in this browser. Use Chrome/Edge, or type the note while looking at the board.";
+                }
+                alert("Speech recognition needs Chrome or Edge. Keep this window open beside Grok and type, or use Chrome for the mic.");
+                return;
+            }
+            if (voiceListening && voiceRecognition) {
+                try { voiceRecognition.stop(); } catch (e) {}
+                voiceListening = false;
+                if (label) label.innerText = "Speak";
+                if (icon) icon.innerText = "🎤";
+                if (status) { status.classList.remove('hidden'); status.innerText = "Stopped."; }
+                return;
+            }
+            voiceRecognition = new SR();
+            voiceRecognition.lang = "en-US";
+            voiceRecognition.continuous = true;
+            voiceRecognition.interimResults = true;
+            let finalText = (noteEl && noteEl.value) ? noteEl.value.trim() : "";
+            voiceRecognition.onstart = () => {
+                voiceListening = true;
+                if (label) label.innerText = "Stop";
+                if (icon) icon.innerText = "⏹";
+                if (status) {
+                    status.classList.remove('hidden');
+                    status.innerText = "Listening… look at the board and say the idea for this move.";
+                }
+            };
+            voiceRecognition.onresult = (event) => {
+                let interim = "";
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const t = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalText = (finalText ? finalText + " " : "") + t.trim();
+                    } else {
+                        interim += t;
+                    }
+                }
+                if (noteEl) {
+                    noteEl.value = (finalText + (interim ? " " + interim : "")).trim();
+                    if (typeof saveCurrentMoveNote === "function") saveCurrentMoveNote();
+                }
+            };
+            voiceRecognition.onerror = (event) => {
+                voiceListening = false;
+                if (label) label.innerText = "Speak";
+                if (icon) icon.innerText = "🎤";
+                if (status) {
+                    status.classList.remove('hidden');
+                    status.innerText = "Voice error: " + (event.error || "unknown") + ". You can still type.";
+                }
+            };
+            voiceRecognition.onend = () => {
+                voiceListening = false;
+                if (label) label.innerText = "Speak";
+                if (icon) icon.innerText = "🎤";
+                if (status && status.innerText.indexOf("Listening") === 0) {
+                    status.innerText = "Done. Note saved for this move.";
+                }
+                if (typeof saveCurrentMoveNote === "function") saveCurrentMoveNote();
+            };
+            try {
+                voiceRecognition.start();
+            } catch (e) {
+                if (status) {
+                    status.classList.remove('hidden');
+                    status.innerText = "Could not start mic. Check browser permission.";
+                }
+            }
         }
 
         function saveCurrentMoveNote() {
