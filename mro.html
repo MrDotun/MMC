@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GM Variation Master Pro (MRO) v1.7 | Decipher Chess Academy</title>
-    <!-- build: 2026-10-05-mro-v1.7 -->
+    <!-- build: 2026-10-06-mro-v1.9 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -34,7 +34,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">FEN only · Stockfish only at variation ends · v1.7</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">GM translate · 2 FENs · v1.9</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -1278,23 +1278,12 @@
                     ? c.fenAfter
                     : (isValidFen(c.fen) ? c.fen : null);
 
-                // FEN after each of the next up to 4 plies of THIS variation
-                const fenSteps = [];
-                if (fenAfter) {
-                    try {
-                        const ch = new Chess();
-                        if (ch.load(fenAfter)) {
-                            const nextSans = (c.nextMoves || []).slice(0, 4);
-                            for (let si = 0; si < nextSans.length; si++) {
-                                const ok = ch.move(String(nextSans[si]).replace(/[!?$].*$/, "").trim(), { sloppy: true });
-                                if (!ok) break;
-                                fenSteps.push(ch.fen());
-                            }
-                        }
-                    } catch (e) {}
-                }
+                const fenBefore = isValidFen(c.fen) ? c.fen : null;
+                const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter))
+                    ? c.fenAfter
+                    : (isValidFen(c.fen) ? c.fen : null);
 
-                // Short NEXT clue (3 moves) — idea only, not a script to narrate
+                // Next 3 moves of THIS variation (clue for the side that just moved)
                 const pathArr = c.pathArray || [];
                 const nextArr = (c.nextMovesFull && c.nextMovesFull.length)
                     ? c.nextMovesFull.slice(0, 3)
@@ -1317,17 +1306,14 @@
 MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}
 FEN BEFORE: ${fenBefore || "unavailable"}
 FEN AFTER: ${fenAfter || "unavailable"}`;
-                for (let si = 0; si < fenSteps.length; si++) {
-                    lineOutput += `\nFEN +${si + 1}: ${fenSteps[si]}`;
-                }
                 if (nextClue) {
-                    lineOutput += `\nNEXT (clue only): ${nextClue}`;
+                    lineOutput += `\nNEXT 3: ${nextClue}`;
                 }
                 if (userNotes[c.id]) {
                     lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
                 }
 
-                // ONLY last move of a variation: one Stockfish line (4 moves + eval)
+                // Engine only at the last move of a variation: 4 moves + eval = plan
                 if (c.isVariationEnd && fenAfter) {
                     engineCalls++;
                     btnText.innerHTML = `<div class="spinner"></div>End plan [${currentStep}/${totalSelectedMoves}]...`;
@@ -1361,22 +1347,26 @@ FEN AFTER: ${fenAfter || "unavailable"}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a 2700+ GM writing notes for a chess course. We play ${weSide}. They play ${theySide}.
+            const fullPrompt = `You translate a GM who does not speak English — only chess: moves, squares, and symbols (? ?? ! !! ?! !? = ± ∓ etc.).
 
-Each item has:
-MOVE (with symbol if any: ? ?? ! !! ?! !?)
-FEN BEFORE, FEN AFTER, and FEN +1 … FEN +4 (board after each of the next plies)
-NEXT (clue only — do not copy into the note)
-END PLAN (only on the last move of a variation: one eval and 4 moves — equal/better/worse only)
-YOUR NOTE (optional)
+We play ${weSide}. They play ${theySide}.
 
-Write like a GM course note: very simple correct English, 1–2 short sentences.
-Explain WHY this one move was played. Respect the symbol if present.
-Do not list the next moves. Do not invent pieces — use the FENs.
-On variation ends, one short equal/better/worse from END PLAN.
-Side: ${weSide} → we/our; ${theySide} → ${theySide}/they.
+The GM already "said" everything with:
+MOVE + symbol, FEN BEFORE, FEN AFTER, NEXT 3 (his idea in moves), and on line ends END PLAN (eval + 4 moves).
 
-Return ONLY JSON. Keys = IDs. Values = comment text only.
+Your job: turn that into a short course note in simple correct English — as if translating the GM.
+
+Rules:
+- Trust FEN BEFORE and FEN AFTER. Mandatory. Do not invent pieces.
+- Translate the idea of THIS move only (why that piece went there).
+- Symbol is the GM's verdict: ? = mistake, ?? = blunder, ! = strong, !! = brilliant, ?! = dubious, !? = interesting.
+- NEXT 3 = the GM's plan in moves for the side that just played — translate the idea, do not list the moves as a script.
+- On our move (${weSide}): only our idea (we/our). Never say what they play next.
+- On their move (${theySide}): only their idea (${theySide}/they). Never say what we play next.
+- END PLAN (variation ends only): one short equal/better/worse from the eval and line.
+- 1–2 short sentences. No fluff.
+
+Return ONLY JSON. Keys = IDs. Values = the translated note only.
 
 === BATCH ===
 ${batchString}`;
