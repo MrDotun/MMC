@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master Pro (MRO) v1.7 | Decipher Chess Academy</title>
-    <!-- build: 2026-10-06-voice-v2.2-easy -->
+    <title>GM Variation Master · Voice · v2.3 | Decipher Chess Academy</title>
+    <!-- build: 2026-10-09-voice-v2.6-eval-full -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -34,7 +34,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Easy Speak · Signs · Tips · v2.2</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Sheva style · =/unclear/comp · v2.6</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -601,9 +601,9 @@
             if (!isValidFen(fen)) {
                 return { lines: [], invalid: true, text: "INVALID FEN" };
             }
-            const wantVariants = 5; // API max
-            const depthWant = 14;
-            const thinkMs = 100;
+            const wantVariants = 5; // API max (use weakest as "careless reply" to reveal threats)
+            const depthWant = 15;
+            const thinkMs = 120;
 
             for (let attempt = 0; attempt <= retries; attempt++) {
                 try {
@@ -649,9 +649,9 @@
                                         } catch (e) { return fen; }
                                     })(),
                                     uciCont,
-                                    5
+                                    10
                                 );
-                                const allSan = [firstSan].concat(restSan).filter(Boolean).slice(0, 6);
+                                const allSan = [firstSan].concat(restSan).filter(Boolean).slice(0, 8);
                                 const numbered = formatPvNumberedSans(allSan, fen);
                                 return {
                                     eval: data.eval,
@@ -1368,9 +1368,13 @@
             if (/!!/.test(t)) return "GM: brilliant (!!) — explain why it is strong";
             if (/\?/.test(t)) return "GM: mistake (?) — explain why it is weaker";
             if (/!/.test(t)) return "GM: good (!) — explain the plus";
-            if (/\$16|\$18|\±|\+\-/.test(t)) return "GM: White is better";
-            if (/\$17|\$19|\∓|\-\+/.test(t)) return "GM: Black is better";
-            if (/\$10|\$11|\$12|\$13|=/.test(t)) return "GM: equal / unclear — explain the balance";
+            // Compensation / unclear / equality (order matters)
+            if (/compensation|=\/∞|∞\/=|=\/\∞/i.test(t) || /\$15/.test(t)) return "GM: with compensation — say who has compensation and for what";
+            if (/∞|unclear|\$13/i.test(t)) return "GM: unclear — e.g. 'unclear, but easier for Black to play'";
+            if (/\$10|\$11|\$12|(^|[^\/])=(?!=)/.test(t)) return "GM: equal (=) — e.g. 'equal, but easier for Black to play'";
+            if (/\$16|\$18|\±|\+\-|\+\/=/.test(t)) return "GM: White is better — explain the plus";
+            if (/\$17|\$19|\∓|\-\+|\=\/+/.test(t)) return "GM: Black is better — explain the plus";
+            if (/\$14/.test(t)) return "GM: White is slightly better";
             if (/\$1\b/.test(t) || /\$1[^0-9]/.test(t)) return "GM: good move ($1) — explain the idea";
             if (/\$2/.test(t)) return "GM: poor move ($2) — explain the problem";
             if (/\$3/.test(t)) return "GM: very good ($3)";
@@ -1526,11 +1530,63 @@ FEN: ${fenAfter || "unavailable"}`;
                 if (userNotes[c.id]) {
                     lineOutput += `\nVOICE NOTE: ${userNotes[c.id]}`;
                 } else {
-                    lineOutput += `\nVOICE NOTE: (none — write a short neutral note from the FEN and symbol only)`;
+                    lineOutput += `\nVOICE NOTE: (none)`;
                 }
 
-                statsText.innerText = `Preparing: ${c.moveNum}. ${sanDisplay}`;
-                await delay(8);
+                // Stockfish: best plan + weak/careless reply that reveals WHY the move was played
+                // (e.g. after Qg5, a passive reply allows Qxg7# — so Qg5 threatened mate)
+                if (fenAfter) {
+                    engineCalls++;
+                    btnText.innerHTML = `<div class="spinner"></div>Tips [${currentStep}/${totalSelectedMoves}]...`;
+                    await delay(180);
+                    const engineData = await getEngineRefutation(fenAfter);
+                    if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
+                        const lines = engineData.lines;
+                        const stm = sideToMoveAfter;
+                        // Best line for side to move (plan) — at least 6 moves when available
+                        const best = lines[0];
+                        const bestSans = (best.allSan && best.allSan.length)
+                            ? best.allSan.slice(0, 8)
+                            : `${best.san || ""} ${best.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 8);
+                        const bestLine = formatPvNumberedSans(bestSans, fenAfter);
+                        const bestEv = (best.eval !== undefined && best.eval !== null) ? String(best.eval) : "?";
+                        lineOutput += `\nSTOCKFISH BEST (${stm} to move, eval ${bestEv}, use for plan): ${bestLine}`;
+
+                        // Weakest multipv line = "careless" defence — reveals the threat behind the move just played
+                        if (lines.length >= 2) {
+                            const weak = lines[lines.length - 1];
+                            const weakSans = (weak.allSan && weak.allSan.length)
+                                ? weak.allSan.slice(0, 8)
+                                : `${weak.san || ""} ${weak.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 8);
+                            const weakLine = formatPvNumberedSans(weakSans, fenAfter);
+                            const weakEv = (weak.eval !== undefined && weak.eval !== null) ? String(weak.eval) : "?";
+                            const weakFirst = weakSans[0] || weak.san || "?";
+                            lineOutput += `\nIF CARELESS (weak reply ${weakFirst}, eval ${weakEv} — shows the threat/idea of the move just played): ${weakLine}`;
+                        }
+
+                        // Mid lines for extra context (2nd / 3rd)
+                        if (lines.length >= 3) {
+                            const mid = lines[Math.min(2, lines.length - 1)];
+                            const midSans = (mid.allSan && mid.allSan.length)
+                                ? mid.allSan.slice(0, 8)
+                                : `${mid.san || ""} ${mid.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 8);
+                            const midLine = formatPvNumberedSans(midSans, fenAfter);
+                            const midEv = (mid.eval !== undefined && mid.eval !== null) ? String(mid.eval) : "?";
+                            lineOutput += `\nSTOCKFISH #3 (eval ${midEv}): ${midLine}`;
+                        }
+
+                        if (c.isVariationEnd) {
+                            lineOutput += `\nEND OF VARIATION — use STOCKFISH BEST for equal/better/worse and the next plan (e.g. ...Nd4 and Bf6 ideas).`;
+                        }
+                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] engine ok`;
+                    } else {
+                        lineOutput += `\nSTOCKFISH: (none)`;
+                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] no engine`;
+                    }
+                } else {
+                    statsText.innerText = `Preparing: ${c.moveNum}. ${sanDisplay}`;
+                    await delay(8);
+                }
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
                 progressFill.style.width = `${currentProgress}%`;
@@ -1541,21 +1597,78 @@ FEN: ${fenAfter || "unavailable"}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a chess annotator. Polish each VOICE NOTE into a clean course note.
+            const fullPrompt = `You are annotating a chess course in the exact style of this sample (sheva / Analyze This App chapter notes).
+
+SAMPLE STYLE (copy this voice):
+- "White protects the bishop and keeps the option of long castling."
+- "A useful prophylactic move. Black prepares ...b5 and avoids committing the centre too early."
+- "Black has fully equalized. The bishop becomes active on the long diagonal and the queenside initiative gives easy play."
+- "We strike immediately, before White can fully establish it."
+- "We have successfully completed our development without any serious problems. The position is equal."
+- "A useful move before committing the centre. Black prevents Bb5+ and prepares ...b5, which is especially relevant if White castles queenside."
+- "This is an important move that allows us to gain space and develop our pieces."
+- "Although we have an isolated e-pawn, in practice it is very difficult to attack, and the position is completely equal."
+- "Black has fully equalized. The king is safe, the queenside space advantage remains useful and White has no concrete way to exploit the centralized knight."
+
+We play ${weSide}. They play ${theySide}.
 
 Each item:
-MOVE — with GM symbol if any (? ?? ! !! ?! !? $1 $2 $5 $6 = ± etc.)
-FEN — board after the move (mandatory; do not invent pieces)
-VOICE NOTE — rough speech-to-text (may be messy)
+MOVE (with GM symbol if any)
+FEN — exact board AFTER the move. MUST use this FEN. Never invent pieces.
+VOICE NOTE — rough speech; keep the idea, fix English
+STOCKFISH BEST — main plan (6+ moves) + eval
+IF CARELESS — weak reply that reveals WHY the move was played (threat/idea)
+STOCKFISH #3 — extra line
+END OF VARIATION — when present, short verdict + continuing ideas from STOCKFISH BEST
 
-Job:
-- Keep the speaker's idea; fix into simple correct English (1–3 short sentences).
-- Respect the GM symbol and explain why (equality, advantage, mistake, etc.) when the note or symbol needs it.
-- Spelling/style: use British "centre"; write "e4-pawn", "e4-square" (hyphen); same for other squares/pawns (e.g. d5-pawn, c4-square).
-- Side: ${weSide} → we/our; ${theySide} → ${theySide}/they.
-- Do not invent tactics not in the FEN or voice note.
+=== Why a move was played ===
+Use IF CARELESS: a passive reply that allows a tactic shows the point of the move (e.g. Qg5 threatens mate if ignored).
+Otherwise explain the practical purpose: protects a piece, prepares ...b5, keeps castling options, challenges the centre, etc.
 
-Return ONLY JSON. Keys = IDs. Values = polished note only.
+=== Equality / unclear / compensation (use these patterns) ===
+
+EQUAL (=, $10, $11, $12):
+- "Black has fully equalized."
+- "The position is equal."
+- "Black has full equality with natural development and pressure against the centre."
+- "Although we have an isolated e-pawn, in practice it is very difficult to attack, and the position is completely equal."
+- "Black has fully equalized. The king is safe, the queenside space advantage remains useful and White has no concrete way to exploit the centralized knight."
+- "Black has fully equalized and can continue with ...Bd7 and ...Be7 or Bc5."
+- Prefer practical feel: completed development, safe king, easy play — not only the word "equal".
+
+UNCLEAR (∞, unclear, $13):
+- "The position is unclear."
+- "The position is unclear, but easier for Black to play."
+- "Unclear, but practically easier for White to handle."
+- "A sharp, unclear position where both sides have chances."
+- "Unclear — White has the initiative, but Black's structure is solid."
+- "The position remains unclear; both sides have ideas and the better-prepared player will feel more comfortable."
+
+WITH COMPENSATION (=/∞, ∞/=, compensation, $15):
+- "Black has full compensation for the pawn."
+- "White's activity compensates for the material."
+- "Black is a pawn down but has lasting compensation on the dark squares."
+- "Enough compensation: the open file and the safer king."
+- "White has sacrificed a pawn for the initiative and full compensation."
+- "Black has compensation in the form of the bishop pair and pressure against the centre."
+- "Material is down, but the activity and safer king give adequate compensation."
+
+SLIGHT / CLEAR EDGE (only if symbol or engine support it):
+- "White is slightly better." / "Black has a pleasant edge."
+- "White is clearly better." / "Black is clearly better."
+
+END OF VARIATION:
+- "We are better. Our centre looks good; we continue with ...Nd4 and ...Bf6 ideas." (use real moves from STOCKFISH BEST)
+- "The position is equal, but easier for us to play; next we improve with ...Re8 and ...Bf8."
+
+=== Rules ===
+- 1–3 short sentences. Simple correct English. Same calm GM-course tone as the sample.
+- British "centre". Hyphen: e4-pawn, e4-square, d5-pawn.
+- Move by ${weSide}: we/our. Move by ${theySide}: ${theySide}/they. Do not script the opponent's next PGN moves as our plan.
+- Respect symbols (? ! etc.).
+- Trust FEN + VOICE NOTE + Stockfish lines only.
+
+Return ONLY JSON. Keys = IDs. Values = the note text only.
 
 === BATCH ===
 ${batchString}`;
