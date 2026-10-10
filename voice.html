@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GM Variation Master · Voice · v2.3 | Decipher Chess Academy</title>
-    <!-- build: 2026-10-10-voice-v2.8-gm-signs-csl -->
+    <!-- build: 2026-10-09-voice-v2.7-why-only -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -34,7 +34,7 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Sheva style · GM signs + csl · v2.8</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Why this move only · v2.7</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -938,56 +938,15 @@
                         console.warn("Move failed to parse:", token, "→ tried:", cleanMove, "at", fenBefore);
                     }
 
-                    // Collect GM signs from the move token itself (e.g. Qf5-+, a3?!) and following tokens
                     let evalSymbol = "";
-                    const embeddedSign = (token.match(/([!?]{1,2}|[+\-=±∓∞]+|=\/∞|∞\/=|[+\-]=|=[+\-]|\$\d+)$/) || [])[1] || "";
-                    if (embeddedSign) evalSymbol = embeddedSign;
-
-                    // Look ahead: NAGs, eval glyphs, and { comments } with [%csl]/[%cal]
-                    let highlights = []; // e.g. ["c2"]
-                    let arrows = [];     // e.g. ["e2e4"]
-                    let commentBits = [];
-                    for (let k = 1; k <= 4; k++) {
-                        const nt = pgnTokens[index + k];
-                        if (!nt) break;
-                        if (nt.startsWith('$') || /^[!?]+$/.test(nt) ||
-                            /^[\+\-=±∓∞\/]+$/.test(nt) || /[=+\-±∓]\/[∞=+\-±∓]/.test(nt)) {
-                            if (!evalSymbol) evalSymbol = nt;
-                            else if (evalSymbol !== nt) evalSymbol += " " + nt;
-                            continue;
-                        }
-                        if (nt.startsWith('{') && nt.endsWith('}')) {
-                            const body = nt.slice(1, -1).trim();
-                            // [%csl Rc2,Ye4] or [%csl Rc2]
-                            const cslMatch = body.match(/%csl\s+([A-Za-z0-9,]+)/i);
-                            if (cslMatch) {
-                                cslMatch[1].split(',').forEach(part => {
-                                    const sq = part.replace(/^[RGBYrgbY]/, '').trim();
-                                    if (/^[a-h][1-8]$/i.test(sq)) highlights.push(sq.toLowerCase());
-                                });
-                            }
-                            // [%cal Ra1h8,Gc1c4]
-                            const calMatch = body.match(/%cal\s+([A-Za-z0-9,]+)/i);
-                            if (calMatch) {
-                                calMatch[1].split(',').forEach(part => {
-                                    const arr = part.replace(/^[RGBYrgbY]/, '').trim();
-                                    if (/^[a-h][1-8][a-h][1-8]$/i.test(arr)) arrows.push(arr.toLowerCase());
-                                });
-                            }
-                            // plain text in comment (skip pure csl/cal)
-                            const plain = body
-                                .replace(/%csl\s+[A-Za-z0-9,]+/gi, '')
-                                .replace(/%cal\s+[A-Za-z0-9,]+/gi, '')
-                                .replace(/%\w+\s+[^\s}]+/g, '')
-                                .trim();
-                            if (plain) commentBits.push(plain);
-                            // eval glyphs sometimes live inside comments
-                            const signInComment = body.match(/(?:^|\s)([!?]{1,2}|\$\d+|[+\-]{1,2}|[±∓∞]|=\/∞|∞\/=|[+\-]=|=[+\-])(?:\s|$)/);
-                            if (signInComment && !evalSymbol) evalSymbol = signInComment[1];
-                            continue;
-                        }
-                        // stop look-ahead on next real move / paren / move number
-                        if (/^(\(|\)|\d+\.|[a-hRNBQK]|[O0]-)/.test(nt)) break;
+                    let nextToken = pgnTokens[index + 1];
+                    if (nextToken && (
+                        nextToken.startsWith('$') ||
+                        /^[!?]+$/.test(nextToken) ||
+                        /^[\+\-=±∓∞\/]+$/.test(nextToken) ||
+                        /[=+\-±∓]\/[∞=+\-±∓]/.test(nextToken)
+                    )) {
+                        evalSymbol = ` ${nextToken}`;
                     }
 
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
@@ -999,13 +958,9 @@
                         ? pathArray.slice(Math.max(0, pathArray.length - 4), pathArray.length - 1)
                         : [];
 
-                    const targetDisplay = evalSymbol
-                        ? `${token.replace(/[!?±∓∞=\/\+\-$]+$/g, '').trim()}${evalSymbol}`
-                        : token;
-
                     let newChunk = {
                         id: `CHK_${chunks.length}_M${moveNumber}_V${variationLevel}`,
-                        target: targetDisplay,
+                        target: token + evalSymbol,
                         moveNum: moveNumber,
                         tokenIndex: index,
                         isMainLine: variationLevel === 0,
@@ -1018,11 +973,7 @@
                         pathToHere: pathStr,
                         pathArray: pathArray,
                         last3Moves: last3,
-                        san: sanUsed,
-                        gmSign: evalSymbol || "",
-                        highlights: highlights,
-                        arrows: arrows,
-                        pgnComment: commentBits.join(" ").trim()
+                        san: sanUsed
                     };
 
                     chunks.push(newChunk);
@@ -1411,22 +1362,25 @@
 
         function signHintFromTarget(target) {
             const t = String(target || "");
-            // Order: strongest / most specific first
-            if (/\?\?/.test(t) || /\$4\b/.test(t)) return "GM: blunder (??) — explain what goes wrong";
-            if (/\?!/.test(t) || /\$6\b/.test(t)) return "GM: dubious (?!) — explain the risk";
-            if (/!\?/.test(t) || /\$5\b/.test(t)) return "GM: interesting (!?) — explain the idea";
-            if (/!!/.test(t) || /\$3\b/.test(t)) return "GM: brilliant (!!) — explain why it is strong";
-            if (/\?\b/.test(t) || /\$2\b/.test(t)) return "GM: mistake (?) — explain why it is weaker";
-            if (/!\b/.test(t) || /\$1\b/.test(t)) return "GM: good (!) — explain the plus";
-            if (/\+\-/.test(t) || /\$18\b/.test(t)) return "GM: +- WHITE IS WINNING — say White is winning / decisive";
-            if (/\-\+/.test(t) || /\$19\b/.test(t)) return "GM: -+ BLACK IS WINNING — say Black is winning / decisive";
-            if (/±/.test(t) || /\$16\b/.test(t)) return "GM: ± White is clearly better";
-            if (/∓/.test(t) || /\$17\b/.test(t)) return "GM: ∓ Black is clearly better";
-            if (/\+\/=|\+=/.test(t) || /\$14\b/.test(t)) return "GM: += White is slightly better";
-            if (/=\/\+|=\+/.test(t)) return "GM: =+ Black is slightly better";
-            if (/compensation|=\/∞|∞\/=/i.test(t) || /\$15\b/.test(t)) return "GM: with compensation — who and for what";
-            if (/∞|\$13\b/.test(t)) return "GM: unclear — e.g. 'unclear, but easier for Black'";
-            if (/\$10|\$11|\$12|(^|[^\/\w])=(?!=)/.test(t)) return "GM: equal (=)";
+            if (/\?\?/.test(t)) return "GM: blunder (??) — explain what goes wrong";
+            if (/\?!/.test(t)) return "GM: dubious (?!) — explain the risk";
+            if (/!\?/.test(t)) return "GM: interesting (!?) — explain the idea";
+            if (/!!/.test(t)) return "GM: brilliant (!!) — explain why it is strong";
+            if (/\?/.test(t)) return "GM: mistake (?) — explain why it is weaker";
+            if (/!/.test(t)) return "GM: good (!) — explain the plus";
+            // Compensation / unclear / equality (order matters)
+            if (/compensation|=\/∞|∞\/=|=\/\∞/i.test(t) || /\$15/.test(t)) return "GM: with compensation — say who has compensation and for what";
+            if (/∞|unclear|\$13/i.test(t)) return "GM: unclear — e.g. 'unclear, but easier for Black to play'";
+            if (/\$10|\$11|\$12|(^|[^\/])=(?!=)/.test(t)) return "GM: equal (=) — e.g. 'equal, but easier for Black to play'";
+            if (/\$16|\$18|\±|\+\-|\+\/=/.test(t)) return "GM: White is better — explain the plus";
+            if (/\$17|\$19|\∓|\-\+|\=\/+/.test(t)) return "GM: Black is better — explain the plus";
+            if (/\$14/.test(t)) return "GM: White is slightly better";
+            if (/\$1\b/.test(t) || /\$1[^0-9]/.test(t)) return "GM: good move ($1) — explain the idea";
+            if (/\$2/.test(t)) return "GM: poor move ($2) — explain the problem";
+            if (/\$3/.test(t)) return "GM: very good ($3)";
+            if (/\$4/.test(t)) return "GM: blunder ($4)";
+            if (/\$5/.test(t)) return "GM: interesting ($5)";
+            if (/\$6/.test(t)) return "GM: dubious ($6)";
             return "GM: no special mark — explain the plan briefly";
         }
 
@@ -1440,12 +1394,7 @@
             const noteEl = document.getElementById('move-note');
             if (noteEl) noteEl.value = userNotes[c.id] || "";
             const signEl = document.getElementById('review-sign-hint');
-            if (signEl) {
-                let hint = signHintFromTarget(c.target || c.gmSign || "");
-                if (c.highlights && c.highlights.length) hint += ` · squares: ${c.highlights.join(",")}`;
-                if (c.arrows && c.arrows.length) hint += ` · arrows: ${c.arrows.join(",")}`;
-                signEl.innerText = hint;
-            }
+            if (signEl) signEl.innerText = signHintFromTarget(c.target);
             // Always show the batch move + signs on the label (not only ply label)
             const moveLab = document.getElementById('review-move-label');
             if (moveLab) moveLab.innerText = `${c.moveNum}. ${c.target}`;
@@ -1458,12 +1407,7 @@
             applyReviewLinePosition();
             // Restore batch move label after ply apply (ply may overwrite)
             if (moveLab) moveLab.innerText = `${c.moveNum}. ${c.target}`;
-            if (signEl) {
-                let hint = signHintFromTarget(c.target || c.gmSign || "");
-                if (c.highlights && c.highlights.length) hint += ` · squares: ${c.highlights.join(",")}`;
-                if (c.arrows && c.arrows.length) hint += ` · arrows: ${c.arrows.join(",")}`;
-                signEl.innerText = hint;
-            }
+            if (signEl) signEl.innerText = signHintFromTarget(c.target);
             updateBatchStepLabel();
         }
 
@@ -1556,44 +1500,25 @@
                 const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
                 const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
 
-                // All GM signs: !? and evaluation glyphs (+- -+ =+ += ± ∓ ∞ =/∞ $N)
+                // Symbol only if present on the move
                 const tgt = c.target || "";
-                const gmSign = (c.gmSign || "").trim() || (() => {
-                    const m = tgt.match(/([!?]{1,2}|\$\d+|[±∓∞]|=\/∞|∞\/=|\+\-|\-\+|\+\/=|=\/\+|[+\-]=|=[+\-]|(?<![a-hRNBQK0-9])=(?!=))/);
-                    return m ? m[1] : "";
-                })();
+                const hasBlunder = /\?\?/.test(tgt);
+                const hasDubious = /\?!/.test(tgt);
+                const hasInteresting = /!\?/.test(tgt);
+                const hasBrilliant = /!!/.test(tgt);
+                const hasMistake = /\?/.test(tgt) && !hasBlunder && !hasDubious;
+                const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
 
-                let sanDisplay = (c.san || tgt)
-                    .replace(/[!?]+/g, "")
-                    .replace(/\$\d+/g, "")
-                    .replace(/[±∓∞]/g, "")
-                    .replace(/=\/∞|∞\/=|\+\-|\-\+|\+\/=|=\/\+/g, "")
-                    .replace(/[=\/+\-]+$/g, "")
-                    .trim() || tgt;
-                const moveWithSign = gmSign ? `${sanDisplay} ${gmSign}` : sanDisplay;
+                let signOnly = "";
+                if (hasBlunder) signOnly = "??";
+                else if (hasDubious) signOnly = "?!";
+                else if (hasInteresting) signOnly = "!?";
+                else if (hasBrilliant) signOnly = "!!";
+                else if (hasMistake) signOnly = "?";
+                else if (hasGood) signOnly = "!";
 
-                // Plain-English meaning of the GM evaluation sign (standard chess notation)
-                function gmSignMeaning(sign) {
-                    const s = String(sign || "").trim();
-                    if (!s) return "";
-                    if (/\?\?/.test(s) || s === "$4") return "BLUNDER — this move is a serious error";
-                    if (/\?!/.test(s) || s === "$6") return "DUBIOUS — risky / inaccurate";
-                    if (/!\?/.test(s) || s === "$5") return "INTERESTING — creative but double-edged";
-                    if (/!!/.test(s) || s === "$3") return "BRILLIANT — very strong";
-                    if (s === "?" || s === "$2") return "MISTAKE — weaker than alternatives";
-                    if (s === "!" || s === "$1") return "GOOD MOVE — strong choice";
-                    if (/^\+\-$/.test(s) || s === "$18") return "WHITE IS WINNING (decisive advantage for White)";
-                    if (/^\-\+$/.test(s) || s === "$19") return "BLACK IS WINNING (decisive advantage for Black)";
-                    if (/^±$/.test(s) || s === "$16") return "WHITE IS CLEARLY BETTER";
-                    if (/^∓$/.test(s) || s === "$17") return "BLACK IS CLEARLY BETTER";
-                    if (/^\+\/=$/.test(s) || /^(\+=)$/.test(s) || s === "$14") return "WHITE IS SLIGHTLY BETTER";
-                    if (/^=\/\+$/.test(s) || /^(=\+)$/.test(s) || s === "$15") return "BLACK IS SLIGHTLY BETTER / with compensation";
-                    if (/=\/∞|∞\/=|compensation/i.test(s)) return "WITH COMPENSATION";
-                    if (/∞|\$13/.test(s)) return "UNCLEAR";
-                    if (/^={1}$/.test(s) || s === "$10" || s === "$11" || s === "$12") return "EQUAL";
-                    return `GM mark: ${s}`;
-                }
-                const evalMeaning = gmSignMeaning(gmSign);
+                let sanDisplay = (c.san || tgt).replace(/[!?]+/g, "").replace(/\$\d+/g, "").trim() || tgt;
+                const moveWithSign = signOnly ? `${sanDisplay}${signOnly}` : sanDisplay;
 
                 const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter))
                     ? c.fenAfter
@@ -1602,28 +1527,14 @@
                 let lineOutput = `[ID: ${c.id}]
 MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}
 FEN: ${fenAfter || "unavailable"}`;
-                if (gmSign) {
-                    lineOutput += `\nGM EVAL: ${gmSign} → ${evalMeaning}`;
-                } else {
-                    lineOutput += `\nGM EVAL: (none) — do not invent an evaluation; explain the plan only`;
-                }
-                // Board marks from PGN [%csl] [%cal]
-                if (c.highlights && c.highlights.length) {
-                    lineOutput += `\nGM HIGHLIGHTED SQUARES: ${c.highlights.join(", ")} — the annotator marked these squares as critical; your note MUST address why they matter`;
-                }
-                if (c.arrows && c.arrows.length) {
-                    lineOutput += `\nGM ARROWS: ${c.arrows.join(", ")} — intended ideas/directions on the board`;
-                }
-                if (c.pgnComment) {
-                    lineOutput += `\nPGN COMMENT: ${c.pgnComment}`;
-                }
                 if (userNotes[c.id]) {
                     lineOutput += `\nVOICE NOTE: ${userNotes[c.id]}`;
                 } else {
                     lineOutput += `\nVOICE NOTE: (none)`;
                 }
 
-                // Stockfish: moves only — NO eval numbers (AI must trust GM EVAL only)
+                // Stockfish: best plan + weak/careless reply that reveals WHY the move was played
+                // (e.g. after Qg5, a passive reply allows Qxg7# — so Qg5 threatened mate)
                 if (fenAfter) {
                     engineCalls++;
                     btnText.innerHTML = `<div class="spinner"></div>Tips [${currentStep}/${totalSelectedMoves}]...`;
@@ -1632,34 +1543,40 @@ FEN: ${fenAfter || "unavailable"}`;
                     if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
                         const lines = engineData.lines;
                         const stm = sideToMoveAfter;
+                        // Best line for side to move (plan) — at least 6 moves when available
                         const best = lines[0];
                         const bestSans = (best.allSan && best.allSan.length)
                             ? best.allSan.slice(0, 8)
                             : `${best.san || ""} ${best.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 8);
                         const bestLine = formatPvNumberedSans(bestSans, fenAfter);
-                        lineOutput += `\nSTOCKFISH BEST (${stm} to move, plan moves only — ignore any engine eval): ${bestLine}`;
+                        const bestEv = (best.eval !== undefined && best.eval !== null) ? String(best.eval) : "?";
+                        lineOutput += `\nSTOCKFISH BEST (${stm} to move, eval ${bestEv}, use for plan): ${bestLine}`;
 
+                        // Weakest multipv line = "careless" defence — reveals the threat behind the move just played
                         if (lines.length >= 2) {
                             const weak = lines[lines.length - 1];
                             const weakSans = (weak.allSan && weak.allSan.length)
                                 ? weak.allSan.slice(0, 8)
                                 : `${weak.san || ""} ${weak.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 8);
                             const weakLine = formatPvNumberedSans(weakSans, fenAfter);
+                            const weakEv = (weak.eval !== undefined && weak.eval !== null) ? String(weak.eval) : "?";
                             const weakFirst = weakSans[0] || weak.san || "?";
-                            lineOutput += `\nIF CARELESS (weak reply ${weakFirst} — reveals threat/idea of the move just played): ${weakLine}`;
+                            lineOutput += `\nIF CARELESS (weak reply ${weakFirst}, eval ${weakEv} — shows the threat/idea of the move just played): ${weakLine}`;
                         }
 
+                        // Mid lines for extra context (2nd / 3rd)
                         if (lines.length >= 3) {
                             const mid = lines[Math.min(2, lines.length - 1)];
                             const midSans = (mid.allSan && mid.allSan.length)
                                 ? mid.allSan.slice(0, 8)
                                 : `${mid.san || ""} ${mid.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 8);
                             const midLine = formatPvNumberedSans(midSans, fenAfter);
-                            lineOutput += `\nSTOCKFISH #3: ${midLine}`;
+                            const midEv = (mid.eval !== undefined && mid.eval !== null) ? String(mid.eval) : "?";
+                            lineOutput += `\nSTOCKFISH #3 (eval ${midEv}): ${midLine}`;
                         }
 
                         if (c.isVariationEnd) {
-                            lineOutput += `\nEND OF VARIATION — verdict ONLY from GM EVAL above; use STOCKFISH BEST only for next ideas`;
+                            lineOutput += `\nEND OF VARIATION — use STOCKFISH BEST for equal/better/worse and the next plan (e.g. ...Nd4 and Bf6 ideas).`;
                         }
                         statsText.innerText = `[${c.moveNum}.${sanDisplay}] engine ok`;
                     } else {
@@ -1682,72 +1599,86 @@ FEN: ${fenAfter || "unavailable"}`;
             
             const fullPrompt = `You are annotating a chess course in the exact style of this sample (sheva / Analyze This App chapter notes).
 
-SAMPLE STYLE (calm, practical, varied — never robotic):
+SAMPLE STYLE (copy this voice):
 - "White protects the bishop and keeps the option of long castling."
 - "A useful prophylactic move. Black prepares ...b5 and avoids committing the centre too early."
 - "Black has fully equalized. The bishop becomes active on the long diagonal and the queenside initiative gives easy play."
 - "We strike immediately, before White can fully establish it."
+- "We have successfully completed our development without any serious problems. The position is equal."
+- "A useful move before committing the centre. Black prevents Bb5+ and prepares ...b5, which is especially relevant if White castles queenside."
+- "This is an important move that allows us to gain space and develop our pieces."
 - "Although we have an isolated e-pawn, in practice it is very difficult to attack, and the position is completely equal."
 - "Black has fully equalized. The king is safe, the queenside space advantage remains useful and White has no concrete way to exploit the centralized knight."
 
 We play ${weSide}. They play ${theySide}.
 
-Each item in the batch contains:
-MOVE — SAN + GM sign
-FEN — exact board AFTER the move. Study it carefully. Never invent pieces that are not on this FEN.
-GM EVAL — the ONLY source of who is better. Plain English is given (e.g. "BLACK IS WINNING"). Obey it.
-GM HIGHLIGHTED SQUARES — squares the GM marked ([%csl]). Your note MUST explain why those squares matter.
-GM ARROWS — intended ideas ([%cal]).
-VOICE NOTE — player's rough idea; keep it, fix English.
-STOCKFISH BEST / IF CARELESS / #3 — plan moves ONLY. No engine numbers. Never use them to decide who is better.
+Each item:
+MOVE (with GM symbol if any)
+FEN — exact board AFTER the move. MUST use this FEN. Never invent pieces.
+VOICE NOTE — rough speech; keep the idea, fix English
+STOCKFISH BEST — main plan (6+ moves) + eval
+IF CARELESS — weak reply that reveals WHY the move was played (threat/idea)
+STOCKFISH #3 — extra line
+END OF VARIATION — when present, short verdict + continuing ideas from STOCKFISH BEST
 
-=== GM evaluation symbols (memorise) ===
-+- or $18 = WHITE IS WINNING (decisive)
--+ or $19 = BLACK IS WINNING (decisive)
-± or $16 = WHITE clearly better
-∓ or $17 = BLACK clearly better
-+= or +/= or $14 = WHITE slightly better
-=+ or =/+ = BLACK slightly better
-= or $10–$12 = EQUAL
-∞ or $13 = UNCLEAR
-=/∞ or ∞/= = WITH COMPENSATION
-?! = dubious, ? = mistake, ?? = blunder, ! = good, !! = brilliant, !? = interesting
+=== Why a move was played (THIS move only) ===
+Explain the purpose of the piece that just moved — not a sequence of future moves.
+Good:
+- "We move the knight, ready to occupy d4."
+- "We transfer the bishop to c6, taking advantage of the pin."
+- "The queen protects the bishop and keeps the option of long castling."
+- "A useful prophylactic move; we prepare ...b5 and avoid committing the centre too early."
+Use IF CARELESS only to understand the threat (e.g. mate if they ignore it) — then state that idea briefly, without listing "if they play X, we play Y, then Z".
 
-If we are ${weSide} and GM EVAL says ${weSide} is winning/better → write "we are clearly better" / "we are winning".
-If GM EVAL says ${theySide} is winning/better → say so honestly (or "White/Black is better").
-NEVER contradict GM EVAL. NEVER soft-pedal +- / -+ into "equal" or "slightly better".
+NEVER:
+- Say what we will play on the opponent's turn ("if White plays f3, we take on c3 then Be7").
+- Say what they will play on our turn.
+- Narrate the PGN NEXT moves as a script.
 
-=== Study the FEN ===
-- Count pieces. Name the key squares that matter for THIS move.
-- If GM HIGHLIGHTED SQUARES are given (e.g. c2), explain the tactical or positional reason for that square (weakness, outpost, entry point, hanging piece, etc.).
-- Do not invent threats that the FEN does not support.
+=== Equality / unclear / compensation (use these patterns) ===
 
-=== Why a move was played ===
-Use IF CARELESS only when it shows a real tactic. Phrase it differently each time — do NOT always write "If White is careless".
-Alternatives: "The point is...", "Ignoring it allows...", "White must deal with...", "A slow reply would allow...", "This creates the threat of...".
-Otherwise: purpose, prophylaxis, structure, preparation (...b5, castling options, etc.).
+EQUAL (=, $10, $11, $12):
+- "Black has fully equalized."
+- "The position is equal."
+- "Black has full equality with natural development and pressure against the centre."
+- "Although we have an isolated e-pawn, in practice it is very difficult to attack, and the position is completely equal."
+- "Black has fully equalized. The king is safe, the queenside space advantage remains useful and White has no concrete way to exploit the centralized knight."
+- "Black has fully equalized and can continue with ...Bd7 and ...Be7 or Bc5."
+- Prefer practical feel: completed development, safe king, easy play — not only the word "equal".
 
-=== Vary style — do NOT sound repetitive ===
-FORBIDDEN openers (use at most once per batch, preferably never):
-"This also...", "This move...", "White/Black plays...", "If White/Black is careless...", "A useful move...", "An important move...", restating the move ("...Be6 develops the bishop").
-Mix openings: plan, structure, prophylaxis, threat, short verdict.
-Never restate the move as the content of the note — it is already in the PGN.
+UNCLEAR (∞, unclear, $13):
+- "The position is unclear."
+- "The position is unclear, but easier for Black to play."
+- "Unclear, but practically easier for White to handle."
+- "A sharp, unclear position where both sides have chances."
+- "Unclear — White has the initiative, but Black's structure is solid."
+- "The position remains unclear; both sides have ideas and the better-prepared player will feel more comfortable."
 
-=== Verdict language (ONLY when GM EVAL supports it) ===
-EQUAL: "Black has fully equalized." / "The position is equal." / practical equality (safe king, easy play).
-UNCLEAR: "The position is unclear, but easier for Black to play."
-COMPENSATION: "Black has full compensation for the pawn."
-EDGE / WINNING: match the GM strength — "slightly better", "clearly better", "we are winning". Do not downgrade +- to =.
+WITH COMPENSATION (=/∞, ∞/=, compensation, $15):
+- "Black has full compensation for the pawn."
+- "White's activity compensates for the material."
+- "Black is a pawn down but has lasting compensation on the dark squares."
+- "Enough compensation: the open file and the safer king."
+- "White has sacrificed a pawn for the initiative and full compensation."
+- "Black has compensation in the form of the bishop pair and pressure against the centre."
+- "Material is down, but the activity and safer king give adequate compensation."
 
-END OF VARIATION: verdict from GM EVAL only, then next ideas from STOCKFISH BEST moves.
+SLIGHT / CLEAR EDGE (only if symbol or engine support it):
+- "White is slightly better." / "Black has a pleasant edge."
+- "White is clearly better." / "Black is clearly better."
+
+END OF VARIATION:
+- "We are better. Our centre looks good; we continue with ...Nd4 and ...Bf6 ideas." (use real moves from STOCKFISH BEST)
+- "The position is equal, but easier for us to play; next we improve with ...Re8 and ...Bf8."
 
 === Rules ===
-- 1–3 short sentences. Simple correct English. Calm GM-course tone.
-- British "centre". Hyphen: e4-pawn, e4-square.
+- 1–3 short sentences. Simple correct English. Same calm GM-course tone as the sample.
+- British "centre". Hyphen: e4-pawn, e4-square, d5-pawn.
 - Move by ${weSide}: we/our. Move by ${theySide}: ${theySide}/they.
-- GM EVAL overrides everything. Stockfish lines are for plans only.
-- Address highlighted squares when present.
-- Vary wording across the batch.
+- Only the plan of the side that just moved. No "then they play… then we play…".
+- Stockfish lines are silent clues for the idea (threat, transfer, occupation of a square) — do not list them as a move script.
+- Respect symbols (? ! etc.).
+- Trust FEN + VOICE NOTE + Stockfish lines only.
 
 Return ONLY JSON. Keys = IDs. Values = the note text only.
 
