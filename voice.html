@@ -1,10 +1,11 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master · Voice · v2.3 | Decipher Chess Academy</title>
-    <!-- build: 2026-10-09-voice-v2.7-why-only -->
+    <title>GM Variation Master · Voice · v2.4 | Decipher Chess Academy</title>
+    <!-- build: 2026-10-11-voice-v2.8-tactics -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -18,14 +19,16 @@
         .chunk-card:hover { border-left-color: #d4af37; background: rgba(255,255,255,0.05); }
         .chunk-card.selected-start { border-left-color: #d4af37; background-color: rgba(212, 175, 55, 0.3); }
         .chunk-card.selected-range { border-left-color: #fde047; background-color: rgba(212, 175, 55, 0.15); }
-        
         textarea, input[type="text"] { background: #0f172a !important; border: 1px solid #334155 !important; font-family: 'Fira Code', monospace; scrollbar-width: thin; color: #fff; }
         textarea:focus, input[type="text"]:focus { border-color: #d4af37 !important; outline: none; }
         #progress-fill { height: 100%; background: #d4af37; width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
         .board-container { width: 100%; max-width: 360px; margin: 0 auto; flex-shrink: 0; }
-        
         .spinner { border: 3px solid rgba(255,255,255,0.1); border-left-color: #1e293b; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .sf-badge { display:inline-block; padding:1px 6px; border-radius:6px; font-size:9px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; }
+        .sf-badge.on { background:#064e3b; color:#6ee7b7; }
+        .sf-badge.off { background:#450a0a; color:#fca5a5; }
+        .sf-badge.loading { background:#3f2d06; color:#fcd34d; }
     </style>
 </head>
 <body class="p-4 md:p-10">
@@ -34,9 +37,10 @@
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
                 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Why this move only · v2.7</p>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Why this move only · v2.8 tactics</p>
             </div>
-            <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
+            <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center">
+                <span id="sf-badge" class="sf-badge loading">SF loading…</span>
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
                 <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
             </nav>
@@ -68,6 +72,16 @@
                         <select id="repertoire-side" class="bg-slate-800 text-emerald-400 rounded-lg px-2 py-1 font-bold border border-slate-600">
                             <option value="black">Black (we = Black)</option>
                             <option value="white">White (we = White)</option>
+                        </select>
+                    </label>
+                    <label class="flex items-center gap-2 px-3 py-2 bg-slate-900 rounded-xl text-xs">
+                        <span class="text-slate-400 uppercase font-bold">Depth</span>
+                        <select id="engine-depth" class="bg-slate-800 text-emerald-400 rounded-lg px-2 py-1 font-bold border border-slate-600">
+                            <option value="14">14 (fast)</option>
+                            <option value="16">16</option>
+                            <option value="18" selected>18 (balanced)</option>
+                            <option value="20">20</option>
+                            <option value="22">22 (slow, deep)</option>
                         </select>
                     </label>
                     <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy Selected Batch</span></button>
@@ -121,20 +135,17 @@
                     <span id="batch-count" class="text-[10px] uppercase tracking-widest text-slate-500"></span>
                 </div>
 
-                <!-- Easy flow: board → sign → next/speak → tips (minimal scroll) -->
                 <div class="max-w-lg mx-auto w-full space-y-2">
                     <div class="board-container" style="max-width:100%">
                         <div id="review-board" style="width: 100%;"></div>
                     </div>
 
-                    <!-- GM sign + move always visible -->
                     <div class="text-center glass p-2 rounded-xl border border-amber-400/30">
                         <p id="review-move-label" class="text-base md:text-lg text-emerald-400 font-bold"></p>
                         <p id="review-sign-hint" class="text-xs text-amber-300 font-semibold mt-0.5"></p>
                         <p id="review-fen" class="text-[9px] text-slate-600 break-all mt-1"></p>
                     </div>
 
-                    <!-- One row: prev | counter | next | speak | clear — no scroll to record -->
                     <div class="flex flex-wrap items-center justify-center gap-1.5 sticky bottom-0 z-20 bg-slate-950/95 py-2 rounded-xl border border-slate-700">
                         <button type="button" id="btn-batch-prev" onclick="batchStep(-1)" class="px-2.5 py-2.5 bg-slate-800 rounded-lg text-[11px] font-bold uppercase disabled:opacity-30">◀</button>
                         <span id="batch-step-label" class="text-[11px] text-amber-400 font-bold min-w-[3.2rem] text-center">—</span>
@@ -148,14 +159,12 @@
                     <textarea id="move-note" rows="2" class="w-full p-2 rounded-xl text-sm" placeholder="Spoken note appears here…"></textarea>
                     <p id="notes-saved-count" class="text-[10px] text-slate-500 text-center">0 notes saved</p>
 
-                    <!-- Ply step (small) -->
                     <div class="flex items-center justify-center gap-2">
                         <button type="button" id="btn-review-prev" onclick="reviewStep(-1)" class="px-2 py-1 bg-slate-900 rounded text-[10px] font-bold uppercase text-slate-500 disabled:opacity-30">◀ Ply</button>
                         <span id="review-ply-label" class="text-[10px] text-slate-500">—</span>
                         <button type="button" id="btn-review-next" onclick="reviewStep(1)" class="px-2 py-1 bg-slate-900 rounded text-[10px] font-bold uppercase text-slate-500 disabled:opacity-30">Ply ▶</button>
                     </div>
 
-                    <!-- More engine tips -->
                     <div id="review-engine" class="glass p-2.5 rounded-xl text-left border border-amber-500/25">
                         <div class="flex items-center justify-between mb-1">
                             <span class="text-[10px] font-bold uppercase text-amber-400/90 tracking-widest">Engine tips</span>
@@ -202,6 +211,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <script>
+        /* ============================================================
+           GLOBAL STATE
+           ============================================================ */
         let globalChunks = [];
         let pgnTokens = [];
         let board = null;
@@ -209,85 +221,555 @@
         let selStart = null;
         let selEnd = null;
         let isDbLoaded = false;
-        let reviewIndex = null; // which selected move is shown on review board
-        let userNotes = {}; // chunkId -> short note from the player
+        let reviewIndex = null;
+        let userNotes = {};
         let dynamicMasterDb = {};
-        let engineCache = {}; // fen -> engine result
-        let reviewEngineToken = 0; // cancel stale async fetches
+        let engineCache = {};    // WS fallback cache: fen -> engine result
+        let sfCache = new Map(); // local SF cache: fen::depth -> sfLines
+        let reviewEngineToken = 0;
         let mainEngineToken = 0;
-        let reviewLine = []; // [{fen, label, isFocus}] built for current review chunk
+        let reviewLine = [];
         let reviewLineIdx = 0;
 
         const delay = ms => new Promise(res => setTimeout(res, ms));
 
+        /* ============================================================
+           LOCAL STOCKFISH WORKER (with chess-api.com fallback)
+           ============================================================ */
+        let sfWorker = null;
+        let sfReady = false;
+        let sfBusy = false;
+        let sfHandler = null;
+        let sfChain = Promise.resolve();
+        let sfInitTried = false;
+
+        function setSfBadge(state, text) {
+            const b = document.getElementById('sf-badge');
+            if (!b) return;
+            b.classList.remove('on', 'off', 'loading');
+            b.classList.add(state);
+            b.innerText = text;
+        }
+
+        function initSF() {
+            if (sfWorker || sfInitTried) return;
+            sfInitTried = true;
+            setSfBadge('loading', 'SF loading…');
+            try {
+                // asm.js single-file build works well as a Worker.
+                sfWorker = new Worker('https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js');
+            } catch (e) {
+                console.warn('Stockfish worker unavailable — will use chess-api.com fallback.', e);
+                sfWorker = null;
+                setSfBadge('off', 'SF off · WS');
+                return;
+            }
+            sfWorker.onmessage = (e) => {
+                const s = typeof e.data === 'string' ? e.data : (e.data && e.data.data) || '';
+                if (!s) return;
+                if (s === 'uciok') {
+                    sfWorker.postMessage('setoption name Hash value 32');
+                    sfWorker.postMessage('setoption name Threads value 1');
+                    sfReady = true;
+                    setSfBadge('on', 'SF ready');
+                }
+                if (sfBusy && sfHandler) sfHandler(s);
+            };
+            sfWorker.onerror = (e) => {
+                console.warn('Stockfish error:', e);
+                sfReady = false;
+                sfWorker = null;
+                setSfBadge('off', 'SF off · WS');
+            };
+            sfWorker.postMessage('uci');
+        }
+
+        // Serialized local-SF analysis. Returns array of {multipv, scoreType, score, pvUci}.
+        async function sfAnalyze(fen, opts = {}) {
+            const depth = opts.depth || 18;
+            const multipv = opts.multipv || 5;
+            const timeoutMs = opts.timeoutMs || 9000;
+            const key = fen + '::' + depth + '::' + multipv;
+            if (sfCache.has(key)) return sfCache.get(key);
+
+            if (!sfWorker) initSF();
+            if (!sfWorker) return null;
+
+            if (!sfReady) {
+                const start = Date.now();
+                while (!sfReady && Date.now() - start < 4000) await delay(50);
+                if (!sfReady) return null;
+            }
+
+            const run = () => new Promise((resolve) => {
+                const lines = {};
+                let done = false;
+                let timer = null;
+                sfHandler = (s) => {
+                    if (done) return;
+                    if (s.startsWith('info') && s.includes(' pv ')) {
+                        const mv = s.match(/\bmultipv (\d+)/);
+                        const sc = s.match(/\bscore (cp|mate) (-?\d+)/);
+                        const pv = s.match(/\bpv (.+)$/);
+                        if (mv && sc && pv) {
+                            lines[+mv[1]] = {
+                                multipv: +mv[1],
+                                scoreType: sc[1],
+                                score: +sc[2],
+                                pvUci: pv[1].trim().split(/\s+/)
+                            };
+                        }
+                    } else if (s.startsWith('bestmove')) {
+                        done = true;
+                        clearTimeout(timer);
+                        sfHandler = null;
+                        sfBusy = false;
+                        const rows = Object.values(lines).sort((a, b) => a.multipv - b.multipv);
+                        sfCache.set(key, rows);
+                        resolve(rows);
+                    }
+                };
+                timer = setTimeout(() => {
+                    if (done) return;
+                    try { sfWorker.postMessage('stop'); } catch (e) {}
+                    // Give engine a moment to emit bestmove
+                    setTimeout(() => {
+                        if (done) return;
+                        done = true;
+                        sfHandler = null;
+                        sfBusy = false;
+                        const rows = Object.values(lines).sort((a, b) => a.multipv - b.multipv);
+                        sfCache.set(key, rows);
+                        resolve(rows);
+                    }, 600);
+                }, timeoutMs);
+                sfWorker.postMessage('setoption name MultiPV value ' + multipv);
+                sfWorker.postMessage('position fen ' + fen);
+                sfWorker.postMessage('go depth ' + depth);
+            });
+
+            const chained = sfChain.then(() => { sfBusy = true; return run(); });
+            sfChain = chained.catch(() => {});
+            return chained;
+        }
+
+        function uciListToSan(fen, uciMoves, maxPlies) {
+            const out = [];
+            try {
+                const ch = new Chess();
+                if (!ch.load(fen)) return out;
+                const limit = maxPlies || 8;
+                for (let i = 0; i < uciMoves.length && out.length < limit; i++) {
+                    const u = String(uciMoves[i] || '').trim();
+                    if (!u || u.length < 4) continue;
+                    const from = u.slice(0, 2);
+                    const to = u.slice(2, 4);
+                    const promo = u.length > 4 ? u[4] : undefined;
+                    const mv = ch.move({ from, to, promotion: promo || 'q' });
+                    if (!mv) break;
+                    out.push(mv.san);
+                }
+            } catch (e) {}
+            return out;
+        }
+
+        function formatPvNumberedSans(sans, fen) {
+            const parts = [];
+            try {
+                const bits = (fen || '').split(/\s+/);
+                let fullMove = parseInt(bits[5], 10);
+                if (isNaN(fullMove) || fullMove < 1) fullMove = 1;
+                let isWhite = bits[1] !== 'b';
+                for (let i = 0; i < sans.length; i++) {
+                    if (isWhite) parts.push(fullMove + '. ' + sans[i]);
+                    else parts.push(sans[i]);
+                    if (!isWhite) fullMove++;
+                    isWhite = !isWhite;
+                }
+            } catch (e) { return sans.join(' '); }
+            return parts.join(' ');
+        }
+
+        function fmtScoreSF(l) {
+            if (!l) return '?';
+            if (l.scoreType === 'mate') return (l.score > 0 ? '#' : '#-') + Math.abs(l.score);
+            const v = l.score / 100;
+            return (v >= 0 ? '+' : '') + v.toFixed(2);
+        }
+
+        function sfLinesToEngineData(sfLines, fen) {
+            if (!sfLines || !sfLines.length) return { lines: [], invalid: true, text: 'No SF lines' };
+            const lines = sfLines.map((l, i) => {
+                const sans = uciListToSan(fen, l.pvUci, 12);
+                return {
+                    multipv: l.multipv || (i + 1),
+                    eval: l.scoreType === 'mate'
+                        ? (l.score > 0 ? '#' + l.score : '#-' + Math.abs(l.score))
+                        : (l.score / 100).toFixed(2),
+                    san: sans[0] || '',
+                    continuation: sans.slice(1).join(' '),
+                    numbered: formatPvNumberedSans(sans, fen),
+                    allSan: sans,
+                    scoreType: l.scoreType,
+                    score: l.score,
+                    planHint: '',
+                    invalid: false
+                };
+            });
+            const top = lines[0];
+            return {
+                lines,
+                eval: top.eval,
+                san: top.san,
+                continuation: top.continuation,
+                text: '',
+                planHint: top.planHint,
+                invalid: false
+            };
+        }
+
+        /* ============================================================
+           chess-api.com WEBSOCKET (fallback only)
+           ============================================================ */
+        async function getEngineRefutation(fen, retries = 1) {
+            if (!isValidFen(fen)) return { lines: [], invalid: true, text: 'INVALID FEN' };
+            const wantVariants = 5;
+            const depthWant = 16;
+            const thinkMs = 400;
+
+            for (let attempt = 0; attempt <= retries; attempt++) {
+                try {
+                    const result = await new Promise((resolve) => {
+                        let settled = false;
+                        const byKey = {};
+                        let ws;
+                        const finish = () => {
+                            if (settled) return;
+                            settled = true;
+                            try { ws && ws.close(); } catch (e) {}
+                            const rows = Object.values(byKey);
+                            const bits = fen.split(/\s+/);
+                            const blackToMove = bits[1] === 'b';
+                            rows.sort((a, b) => {
+                                const ea = typeof a.eval === 'number' ? a.eval : 0;
+                                const eb = typeof b.eval === 'number' ? b.eval : 0;
+                                return blackToMove ? (ea - eb) : (eb - ea);
+                            });
+                            const lines = rows.slice(0, wantVariants).map((data) => {
+                                const uciCont = Array.isArray(data.continuationArr) ? data.continuationArr : [];
+                                let firstSan = data.san || '';
+                                if (!firstSan && data.move && data.move.length >= 4) {
+                                    firstSan = uciListToSan(fen, [data.move], 1)[0] || data.move;
+                                }
+                                const restSan = uciListToSan(
+                                    (() => {
+                                        try {
+                                            const ch = new Chess();
+                                            ch.load(fen);
+                                            if (firstSan) ch.move(firstSan, { sloppy: true });
+                                            else if (data.move) {
+                                                const u = data.move;
+                                                ch.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || 'q' });
+                                            }
+                                            return ch.fen();
+                                        } catch (e) { return fen; }
+                                    })(),
+                                    uciCont, 10
+                                );
+                                const allSan = [firstSan].concat(restSan).filter(Boolean).slice(0, 8);
+                                return {
+                                    eval: data.eval,
+                                    san: firstSan,
+                                    continuation: restSan.join(' '),
+                                    numbered: formatPvNumberedSans(allSan, fen),
+                                    allSan,
+                                    text: data.text || '',
+                                    planHint: '',
+                                    invalid: false
+                                };
+                            });
+                            if (!lines.length) { resolve({ lines: [], invalid: true, text: 'No engine lines' }); return; }
+                            const top = lines[0];
+                            resolve({
+                                lines, eval: top.eval, san: top.san, continuation: top.continuation,
+                                text: top.text, planHint: top.planHint, invalid: false
+                            });
+                        };
+
+                        const timer = setTimeout(finish, 4500);
+                        try { ws = new WebSocket('wss://chess-api.com/v1'); }
+                        catch (e) { clearTimeout(timer); resolve(null); return; }
+                        ws.onopen = () => {
+                            ws.send(JSON.stringify({ fen, variants: wantVariants, depth: depthWant, maxThinkingTime: thinkMs }));
+                        };
+                        ws.onmessage = (ev) => {
+                            try {
+                                const data = JSON.parse(ev.data);
+                                if (data.type !== 'move' && data.type !== 'bestmove') return;
+                                const key = data.move || data.san || data.lan;
+                                if (!key) return;
+                                const prev = byKey[key];
+                                if (!prev || (data.depth || 0) >= (prev.depth || 0)) byKey[key] = data;
+                                const deep = Object.values(byKey).filter(x => (x.depth || 0) >= 10);
+                                if (deep.length >= wantVariants && data.type === 'bestmove') {
+                                    clearTimeout(timer);
+                                    setTimeout(finish, 200);
+                                }
+                            } catch (e) {}
+                        };
+                        ws.onerror = () => { clearTimeout(timer); finish(); };
+                        ws.onclose = () => { clearTimeout(timer); finish(); };
+                    });
+                    if (result && !result.invalid && result.lines && result.lines.length) return result;
+                } catch (e) {
+                    if (attempt === retries) return null;
+                    await delay(600);
+                }
+            }
+            return null;
+        }
+
+        // Unified accessor: prefer local Stockfish, fall back to WebSocket.
+        async function getEngineMultiPV(fen, opts = {}) {
+            if (!isValidFen(fen)) return { lines: [], invalid: true, text: 'INVALID FEN' };
+            const depth = opts.depth || parseInt(document.getElementById('engine-depth')?.value || '18', 10);
+            const multipv = opts.multipv || 5;
+            const timeoutMs = opts.timeoutMs || (depth >= 20 ? 14000 : depth >= 18 ? 10000 : 6000);
+
+            if (sfWorker) {
+                const sfLines = await sfAnalyze(fen, { depth, multipv, timeoutMs });
+                if (sfLines && sfLines.length) return sfLinesToEngineData(sfLines, fen);
+            }
+            // Fallback
+            const cached = engineCache[fen];
+            if (cached) return cached;
+            const wsResult = await getEngineRefutation(fen);
+            if (wsResult && !wsResult.invalid) engineCache[fen] = wsResult;
+            return wsResult;
+        }
+
+        /* ============================================================
+           TACTICAL SCANNER  (pure JS, no engine needed)
+           ============================================================ */
+        const PIECE_VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+        const sqToFR = sq => [sq.charCodeAt(0) - 97, 8 - parseInt(sq[1], 10)];
+        const frToSq = (f, r) => String.fromCharCode(97 + f) + (8 - r);
+
+        function attackersOfBoard(board, sq, byColor) {
+            const [tf, tr] = sqToFR(sq);
+            const at = (f, r) => (f >= 0 && f < 8 && r >= 0 && r < 8) ? board[r][f] : null;
+            const out = [];
+            const slide = (dirs, types) => {
+                for (const [df, dr] of dirs) {
+                    let f = tf + df, r = tr + dr;
+                    while (f >= 0 && f < 8 && r >= 0 && r < 8) {
+                        const p = at(f, r);
+                        if (p) {
+                            if (p.color === byColor && types.includes(p.type)) out.push(frToSq(f, r));
+                            break;
+                        }
+                        f += df; r += dr;
+                    }
+                }
+            };
+            slide([[1, 1], [1, -1], [-1, 1], [-1, -1]], ['b', 'q']);
+            slide([[1, 0], [-1, 0], [0, 1], [0, -1]], ['r', 'q']);
+            slide([[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]], ['k']);
+            for (const [df, dr] of [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]]) {
+                const p = at(tf + df, tr + dr);
+                if (p && p.color === byColor && p.type === 'n') out.push(frToSq(tf + df, tr + dr));
+            }
+            const pd = byColor === 'w' ? 1 : -1;
+            for (const df of [-1, 1]) {
+                const p = at(tf + df, tr + pd);
+                if (p && p.color === byColor && p.type === 'p') out.push(frToSq(tf + df, tr + pd));
+            }
+            return out;
+        }
+
+        function hangingPieces(fen) {
+            const chess = new Chess(fen);
+            if (!chess) return [];
+            const board = chess.board();
+            const stm = chess.turn();
+            const enemy = stm === 'w' ? 'b' : 'w';
+            const out = [];
+            for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+                const p = board[r][f];
+                if (!p || p.color !== enemy || p.type === 'k') continue;
+                const sq = frToSq(f, r);
+                const atk = attackersOfBoard(board, sq, stm);
+                if (!atk.length) continue;
+                const def = attackersOfBoard(board, sq, enemy);
+                const cheapest = Math.min(...atk.map(s => {
+                    const [af, ar] = sqToFR(s); return PIECE_VAL[board[ar][af].type];
+                }));
+                if (!def.length) out.push({ square: sq, piece: p.type, color: p.color, reason: 'undefended' });
+                else if (cheapest < PIECE_VAL[p.type]) out.push({ square: sq, piece: p.type, color: p.color, reason: 'attacked by cheaper piece' });
+            }
+            return out;
+        }
+
+        function pinsAndSkewers(fen) {
+            const chess = new Chess(fen);
+            if (!chess) return [];
+            const board = chess.board();
+            const stm = chess.turn();
+            const enemy = stm === 'w' ? 'b' : 'w';
+            const dirsB = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+            const dirsR = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+            const out = [];
+            for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+                const p = board[r][f];
+                if (!p || p.color !== stm || !['b', 'r', 'q'].includes(p.type)) continue;
+                const dirs = p.type === 'b' ? dirsB : p.type === 'r' ? dirsR : [...dirsB, ...dirsR];
+                for (const [df, dr] of dirs) {
+                    let cf = f + df, cr = r + dr, first = null, second = null;
+                    while (cf >= 0 && cf < 8 && cr >= 0 && cr < 8) {
+                        const q = board[cr][cf];
+                        if (q) {
+                            if (!first) { if (q.color === stm) break; first = { sq: frToSq(cf, cr), p: q }; }
+                            else { second = { sq: frToSq(cf, cr), p: q }; break; }
+                        }
+                        cf += df; cr += dr;
+                    }
+                    if (first && second && second.p.color === enemy && second.p.type === 'k')
+                        out.push({ type: 'pin', pinned: first.sq, pinnedPiece: first.p.type, pinnedColor: first.p.color, toKing: second.sq, by: frToSq(f, r), byPiece: p.type });
+                    else if (first && second && second.p.color === stm && PIECE_VAL[first.p.type] > PIECE_VAL[second.p.type])
+                        out.push({ type: 'skewer', front: first.sq, frontPiece: first.p.type, behind: second.sq, behindPiece: second.p.type, behindColor: second.p.color, by: frToSq(f, r), byPiece: p.type });
+                }
+            }
+            return out;
+        }
+
+        function nullMove(fen) {
+            const p = fen.split(' ');
+            p[1] = p[1] === 'w' ? 'b' : 'w';
+            p[3] = '-';
+            return p.join(' ');
+        }
+
+        function materialCount(fen) {
+            const chess = new Chess(fen);
+            if (!chess) return { w: 0, b: 0 };
+            let w = 0, b = 0;
+            for (const row of chess.board()) for (const p of row) {
+                if (!p) continue;
+                if (p.color === 'w') w += PIECE_VAL[p.type];
+                else b += PIECE_VAL[p.type];
+            }
+            return { w, b };
+        }
+
+        // Full tactical report for one move — this is what the LLM consumes.
+        async function buildTacticalReport(fenAfter, moveSan, moverSide) {
+            const R = [];
+            R.push('=== TACTICAL REPORT ===');
+            R.push('Move: ' + moveSan + ' (' + moverSide + ' to move was ' + (moverSide === 'White' ? 'Black' : 'White') + ')');
+            R.push('FEN after: ' + fenAfter);
+            const chess = new Chess(fenAfter);
+            if (!chess) { R.push('(invalid FEN)'); return R.join('\n'); }
+            const stm = chess.turn() === 'w' ? 'White' : 'Black';
+            R.push('Side to move after: ' + stm);
+
+            const mat = materialCount(fenAfter);
+            const diff = mat.w - mat.b;
+            R.push('Material (White minus Black, pawns=1): ' + (diff >= 0 ? '+' : '') + diff);
+
+            const hang = hangingPieces(fenAfter);
+            R.push(hang.length
+                ? 'HANGING for ' + stm + ': ' + hang.map(h => (h.color === 'w' ? 'White ' : 'Black ') + h.piece.toUpperCase() + ' on ' + h.square + ' (' + h.reason + ')').join('; ')
+                : 'HANGING: none');
+
+            const ps = pinsAndSkewers(fenAfter);
+            R.push(ps.length
+                ? 'PINS/SKEWERS: ' + ps.map(x => x.type === 'pin'
+                    ? (x.pinnedColor === 'w' ? 'White ' : 'Black ') + x.pinnedPiece.toUpperCase() + ' on ' + x.pinned + ' pinned to king on ' + x.toKing + ' by ' + x.byPiece.toUpperCase() + ' on ' + x.by
+                    : 'skewer: ' + x.frontPiece.toUpperCase() + ' ' + x.front + ' in front of ' + x.behindPiece.toUpperCase() + ' ' + x.behind + ' (' + x.byPiece.toUpperCase() + ' ' + x.by + ')'
+                ).join('; ')
+                : 'PINS/SKEWERS: none');
+
+            // Engine lines (top 5) + mate detection
+            const engineData = await getEngineMultiPV(fenAfter, { multipv: 5 });
+            const engineLines = (engineData && !engineData.invalid && engineData.lines) ? engineData.lines : [];
+
+            const bestMate = engineLines.find(l => l.scoreType === 'mate' && l.score > 0);
+            if (bestMate) {
+                R.push('FORCED MATE for ' + stm + ' in ' + bestMate.score + ': ' + bestMate.numbered);
+            }
+            // Also detect if mover just left mate against themselves — for ?? annotations
+            const nullFen = nullMove(fenAfter);
+            if (isValidFen(nullFen)) {
+                const threatLines = await getEngineMultiPV(nullFen, { multipv: 1, depth: Math.max(12, (parseInt(document.getElementById('engine-depth')?.value || '18', 10) - 2)) });
+                if (threatLines && !threatLines.invalid && threatLines.lines && threatLines.lines.length) {
+                    const t = threatLines.lines[0];
+                    // Only report as a "threat" if it's actually meaningful — a mate or big plus
+                    const isMateThreat = /^#/.test(String(t.eval));
+                    const evNum = parseFloat(String(t.eval).replace('#', ''));
+                    if (isMateThreat || (!isNaN(evNum) && Math.abs(evNum) >= 0.5)) {
+                        R.push('THREAT (if ' + stm + ' passes, ' + moverSide + ' plays): ' + t.numbered);
+                    }
+                }
+            }
+
+            if (engineLines.length) {
+                R.push('ENGINE LINES (top ' + engineLines.length + '):');
+                engineLines.forEach((l, i) => {
+                    R.push('  #' + (i + 1) + ' ' + (l.eval || '?') + ': ' + l.numbered);
+                });
+            } else {
+                R.push('ENGINE LINES: unavailable');
+            }
+            return R.join('\n');
+        }
+
+        /* ============================================================
+           PGN PARSER (Web Worker)
+           ============================================================ */
         function createPgnParserWorker() {
             const workerCode = `
                 importScripts('https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js');
-
                 self.onmessage = function(e) {
                     const pgnContent = e.data;
                     const games = pgnContent.split(/\\n\\s*\\n(?=\\[Event)/g);
                     const db = {};
                     let totalGamesParsed = 0;
-
                     for (let gamePgn of games) {
                         if (!gamePgn.trim()) continue;
-                        
                         let whiteMatch = gamePgn.match(/\\[White "(.*?)"\\]/);
                         let blackMatch = gamePgn.match(/\\[Black "(.*?)"\\]/);
                         let pWhite = whiteMatch ? whiteMatch[1] : "Unknown";
                         let pBlack = blackMatch ? blackMatch[1] : "Unknown";
-
                         let chess = new Chess();
                         if (!chess.load_pgn(gamePgn, { sloppy: true })) continue;
-
                         totalGamesParsed++;
                         let history = chess.history({ verbose: true });
                         let simChess = new Chess();
-
                         for (let move of history) {
                             let fen = simChess.fen();
                             let parts = fen.split(' ');
                             let key = parts.slice(0, 4).join(' ');
-
-                            if (!db[key]) {
-                                db[key] = { totalGames: 0, moves: {}, topPlayers: {} };
-                            }
-
+                            if (!db[key]) db[key] = { totalGames: 0, moves: {}, topPlayers: {} };
                             db[key].totalGames++;
-                            
-                            if (!db[key].moves[move.san]) {
-                                db[key].moves[move.san] = 0;
-                            }
+                            if (!db[key].moves[move.san]) db[key].moves[move.san] = 0;
                             db[key].moves[move.san]++;
-
                             let currentPlayer = simChess.turn() === 'w' ? pWhite : pBlack;
                             if (currentPlayer !== "Unknown") {
-                                if (!db[key].topPlayers[currentPlayer]) {
-                                    db[key].topPlayers[currentPlayer] = 0;
-                                }
+                                if (!db[key].topPlayers[currentPlayer]) db[key].topPlayers[currentPlayer] = 0;
                                 db[key].topPlayers[currentPlayer]++;
                             }
-
                             simChess.move(move);
                         }
-
-                        if (totalGamesParsed % 50 === 0) {
-                            self.postMessage({ type: 'progress', count: totalGamesParsed });
-                        }
+                        if (totalGamesParsed % 50 === 0) self.postMessage({ type: 'progress', count: totalGamesParsed });
                     }
-
                     const formattedDb = {};
                     for (let key in db) {
                         let entry = db[key];
-                        
                         let sortedMoves = Object.keys(entry.moves).sort((a, b) => entry.moves[b] - entry.moves[a]);
                         let topSan = sortedMoves[0] || "";
-                        let choicesStr = sortedMoves.slice(0, 5).map(m => \`\${m} (\${entry.moves[m]} games)\`).join(', ');
-
+                        let choicesStr = sortedMoves.slice(0, 5).map(m => m + " (" + entry.moves[m] + " games)").join(', ');
                         let sortedPlayers = Object.keys(entry.topPlayers).sort((a, b) => entry.topPlayers[b] - entry.topPlayers[a]);
-                        let notablePlayers = sortedPlayers.slice(0, 3).map(p => \`\${p} (\${entry.topPlayers[p]} times)\`).join(', ');
-
+                        let notablePlayers = sortedPlayers.slice(0, 3).map(p => p + " (" + entry.topPlayers[p] + " times)").join(', ');
                         formattedDb[key] = {
                             totalGames: entry.totalGames,
                             mostPlayedSan: topSan,
@@ -295,7 +777,6 @@
                             notablePlayers: notablePlayers || "None recorded"
                         };
                     }
-
                     self.postMessage({ type: 'complete', db: formattedDb, count: totalGamesParsed });
                 };
             `;
@@ -306,23 +787,17 @@
         async function handleFileUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
-
             const statsEl = document.getElementById('stats');
             const spinnerEl = document.getElementById('db-spinner');
-
             try {
                 statsEl.innerText = "PROCESSING FILE...";
                 spinnerEl.classList.remove('hidden');
-
                 let pgnContent = "";
-
                 if (file.name.endsWith('.zip')) {
                     const zip = new JSZip();
                     const unzipped = await zip.loadAsync(file);
-
                     const jsFilename = Object.keys(unzipped.files).find(name => name.endsWith('.js'));
                     const pgnFilename = Object.keys(unzipped.files).find(name => name.endsWith('.pgn'));
-
                     if (jsFilename) {
                         const jsContent = await unzipped.file(jsFilename).async("string");
                         const scriptElement = document.createElement('script');
@@ -342,23 +817,19 @@
                 } else if (file.name.endsWith('.pgn')) {
                     pgnContent = await file.text();
                 }
-
                 if (pgnContent) {
                     statsEl.innerText = "PARSING PGN IN WORKER...";
                     const worker = createPgnParserWorker();
-
                     worker.onmessage = function(e) {
-                        if (e.data.type === 'progress') {
-                            statsEl.innerText = `PARSED ${e.data.count} GAMES...`;
-                        } else if (e.data.type === 'complete') {
+                        if (e.data.type === 'progress') statsEl.innerText = "PARSED " + e.data.count + " GAMES...";
+                        else if (e.data.type === 'complete') {
                             dynamicMasterDb = e.data.db;
                             isDbLoaded = true;
-                            statsEl.innerText = `DB READY (${e.data.count} GAMES)`;
-                            alert(`Successfully processed ${e.data.count} games into the database!`);
+                            statsEl.innerText = "DB READY (" + e.data.count + " GAMES)";
+                            alert("Successfully processed " + e.data.count + " games into the database!");
                             spinnerEl.classList.add('hidden');
                         }
                     };
-
                     worker.postMessage(pgnContent);
                 }
             } catch (e) {
@@ -374,20 +845,15 @@
             try {
                 const statsEl = document.getElementById('stats');
                 const spinnerEl = document.getElementById('db-spinner');
-                
                 statsEl.innerText = "EXTRACTING DATABASE...";
                 spinnerEl.classList.remove('hidden');
-
                 const response = await fetch('Sicilian.zip');
                 if (!response.ok) throw new Error("Zip file not found locally. Use the Upload button.");
-                
                 const blob = await response.blob();
                 const zip = new JSZip();
                 const unzipped = await zip.loadAsync(blob);
-
                 const jsFilename = Object.keys(unzipped.files).find(name => name.endsWith('.js'));
                 const pgnFilename = Object.keys(unzipped.files).find(name => name.endsWith('.pgn'));
-                
                 if (jsFilename) {
                     const jsContent = await unzipped.file(jsFilename).async("string");
                     const scriptElement = document.createElement('script');
@@ -426,14 +892,13 @@
                 pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
                 position: 'start'
             });
-
+            initSF();
             loadZippedDatabase();
-
             const saved = localStorage.getItem('gm_master_state');
             if (saved) {
                 const state = JSON.parse(saved);
                 document.getElementById('pgn-input').value = state.original;
-                if(state.original) { processPgn(true); }
+                if (state.original) processPgn(true);
             }
         };
 
@@ -441,55 +906,23 @@
             try {
                 const parts = fen.split(' ');
                 if (parts.length < 4) return null;
-
-                const board = parts[0];
-                const turn = parts[1];
-                const castling = parts[2];
-                const ep = parts[3];
-
-                const formatsToTry = [
-                    fen,
-                    `${board} ${turn} ${castling} ${ep}`,
-                    `${board} ${turn} ${castling} -`,
-                    `${board} ${turn} ${castling}`
-                ];
-
-                for (let f of formatsToTry) {
-                    if (dynamicMasterDb[f]) {
-                        return dynamicMasterDb[f];
-                    }
-                }
-
+                const board = parts[0], turn = parts[1], castling = parts[2], ep = parts[3];
+                const formatsToTry = [fen, board + ' ' + turn + ' ' + castling + ' ' + ep, board + ' ' + turn + ' ' + castling + ' -', board + ' ' + turn + ' ' + castling];
+                for (let f of formatsToTry) if (dynamicMasterDb[f]) return dynamicMasterDb[f];
                 if (typeof NAJDORF_G3_MASTER_DB !== 'undefined') {
-                    for (let f of formatsToTry) {
-                        if (NAJDORF_G3_MASTER_DB[f]) {
-                            return NAJDORF_G3_MASTER_DB[f];
-                        }
-                    }
+                    for (let f of formatsToTry) if (NAJDORF_G3_MASTER_DB[f]) return NAJDORF_G3_MASTER_DB[f];
                 }
-
                 return null;
-            } catch (e) {
-                console.error("Local database fetch failed:", e);
-                return null;
-            }
+            } catch (e) { return null; }
         }
 
         function isValidFen(fen) {
             if (!fen || typeof fen !== "string") return false;
             const parts = fen.trim().split(/\s+/);
             if (parts.length < 4) return false;
-            try {
-                const c = new Chess();
-                return c.load(fen);
-            } catch (e) {
-                return false;
-            }
+            try { const c = new Chess(); return c.load(fen); } catch (e) { return false; }
         }
 
-        // One clear board diagram from FEN (only format sent to the AI)
-        // Standard orientation: Black's rank 8 at TOP, White's rank 1 at BOTTOM. a-file LEFT, h-file RIGHT.
-        // Uppercase = White piece, lowercase = Black piece. a1 is a dark square.
         function fenToAsciiBoard(fen) {
             if (!fen || !isValidFen(fen)) return "";
             try {
@@ -504,303 +937,17 @@
                 for (let r = 0; r < 8; r++) {
                     let row = "";
                     for (const ch of rows[r]) {
-                        if (ch >= "1" && ch <= "8") {
-                            row += " .".repeat(parseInt(ch, 10));
-                        } else {
-                            row += " " + ch;
-                        }
+                        if (ch >= "1" && ch <= "8") row += " .".repeat(parseInt(ch, 10));
+                        else row += " " + ch;
                     }
-                    lines.push(`${8 - r} |${row} |`);
+                    lines.push((8 - r) + " |" + row + " |");
                 }
                 lines.push("  +-----------------+");
                 lines.push("    a b c d e f g h");
                 const turn = parts[1] === "b" ? "Black" : "White";
-                lines.push(`Side to move: ${turn}`);
+                lines.push("Side to move: " + turn);
                 return lines.join("\n");
-            } catch (e) {
-                return "";
-            }
-        }
-
-        function buildPlanHint(evalVal, cont) {
-            const evalNum = parseFloat(evalVal);
-            const isMate = /mate|#/i.test(String(evalVal)) || /#/.test(cont || "");
-            if (isMate) return "Forced mate sequence exists.";
-            if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) return "Large advantage — concrete attack or decisive material/positional gain.";
-            if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) return "Clear plus — lasting pressure or structural advantage.";
-            return "Small edge or equal — positional idea.";
-        }
-
-        function parseEngineLine(data) {
-            if (!data || data.error || (data.text && /wrong FEN|Cannot evaluate/i.test(data.text))) {
-                return null;
-            }
-            let cont = "";
-            if (data.continuationArr && data.continuationArr.length) {
-                cont = data.continuationArr.slice(0, 10).join(" ");
-            } else if (data.continuation) {
-                cont = String(data.continuation).split(" ").slice(0, 10).join(" ");
-            } else if (data.pv && Array.isArray(data.pv)) {
-                cont = data.pv.slice(0, 10).join(" ");
-            } else if (data.moves && Array.isArray(data.moves)) {
-                cont = data.moves.slice(0, 10).join(" ");
-            }
-            const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
-            return {
-                eval: data.eval,
-                san: firstMove,
-                continuation: cont,
-                text: data.text || "",
-                planHint: buildPlanHint(data.eval, cont),
-                invalid: false
-            };
-        }
-
-        // Convert UCI move list to SAN from a starting FEN (chess.js)
-        function uciListToSan(fen, uciMoves, maxPlies) {
-            const out = [];
-            try {
-                const ch = new Chess();
-                if (!ch.load(fen)) return out;
-                const limit = maxPlies || 6;
-                for (let i = 0; i < uciMoves.length && out.length < limit; i++) {
-                    const u = String(uciMoves[i] || "").trim();
-                    if (!u || u.length < 4) continue;
-                    const from = u.slice(0, 2);
-                    const to = u.slice(2, 4);
-                    const promo = u.length > 4 ? u[4] : undefined;
-                    const mv = ch.move({ from, to, promotion: promo || "q" });
-                    if (!mv) break;
-                    out.push(mv.san);
-                }
-            } catch (e) {}
-            return out;
-        }
-
-        function formatPvNumberedSans(sans, fen) {
-            const parts = [];
-            try {
-                const bits = (fen || "").split(/\s+/);
-                let fullMove = parseInt(bits[5], 10);
-                if (isNaN(fullMove) || fullMove < 1) fullMove = 1;
-                let isWhite = bits[1] !== "b";
-                for (let i = 0; i < sans.length; i++) {
-                    if (isWhite) parts.push(fullMove + ". " + sans[i]);
-                    else parts.push(sans[i]);
-                    if (!isWhite) fullMove++;
-                    isWhite = !isWhite;
-                }
-            } catch (e) {
-                return sans.join(" ");
-            }
-            return parts.join(" ");
-        }
-
-        // MultiPV via WebSocket (REST only returns 1 line). variants max 5 on chess-api.com
-        async function getEngineRefutation(fen, retries = 2) {
-            if (!isValidFen(fen)) {
-                return { lines: [], invalid: true, text: "INVALID FEN" };
-            }
-            const wantVariants = 5; // API max (use weakest as "careless reply" to reveal threats)
-            const depthWant = 15;
-            const thinkMs = 120;
-
-            for (let attempt = 0; attempt <= retries; attempt++) {
-                try {
-                    const result = await new Promise((resolve) => {
-                        let settled = false;
-                        const byKey = {}; // first-move UCI or SAN -> best depth message
-                        let ws;
-                        const finish = () => {
-                            if (settled) return;
-                            settled = true;
-                            try { ws && ws.close(); } catch (e) {}
-                            const rows = Object.values(byKey);
-                            // Sort: best for side-to-move first
-                            const bits = fen.split(/\s+/);
-                            const blackToMove = bits[1] === "b";
-                            rows.sort((a, b) => {
-                                const ea = typeof a.eval === "number" ? a.eval : 0;
-                                const eb = typeof b.eval === "number" ? b.eval : 0;
-                                // White POV eval: Black wants lower, White wants higher
-                                return blackToMove ? (ea - eb) : (eb - ea);
-                            });
-                            const lines = rows.slice(0, wantVariants).map((data) => {
-                                const uciCont = Array.isArray(data.continuationArr)
-                                    ? data.continuationArr
-                                    : [];
-                                // first move: prefer SAN from API, else convert UCI
-                                let firstSan = data.san || "";
-                                if (!firstSan && data.move && data.move.length >= 4) {
-                                    firstSan = uciListToSan(fen, [data.move], 1)[0] || data.move;
-                                }
-                                const restSan = uciListToSan(
-                                    // position after first move
-                                    (() => {
-                                        try {
-                                            const ch = new Chess();
-                                            ch.load(fen);
-                                            if (firstSan) ch.move(firstSan, { sloppy: true });
-                                            else if (data.move) {
-                                                const u = data.move;
-                                                ch.move({ from: u.slice(0,2), to: u.slice(2,4), promotion: u[4] || "q" });
-                                            }
-                                            return ch.fen();
-                                        } catch (e) { return fen; }
-                                    })(),
-                                    uciCont,
-                                    10
-                                );
-                                const allSan = [firstSan].concat(restSan).filter(Boolean).slice(0, 8);
-                                const numbered = formatPvNumberedSans(allSan, fen);
-                                return {
-                                    eval: data.eval,
-                                    san: firstSan,
-                                    continuation: restSan.join(" "),
-                                    numbered,
-                                    allSan,
-                                    text: data.text || "",
-                                    planHint: buildPlanHint(data.eval, restSan.join(" ")),
-                                    invalid: false
-                                };
-                            });
-                            if (!lines.length) {
-                                resolve({ lines: [], invalid: true, text: "No engine lines" });
-                                return;
-                            }
-                            const top = lines[0];
-                            resolve({
-                                lines,
-                                eval: top.eval,
-                                san: top.san,
-                                continuation: top.continuation,
-                                text: top.text,
-                                planHint: top.planHint,
-                                invalid: false
-                            });
-                        };
-
-                        const timer = setTimeout(finish, 4500);
-                        try {
-                            ws = new WebSocket("wss://chess-api.com/v1");
-                        } catch (e) {
-                            clearTimeout(timer);
-                            resolve(null);
-                            return;
-                        }
-                        ws.onopen = () => {
-                            ws.send(JSON.stringify({
-                                fen,
-                                variants: wantVariants,
-                                depth: depthWant,
-                                maxThinkingTime: thinkMs
-                            }));
-                        };
-                        ws.onmessage = (ev) => {
-                            try {
-                                const data = JSON.parse(ev.data);
-                                if (data.type !== "move" && data.type !== "bestmove") return;
-                                const key = data.move || data.san || data.lan;
-                                if (!key) return;
-                                const prev = byKey[key];
-                                if (!prev || (data.depth || 0) >= (prev.depth || 0)) {
-                                    byKey[key] = data;
-                                }
-                                // enough distinct lines at decent depth
-                                const deep = Object.values(byKey).filter(x => (x.depth || 0) >= 10);
-                                if (deep.length >= wantVariants && data.type === "bestmove") {
-                                    clearTimeout(timer);
-                                    setTimeout(finish, 200);
-                                }
-                            } catch (e) {}
-                        };
-                        ws.onerror = () => {
-                            clearTimeout(timer);
-                            finish();
-                        };
-                        ws.onclose = () => {
-                            clearTimeout(timer);
-                            finish();
-                        };
-                    });
-
-                    if (result && !result.invalid && result.lines && result.lines.length) {
-                        return result;
-                    }
-                } catch (e) {
-                    if (attempt === retries) return null;
-                    await delay(800);
-                }
-            }
-            return null;
-        }
-
-
-        // Full board inventory + features from FEN so AI never invents pieces from sibling lines
-        function describePositionFromFen(fen) {
-            if (!fen || !isValidFen(fen)) return "";
-            try {
-                const parts = fen.trim().split(/\s+/);
-                const board = parts[0];
-                const turn = parts[1] === "w" ? "White" : "Black";
-                const castling = parts[2] || "-";
-                const rows = board.split("/");
-                const names = {
-                    K: "White king", Q: "White queen", R: "White rook", B: "White bishop", N: "White knight", P: "White pawn",
-                    k: "Black king", q: "Black queen", r: "Black rook", b: "Black bishop", n: "Black knight", p: "Black pawn"
-                };
-                let whiteKing = "", blackKing = "";
-                const pieces = [];
-                const byType = {
-                    whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [],
-                    whiteRooks: [], blackRooks: [], whiteQueens: [], blackQueens: [],
-                    whitePawns: [], blackPawns: []
-                };
-                for (let r = 0; r < 8; r++) {
-                    let file = 0;
-                    for (const ch of rows[r]) {
-                        if (ch >= "1" && ch <= "8") { file += parseInt(ch); continue; }
-                        const sq = String.fromCharCode(97 + file) + (8 - r);
-                        if (ch === "K") whiteKing = sq;
-                        if (ch === "k") blackKing = sq;
-                        if (names[ch]) pieces.push(`${names[ch]} on ${sq}`);
-                        if (ch === "B") byType.whiteBishops.push(sq);
-                        if (ch === "b") byType.blackBishops.push(sq);
-                        if (ch === "N") byType.whiteKnights.push(sq);
-                        if (ch === "n") byType.blackKnights.push(sq);
-                        if (ch === "R") byType.whiteRooks.push(sq);
-                        if (ch === "r") byType.blackRooks.push(sq);
-                        if (ch === "Q") byType.whiteQueens.push(sq);
-                        if (ch === "q") byType.blackQueens.push(sq);
-                        if (ch === "P") byType.whitePawns.push(sq);
-                        if (ch === "p") byType.blackPawns.push(sq);
-                        file++;
-                    }
-                }
-                let notes = [];
-                notes.push(`Side to move: ${turn}`);
-                if (whiteKing) notes.push(`White king on ${whiteKing}`);
-                if (blackKing) notes.push(`Black king on ${blackKing}`);
-                if (whiteKing && whiteKing[0] === "e" && (castling.includes("K") || castling.includes("Q"))) notes.push("White still uncastled");
-                if (blackKing && blackKing[0] === "e" && (castling.includes("k") || castling.includes("q"))) notes.push("Black still uncastled");
-                if (byType.blackBishops.length) notes.push(`Black bishops on ${byType.blackBishops.join(",")}`);
-                else notes.push("NO black bishop on the board");
-                if (byType.whiteBishops.length) notes.push(`White bishops on ${byType.whiteBishops.join(",")}`);
-                else notes.push("NO white bishop on the board");
-                if (byType.blackKnights.length) notes.push(`Black knights on ${byType.blackKnights.join(",")}`);
-                else notes.push("NO black knight on the board");
-                if (byType.whiteKnights.length) notes.push(`White knights on ${byType.whiteKnights.join(",")}`);
-                else notes.push("NO white knight on the board");
-                if (byType.blackQueens.length) notes.push(`Black queen on ${byType.blackQueens.join(",")}`);
-                if (byType.whiteQueens.length) notes.push(`White queen on ${byType.whiteQueens.join(",")}`);
-                if (byType.blackRooks.length) notes.push(`Black rooks on ${byType.blackRooks.join(",")}`);
-                if (byType.whiteRooks.length) notes.push(`White rooks on ${byType.whiteRooks.join(",")}`);
-                // compact piece list for verification — AI must use ONLY these pieces
-                notes.push(`FULL PIECE LIST (use only these): ${pieces.join("; ")}`);
-                return notes.join(" | ");
-            } catch (e) {
-                return "";
-            }
+            } catch (e) { return ""; }
         }
 
         function switchTab(tab) {
@@ -812,43 +959,32 @@
             r.className = tab === 'reassembler' ? 'px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg' : 'px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white';
         }
 
+        /* ============================================================
+           PGN FRAGMENTER (unchanged logic, same behaviour)
+           ============================================================ */
         function processPgn(isLoad = false) {
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
-
-            // Tokenize: keep ( ) move-numbers NAGs SANs; drop headers/comments as skipped tokens
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[O0]-[O0](?:-[O0])?[+#]?|[a-hRNBQK][a-hRNBQK1-8x\-=+#]*[?!]*|[a-h][1-8](?:=[RNBQ])?[+#]?[?!]*)/g) || [];
-            
+
             let chunks = [];
             let moveNumber = 0;
             let variationLevel = 0;
-            let depthPlyCounts = { 0: 0 }; 
+            let depthPlyCounts = { 0: 0 };
             let lastChunkAtLevel = {};
 
             let chess = new Chess();
             const startFen = chess.fen();
 
-            // Ply stack = sequence of moves on the CURRENT line (main or variation).
-            // Each entry: { san, fenBefore, fenAfter }
-            // On '(': save stack, undo last ply (variation replaces that move), continue.
-            // On ')': restore saved stack so deeper nests and siblings keep correct FENs.
             let plyStack = [];
-            let branchStack = []; // { plies, level }
+            let branchStack = [];
 
             const normalizeFen = (f) => {
                 if (!f || typeof f !== "string") return f;
-                try {
-                    const tmp = new Chess();
-                    if (tmp.load(f)) return tmp.fen();
-                } catch (e) {}
+                try { const tmp = new Chess(); if (tmp.load(f)) return tmp.fen(); } catch (e) {}
                 return f;
             };
-
-            const fenAtTip = () => {
-                if (plyStack.length === 0) return startFen;
-                return plyStack[plyStack.length - 1].fenAfter;
-            };
-
+            const fenAtTip = () => (plyStack.length === 0 ? startFen : plyStack[plyStack.length - 1].fenAfter);
             const loadTip = () => {
                 const f = fenAtTip();
                 const ok = chess.load(f);
@@ -857,53 +993,36 @@
             };
 
             pgnTokens.forEach((token, index) => {
-                if (token.startsWith('[') || token.startsWith('{')) return; // skip headers / comments
+                if (token.startsWith('[') || token.startsWith('{')) return;
 
                 if (token === "(") {
-                    // Save full line state (including the move this variation replaces)
                     branchStack.push({
                         plies: plyStack.map(p => ({ san: p.san, fenBefore: p.fenBefore, fenAfter: p.fenAfter })),
                         level: variationLevel
                     });
-                    // Variation = alternative to the last move → undo that ply
-                    if (plyStack.length > 0) {
-                        plyStack.pop();
-                    }
+                    if (plyStack.length > 0) plyStack.pop();
                     loadTip();
                     variationLevel++;
                     depthPlyCounts[variationLevel] = 0;
                     return;
                 }
                 if (token === ")") {
-                    if (lastChunkAtLevel[variationLevel]) {
-                        lastChunkAtLevel[variationLevel].isVariationEnd = true;
-                    }
+                    if (lastChunkAtLevel[variationLevel]) lastChunkAtLevel[variationLevel].isVariationEnd = true;
                     const saved = branchStack.pop();
-                    if (saved) {
-                        plyStack = saved.plies;
-                        variationLevel = saved.level;
-                    } else {
-                        variationLevel = Math.max(0, variationLevel - 1);
-                    }
+                    if (saved) { plyStack = saved.plies; variationLevel = saved.level; }
+                    else variationLevel = Math.max(0, variationLevel - 1);
                     loadTip();
                     return;
                 }
-                
                 const isMoveNum = /^\d+\./.test(token);
-                if (isMoveNum) {
-                    moveNumber = parseInt(token, 10);
-                    return;
-                }
-
-                if (token.startsWith('$')) return; // NAG handled via look-ahead on moves
+                if (isMoveNum) { moveNumber = parseInt(token, 10); return; }
+                if (token.startsWith('$')) return;
 
                 const isMove = /^([a-hRNBQK]|[O0]-)/.test(token);
-                
                 if (isMove) {
                     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
                     const fenBefore = normalizeFen(loadTip());
 
-                    // Clean SAN for chess.js
                     let cleanMove = token
                         .replace(/\$\d+/g, '')
                         .replace(/[!?]+/g, '')
@@ -912,7 +1031,6 @@
                         .replace(/[^a-zA-Z0-9=\+\-#O]/g, '')
                         .trim();
                     if (/=$/.test(cleanMove)) cleanMove = cleanMove.replace(/=$/, '');
-                    // Castling: accept 0-0 as O-O
                     cleanMove = cleanMove.replace(/0/g, 'O');
 
                     let moveObj = chess.move(cleanMove, { sloppy: true });
@@ -933,8 +1051,7 @@
                         sanUsed = moveObj.san;
                         plyStack.push({ san: sanUsed, fenBefore, fenAfter });
                     } else {
-                        // Failed parse: do not push a fake ply (keeps later FENs correct)
-                        sanUsed = token.replace(/[!?$±∓∞].*$/,'').replace(/[=\/+\-]+$/,'').trim();
+                        sanUsed = token.replace(/[!?$±∓∞].*$/, '').replace(/[=\/+\-]+$/, '').trim();
                         console.warn("Move failed to parse:", token, "→ tried:", cleanMove, "at", fenBefore);
                     }
 
@@ -945,21 +1062,15 @@
                         /^[!?]+$/.test(nextToken) ||
                         /^[\+\-=±∓∞\/]+$/.test(nextToken) ||
                         /[=+\-±∓]\/[∞=+\-±∓]/.test(nextToken)
-                    )) {
-                        evalSymbol = ` ${nextToken}`;
-                    }
+                    )) evalSymbol = " " + nextToken;
 
                     const isFirstMoveOfVariation = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
                     const pathArray = plyStack.map(p => p.san);
-                    const pathStr = pathArray.length > 12
-                        ? "..." + pathArray.slice(-12).join(" ")
-                        : pathArray.join(" ");
-                    const last3 = pathArray.length > 1
-                        ? pathArray.slice(Math.max(0, pathArray.length - 4), pathArray.length - 1)
-                        : [];
+                    const pathStr = pathArray.length > 12 ? "..." + pathArray.slice(-12).join(" ") : pathArray.join(" ");
+                    const last3 = pathArray.length > 1 ? pathArray.slice(Math.max(0, pathArray.length - 4), pathArray.length - 1) : [];
 
                     let newChunk = {
-                        id: `CHK_${chunks.length}_M${moveNumber}_V${variationLevel}`,
+                        id: "CHK_" + chunks.length + "_M" + moveNumber + "_V" + variationLevel,
                         target: token + evalSymbol,
                         moveNum: moveNumber,
                         tokenIndex: index,
@@ -975,17 +1086,13 @@
                         last3Moves: last3,
                         san: sanUsed
                     };
-
                     chunks.push(newChunk);
                     lastChunkAtLevel[variationLevel] = newChunk;
                 }
             });
 
-            if (lastChunkAtLevel[0]) {
-                lastChunkAtLevel[0].isVariationEnd = true;
-            }
+            if (lastChunkAtLevel[0]) lastChunkAtLevel[0].isVariationEnd = true;
 
-            // Post-process: next 5–7 moves of THIS variation only, keeping GM signs (!?/+- etc.)
             for (let i = 0; i < chunks.length; i++) {
                 const c = chunks[i];
                 const nextSans = [];
@@ -994,10 +1101,7 @@
                 while (j < chunks.length && nextFull.length < 4) {
                     const nxt = chunks[j];
                     if (nxt.variationLevel < c.variationLevel) break;
-                    if (nxt.variationLevel > c.variationLevel) {
-                        j++;
-                        continue;
-                    }
+                    if (nxt.variationLevel > c.variationLevel) { j++; continue; }
                     if (nxt.isVariationStart) break;
                     nextSans.push(nxt.san || nxt.target.replace(/[!?$].*$/, '').trim());
                     nextFull.push((nxt.target || nxt.san || "").trim());
@@ -1010,19 +1114,13 @@
             globalChunks = chunks;
             document.getElementById('workspace').classList.remove('hidden');
             document.getElementById('copy-btn').classList.remove('hidden');
-            
-            selStart = null;
-            selEnd = null;
-            reviewIndex = null;
+            selStart = null; selEnd = null; reviewIndex = null;
             board.position('start', false);
             document.getElementById('fen-output').value = "";
             document.getElementById('batch-review').classList.add('hidden');
             userNotes = {};
-            const mn = document.getElementById('move-note');
-            if (mn) mn.value = "";
-            const nsc = document.getElementById('notes-saved-count');
-            if (nsc) nsc.innerText = "0 notes saved";
-
+            const mn = document.getElementById('move-note'); if (mn) mn.value = "";
+            const nsc = document.getElementById('notes-saved-count'); if (nsc) nsc.innerText = "0 notes saved";
             updateUI();
             saveState();
         }
@@ -1032,7 +1130,6 @@
             const endIdx = selEnd !== null ? selEnd : selStart;
             const rangeIndices = [];
             for (let i = selStart; i <= endIdx; i++) rangeIndices.push(i);
-
             const mustInclude = new Set();
             mustInclude.add(selStart);
             mustInclude.add(endIdx);
@@ -1050,7 +1147,9 @@
             return Array.from(mustInclude).sort((a, b) => a - b);
         }
 
-
+        /* ============================================================
+           VOICE NOTES
+           ============================================================ */
         let voiceRecognition = null;
         let voiceListening = false;
 
@@ -1060,20 +1159,17 @@
             const icon = document.getElementById('voice-note-icon');
             const noteEl = document.getElementById('move-note');
             const btn = document.getElementById('btn-voice-note');
-
             if (!window.isSecureContext && location.protocol !== 'https:' && location.hostname !== 'localhost') {
                 if (status) status.innerText = "Mic needs HTTPS. Open the site with https://";
                 alert("Microphone needs a secure (https) page.");
                 return;
             }
-
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SR) {
-                if (status) status.innerText = "This browser has no speech recognition. Use Chrome on Android, or type the note.";
-                alert("Speech not supported here. Use Google Chrome, or type while looking at the board.");
+                if (status) status.innerText = "This browser has no speech recognition.";
+                alert("Speech not supported here. Use Google Chrome, or type the note.");
                 return;
             }
-
             if (voiceListening && voiceRecognition) {
                 voiceListening = false;
                 try { voiceRecognition.stop(); } catch (e) {}
@@ -1083,19 +1179,14 @@
                 if (status) status.innerText = "Stopped. Note kept.";
                 return;
             }
-
-            // Fresh instance each time (more reliable on mobile)
             try { if (voiceRecognition) voiceRecognition.abort(); } catch (e) {}
             voiceRecognition = new SR();
             voiceRecognition.lang = (navigator.language || "en-US").indexOf("en") === 0 ? (navigator.language || "en-US") : "en-US";
-            // continuous=false is more reliable on Android Chrome; we restart while listening
             voiceRecognition.continuous = false;
             voiceRecognition.interimResults = true;
             voiceRecognition.maxAlternatives = 1;
-
             let finalText = (noteEl && noteEl.value) ? noteEl.value.trim() : "";
             voiceListening = true;
-
             const setListeningUI = () => {
                 if (label) label.innerText = "Stop";
                 if (icon) icon.innerText = "⏹";
@@ -1103,53 +1194,36 @@
                 if (status) status.innerText = "Listening… speak now (look at the board).";
             };
             setListeningUI();
-
             voiceRecognition.onstart = () => setListeningUI();
-
             voiceRecognition.onresult = (event) => {
                 let interim = "";
                 for (let i = event.resultIndex; i < event.results.length; i++) {
                     const t = event.results[i][0].transcript;
-                    if (event.results[i].isFinal) {
-                        finalText = (finalText ? finalText + " " : "") + t.trim();
-                    } else {
-                        interim += t;
-                    }
+                    if (event.results[i].isFinal) finalText = (finalText ? finalText + " " : "") + t.trim();
+                    else interim += t;
                 }
                 if (noteEl) {
                     noteEl.value = (finalText + (interim ? " " + interim : "")).trim();
                     if (typeof saveCurrentMoveNote === "function") saveCurrentMoveNote();
                 }
             };
-
             voiceRecognition.onerror = (event) => {
                 const err = (event && event.error) || "unknown";
-                // not-allowed = permission denied; no-speech = try again
                 if (err === "not-allowed" || err === "service-not-allowed") {
                     voiceListening = false;
                     if (label) label.innerText = "Speak";
                     if (icon) icon.innerText = "🎤";
                     if (btn) btn.classList.remove('ring-2', 'ring-emerald-400');
-                    if (status) status.innerText = "Mic blocked. Allow microphone for this site in Chrome settings, then try again.";
+                    if (status) status.innerText = "Mic blocked. Allow microphone for this site.";
                     return;
                 }
-                if (err === "no-speech") {
-                    if (status) status.innerText = "No speech heard — tap Speak and try again.";
-                    return;
-                }
+                if (err === "no-speech") { if (status) status.innerText = "No speech heard — tap Speak and try again."; return; }
                 if (status) status.innerText = "Voice: " + err + " — you can still type.";
             };
-
             voiceRecognition.onend = () => {
-                // Auto-restart while user still wants to listen (mobile often ends after one phrase)
                 if (voiceListening) {
-                    try {
-                        voiceRecognition.start();
-                        if (status) status.innerText = "Still listening… tap Stop when done.";
-                        return;
-                    } catch (e) {
-                        voiceListening = false;
-                    }
+                    try { voiceRecognition.start(); if (status) status.innerText = "Still listening… tap Stop when done."; return; }
+                    catch (e) { voiceListening = false; }
                 }
                 voiceListening = false;
                 if (label) label.innerText = "Speak";
@@ -1158,10 +1232,8 @@
                 if (status) status.innerText = finalText ? "Note saved for this move." : "Ready — tap Speak.";
                 if (typeof saveCurrentMoveNote === "function") saveCurrentMoveNote();
             };
-
-            try {
-                voiceRecognition.start();
-            } catch (e) {
+            try { voiceRecognition.start(); }
+            catch (e) {
                 voiceListening = false;
                 if (status) status.innerText = "Could not start mic: " + (e.message || e);
                 if (label) label.innerText = "Speak";
@@ -1178,8 +1250,7 @@
             else delete userNotes[c.id];
             const n = Object.keys(userNotes).length;
             const el = document.getElementById('notes-saved-count');
-            if (el) el.innerText = n === 0 ? "0 notes saved" : `${n} note${n > 1 ? "s" : ""} saved`;
-            // mark list items that have notes
+            if (el) el.innerText = n === 0 ? "0 notes saved" : n + " note" + (n > 1 ? "s" : "") + " saved";
             document.querySelectorAll('#review-move-list .review-item').forEach(el2 => {
                 const idx = parseInt(el2.dataset.idx, 10);
                 const id = globalChunks[idx]?.id;
@@ -1194,21 +1265,16 @@
             }
             return engineData.lines.slice(0, 8).map((ln, i) => {
                 const ev = (ln.eval !== undefined && ln.eval !== null) ? String(ln.eval) : '?';
-                // Prefer numbered SAN if present (from WebSocket multipv)
                 let moves = '';
-                if (ln.numbered) {
-                    moves = String(ln.numbered).split(/\s+/).slice(0, 12).join(' ');
-                } else if (ln.allSan && ln.allSan.length) {
-                    moves = ln.allSan.slice(0, 4).join(' ');
-                } else {
-                    moves = `${ln.san || ''} ${ln.continuation || ''}`.trim().split(/\s+/).filter(Boolean).slice(0, 4).join(' ');
-                }
+                if (ln.numbered) moves = String(ln.numbered).split(/\s+/).slice(0, 12).join(' ');
+                else if (ln.allSan && ln.allSan.length) moves = ln.allSan.slice(0, 4).join(' ');
+                else moves = ((ln.san || '') + ' ' + (ln.continuation || '')).trim().split(/\s+/).filter(Boolean).slice(0, 4).join(' ');
                 const rank = i === 0 ? 'text-emerald-400' : 'text-slate-300';
-                return `<div class="${rank}"><span class="text-slate-500">#${i + 1}</span> <span class="gold-text font-bold">${ev}</span> <span>${moves || '—'}</span></div>`;
+                return '<div class="' + rank + '"><span class="text-slate-500">#' + (i + 1) + '</span> <span class="gold-text font-bold">' + ev + '</span> <span>' + (moves || '—') + '</span></div>';
             }).join('');
         }
 
-        async function loadEngineForPanel(fen, linesElId, statusElId, tokenRef) {
+        async function loadEngineForPanel(fen, linesElId, statusElId, tokenRef, opts = {}) {
             const linesEl = document.getElementById(linesElId);
             const statusEl = document.getElementById(statusElId);
             if (!linesEl || !statusEl) return;
@@ -1218,16 +1284,10 @@
                 return;
             }
             const myToken = ++tokenRef.n;
-            if (engineCache[fen]) {
-                linesEl.innerHTML = formatEngineLines(engineCache[fen]);
-                statusEl.innerText = 'cached';
-                return;
-            }
             linesEl.innerHTML = '<p class="text-slate-500"><span class="spinner"></span>Analyzing…</p>';
-            statusEl.innerText = 'depth 18…';
-            const data = await getEngineRefutation(fen);
-            if (myToken !== tokenRef.n) return; // stale
-            if (data && !data.invalid) engineCache[fen] = data;
+            statusEl.innerText = 'depth ' + (opts.depth || 16) + '…';
+            const data = await getEngineMultiPV(fen, opts);
+            if (myToken !== tokenRef.n) return;
             linesEl.innerHTML = formatEngineLines(data);
             statusEl.innerText = (data && !data.invalid) ? 'ready' : 'failed';
         }
@@ -1243,24 +1303,21 @@
                 const m = chess.move(path[i], { sloppy: true });
                 if (!m) break;
                 const moveNum = Math.floor(i / 2) + 1;
-                const label = (i % 2 === 0) ? `${moveNum}. ${m.san}` : `${moveNum}... ${m.san}`;
+                const label = (i % 2 === 0) ? moveNum + ". " + m.san : moveNum + "... " + m.san;
                 positions.push({ fen: chess.fen(), label, ply: i + 1 });
-                // focus = position AFTER the reviewed move
                 if (i === path.length - 1) focusIdx = positions.length - 1;
             }
-            // append next moves of this variation (for stepping forward)
             const nextArr = (c.nextMoves && c.nextMoves.length) ? c.nextMoves : [];
             for (let i = 0; i < nextArr.length; i++) {
                 const m = chess.move(nextArr[i], { sloppy: true });
                 if (!m) break;
                 const ply = path.length + i;
                 const moveNum = Math.floor(ply / 2) + 1;
-                const label = (ply % 2 === 0) ? `${moveNum}. ${m.san}` : `${moveNum}... ${m.san}`;
+                const label = (ply % 2 === 0) ? moveNum + ". " + m.san : moveNum + "... " + m.san;
                 positions.push({ fen: chess.fen(), label, ply: ply + 1 });
             }
-            // if path was empty, try fenAfter as focus
             if (path.length === 0 && c.fenAfter && isValidFen(c.fenAfter)) {
-                positions.push({ fen: c.fenAfter, label: `${c.moveNum}. ${c.target}`, ply: 1 });
+                positions.push({ fen: c.fenAfter, label: c.moveNum + ". " + c.target, ply: 1 });
                 focusIdx = positions.length - 1;
             }
             return { positions, focusIdx };
@@ -1274,15 +1331,15 @@
             document.getElementById('review-move-label').innerText = pos.label || "";
             document.getElementById('review-fen').innerText = fen || "";
             const plyLabel = document.getElementById('review-ply-label');
-            if (plyLabel) plyLabel.innerText = `${reviewLineIdx + 1} / ${reviewLine.length}`;
+            if (plyLabel) plyLabel.innerText = (reviewLineIdx + 1) + " / " + reviewLine.length;
             const prevBtn = document.getElementById('btn-review-prev');
             const nextBtn = document.getElementById('btn-review-next');
             if (prevBtn) prevBtn.disabled = reviewLineIdx <= 0;
             if (nextBtn) nextBtn.disabled = reviewLineIdx >= reviewLine.length - 1;
-            if (fen && isValidFen(fen) && reviewBoard) {
-                reviewBoard.position(fen, false);
-            }
-            loadEngineForPanel(fen, 'review-engine-lines', 'review-engine-status', { get n() { return reviewEngineToken; }, set n(v) { reviewEngineToken = v; } });
+            if (fen && isValidFen(fen) && reviewBoard) reviewBoard.position(fen, false);
+            loadEngineForPanel(fen, 'review-engine-lines', 'review-engine-status',
+                { get n() { return reviewEngineToken; }, set n(v) { reviewEngineToken = v; } },
+                { depth: 14, multipv: 5 });
         }
 
         function reviewStep(delta) {
@@ -1292,7 +1349,6 @@
             reviewLineIdx = next;
             applyReviewLinePosition();
         }
-
 
         function stopVoiceIfNeeded() {
             if (voiceListening && voiceRecognition) {
@@ -1317,7 +1373,7 @@
             }
             const n = Object.keys(userNotes).length;
             const el = document.getElementById('notes-saved-count');
-            if (el) el.innerText = n === 0 ? "0 notes saved" : `${n} note${n > 1 ? "s" : ""} saved`;
+            if (el) el.innerText = n === 0 ? "0 notes saved" : n + " note" + (n > 1 ? "s" : "") + " saved";
             document.querySelectorAll('#review-move-list .review-item').forEach(el2 => {
                 const idx = parseInt(el2.dataset.idx, 10);
                 const id = globalChunks[idx]?.id;
@@ -1340,7 +1396,7 @@
                 return;
             }
             const pos = indices.indexOf(reviewIndex);
-            if (lab) lab.innerText = pos >= 0 ? `${pos + 1} / ${indices.length}` : "—";
+            if (lab) lab.innerText = pos >= 0 ? (pos + 1) + " / " + indices.length : "—";
             if (prevBtn) prevBtn.disabled = pos <= 0;
             if (nextBtn) nextBtn.disabled = pos < 0 || pos >= indices.length - 1;
         }
@@ -1354,10 +1410,7 @@
             if (next < 0 || next >= indices.length) return;
             stopVoiceIfNeeded();
             showReviewPosition(indices[next]);
-            // keep next move button in view
-            try {
-                document.getElementById('btn-batch-next')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-            } catch (e) {}
+            try { document.getElementById('btn-batch-next')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {}
         }
 
         function signHintFromTarget(target) {
@@ -1368,7 +1421,6 @@
             if (/!!/.test(t)) return "GM: brilliant (!!) — explain why it is strong";
             if (/\?/.test(t)) return "GM: mistake (?) — explain why it is weaker";
             if (/!/.test(t)) return "GM: good (!) — explain the plus";
-            // Compensation / unclear / equality (order matters)
             if (/compensation|=\/∞|∞\/=|=\/\∞/i.test(t) || /\$15/.test(t)) return "GM: with compensation — say who has compensation and for what";
             if (/∞|unclear|\$13/i.test(t)) return "GM: unclear — e.g. 'unclear, but easier for Black to play'";
             if (/\$10|\$11|\$12|(^|[^\/])=(?!=)/.test(t)) return "GM: equal (=) — e.g. 'equal, but easier for Black to play'";
@@ -1385,7 +1437,6 @@
         }
 
         function showReviewPosition(chunkIndex) {
-            // save note for previous move before switching
             saveCurrentMoveNote();
             stopVoiceIfNeeded();
             reviewIndex = chunkIndex;
@@ -1395,9 +1446,8 @@
             if (noteEl) noteEl.value = userNotes[c.id] || "";
             const signEl = document.getElementById('review-sign-hint');
             if (signEl) signEl.innerText = signHintFromTarget(c.target);
-            // Always show the batch move + signs on the label (not only ply label)
             const moveLab = document.getElementById('review-move-label');
-            if (moveLab) moveLab.innerText = `${c.moveNum}. ${c.target}`;
+            if (moveLab) moveLab.innerText = c.moveNum + ". " + c.target;
             document.querySelectorAll('#review-move-list .review-item').forEach(el => {
                 el.classList.toggle('selected-start', parseInt(el.dataset.idx, 10) === chunkIndex);
             });
@@ -1405,38 +1455,31 @@
             reviewLine = built.positions;
             reviewLineIdx = built.focusIdx;
             applyReviewLinePosition();
-            // Restore batch move label after ply apply (ply may overwrite)
-            if (moveLab) moveLab.innerText = `${c.moveNum}. ${c.target}`;
+            if (moveLab) moveLab.innerText = c.moveNum + ". " + c.target;
             if (signEl) signEl.innerText = signHintFromTarget(c.target);
             updateBatchStepLabel();
         }
 
         function updateBatchReview() {
             const panel = document.getElementById('batch-review');
-            if (selStart === null || selEnd === null) {
-                panel.classList.add('hidden');
-                return;
-            }
+            if (selStart === null || selEnd === null) { panel.classList.add('hidden'); return; }
             const indices = getSelectedIndices();
             panel.classList.remove('hidden');
-            document.getElementById('batch-count').innerText = `${indices.length} positions`;
+            document.getElementById('batch-count').innerText = indices.length + " positions";
             const list = document.getElementById('review-move-list');
             list.innerHTML = "";
             indices.forEach(i => {
                 const c = globalChunks[i];
                 const div = document.createElement('div');
                 div.className = 'review-item chunk-card glass p-2 rounded-lg cursor-pointer';
-                if (userNotes[c.id]) {
-                    div.className += ' ring-1 ring-yellow-500';
-                }
+                if (userNotes[c.id]) div.className += ' ring-1 ring-yellow-500';
                 div.dataset.idx = i;
-                div.innerHTML = `<p class="text-[9px] gold-text font-bold">${c.id}</p><p class="text-xs font-semibold truncate">${c.moveNum}. ${c.target}</p>`;
+                div.innerHTML = '<p class="text-[9px] gold-text font-bold">' + c.id + '</p><p class="text-xs font-semibold truncate">' + c.moveNum + '. ' + c.target + '</p>';
                 div.onclick = () => showReviewPosition(i);
                 list.appendChild(div);
             });
             if (indices.length) showReviewPosition(indices[0]);
             setTimeout(() => { if (reviewBoard) reviewBoard.resize(); }, 50);
-            // autosave note while typing
             const noteEl = document.getElementById('move-note');
             if (noteEl && !noteEl._bound) {
                 noteEl.addEventListener('input', saveCurrentMoveNote);
@@ -1446,14 +1489,13 @@
 
         function selectChunk(index) {
             if (selStart === null || (selStart !== null && selEnd !== null)) {
-                selStart = index;
-                selEnd = null;
+                selStart = index; selEnd = null;
                 let fen = globalChunks[index].fenAfter || globalChunks[index].fen;
                 document.getElementById('fen-output').value = fen;
-                if (isValidFen(fen)) {
-                    board.position(fen, false);
-                }
-                loadEngineForPanel(fen, 'main-engine-lines', 'main-engine-status', { get n() { return mainEngineToken; }, set n(v) { mainEngineToken = v; } });
+                if (isValidFen(fen)) board.position(fen, false);
+                loadEngineForPanel(fen, 'main-engine-lines', 'main-engine-status',
+                    { get n() { return mainEngineToken; }, set n(v) { mainEngineToken = v; } },
+                    { depth: 16, multipv: 5 });
                 document.getElementById('batch-review').classList.add('hidden');
             } else {
                 selEnd = Math.max(selStart, index);
@@ -1463,45 +1505,40 @@
             updateUI();
         }
 
+        /* ============================================================
+           COPY BATCH — now with tactical reports
+           ============================================================ */
         async function copySelectedBatch() {
             if (selStart === null || selEnd === null) {
                 alert("Please click on a starting move and an ending move first!");
                 return;
             }
-            
             const btn = document.getElementById('copy-btn');
             const btnText = document.getElementById('copy-text');
             const statsText = document.getElementById('stats');
             const progressFill = document.getElementById('progress-fill');
-            
             btn.classList.add('opacity-80', 'cursor-not-allowed');
             btn.disabled = true;
 
             const repertoireSide = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
             const weSide = repertoireSide === 'white' ? 'White' : 'Black';
             const theySide = repertoireSide === 'white' ? 'Black' : 'White';
-            // save note for the move currently open in the review panel
             saveCurrentMoveNote();
 
             const selectedIndices = getSelectedIndices();
             let batchData = [];
-            let totalSelectedMoves = selectedIndices.length;
-            let engineCalls = 0;
+            const total = selectedIndices.length;
 
             for (let s = 0; s < selectedIndices.length; s++) {
-                let i = selectedIndices[s];
-                let currentStep = s + 1;
-                let c = globalChunks[i];
+                const i = selectedIndices[s];
+                const c = globalChunks[i];
+                const step = s + 1;
 
-                // Side that JUST played the move = the side that was to move BEFORE the move
                 const fenPartsBefore = (c.fen || "").split(" ");
                 const sideJustPlayed = fenPartsBefore[1] === "w" ? "White" : (fenPartsBefore[1] === "b" ? "Black" : "?");
-                const fenPartsAfter = (c.fenAfter || "").split(" ");
-                const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
                 const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
-
-                // Symbol only if present on the move
                 const tgt = c.target || "";
+
                 const hasBlunder = /\?\?/.test(tgt);
                 const hasDubious = /\?!/.test(tgt);
                 const hasInteresting = /!\?/.test(tgt);
@@ -1518,85 +1555,37 @@
                 else if (hasGood) signOnly = "!";
 
                 let sanDisplay = (c.san || tgt).replace(/[!?]+/g, "").replace(/\$\d+/g, "").trim() || tgt;
-                const moveWithSign = signOnly ? `${sanDisplay}${signOnly}` : sanDisplay;
+                const moveWithSign = signOnly ? sanDisplay + signOnly : sanDisplay;
 
-                const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter))
-                    ? c.fenAfter
-                    : (isValidFen(c.fen) ? c.fen : null);
+                const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter)) ? c.fenAfter : (isValidFen(c.fen) ? c.fen : null);
 
-                let lineOutput = `[ID: ${c.id}]
-MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}
-FEN: ${fenAfter || "unavailable"}`;
-                if (userNotes[c.id]) {
-                    lineOutput += `\nVOICE NOTE: ${userNotes[c.id]}`;
-                } else {
-                    lineOutput += `\nVOICE NOTE: (none)`;
-                }
+                let lineOutput = '[ID: ' + c.id + ']';
+                lineOutput += '\nMOVE: ' + c.moveNum + '. ' + moveWithSign + ' by ' + sideJustPlayed;
+                lineOutput += '\nFEN: ' + (fenAfter || 'unavailable');
+                lineOutput += '\nVOICE NOTE: ' + (userNotes[c.id] || '(none)');
 
-                // Stockfish: best plan + weak/careless reply that reveals WHY the move was played
-                // (e.g. after Qg5, a passive reply allows Qxg7# — so Qg5 threatened mate)
                 if (fenAfter) {
-                    engineCalls++;
-                    btnText.innerHTML = `<div class="spinner"></div>Tips [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(180);
-                    const engineData = await getEngineRefutation(fenAfter);
-                    if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
-                        const lines = engineData.lines;
-                        const stm = sideToMoveAfter;
-                        // Best line for side to move (plan) — at least 6 moves when available
-                        const best = lines[0];
-                        const bestSans = (best.allSan && best.allSan.length)
-                            ? best.allSan.slice(0, 8)
-                            : `${best.san || ""} ${best.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 8);
-                        const bestLine = formatPvNumberedSans(bestSans, fenAfter);
-                        const bestEv = (best.eval !== undefined && best.eval !== null) ? String(best.eval) : "?";
-                        lineOutput += `\nSTOCKFISH BEST (${stm} to move, eval ${bestEv}, use for plan): ${bestLine}`;
-
-                        // Weakest multipv line = "careless" defence — reveals the threat behind the move just played
-                        if (lines.length >= 2) {
-                            const weak = lines[lines.length - 1];
-                            const weakSans = (weak.allSan && weak.allSan.length)
-                                ? weak.allSan.slice(0, 8)
-                                : `${weak.san || ""} ${weak.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 8);
-                            const weakLine = formatPvNumberedSans(weakSans, fenAfter);
-                            const weakEv = (weak.eval !== undefined && weak.eval !== null) ? String(weak.eval) : "?";
-                            const weakFirst = weakSans[0] || weak.san || "?";
-                            lineOutput += `\nIF CARELESS (weak reply ${weakFirst}, eval ${weakEv} — shows the threat/idea of the move just played): ${weakLine}`;
-                        }
-
-                        // Mid lines for extra context (2nd / 3rd)
-                        if (lines.length >= 3) {
-                            const mid = lines[Math.min(2, lines.length - 1)];
-                            const midSans = (mid.allSan && mid.allSan.length)
-                                ? mid.allSan.slice(0, 8)
-                                : `${mid.san || ""} ${mid.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 8);
-                            const midLine = formatPvNumberedSans(midSans, fenAfter);
-                            const midEv = (mid.eval !== undefined && mid.eval !== null) ? String(mid.eval) : "?";
-                            lineOutput += `\nSTOCKFISH #3 (eval ${midEv}): ${midLine}`;
-                        }
-
-                        if (c.isVariationEnd) {
-                            lineOutput += `\nEND OF VARIATION — use STOCKFISH BEST for equal/better/worse and the next plan (e.g. ...Nd4 and Bf6 ideas).`;
-                        }
-                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] engine ok`;
-                    } else {
-                        lineOutput += `\nSTOCKFISH: (none)`;
-                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] no engine`;
+                    btnText.innerHTML = '<div class="spinner"></div>Tactics [' + step + '/' + total + ']…';
+                    statsText.innerText = 'Analysing ' + c.moveNum + '. ' + sanDisplay;
+                    await delay(30);
+                    try {
+                        const report = await buildTacticalReport(fenAfter, moveWithSign, sideJustPlayed);
+                        lineOutput += '\n' + report;
+                    } catch (e) {
+                        console.warn('Tactical report failed for', c.id, e);
+                        lineOutput += '\n(Tactical report unavailable for this move)';
                     }
                 } else {
-                    statsText.innerText = `Preparing: ${c.moveNum}. ${sanDisplay}`;
-                    await delay(8);
+                    lineOutput += '\n(No valid FEN — tactical report skipped)';
                 }
 
-                let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
-                progressFill.style.width = `${currentProgress}%`;
-
+                progressFill.style.width = (((step - 1) / total) * 100) + '%';
                 batchData.push(lineOutput);
             }
 
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
-            
+
             const fullPrompt = `You are annotating a chess course in the exact style of this sample (sheva / Analyze This App chapter notes).
 
 SAMPLE STYLE (copy this voice):
@@ -1612,73 +1601,63 @@ SAMPLE STYLE (copy this voice):
 
 We play ${weSide}. They play ${theySide}.
 
-Each item:
+Each batch item contains:
 MOVE (with GM symbol if any)
 FEN — exact board AFTER the move. MUST use this FEN. Never invent pieces.
 VOICE NOTE — rough speech; keep the idea, fix English
-STOCKFISH BEST — main plan (6+ moves) + eval
-IF CARELESS — weak reply that reveals WHY the move was played (threat/idea)
-STOCKFISH #3 — extra line
-END OF VARIATION — when present, short verdict + continuing ideas from STOCKFISH BEST
+TACTICAL REPORT — ground truth computed by Stockfish + a motif scanner. Treat as facts.
+   Contains: material balance, HANGING pieces, PINS/SKEWERS, FORCED MATE if present,
+   THREAT (what the mover would play if the opponent passed),
+   and top 5 ENGINE LINES at high depth with real mate scores.
 
-=== Why a move was played (THIS move only) ===
-Explain the purpose of the piece that just moved — not a sequence of future moves.
-Good:
-- "We move the knight, ready to occupy d4."
-- "We transfer the bishop to c6, taking advantage of the pin."
-- "The queen protects the bishop and keeps the option of long castling."
-- "A useful prophylactic move; we prepare ...b5 and avoid committing the centre too early."
-Use IF CARELESS only to understand the threat (e.g. mate if they ignore it) — then state that idea briefly, without listing "if they play X, we play Y, then Z".
+=== HOW TO USE THE TACTICAL REPORT (non-negotiable) ===
+The TACTICAL REPORT is ground truth. You MUST NOT contradict it and you MUST NOT invent
+pieces, squares or threats. If it says HANGING: none, you may not claim a piece is en prise.
+If it says FORCED MATE, you say so and give the mate line. If it says THREAT: <line>,
+that line IS the reason the move was played — state the idea in one clause
+("threatens Qxg7#"), not as a future-move script.
+
+=== WHY A MOVE WAS PLAYED (this move only) ===
+Explain the purpose of the piece that just moved. Choose exactly ONE reason that the report
+supports:
+ - It creates a threat (quote the THREAT line).
+ - It defends a hanging piece / answers a threat (name the square).
+ - It exploits a pin or skewer (quote PINS/SKEWERS).
+ - It is prophylactic: it prevents an opponent idea (name it).
+ - It improves a piece toward a better square (name the square).
+ - It is practically forced (mate score or eval swing).
+Use IF CARELESS / ENGINE LINES only to understand the threat, then state the idea briefly.
 
 NEVER:
 - Say what we will play on the opponent's turn ("if White plays f3, we take on c3 then Be7").
 - Say what they will play on our turn.
-- Narrate the PGN NEXT moves as a script.
+- Narrate the ENGINE LINES as a script.
+- State any tactic that is not in the TACTICAL REPORT.
 
 === Equality / unclear / compensation (use these patterns) ===
-
 EQUAL (=, $10, $11, $12):
-- "Black has fully equalized."
-- "The position is equal."
+- "Black has fully equalized." / "The position is equal."
 - "Black has full equality with natural development and pressure against the centre."
 - "Although we have an isolated e-pawn, in practice it is very difficult to attack, and the position is completely equal."
 - "Black has fully equalized. The king is safe, the queenside space advantage remains useful and White has no concrete way to exploit the centralized knight."
-- "Black has fully equalized and can continue with ...Bd7 and ...Be7 or Bc5."
-- Prefer practical feel: completed development, safe king, easy play — not only the word "equal".
-
 UNCLEAR (∞, unclear, $13):
-- "The position is unclear."
 - "The position is unclear, but easier for Black to play."
-- "Unclear, but practically easier for White to handle."
 - "A sharp, unclear position where both sides have chances."
-- "Unclear — White has the initiative, but Black's structure is solid."
-- "The position remains unclear; both sides have ideas and the better-prepared player will feel more comfortable."
-
 WITH COMPENSATION (=/∞, ∞/=, compensation, $15):
 - "Black has full compensation for the pawn."
-- "White's activity compensates for the material."
-- "Black is a pawn down but has lasting compensation on the dark squares."
-- "Enough compensation: the open file and the safer king."
 - "White has sacrificed a pawn for the initiative and full compensation."
 - "Black has compensation in the form of the bishop pair and pressure against the centre."
-- "Material is down, but the activity and safer king give adequate compensation."
-
 SLIGHT / CLEAR EDGE (only if symbol or engine support it):
 - "White is slightly better." / "Black has a pleasant edge."
-- "White is clearly better." / "Black is clearly better."
-
 END OF VARIATION:
-- "We are better. Our centre looks good; we continue with ...Nd4 and ...Bf6 ideas." (use real moves from STOCKFISH BEST)
-- "The position is equal, but easier for us to play; next we improve with ...Re8 and ...Bf8."
+- Short verdict + continuing ideas drawn only from STOCKFISH BEST / top engine line.
 
 === Rules ===
 - 1–3 short sentences. Simple correct English. Same calm GM-course tone as the sample.
 - British "centre". Hyphen: e4-pawn, e4-square, d5-pawn.
 - Move by ${weSide}: we/our. Move by ${theySide}: ${theySide}/they.
 - Only the plan of the side that just moved. No "then they play… then we play…".
-- Stockfish lines are silent clues for the idea (threat, transfer, occupation of a square) — do not list them as a move script.
-- Respect symbols (? ! etc.).
-- Trust FEN + VOICE NOTE + Stockfish lines only.
+- Respect the GM symbols (? ! etc.).
 
 Return ONLY JSON. Keys = IDs. Values = the note text only.
 
@@ -1686,20 +1665,20 @@ Return ONLY JSON. Keys = IDs. Values = the note text only.
 ${batchString}`;
 
             navigator.clipboard.writeText(fullPrompt).then(() => {
-                resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                alert(`Selected Batch Copied!\n${totalSelectedMoves} positions.`);
-            }).catch(err => {
+                resetCopyBtnUI(btn, btnText, statsText, progressFill, total);
+                alert('Selected Batch Copied!\n' + total + ' positions with tactical reports.');
+            }).catch(() => {
                 const textArea = document.createElement("textarea");
                 textArea.value = fullPrompt;
                 document.body.appendChild(textArea);
                 textArea.select();
                 try {
                     document.execCommand('copy');
-                    resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                    alert(`Selected Batch Copied!\n${totalSelectedMoves} positions.`);
+                    resetCopyBtnUI(btn, btnText, statsText, progressFill, total);
+                    alert('Selected Batch Copied!\n' + total + ' positions with tactical reports.');
                 } catch (e) {
                     alert("Clipboard error. Please try again or copy manually.");
-                    resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
+                    resetCopyBtnUI(btn, btnText, statsText, progressFill, total);
                 }
                 document.body.removeChild(textArea);
             });
@@ -1707,7 +1686,7 @@ ${batchString}`;
 
         function resetCopyBtnUI(btn, btnText, statsText, progressFill, total) {
             btnText.innerText = "Copy Selected Batch";
-            statsText.innerText = `${globalChunks.length} TOTAL MOVES`;
+            statsText.innerText = globalChunks.length + " TOTAL MOVES";
             btn.classList.remove('opacity-80', 'cursor-not-allowed');
             btn.disabled = false;
             setTimeout(() => { progressFill.style.width = '0%'; }, 1500);
@@ -1716,7 +1695,6 @@ ${batchString}`;
         function updateUI() {
             const container = document.getElementById('chunks-container');
             container.innerHTML = "";
-            
             globalChunks.forEach((c, i) => {
                 const div = document.createElement('div');
                 let selectionClass = '';
@@ -1725,74 +1703,47 @@ ${batchString}`;
                     if (i === selStart) selectionClass = 'selected-start';
                     else if (i > selStart && i <= maxSelect) selectionClass = 'selected-range';
                 }
-
-                div.className = `chunk-card glass p-3 rounded-lg ${selectionClass}`;
+                div.className = 'chunk-card glass p-3 rounded-lg ' + selectionClass;
                 div.onclick = () => selectChunk(i);
-                div.innerHTML = `<p class="text-[9px] gold-text font-bold mb-1">${c.id}</p><p class="text-xs font-semibold truncate">${c.moveNum}. ${c.target}</p>`;
+                div.innerHTML = '<p class="text-[9px] gold-text font-bold mb-1">' + c.id + '</p><p class="text-xs font-semibold truncate">' + c.moveNum + '. ' + c.target + '</p>';
                 container.appendChild(div);
             });
-            document.getElementById('stats').innerText = `${globalChunks.length} TOTAL MOVES`;
+            document.getElementById('stats').innerText = globalChunks.length + " TOTAL MOVES";
         }
 
+        /* ============================================================
+           REASSEMBLER (unchanged)
+           ============================================================ */
         function rebuildPgn() {
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
-
-            // --- Robust extraction: tolerate extra text, markdown fences, trailing commas, missing commas, single quotes ---
-            function tryParseJson(str) {
-                try { return JSON.parse(str); } catch (e) { return null; }
-            }
-
+            function tryParseJson(str) { try { return JSON.parse(str); } catch (e) { return null; } }
             function extractChunkMap(text) {
                 const map = {};
-                // 1. Prefer a clean JSON object if present
                 const firstBrace = text.indexOf('{');
                 const lastBrace = text.lastIndexOf('}');
                 if (firstBrace !== -1 && lastBrace > firstBrace) {
                     let candidate = text.substring(firstBrace, lastBrace + 1);
-                    // Fix common AI issues: trailing commas before } or ]
                     candidate = candidate.replace(/,\s*([}\]])/g, '$1');
-                    // Convert single-quoted keys/values to double quotes (simple heuristic)
                     candidate = candidate.replace(/'([^']*)'/g, '"$1"');
                     let parsed = tryParseJson(candidate);
-                    if (parsed && typeof parsed === 'object') {
-                        Object.assign(map, parsed);
-                        return map;
-                    }
+                    if (parsed && typeof parsed === 'object') { Object.assign(map, parsed); return map; }
                 }
-
-                // 2. Fallback: regex-extract every "CHK_...": "comment" pair (handles broken JSON)
-                // Greedy enough to capture full sentences; allows escaped quotes inside
                 const pairRe = /["']?(CHK_\d+_M\d+_V\d+)["']?\s*:\s*"((?:\\.|[^"\\])*)"/gs;
                 let m;
                 while ((m = pairRe.exec(text)) !== null) {
                     const id = m[1];
-                    let comment = m[2]
-                        .replace(/\\"/g, '"')
-                        .replace(/\\n/g, ' ')
-                        .replace(/\\t/g, ' ')
-                        .replace(/\\\\/g, '\\')
-                        .trim();
+                    let comment = m[2].replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\t/g, ' ').replace(/\\\\/g, '\\').trim();
                     if (id && comment) map[id] = comment;
                 }
-
-                // 2b. Single-quoted values
                 if (Object.keys(map).length === 0) {
                     const pairRe2 = /["']?(CHK_\d+_M\d+_V\d+)["']?\s*:\s*'((?:\\.|[^'\\])*)'/gs;
                     while ((m = pairRe2.exec(text)) !== null) {
                         const id = m[1];
-                        let comment = m[2]
-                            .replace(/\\'/g, "'")
-                            .replace(/\\n/g, ' ')
-                            .replace(/\\t/g, ' ')
-                            .replace(/\\\\/g, '\\')
-                            .trim();
+                        let comment = m[2].replace(/\\'/g, "'").replace(/\\n/g, ' ').replace(/\\t/g, ' ').replace(/\\\\/g, '\\').trim();
                         if (id && comment) map[id] = comment;
                     }
                 }
-
-                // 3. Even more permissive: lines that look like CHK_0_M5_V0: some text
-                // Capture until next CHK_ key or end of line block (not non-greedy early stop)
                 if (Object.keys(map).length === 0) {
                     const lineRe = /(CHK_\d+_M\d+_V\d+)\s*[:=]\s*["']?([^\n]+?)["']?\s*(?=,?\s*(?:CHK_|\n\s*\}|\n\s*$|$))/gm;
                     while ((m = lineRe.exec(text)) !== null) {
@@ -1803,37 +1754,27 @@ ${batchString}`;
                 }
                 return map;
             }
-
             try {
                 aiData = extractChunkMap(raw);
-                if (!aiData || Object.keys(aiData).length === 0) {
-                    throw new Error("No chunk IDs found");
-                }
+                if (!aiData || Object.keys(aiData).length === 0) throw new Error("No chunk IDs found");
             } catch (e) {
-                alert("Failed to parse the AI output. Paste the full response (even with thinking text). The tool will extract CHK_… keys automatically.");
+                alert("Failed to parse the AI output. Paste the full response (even with thinking text).");
                 console.error("JSON Parse Error:", e);
                 return;
             }
-            
             let workingTokens = [...pgnTokens];
-            const sortedIds = Object.keys(aiData).sort((a,b) => {
+            const sortedIds = Object.keys(aiData).sort((a, b) => {
                 const idxA = globalChunks.find(c => c.id === a)?.tokenIndex || 0;
                 const idxB = globalChunks.find(c => c.id === b)?.tokenIndex || 0;
                 return idxB - idxA;
             });
-
-            // Always place comments AFTER the move (never before)
             sortedIds.forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
                 if (chunk && aiData[id]) {
-                    // Clean any residual braces the user might have left
                     const cleanComment = String(aiData[id]).replace(/^[{[\s]+|[}\]\s]+$/g, '').trim();
-                    if (cleanComment) {
-                        workingTokens[chunk.tokenIndex] += ` { ${cleanComment} }`;
-                    }
+                    if (cleanComment) workingTokens[chunk.tokenIndex] += ' { ' + cleanComment + ' }';
                 }
             });
-
             document.getElementById('final-pgn').value = workingTokens.join(" ");
         }
 
@@ -1853,7 +1794,7 @@ ${batchString}`;
 
         function downloadPgn() {
             const val = document.getElementById('final-pgn').value;
-            const blob = new Blob([val], {type: 'text/plain'});
+            const blob = new Blob([val], { type: 'text/plain' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
             a.download = "GM_Variation_Analysis.pgn";
