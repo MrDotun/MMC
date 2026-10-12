@@ -4,8 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v6.6 | Decipher Chess Academy</title>
-<!-- build: 2026-10-12-voice-v6.6-wiki-full -->
+<title>GM Variation Master · v6.7 | Decipher Chess Academy</title>
+<!-- build: 2026-10-12-voice-v6.7-tight-voice -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -38,7 +38,7 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Full wiki reference · v6.6</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Tight GM voice · v6.7</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center flex-wrap">
 <span id="sf-badge" class="sf-badge loading">Engine loading…</span>
@@ -943,8 +943,6 @@ function lineUsesMotif(line, motif) {
   if (motif.type === 'skewer') return f4.some(s => s.includes('x' + motif.front)) || f4.some(s => s.includes('x' + motif.behind));
   return false;
 }
-
-/* ===================== POSITION FEATURES ===================== */
 function positionFeatures(fen) {
   const chess = new Chess(fen); if (!chess) return '';
   const board = chess.board();
@@ -976,7 +974,6 @@ function positionFeatures(fen) {
   if (bK && bK[0] === 'e' && (bK[1] === '1' || bK[1] === '8')) feats.push('Black king still on e8 (uncastled)');
   return feats.slice(0, 3).join('. ');
 }
-
 async function buildTacticalReport(fenAfter, moveSan, moverSide, maxLines) {
   const limit = maxLines || 2;
   const R = [];
@@ -1168,8 +1165,6 @@ function getMainLineSANs() {
   return globalChunks.filter(c => c.variationLevel === 0 && c.san)
     .sort((a, b) => a.tokenIndex - b.tokenIndex).map(c => c.san);
 }
-
-/* ===================== MOVE SELECTION ===================== */
 function getSelectedIndices() {
   if (selStart === null) return [];
   const endIdx = selEnd !== null ? selEnd : selStart;
@@ -1411,8 +1406,6 @@ function updateUI() {
   });
   document.getElementById('stats').innerText = globalChunks.length + ' TOTAL MOVES';
 }
-
-/* ===================== DISTIL OBJECTIVES ===================== */
 function distilObjectives(ideasPack, max) {
   const n = max || 6;
   const out = [];
@@ -1425,7 +1418,7 @@ function distilObjectives(ideasPack, max) {
   return out;
 }
 
-/* ===================== COPY BATCH — compact + positional + full wiki ===================== */
+/* ===================== COPY BATCH — tight GM voice ===================== */
 async function copySelectedBatch() {
   if (selStart === null || selEnd === null) { alert('Pick start and end moves.'); return; }
   const btn = document.getElementById('copy-btn'), btnText = document.getElementById('copy-text');
@@ -1436,7 +1429,6 @@ async function copySelectedBatch() {
   const ideasPack = loadIdeasPack();
   const openingName = (localStorage.getItem(PACK_NAME_KEY) || '').trim();
 
-  // Split ideas pack: curated ideas vs wiki-tagged entries (avoid duplication)
   const curatedIdeas = [];
   const wikiTagged = [];
   for (const s of ideasPack) {
@@ -1446,14 +1438,12 @@ async function copySelectedBatch() {
     else curatedIdeas.push(str);
   }
 
-  // OBJECTIVES: 6 curated ideas max, 160 chars each
   const objectives = distilObjectives(curatedIdeas, 6);
   const objectivesBlock = objectives.length
     ? '=== OPENING OBJECTIVES — ' + (openingName || 'this course') + ' ===\n' +
       objectives.map((s, i) => (i+1) + '. ' + s).join('\n') + '\n'
     : '';
 
-  // WIKI: use raw wikiEntries if available; else unpack the [Wiki …] items from the ideas pack
   let wikiList = [];
   if (wikiEntries.length) wikiList = wikiEntries;
   else if (wikiTagged.length) {
@@ -1463,28 +1453,21 @@ async function copySelectedBatch() {
     });
   }
 
-  // Get SANs of the moves in the batch so we can match wiki entries to them
   const idx = getSelectedIndices();
   const batchMoveSans = idx.map(i => {
     const ch = globalChunks[i];
     return ch && ch.san ? String(ch.san).toLowerCase() : '';
   }).filter(Boolean);
 
-  // Split wiki: entries that mention a batch move vs the rest
-  const matchedWiki = [];
-  const unmatchedWiki = [];
+  const matchedWiki = [], unmatchedWiki = [];
   for (const w of wikiList) {
     const wm = String(w.move || '').toLowerCase();
     let hit = false;
-    for (const san of batchMoveSans) {
-      if (san && wm.includes(san)) { hit = true; break; }
-    }
-    if (hit) matchedWiki.push(w);
-    else unmatchedWiki.push(w);
+    for (const san of batchMoveSans) if (san && wm.includes(san)) { hit = true; break; }
+    if (hit) matchedWiki.push(w); else unmatchedWiki.push(w);
   }
   const finalWiki = matchedWiki.concat(unmatchedWiki);
 
-  // Total wiki cap: 6 KB, per entry 500 chars — matched entries first
   let wikiText = '';
   let wikiCount = 0;
   for (const w of finalWiki) {
@@ -1547,18 +1530,45 @@ async function copySelectedBatch() {
   progressFill.style.width = '100%';
 
   const N = total;
-  const fullPrompt = `You are a grandmaster chess author writing an opening course. Every note must explain WHY the move fits the plan, in terms of the opening's objectives and the positional context — not just what square a piece goes to.
+  const fullPrompt = `You are a grandmaster chess author writing a short opening-course note for each move. Every note is SHORT, concrete, and explains WHY — never narrates the board.
 
 === OUTPUT ===
-Return a JSON object with EXACTLY ${N} keys, one per [ID] below. Do not skip or merge keys.
+Return a JSON object with EXACTLY ${N} keys, one per [ID] below. Do not skip, merge, or reorder keys.
 
-=== VOICE (copy this register) ===
+=== LENGTH — HARD RULE ===
+Each note: ONE or TWO short sentences. Maximum 30 words. If it fits in one sentence, use one.
+Prefer less. If the reader can see it on the board, do not say it.
+
+=== NEVER SAY (the reader sees these already) ===
+- "gives check", "with check", "the check lands on the king"
+- "attacks the king", "hits the king", "hits e1"
+- "takes the bishop on b4 with the bishop"
+- "the pawn steps from d7 to d5"
+- "the queen lands on b4" (the notation already showed it)
+- "White's king is still on e1" — UNLESS you immediately use it to justify a plan in the same sentence
+- Do NOT repeat the same feature (the a-file, the b-file, the c5-pawn) in two consecutive notes. Say it once, where it first matters, then move on.
+
+=== POSITION SYMBOL → MANDATORY EXPLANATION ===
+When a batch item says "POSITION AFTER: <symbol>", the SYMBOL is the headline and your note is the REASON. Ground the reason in the POSITIONAL CONTEXT or the opening's plan — never in a description of the board.
+
+  =/∞ or ∞/=  → e.g. "Black has full compensation: the half-open a-file and b-file and the pressure on b2 give us lasting play."
+  =           → e.g. "The position is equal. Our pieces are placed, the structure is solid, White has no target."
+  ∞           → e.g. "Unclear. We have the better structure; White has the bishop pair."
+  ±  or  ∓    → e.g. "White is slightly better. The bishop on c4 is worth more than the knight on c8."
+
+Bad (narrates the board):
+- "...Qxb4+ gives check to the king on e1."
+- "...d5 supports the c5-pawn."
+
+Good (explains the move):
+- "...Qxb4+ is the point: it removes the bishop that held back our c5-pawn, and the check keeps White's king in the centre for one more move."
+- "...d5 is the freeing move. The d5-square opens for the bishop on e7, and with the half-open a-file and b-file we have lasting queenside play."
+
+=== VOICE (this is how a GM talks — copy it) ===
 - "A useful prophylactic move. Black prepares ...b5 and avoids committing the centre too early."
 - "We strike immediately, before White can fully establish it."
 - "Black has fully equalized. The bishop becomes active on the long diagonal and the queenside initiative gives easy play."
 - "White protects the bishop and keeps the option of long castling."
-- "We have successfully completed our development without any serious problems. The position is equal."
-- "Although we have an isolated e-pawn, in practice it is very difficult to attack, and the position is completely equal."
 - "Black has compensation in the form of the bishop pair and pressure against the centre."
 - "This is a typical Benko idea: give the pawn, take the open file, and play against b2."
 
@@ -1566,43 +1576,19 @@ Short sentences. Simple words. Correct grammar. British spelling.
 Use "we"/"our" for ${weSide}; "${theySide}"/"they" for ${theySide}.
 
 Never use: centralises, stabilising, coordination, creating imbalances, long-term asset, positional understanding, showcases, demonstrates, highlights, dynamic equilibrium.
-Never describe the opponent's next move. Never describe our next move.
 
-=== HOW TO EXPLAIN A MOVE (mandatory method) ===
-For every move, do TWO things:
- 1. STATE the concrete action: which piece goes where, which square is taken, which file opens.
- 2. STATE the objective it serves — check it against the OPENING OBJECTIVES and the POSITIONAL CONTEXT (open files, half-open files, pawn majority on one side, king safety, which side the play is on).
-
-Bad (what to avoid):
-- "...Qa5+ supports the c5-pawn."
-- "The knight develops to f3."
-- "The bishop improves."
-
-Good (what to aim for):
-- "...Qa5+ starts queenside counterplay. With the a-file and b-file half-open for us, the queen steps off the c-file and eyes the light squares; the check also wins a tempo before we finish the queenside setup."
-- "We give back the c5-pawn to reach a position with clear play on the queenside: our rooks belong on b8 and a8, our bishop on g7 hits d4, and White's king is still in the centre."
-- "This move opens the b-file for us. With the b-pawn gone, the rook on a8 will slide to b8 and we double against b2."
-
-=== GM SYMBOL TABLE (mandatory) ===
-If a batch item says "POSITION AFTER: <symbol>", use the matching phrase:
-  =   → "The position is equal."
-  =/∞ → "Black has compensation for the pawn." (or White, whichever side is down material)
-  ∞/= → same as =/∞ (pick the side who is down material)
-  ∞   → "The position is unclear, but easier for [side] to play."
-  ±   → "White is slightly better."
-  ∓   → "Black is slightly better."
-
-If "GM SYMBOL: ??", the move is a blunder — explain what goes wrong.
-If "GM SYMBOL: ?!", dubious — explain the risk.
-If "GM SYMBOL: !", good — explain the plus.
+=== GM SYMBOL TABLE ===
+  ?? → blunder — explain what goes wrong.
+  ?! → dubious — explain the risk.
+  !  → good — explain the plus.
 
 === TACTICAL REPORT ===
 Ground truth. Never contradict it. If TACTIC or THREAT is not listed, don't mention pins or hanging pieces.
-Use POSITIONAL CONTEXT to anchor the note to the correct part of the board.
+Use POSITIONAL CONTEXT to anchor the note to the correct part of the board — but only when it changes the story.
 
 === WIKI REFERENCE ===
-If a WIKI MOVE-BY-MOVE REFERENCE block is present, use it to inform WHY the move was played.
-Paraphrase in GM register — never copy sentences verbatim.
+If a WIKI MOVE-BY-MOVE REFERENCE block is present, use it as a MODEL for VOICE and CONTENT.
+Paraphrase in the GM register — never copy sentences verbatim.
 
 We play ${weSide}. They play ${theySide}.
 
@@ -1619,8 +1605,7 @@ ${batch.join('\n\n')}`;
     btnText.innerText = 'Copy Selected Batch';
     btn.classList.remove('opacity-80', 'cursor-not-allowed'); btn.disabled = false;
     setTimeout(() => { progressFill.style.width = '0%'; }, 1500);
-    const bytes = fullPrompt.length;
-    const kb = (bytes / 1024).toFixed(1);
+    const kb = (fullPrompt.length / 1024).toFixed(1);
     alert('Copied ' + N + ' moves.\nBatch size: ~' + kb + ' KB.\nWiki entries in batch: ' + wikiCount + '.\nAll ' + N + ' keys requested.');
   };
   navigator.clipboard.writeText(fullPrompt).then(finish).catch(() => {
