@@ -4,8 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v7.0 | Decipher Chess Academy</title>
-<!-- build: 2026-10-12-voice-v7.0-real-tactics -->
+<title>GM Variation Master · v7.2 | Decipher Chess Academy</title>
+<!-- build: 2026-10-12-voice-v7.2-intention -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -38,7 +38,7 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Real tactics · wiki voice · v7.0</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Intention + positional review · v7.2</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center flex-wrap">
 <span id="sf-badge" class="sf-badge loading">Engine loading…</span>
@@ -118,6 +118,7 @@ Import<input type="file" accept=".json,.txt" class="hidden" onchange="importPack
 </select>
 </label>
 <button onclick="testEngine()" class="px-4 py-3 bg-slate-800 text-slate-300 font-bold rounded-xl uppercase text-xs hover:bg-slate-700">🧪 Test</button>
+<button onclick="extractAndReview()" id="review-facts-btn" class="px-6 py-3 bg-emerald-700 hover:bg-emerald-600 rounded-xl font-bold uppercase text-xs hidden">🔬 Review Facts</button>
 <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden"><span id="copy-text">Copy Selected Batch</span></button>
 <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
 </div>
@@ -195,6 +196,19 @@ Import<input type="file" accept=".json,.txt" class="hidden" onchange="importPack
 <div id="review-move-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[220px] overflow-y-auto pr-1"></div>
 </div>
 </div>
+
+<div id="facts-review-panel" class="hidden glass p-6 rounded-2xl space-y-4">
+<div class="flex items-center justify-between">
+<h2 class="text-lg font-bold gold-text">Phase 2 — Review positional facts</h2>
+<span id="facts-review-count" class="text-[10px] text-slate-500 uppercase"></span>
+</div>
+<p class="text-xs text-slate-400 italic">Untick any fact you disagree with. The AI will only see what you leave ticked.</p>
+<div id="facts-review-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[500px] overflow-y-auto pr-1"></div>
+<div class="flex gap-3">
+<button onclick="applyFactsReview()" class="flex-1 py-3 gold-bg rounded-xl font-bold uppercase text-xs">✓ Apply &amp; Copy Batch</button>
+<button onclick="closeFactsReview()" class="px-6 py-3 bg-slate-800 rounded-xl font-bold uppercase text-xs text-slate-300">Cancel</button>
+</div>
+</div>
 </div>
 
 <div id="view-reassembler" class="hidden space-y-6">
@@ -239,6 +253,7 @@ let reviewLine = [], reviewLineIdx = 0;
 let wikiEntries = [];
 let openingsDB = [], openingsMap = {};
 let lastBatchIds = [];
+let reviewedFacts = {};
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 /* ===================== OPENINGS DB ===================== */
@@ -812,7 +827,7 @@ function formatPvNumberedSans(sans, fen) {
 function sfLinesToEngineData(sfLines, fen) {
   if (!sfLines || !sfLines.length) return { lines: [], invalid: true };
   const lines = sfLines.map((l, i) => {
-    const sans = uciListToSan(fen, l.pvUci, 8);
+    const sans = uciListToSan(fen, l.pvUci, 10);
     return {
       multipv: l.multipv || (i + 1),
       eval: l.scoreType === 'mate' ? (l.score > 0 ? '#' + l.score : '#-' + Math.abs(l.score)) : (l.score / 100).toFixed(2),
@@ -852,10 +867,11 @@ async function testEngine() {
   } else alert('✗ Engine failed.');
 }
 
-/* ===================== TACTICAL SCANNER ===================== */
+/* ===================== CORE SCANNERS ===================== */
 const PIECE_VAL = { p:1, n:3, b:3, r:5, q:9, k:100 };
 const sqToFR = sq => [sq.charCodeAt(0) - 97, 8 - parseInt(sq[1], 10)];
 const frToSq = (f, r) => String.fromCharCode(97 + f) + (8 - r);
+
 function attackersOfBoard(board, sq, byColor) {
   const [tf, tr] = sqToFR(sq);
   const at = (f, r) => (f>=0&&f<8&&r>=0&&r<8) ? board[r][f] : null;
@@ -885,7 +901,6 @@ function attackersOfBoard(board, sq, byColor) {
   return out;
 }
 
-/* ---- REAL hanging detection: simulate the capture and the recapture ---- */
 function winningCaptures(fen) {
   const chess = new Chess(fen); if (!chess) return [];
   const board = chess.board();
@@ -899,26 +914,22 @@ function winningCaptures(fen) {
     const sq = frToSq(f, r);
     const atk = attackersOfBoard(board, sq, stm);
     if (!atk.length) continue;
-    // Find cheapest attacker
     let cheapestSq = null, cheapestVal = 999;
     for (const as of atk) {
       const [af, ar] = sqToFR(as);
       const ap = board[ar][af];
       if (PIECE_VAL[ap.type] < cheapestVal) { cheapestVal = PIECE_VAL[ap.type]; cheapestSq = as; }
     }
-    // Simulate the capture
     const test = new Chess(fen);
     let mv;
     try { mv = test.move({ from: cheapestSq, to: sq, promotion: 'q' }); } catch(e) { continue; }
     if (!mv) continue;
-    // Can the capturer be recaptured?
     const newBoard = test.board();
     const defs = attackersOfBoard(newBoard, sq, enemy);
     const pieceVal = PIECE_VAL[p.type];
     let netGain;
-    if (defs.length === 0) {
-      netGain = pieceVal - cheapestVal;
-    } else {
+    if (defs.length === 0) netGain = pieceVal - cheapestVal;
+    else {
       let cheapestDefVal = 999;
       for (const ds of defs) {
         const [df, dr] = sqToFR(ds);
@@ -927,22 +938,13 @@ function winningCaptures(fen) {
       }
       netGain = pieceVal - Math.max(cheapestVal, cheapestDefVal);
     }
-    // Only report if the capture actually wins material
     if (netGain >= 1) {
-      out.push({
-        piece: names[p.type],
-        square: sq,
-        color: p.color,
-        gain: netGain,
-        free: defs.length === 0,
-        by: (names[board[sqToFR(cheapestSq)[1]][sqToFR(cheapestSq)[0]].type] || 'piece') + ' on ' + cheapestSq
-      });
+      out.push({ piece: names[p.type], square: sq, color: p.color, gain: netGain, free: defs.length === 0 });
     }
   }
   return out.slice(0, 4);
 }
 
-/* ---- Pins/skewers: only report if the top engine line uses them ---- */
 function pinsAndSkewers(fen) {
   const chess = new Chess(fen); if (!chess) return [];
   const board = chess.board(), stm = chess.turn(), enemy = stm === 'w' ? 'b' : 'w';
@@ -979,14 +981,55 @@ function materialCount(fen) {
   }
   return { w, b };
 }
-function lineUsesMotif(line, motif) {
-  if (!line || !line.allSan || !line.allSan.length) return false;
-  const f4 = line.allSan.slice(0, 4);
-  if (motif.type === 'capture') return f4.some(s => s.includes('x' + motif.square));
-  if (motif.type === 'pin') return f4.some(s => s.includes('x' + motif.pinned)) || f4.some(s => s.includes(motif.by));
-  if (motif.type === 'skewer') return f4.some(s => s.includes('x' + motif.front)) || f4.some(s => s.includes(motif.behind));
-  return false;
+
+/* ===================== POSITIONAL SCANNERS ===================== */
+
+// King safety
+function kingSafetyNotes(fen) {
+  const chess = new Chess(fen); if (!chess) return '';
+  const board = chess.board();
+  const notes = [];
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f]; if (!p || p.type !== 'k') continue;
+    const side = p.color === 'w' ? 'White' : 'Black';
+    const homeRank = p.color === 'w' ? 7 : 0;
+    const dir = p.color === 'w' ? -1 : 1;
+    const castled = (f === 6 || f === 2) && r === homeRank;
+    let shield = 0;
+    for (const df of [-1, 0, 1]) {
+      const nf = f + df, nr = r + dir;
+      if (nf < 0 || nf > 7 || nr < 0 || nr > 7) continue;
+      const q = board[nr][nf];
+      if (q && q.type === 'p' && q.color === p.color) shield++;
+    }
+    if (!castled && r === homeRank) notes.push(side + ' king still on e1/e8');
+    else if (castled && shield === 0) notes.push(side + ' king castled, no pawn shield');
+  }
+  return notes.join('; ');
 }
+
+// Undeveloped pieces
+function undevelopedPieces(fen) {
+  const chess = new Chess(fen); if (!chess) return '';
+  const board = chess.board();
+  const homes = {
+    w: [['b1','n'],['c1','b'],['f1','b'],['g1','n']],
+    b: [['b8','n'],['c8','b'],['f8','b'],['g8','n']]
+  };
+  const out = [];
+  for (const side of ['w', 'b']) {
+    const un = [];
+    for (const [sq, code] of homes[side]) {
+      const [f, r] = sqToFR(sq);
+      const p = board[r][f];
+      if (p && p.color === side && p.type === code) un.push(sq);
+    }
+    if (un.length) out.push((side === 'w' ? 'White' : 'Black') + ' home: ' + un.join(','));
+  }
+  return out.join('; ');
+}
+
+// Positional features (open files, pawn majority)
 function positionFeatures(fen) {
   const chess = new Chess(fen); if (!chess) return '';
   const board = chess.board();
@@ -1014,48 +1057,207 @@ function positionFeatures(fen) {
   if (kB >= kW + 2) feats.push('Black has more pawns on the kingside');
   return feats.slice(0, 3).join('. ');
 }
-function kingSafetyNotes(fen) {
-  const chess = new Chess(fen); if (!chess) return '';
+
+// Piece freedom — rooks behind pawns, knights on rim, bishops boxed
+function pieceFreedom(fen) {
+  const chess = new Chess(fen); if (!chess) return [];
   const board = chess.board();
   const files = 'abcdefgh';
-  const notes = [];
+  const out = [];
   for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
     const p = board[r][f];
-    if (!p || p.type !== 'k') continue;
-    const side = p.color === 'w' ? 'White' : 'Black';
-    const homeRank = p.color === 'w' ? 7 : 0;
+    if (!p || p.type !== 'r') continue;
     const dir = p.color === 'w' ? -1 : 1;
-    const castled = (f === 6 || f === 2) && r === homeRank;
-    let shield = 0;
-    for (const df of [-1, 0, 1]) {
-      const nf = f + df, nr = r + dir;
-      if (nf < 0 || nf > 7 || nr < 0 || nr > 7) continue;
-      const q = board[nr][nf];
-      if (q && q.type === 'p' && q.color === p.color) shield++;
+    let cr = r + dir, blocked = false;
+    while (cr >= 0 && cr < 8) {
+      const q = board[cr][f];
+      if (q) {
+        if (q.type === 'p' && q.color === p.color) blocked = true;
+        break;
+      }
+      cr += dir;
     }
-    if (!castled && r === homeRank) notes.push(side + ' king still on e1/e8');
-    else if (castled && shield === 0) notes.push(side + ' king castled but no pawn shield left');
+    if (blocked) out.push({ side: p.color === 'w' ? 'White' : 'Black', piece: 'rook', square: files[f] + (8-r), issue: 'blocked by own pawn on the ' + files[f] + '-file' });
   }
-  return notes.join('; ');
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f];
+    if (!p || p.type !== 'n') continue;
+    if (f === 0 || f === 7) {
+      const sq = files[f] + (8-r);
+      const test = new Chess(fen);
+      const moves = test.moves({ square: sq, verbose: true });
+      if (moves.length <= 2)
+        out.push({ side: p.color === 'w' ? 'White' : 'Black', piece: 'knight', square: sq, issue: 'on the rim with only ' + moves.length + ' square' + (moves.length === 1 ? '' : 's') });
+    }
+  }
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f];
+    if (!p || p.type !== 'b') continue;
+    const sq = files[f] + (8-r);
+    const test = new Chess(fen);
+    const moves = test.moves({ square: sq, verbose: true });
+    if (moves.length <= 3)
+      out.push({ side: p.color === 'w' ? 'White' : 'Black', piece: 'bishop', square: sq, issue: 'only ' + moves.length + ' square' + (moves.length === 1 ? '' : 's') });
+  }
+  return out.slice(0, 6);
 }
-function undevelopedPieces(fen) {
-  const chess = new Chess(fen); if (!chess) return '';
+
+// Bishop pair + active bishops
+function bishopAnalysis(fen) {
+  const chess = new Chess(fen); if (!chess) return { activeBishops: [], whitePair: false, blackPair: false };
   const board = chess.board();
-  const homes = {
-    w: [['b1','n'],['c1','b'],['f1','b'],['g1','n']],
-    b: [['b8','n'],['c8','b'],['f8','b'],['g8','n']]
-  };
-  const out = [];
-  for (const side of ['w', 'b']) {
-    const un = [];
-    for (const [sq, code] of homes[side]) {
-      const [f, r] = sqToFR(sq);
-      const p = board[r][f];
-      if (p && p.color === side && p.type === code) un.push(sq);
-    }
-    if (un.length) out.push((side === 'w' ? 'White' : 'Black') + ' home: ' + un.join(','));
+  const files = 'abcdefgh';
+  const result = { activeBishops: [], whiteCount: 0, blackCount: 0, whitePair: false, blackPair: false };
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f];
+    if (!p || p.type !== 'b') continue;
+    if (p.color === 'w') result.whiteCount++; else result.blackCount++;
+    const sq = files[f] + (8-r);
+    const test = new Chess(fen);
+    const moves = test.moves({ square: sq, verbose: true });
+    const onLong = (f === r) || ((f + r) === 7);
+    const centralLong = onLong && f >= 2 && f <= 5 && r >= 2 && r <= 5;
+    if (centralLong && moves.length >= 6)
+      result.activeBishops.push({ color: p.color, square: sq, moves: moves.length,
+        note: 'on the long ' + (p.color === 'w' ? 'a1-h8' : 'h1-a8') + ' diagonal with ' + moves.length + ' squares' });
   }
-  return out.join('; ');
+  result.whitePair = result.whiteCount >= 2;
+  result.blackPair = result.blackCount >= 2;
+  return result;
+}
+
+// Centre strength
+function centreStrength(fen) {
+  const chess = new Chess(fen); if (!chess) return [];
+  const board = chess.board();
+  const files = 'abcdefgh';
+  const centreSquares = ['d4', 'e4', 'd5', 'e5'];
+  const wPawns = [], bPawns = [];
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f];
+    if (!p || p.type !== 'p') continue;
+    const sq = files[f] + (8-r);
+    if (p.color === 'w') wPawns.push(sq); else bPawns.push(sq);
+  }
+  const out = [];
+  for (const [side, pawns] of [['White', wPawns], ['Black', bPawns]]) {
+    const onCentre = pawns.filter(s => centreSquares.includes(s));
+    if (onCentre.length < 2) continue;
+    const attacked = onCentre.filter(s => {
+      const [f, r] = [s.charCodeAt(0) - 97, 8 - parseInt(s[1])];
+      const enemyDir = side === 'White' ? -1 : 1;
+      for (const df of [-1, 1]) {
+        const ef = f + df, er = r + enemyDir;
+        if (ef < 0 || ef > 7 || er < 0 || er > 7) continue;
+        const q = board[er][ef];
+        const enemyColor = side === 'White' ? 'b' : 'w';
+        if (q && q.type === 'p' && q.color === enemyColor) return true;
+      }
+      return false;
+    });
+    if (attacked.length === 0) out.push(side + ' has a strong pawn centre on ' + onCentre.join(', '));
+    else if (attacked.length >= onCentre.length) out.push(side + ' centre pawns are under pressure');
+  }
+  return out;
+}
+
+// Passed pawns — strict + not immediately capturable
+function passedPawns(fen) {
+  const chess = new Chess(fen); if (!chess) return [];
+  const board = chess.board();
+  const files = 'abcdefgh';
+  const out = [];
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f];
+    if (!p || p.type !== 'p') continue;
+    const pawnSide = p.color;
+    const enemySide = pawnSide === 'w' ? 'b' : 'w';
+    const dir = pawnSide === 'w' ? -1 : 1;
+    let isPassed = true;
+    for (const df of [-1, 0, 1]) {
+      const nf = f + df;
+      if (nf < 0 || nf > 7) continue;
+      let cr = r + dir;
+      while (cr >= 0 && cr < 8) {
+        const q = board[cr][nf];
+        if (q && q.type === 'p' && q.color === enemySide) { isPassed = false; break; }
+        cr += dir;
+      }
+      if (!isPassed) break;
+    }
+    if (!isPassed) continue;
+    const sq = files[f] + (8-r);
+    const enemyAttacks = attackersOfBoard(board, sq, enemySide);
+    const ownDefends = attackersOfBoard(board, sq, pawnSide);
+    if (enemyAttacks.length && !ownDefends.length) continue;
+    const rankNum = 8 - r;
+    const advanced = pawnSide === 'w' ? rankNum >= 4 : rankNum <= 5;
+    out.push({ side: pawnSide === 'w' ? 'White' : 'Black', square: sq, advanced, defended: ownDefends.length > 0 });
+  }
+  return out.slice(0, 4);
+}
+
+// Weak pawns — isolated, doubled
+function weakPawns(fen) {
+  const chess = new Chess(fen); if (!chess) return [];
+  const board = chess.board();
+  const files = 'abcdefgh';
+  const out = [];
+  const pawnsByFile = { w: new Array(8).fill(0).map(() => []), b: new Array(8).fill(0).map(() => []) };
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f];
+    if (!p || p.type !== 'p') continue;
+    pawnsByFile[p.color][f].push(8 - r);
+  }
+  for (const side of ['w', 'b']) {
+    for (let f = 0; f < 8; f++) {
+      const ranks = pawnsByFile[side][f];
+      if (!ranks.length) continue;
+      const leftHas = f > 0 && pawnsByFile[side][f - 1].length > 0;
+      const rightHas = f < 7 && pawnsByFile[side][f + 1].length > 0;
+      const sideName = side === 'w' ? 'White' : 'Black';
+      if (!leftHas && !rightHas && ranks.length === 1)
+        out.push({ side: sideName, type: 'isolated', square: files[f] + ranks[0] });
+      if (ranks.length >= 2)
+        out.push({ side: sideName, type: 'doubled', square: files[f] + ranks[0] });
+    }
+  }
+  return out.slice(0, 5);
+}
+
+// Manoeuvre detector — reads intent from null-move PV
+function findManeuver(fen, pvSanList) {
+  if (!pvSanList || pvSanList.length < 3) return null;
+  const chess = new Chess(fen);
+  const moves = [];
+  for (const san of pvSanList) {
+    const m = chess.move(san, { sloppy: true });
+    if (!m) break;
+    moves.push({ san, from: m.from, to: m.to, piece: m.piece, color: m.color });
+    if (moves.length >= 8) break;
+  }
+  if (moves.length < 3) return null;
+  const myMoves = moves.filter((_, i) => i % 2 === 0);
+  if (myMoves.length < 2) return null;
+  for (let i = 0; i < myMoves.length - 1; i++) {
+    const a = myMoves[i];
+    const b = myMoves[i + 1];
+    if (a.piece === b.piece && a.color === b.color && a.to === b.from) {
+      const type = { n:'knight manoeuvre', r:'rook lift', b:'bishop repositioning', q:'queen transfer', k:'king walk', p:'pawn march' }[a.piece] || 'piece transfer';
+      return { type, path: [a.from, a.to, b.to], pathSan: [a.san, b.san], target: b.to };
+    }
+  }
+  return null;
+}
+
+/* ===================== TACTICAL REPORT ===================== */
+function lineUsesMotif(line, motif) {
+  if (!line || !line.allSan || !line.allSan.length) return false;
+  const f4 = line.allSan.slice(0, 4);
+  if (motif.type === 'capture') return f4.some(s => s.includes('x' + motif.square));
+  if (motif.type === 'pin') return f4.some(s => s.includes('x' + motif.pinned)) || f4.some(s => s.includes(motif.by));
+  if (motif.type === 'skewer') return f4.some(s => s.includes('x' + motif.front)) || f4.some(s => s.includes(motif.behind));
+  return false;
 }
 
 async function buildTacticalReport(fenAfter, moveSan, moverSide, maxLines) {
@@ -1063,62 +1265,67 @@ async function buildTacticalReport(fenAfter, moveSan, moverSide, maxLines) {
   const R = [];
   const chess = new Chess(fenAfter); if (!chess) return '(invalid FEN)';
   const stm = chess.turn() === 'w' ? 'White' : 'Black';
-  const mover = moverSide;
   const engineData = await getEngineMultiPV(fenAfter, { multipv: limit });
   const engineLines = (engineData && !engineData.invalid && engineData.lines) ? engineData.lines.slice(0, limit) : [];
   const mat = materialCount(fenAfter);
   const diff = mat.w - mat.b;
-  const evalForMover = mover === 'White' ? diff : -diff;
+  const evalForMover = moverSide === 'White' ? diff : -diff;
 
   R.push('=== TACTICAL REPORT ===');
-  if (diff !== 0) {
-    R.push('Material: ' + (diff > 0 ? 'White is up ' + diff : 'Black is up ' + (-diff)));
-  } else {
-    R.push('Material: level');
-  }
+  if (diff !== 0) R.push('Material: ' + (diff > 0 ? 'White is up ' + diff : 'Black is up ' + (-diff)));
+  else R.push('Material: level');
 
-  // Positional notes
   const posNotes = [];
-  const pos = positionFeatures(fenAfter);
-  if (pos) posNotes.push(pos);
-  const ks = kingSafetyNotes(fenAfter);
-  if (ks) posNotes.push(ks);
-  const un = undevelopedPieces(fenAfter);
-  if (un) posNotes.push(un);
+  const pos = positionFeatures(fenAfter); if (pos) posNotes.push(pos);
+  const ks = kingSafetyNotes(fenAfter); if (ks) posNotes.push(ks);
+  const un = undevelopedPieces(fenAfter); if (un) posNotes.push(un);
   if (posNotes.length) R.push('POSITION: ' + posNotes.join(' | '));
 
-  // Real winning captures (only if the engine plays them)
+  const freedom = pieceFreedom(fenAfter);
+  if (freedom.length) R.push('STUCK PIECES: ' + freedom.map(x => x.side + ' ' + x.piece + ' on ' + x.square + ' — ' + x.issue).join('; '));
+
+  const bish = bishopAnalysis(fenAfter);
+  if (bish.activeBishops.length) R.push('ACTIVE BISHOPS: ' + bish.activeBishops.map(x => (x.color === 'w' ? 'White' : 'Black') + ' ' + x.square + ' (' + x.note + ')').join('; '));
+  const pairs = [];
+  if (bish.whitePair) pairs.push('White has the bishop pair');
+  if (bish.blackPair) pairs.push('Black has the bishop pair');
+  if (pairs.length) R.push('BISHOP PAIR: ' + pairs.join('; '));
+
+  for (const c of centreStrength(fenAfter)) R.push('CENTRE: ' + c);
+
+  const passed = passedPawns(fenAfter);
+  if (passed.length) R.push('PASSED PAWNS: ' + passed.map(x => x.side + ' pawn on ' + x.square + (x.advanced ? ' (advanced)' : '') + (x.defended ? ', defended' : '')).join('; '));
+
+  const weak = weakPawns(fenAfter);
+  if (weak.length) R.push('WEAK PAWNS: ' + weak.map(x => x.side + ' ' + x.type + ' pawn on ' + x.square).join('; '));
+
   const wc = winningCaptures(fenAfter);
   if (wc.length) {
     const confirmed = wc.filter(x => engineLines.some(l => lineUsesMotif(l, { type:'capture', square: x.square })));
-    const real = confirmed.length ? confirmed : wc.filter(x => x.gain >= 3); // big wins only if unconfirmed
-    if (real.length) {
-      R.push('WINNING CAPTURES FOR ' + stm + ': ' + real.map(x =>
-        x.piece + ' on ' + x.square + (x.free ? ' is free' : ' (wins ' + (x.gain >= 3 ? 'material' : 'a pawn') + ')')
-      ).join('; '));
-    }
+    const real = confirmed.length ? confirmed : wc.filter(x => x.gain >= 3);
+    if (real.length) R.push('WINNING CAPTURES FOR ' + stm + ': ' + real.map(x => x.piece + ' on ' + x.square + (x.free ? ' is free' : ' (wins ' + x.gain + ')')).join('; '));
   }
 
-  // Pins/skewers — only those the engine actually uses
   const ps = pinsAndSkewers(fenAfter);
   const activePs = ps.filter(p => engineLines.some(l => lineUsesMotif(l, p)));
-  if (activePs.length) {
-    R.push('PINS/SKEWERS IN PLAY: ' + activePs.map(x => x.type === 'pin'
-      ? x.pinnedPiece + ' on ' + x.pinned + ' pinned to king by ' + x.byPiece + ' on ' + x.by
-      : 'skewer: ' + x.frontPiece + '/' + x.behindPiece + ' on ' + x.front + '/' + x.behind
-    ).join('; '));
-  }
+  if (activePs.length) R.push('PINS/SKEWERS IN PLAY: ' + activePs.map(x => x.type === 'pin'
+    ? x.pinnedPiece + ' on ' + x.pinned + ' pinned to king by ' + x.byPiece + ' on ' + x.by
+    : 'skewer: ' + x.frontPiece + '/' + x.behindPiece + ' on ' + x.front + '/' + x.behind
+  ).join('; '));
 
-  // Threats via null-move
+  // Manoeuvre + threat — from null-move PV
   const nullFen = nullMove(fenAfter);
   if (isValidFen(nullFen)) {
-    const t = await getEngineMultiPV(nullFen, { multipv: 1 });
+    const t = await getEngineMultiPV(nullFen, { multipv: 2 });
     if (t && !t.invalid && t.lines && t.lines.length) {
       const tl = t.lines[0];
       const isMate = /^#/.test(String(tl.eval));
       const evNum = parseFloat(String(tl.eval).replace('#', ''));
       if (isMate || (!isNaN(evNum) && Math.abs(evNum) >= 1.0))
-        R.push('THREAT (if ' + stm + ' ignores the position): ' + tl.numbered);
+        R.push('THREAT (if ' + stm + ' passes): ' + tl.numbered);
+
+      const man = findManeuver(nullFen, tl.allSan || []);
+      if (man) R.push('INTENT — ' + man.type + ': ' + moverSide + ' plays ' + man.pathSan.join(' then ') + ', settling on ' + man.target);
     }
   }
 
@@ -1249,10 +1456,12 @@ function processPgn(isLoad = false) {
   globalChunks = chunks;
   document.getElementById('workspace').classList.remove('hidden');
   document.getElementById('copy-btn').classList.remove('hidden');
+  document.getElementById('review-facts-btn').classList.remove('hidden');
   selStart = null; selEnd = null; reviewIndex = null;
   board.position('start', false);
   document.getElementById('fen-output').value = '';
   document.getElementById('batch-review').classList.add('hidden');
+  document.getElementById('facts-review-panel').classList.add('hidden');
   userNotes = {};
   if (document.getElementById('move-note')) document.getElementById('move-note').value = '';
   if (document.getElementById('notes-saved-count')) document.getElementById('notes-saved-count').innerText = '0 notes saved';
@@ -1500,6 +1709,7 @@ function selectChunk(i) {
     loadEngineForPanel(fen, 'main-engine-lines', 'main-engine-status',
       { get n() { return mainEngineToken; }, set n(v) { mainEngineToken = v; } }, { depth: 16, multipv: 5 });
     document.getElementById('batch-review').classList.add('hidden');
+    document.getElementById('facts-review-panel').classList.add('hidden');
   } else {
     selEnd = Math.max(selStart, i); selStart = Math.min(selStart, i); updateBatchReview();
   }
@@ -1520,16 +1730,94 @@ function updateUI() {
   });
   document.getElementById('stats').innerText = globalChunks.length + ' TOTAL MOVES';
 }
-function distilObjectives(ideasPack, max) {
-  const n = max || 6;
-  const out = [];
-  for (const idea of ideasPack) {
-    if (out.length >= n) break;
-    const clean = String(idea).replace(/\s+/g, ' ').trim();
-    if (!clean) continue;
-    out.push(clean.length > 160 ? clean.slice(0, 157) + '…' : clean);
+
+/* ===================== PHASE 2 — REVIEW FACTS ===================== */
+async function extractAndReview() {
+  if (selStart === null || selEnd === null) { alert('Pick a start and end move first.'); return; }
+  const idx = getSelectedIndices();
+  const container = document.getElementById('facts-review-list');
+  container.innerHTML = '<p class="text-slate-500 italic col-span-2 p-4">Extracting facts — this runs the engine on every selected move…</p>';
+  document.getElementById('facts-review-panel').classList.remove('hidden');
+  document.getElementById('facts-review-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  reviewedFacts = {};
+
+  for (const i of idx) {
+    const c = globalChunks[i];
+    if (!c || !c.fenAfter) continue;
+    const facts = [];
+    const ks = kingSafetyNotes(c.fenAfter); if (ks) facts.push(ks);
+    const freedom = pieceFreedom(c.fenAfter);
+    for (const f of freedom) facts.push(f.side + ' ' + f.piece + ' on ' + f.square + ' — ' + f.issue);
+    const bish = bishopAnalysis(c.fenAfter);
+    for (const b of bish.activeBishops) facts.push((b.color === 'w' ? 'White' : 'Black') + ' bishop on ' + b.square + ' ' + b.note);
+    if (bish.whitePair) facts.push('White has the bishop pair');
+    if (bish.blackPair) facts.push('Black has the bishop pair');
+    for (const x of centreStrength(c.fenAfter)) facts.push(x);
+    for (const p of passedPawns(c.fenAfter)) facts.push(p.side + ' passed pawn on ' + p.square + (p.advanced ? ' (advanced)' : '') + (p.defended ? ', defended' : ''));
+    for (const w of weakPawns(c.fenAfter)) facts.push(w.side + ' ' + w.type + ' pawn on ' + w.square);
+    const pos = positionFeatures(c.fenAfter); if (pos) facts.push(pos);
+    const un = undevelopedPieces(c.fenAfter); if (un) facts.push(un);
+
+    // Manoeuvre/intention via null-move engine
+    try {
+      const nullFen = nullMove(c.fenAfter);
+      if (isValidFen(nullFen)) {
+        const t = await getEngineMultiPV(nullFen, { multipv: 1 });
+        if (t && !t.invalid && t.lines && t.lines.length) {
+          const tl = t.lines[0];
+          const man = findManeuver(nullFen, tl.allSan || []);
+          if (man) facts.push('INTENT: ' + man.type + ' — ' + man.pathSan.join(' then ') + ' → ' + man.target);
+        }
+      }
+    } catch (e) {}
+
+    reviewedFacts[c.id] = facts.map(t => ({ text: t, checked: true }));
   }
-  return out;
+  renderFactsReview();
+}
+
+function renderFactsReview() {
+  const container = document.getElementById('facts-review-list');
+  container.innerHTML = '';
+  let total = 0, totalChecked = 0;
+  for (const [id, arr] of Object.entries(reviewedFacts)) {
+    const c = globalChunks.find(x => x.id === id);
+    if (!c) continue;
+    if (!arr.length) continue;
+    const card = document.createElement('div');
+    card.className = 'glass p-3 rounded-xl';
+    card.innerHTML = '<p class="text-[10px] gold-text font-bold mb-2">' + c.moveNum + '. ' + c.target + '</p>';
+    for (let k = 0; k < arr.length; k++) {
+      total++;
+      if (arr[k].checked) totalChecked++;
+      const row = document.createElement('label');
+      row.className = 'flex items-start gap-2 text-xs text-slate-300 mb-1 cursor-pointer';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = arr[k].checked;
+      cb.onchange = () => { arr[k].checked = cb.checked; renderFactsReview(); };
+      const span = document.createElement('span');
+      span.textContent = arr[k].text;
+      row.appendChild(cb);
+      row.appendChild(span);
+      card.appendChild(row);
+    }
+    container.appendChild(card);
+  }
+  document.getElementById('facts-review-count').innerText = totalChecked + ' / ' + total + ' facts kept';
+}
+
+function closeFactsReview() {
+  document.getElementById('facts-review-panel').classList.add('hidden');
+}
+
+function applyFactsReview() {
+  for (const [id, arr] of Object.entries(reviewedFacts)) {
+    const c = globalChunks.find(x => x.id === id);
+    if (c) c._reviewedFacts = arr.filter(x => x.checked).map(x => x.text);
+  }
+  closeFactsReview();
+  copySelectedBatch();
 }
 
 /* ===================== COPY BATCH ===================== */
@@ -1542,7 +1830,6 @@ async function copySelectedBatch() {
 
   const ideasPack = loadIdeasPack();
   const openingName = (localStorage.getItem(PACK_NAME_KEY) || '').trim();
-
   const curatedIdeas = [];
   const wikiTagged = [];
   for (const s of ideasPack) {
@@ -1551,11 +1838,9 @@ async function copySelectedBatch() {
     if (str.startsWith('[Wiki')) wikiTagged.push(str);
     else curatedIdeas.push(str);
   }
-
-  const objectives = distilObjectives(curatedIdeas, 6);
+  const objectives = curatedIdeas.slice(0, 6).map(s => String(s).length > 160 ? String(s).slice(0, 157) + '…' : s);
   const objectivesBlock = objectives.length
-    ? '=== OPENING OBJECTIVES — ' + (openingName || 'this course') + ' ===\n' +
-      objectives.map((s, i) => (i+1) + '. ' + s).join('\n') + '\n'
+    ? '=== OPENING OBJECTIVES — ' + (openingName || 'this course') + ' ===\n' + objectives.map((s, i) => (i+1) + '. ' + s).join('\n') + '\n'
     : '';
 
   let wikiList = [];
@@ -1566,13 +1851,8 @@ async function copySelectedBatch() {
       return m ? { move: m[1].trim(), comment: m[2].trim() } : { move: '', comment: s };
     });
   }
-
   const idx = getSelectedIndices();
-  const batchMoveSans = idx.map(i => {
-    const ch = globalChunks[i];
-    return ch && ch.san ? String(ch.san).toLowerCase() : '';
-  }).filter(Boolean);
-
+  const batchMoveSans = idx.map(i => { const ch = globalChunks[i]; return ch && ch.san ? String(ch.san).toLowerCase() : ''; }).filter(Boolean);
   const matchedWiki = [], unmatchedWiki = [];
   for (const w of wikiList) {
     const wm = String(w.move || '').toLowerCase();
@@ -1581,23 +1861,19 @@ async function copySelectedBatch() {
     if (hit) matchedWiki.push(w); else unmatchedWiki.push(w);
   }
   const finalWiki = matchedWiki.concat(unmatchedWiki);
-
-  let wikiText = '';
-  let wikiCount = 0;
+  let wikiText = '', wikiCount = 0;
   for (const w of finalWiki) {
     const comment = String(w.comment || '').slice(0, 500);
     const line = (w.move ? w.move + ': ' : '') + comment;
     if (wikiText.length + line.length > 6000) break;
-    wikiText += line + '\n';
-    wikiCount++;
+    wikiText += line + '\n'; wikiCount++;
   }
   const wikiSnippet = wikiCount
-    ? '=== WIKI MOVE-BY-MOVE REFERENCE (' + wikiCount + ' entries — this is the VOICE model) ===\n' + wikiText
+    ? '=== WIKI MOVE-BY-MOVE REFERENCE (' + wikiCount + ' entries — this is your VOICE model) ===\n' + wikiText
     : '';
 
   const headerFrame = (pgnMeta.eco || pgnMeta.opening)
-    ? '=== PGN HEADERS ===\n' +
-      (pgnMeta.eco ? 'ECO: ' + pgnMeta.eco + '\n' : '') +
+    ? '=== PGN HEADERS ===\n' + (pgnMeta.eco ? 'ECO: ' + pgnMeta.eco + '\n' : '') +
       (pgnMeta.opening ? 'Opening: ' + pgnMeta.opening + '\n' : '') +
       (pgnMeta.variation ? 'Variation: ' + pgnMeta.variation + '\n' : '') +
       (pgnMeta.event ? 'Event: ' + pgnMeta.event + '\n' : '')
@@ -1646,8 +1922,7 @@ async function copySelectedBatch() {
       if (n.variationLevel === c.variationLevel && n.isVariationEnd) {
         const pathLen = (n.pathArray || []).length;
         const isWhiteMove = (pathLen % 2 === 1);
-        const prefix = isWhiteMove ? n.moveNum + '.' : n.moveNum + '...';
-        lineEnds = prefix + (n.target || '').trim();
+        lineEnds = (isWhiteMove ? n.moveNum + '.' : n.moveNum + '...') + (n.target || '').trim();
         break;
       }
     }
@@ -1661,7 +1936,10 @@ async function copySelectedBatch() {
     if (lineEnds) lineOutput += '\nLINE ENDS AT (context only, do not describe): ' + lineEnds;
     lineOutput += '\nFEN: ' + (fenAfter || 'unavailable');
     lineOutput += '\nVOICE NOTE: ' + (userNotes[c.id] || '(none)');
-    if (fenAfter) {
+
+    if (c._reviewedFacts && c._reviewedFacts.length) {
+      lineOutput += '\nPOSITIONAL FACTS (human-reviewed): ' + c._reviewedFacts.join(' | ');
+    } else if (fenAfter) {
       btnText.innerHTML = '<div class="spinner"></div>[' + step + '/' + total + ']…';
       await delay(10);
       try { lineOutput += '\n' + await buildTacticalReport(fenAfter, moveWithSign, sideJustPlayed, 2); } catch (e) {}
@@ -1672,57 +1950,52 @@ async function copySelectedBatch() {
   progressFill.style.width = '100%';
 
   const N = total;
-  const fullPrompt = `You are a grandmaster chess author annotating an opening course.
-
-=== PRIMARY VOICE MODEL ===
-If a WIKI MOVE-BY-MOVE REFERENCE block is present, that is your PRIMARY voice model. Copy its register exactly: short sentences, concrete detail about what the move does and why, no fluff. Then use the TACTICAL REPORT as a silent, secondary check — pull ONE relevant fact from it only if it adds to the picture. Never list the tactical report line by line; weave one fact in.
+  const fullPrompt = `You are a grandmaster chess author. Your PRIMARY source of voice is the WIKI MOVE-BY-MOVE REFERENCE — copy its register exactly: short sentences, concrete detail, no fluff.
 
 === OUTPUT ===
 Return a JSON object with EXACTLY ${N} keys, one per [ID] below. Do not skip, merge, or reorder keys.
 
-=== LENGTH — HARD RULE ===
-Each note: ONE to TWO short sentences. Maximum 35 words. Prefer less.
+=== THE ONE RULE THAT MATTERS ===
+Each note is about the move that was JUST PLAYED and nothing else.
+- On our move: describe OUR plan.
+- On their move: describe THEIR plan (which we must answer).
+- NEVER describe the opponent's next move on our move.
+- NEVER describe our next move on their move.
+- NEVER list future moves. No "next", "then", "followed by".
+If you catch yourself about to write a future move, delete that sentence and stop.
 
-=== HOW TO THINK ABOUT A MOVE ===
-Ask three questions, answer in the note:
-  1. What does this move DO on the board? (which square, which file, which piece improves)
-  2. WHY does that matter for the plan? (attack, defence, space, king safety, structure)
-  3. Which ONE concrete fact from the report anchors it? (a file, an attacked piece, a threat, king position, development)
+You may use INTENT — the engine-detected manoeuvre — because it describes the plan of the side that just moved, and that is correct.
+You may use THREAT — but only in one clause and only if it is the mover's own threat.
 
-If the move is quiet and there is no concrete fact — say so honestly:
-"A quiet move. Nothing is attacked; we complete development and wait."
+=== LENGTH ===
+ONE to TWO short sentences. Maximum 30 words. Prefer less.
 
-=== CHESS VOCABULARY — USE CORRECT TERMS ===
-Right: "en prise", "defended twice", "attacks the c4-bishop", "wins a pawn", "the half-open a-file", "the bishop on g5 pins the knight", "we double rooks", "the queen steps off the diagonal", "the king walks to g8", "no pawn shield".
-Wrong (never use): "the queen is unprotected" for a queen that is actively attacking; "hanging" for a piece that has no defender but is not actually capturable for gain; "the piece supports the pawn" when the piece is not defending it; "the bishop is protected" when only the queen defends it.
-Hanging means: the piece can actually be captured right now, and the capture wins material.
+=== WHAT TO SAY ===
+For every move, answer in one line:
+ 1. What is the concrete action? (a piece, a square, a file)
+ 2. Why does it serve the plan? (attack, defence, space, king safety, structure, a manoeuvre)
 
-=== NEVER NARRATE FUTURE MOVES ===
-The note is ONLY about the move just played and the position right after.
-- Do NOT say what we plan to play on the opponent's next turn.
-- Do NOT say what the opponent will play on our next turn.
-- Do NOT list moves. Never use "next", "then", "followed by", or "the plan is" before moves.
+Use the POSITIONAL FACTS (human-reviewed) — those are the verified facts of this position. Do NOT invent facts.
+If the position has no concrete content, say so: "A quiet move. We complete development."
 
-=== NEVER SAY (the reader sees these already) ===
-- "gives check", "with check", "the check lands on the king"
-- "attacks the king", "hits the king", "hits e1"
+=== NEVER SAY ===
+- "gives check", "with check", "attacks the king", "hits e1"
 - "the pawn steps from d7 to d5", "the queen lands on b4"
-Do NOT repeat the same feature in two consecutive notes.
+- Do NOT repeat the same feature (the a-file, the b5-pawn) in two consecutive notes.
 
-=== LINE LEADS TO / LINE ENDS AT — USE, DO NOT DESCRIBE ===
-Use LINE ENDS AT to JUDGE the current move:
-  $10/$11/$12 → equal.  $13 → unclear.  $14 → White slightly better.
-  $15 → with compensation.  $16 → White is better.  $17 → Black is better.
-  $18/$19 → winning for White / Black.
-Never quote or list the moves.
-
-=== POSITION SYMBOL — mandatory explanation ===
+=== HOW TO EXPLAIN A POSITION SYMBOL ===
   =/∞ or ∞/=  → "Black has full compensation: [the concrete asset]."
   =           → "The position is equal. [Why]."
   ∞           → "Unclear. [Whose play is easier and why]."
   ±  or  ∓    → "[Side] is slightly better — [the concrete edge]."
+  =/∞ means the material is unbalanced but the missing side has real compensation.
 
-=== TONE — do NOT use these words ===
+=== GM SYMBOL TABLE ===
+  ?? → blunder — explain what goes wrong.
+  ?! → dubious — explain the risk.
+  !  → good — explain the plus.
+
+=== TONE — forbidden words ===
 centralises, stabilising, coordination, creating imbalances, long-term asset,
 positional understanding, showcases, demonstrates, highlights, dynamic equilibrium.
 
