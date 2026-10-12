@@ -4,8 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v6.9 | Decipher Chess Academy</title>
-<!-- build: 2026-10-12-voice-v6.9-richer-tactics -->
+<title>GM Variation Master · v7.0 | Decipher Chess Academy</title>
+<!-- build: 2026-10-12-voice-v7.0-real-tactics -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -38,7 +38,7 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Richer tactics + line context · v6.9</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Real tactics · wiki voice · v7.0</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center flex-wrap">
 <span id="sf-badge" class="sf-badge loading">Engine loading…</span>
@@ -884,21 +884,65 @@ function attackersOfBoard(board, sq, byColor) {
   }
   return out;
 }
-function hangingPieces(fen) {
+
+/* ---- REAL hanging detection: simulate the capture and the recapture ---- */
+function winningCaptures(fen) {
   const chess = new Chess(fen); if (!chess) return [];
-  const board = chess.board(), stm = chess.turn(), enemy = stm === 'w' ? 'b' : 'w';
+  const board = chess.board();
+  const stm = chess.turn();
+  const enemy = stm === 'w' ? 'b' : 'w';
+  const names = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen' };
   const out = [];
   for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p || p.color !== enemy || p.type === 'k') continue;
-    const sq = frToSq(f, r), atk = attackersOfBoard(board, sq, stm);
+    const p = board[r][f];
+    if (!p || p.color !== enemy || p.type === 'k') continue;
+    const sq = frToSq(f, r);
+    const atk = attackersOfBoard(board, sq, stm);
     if (!atk.length) continue;
-    const def = attackersOfBoard(board, sq, enemy);
-    const cheapest = Math.min(...atk.map(s => { const [af, ar] = sqToFR(s); return PIECE_VAL[board[ar][af].type]; }));
-    if (!def.length) out.push({ type:'hanging', square:sq, piece:p.type, color:p.color, reason:'undefended' });
-    else if (cheapest < PIECE_VAL[p.type]) out.push({ type:'hanging', square:sq, piece:p.type, color:p.color, reason:'attacked by cheaper piece' });
+    // Find cheapest attacker
+    let cheapestSq = null, cheapestVal = 999;
+    for (const as of atk) {
+      const [af, ar] = sqToFR(as);
+      const ap = board[ar][af];
+      if (PIECE_VAL[ap.type] < cheapestVal) { cheapestVal = PIECE_VAL[ap.type]; cheapestSq = as; }
+    }
+    // Simulate the capture
+    const test = new Chess(fen);
+    let mv;
+    try { mv = test.move({ from: cheapestSq, to: sq, promotion: 'q' }); } catch(e) { continue; }
+    if (!mv) continue;
+    // Can the capturer be recaptured?
+    const newBoard = test.board();
+    const defs = attackersOfBoard(newBoard, sq, enemy);
+    const pieceVal = PIECE_VAL[p.type];
+    let netGain;
+    if (defs.length === 0) {
+      netGain = pieceVal - cheapestVal;
+    } else {
+      let cheapestDefVal = 999;
+      for (const ds of defs) {
+        const [df, dr] = sqToFR(ds);
+        const dp = newBoard[dr][df];
+        if (dp && PIECE_VAL[dp.type] < cheapestDefVal) cheapestDefVal = PIECE_VAL[dp.type];
+      }
+      netGain = pieceVal - Math.max(cheapestVal, cheapestDefVal);
+    }
+    // Only report if the capture actually wins material
+    if (netGain >= 1) {
+      out.push({
+        piece: names[p.type],
+        square: sq,
+        color: p.color,
+        gain: netGain,
+        free: defs.length === 0,
+        by: (names[board[sqToFR(cheapestSq)[1]][sqToFR(cheapestSq)[0]].type] || 'piece') + ' on ' + cheapestSq
+      });
+    }
   }
-  return out;
+  return out.slice(0, 4);
 }
+
+/* ---- Pins/skewers: only report if the top engine line uses them ---- */
 function pinsAndSkewers(fen) {
   const chess = new Chess(fen); if (!chess) return [];
   const board = chess.board(), stm = chess.turn(), enemy = stm === 'w' ? 'b' : 'w';
@@ -938,9 +982,9 @@ function materialCount(fen) {
 function lineUsesMotif(line, motif) {
   if (!line || !line.allSan || !line.allSan.length) return false;
   const f4 = line.allSan.slice(0, 4);
-  if (motif.type === 'hanging') return f4.some(s => s.includes('x' + motif.square));
+  if (motif.type === 'capture') return f4.some(s => s.includes('x' + motif.square));
   if (motif.type === 'pin') return f4.some(s => s.includes('x' + motif.pinned)) || f4.some(s => s.includes(motif.by));
-  if (motif.type === 'skewer') return f4.some(s => s.includes('x' + motif.front)) || f4.some(s => s.includes('x' + motif.behind));
+  if (motif.type === 'skewer') return f4.some(s => s.includes('x' + motif.front)) || f4.some(s => s.includes(motif.behind));
   return false;
 }
 function positionFeatures(fen) {
@@ -970,46 +1014,18 @@ function positionFeatures(fen) {
   if (kB >= kW + 2) feats.push('Black has more pawns on the kingside');
   return feats.slice(0, 3).join('. ');
 }
-
-/* ---- NEW: checks, attacked pieces, king status, piece activity ---- */
-function checksAvailable(fen) {
-  const chess = new Chess(fen); if (!chess) return [];
-  const out = [];
-  try {
-    for (const m of chess.moves({ verbose: true })) {
-      if (m.san && /[+#]$/.test(m.san)) out.push(m.san.replace(/[!?]+$/, ''));
-      if (out.length >= 4) break;
-    }
-  } catch (e) {}
-  return out;
-}
-function attackedEnemyPieces(fen) {
-  const chess = new Chess(fen); if (!chess) return [];
-  const board = chess.board();
-  const stm = chess.turn();
-  const enemy = stm === 'w' ? 'b' : 'w';
-  const names = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen' };
-  const out = [];
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f];
-    if (!p || p.color !== enemy || p.type === 'k') continue;
-    const sq = frToSq(f, r);
-    const atk = attackersOfBoard(board, sq, stm);
-    if (atk.length) out.push(names[p.type] + ' on ' + sq + ' ×' + atk.length);
-  }
-  return out.slice(0, 5);
-}
-function kingStatus(fen) {
+function kingSafetyNotes(fen) {
   const chess = new Chess(fen); if (!chess) return '';
   const board = chess.board();
   const files = 'abcdefgh';
-  const out = [];
+  const notes = [];
   for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
     const p = board[r][f];
     if (!p || p.type !== 'k') continue;
-    const sq = files[f] + (8 - r);
     const side = p.color === 'w' ? 'White' : 'Black';
+    const homeRank = p.color === 'w' ? 7 : 0;
     const dir = p.color === 'w' ? -1 : 1;
+    const castled = (f === 6 || f === 2) && r === homeRank;
     let shield = 0;
     for (const df of [-1, 0, 1]) {
       const nf = f + df, nr = r + dir;
@@ -1017,33 +1033,27 @@ function kingStatus(fen) {
       const q = board[nr][nf];
       if (q && q.type === 'p' && q.color === p.color) shield++;
     }
-    const homeRank = p.color === 'w' ? 7 : 0;
-    const castled = (f === 6 || f === 2) && r === homeRank;
-    let status = side + ' king on ' + sq;
-    if (castled) status += ' (castled)';
-    else if (r === homeRank) status += ' (uncastled)';
-    if (shield >= 2) status += ', shielded';
-    else if (shield <= 1) status += ', NO pawn shield';
-    out.push(status);
+    if (!castled && r === homeRank) notes.push(side + ' king still on e1/e8');
+    else if (castled && shield === 0) notes.push(side + ' king castled but no pawn shield left');
   }
-  return out.join('; ');
+  return notes.join('; ');
 }
-function pieceActivity(fen) {
+function undevelopedPieces(fen) {
   const chess = new Chess(fen); if (!chess) return '';
   const board = chess.board();
   const homes = {
-    w: [['b1','n'],['c1','b'],['d1','q'],['f1','b'],['g1','n']],
-    b: [['b8','n'],['c8','b'],['d8','q'],['f8','b'],['g8','n']]
+    w: [['b1','n'],['c1','b'],['f1','b'],['g1','n']],
+    b: [['b8','n'],['c8','b'],['f8','b'],['g8','n']]
   };
   const out = [];
   for (const side of ['w', 'b']) {
-    const undeveloped = [];
+    const un = [];
     for (const [sq, code] of homes[side]) {
       const [f, r] = sqToFR(sq);
       const p = board[r][f];
-      if (p && p.color === side && p.type === code) undeveloped.push(sq);
+      if (p && p.color === side && p.type === code) un.push(sq);
     }
-    if (undeveloped.length) out.push((side === 'w' ? 'White' : 'Black') + ' undeveloped: ' + undeveloped.join(','));
+    if (un.length) out.push((side === 'w' ? 'White' : 'Black') + ' home: ' + un.join(','));
   }
   return out.join('; ');
 }
@@ -1053,49 +1063,53 @@ async function buildTacticalReport(fenAfter, moveSan, moverSide, maxLines) {
   const R = [];
   const chess = new Chess(fenAfter); if (!chess) return '(invalid FEN)';
   const stm = chess.turn() === 'w' ? 'White' : 'Black';
+  const mover = moverSide;
   const engineData = await getEngineMultiPV(fenAfter, { multipv: limit });
   const engineLines = (engineData && !engineData.invalid && engineData.lines) ? engineData.lines.slice(0, limit) : [];
   const mat = materialCount(fenAfter);
   const diff = mat.w - mat.b;
-  const evalForMover = moverSide === 'White' ? diff : -diff;
+  const evalForMover = mover === 'White' ? diff : -diff;
 
   R.push('=== TACTICAL REPORT ===');
-  let matPhrase = '';
-  if (diff === 0) matPhrase = 'material is equal';
-  else {
-    const side = diff > 0 ? 'White' : 'Black';
-    const ad = Math.abs(diff);
-    matPhrase = side + ' is up ' + ad + ' pawn' + (ad === 1 ? '' : 's');
+  if (diff !== 0) {
+    R.push('Material: ' + (diff > 0 ? 'White is up ' + diff : 'Black is up ' + (-diff)));
+  } else {
+    R.push('Material: level');
   }
-  R.push('Material for ' + moverSide + ': ' + (evalForMover >= 0 ? '+' : '') + evalForMover + ' (' + matPhrase + ')');
 
+  // Positional notes
+  const posNotes = [];
   const pos = positionFeatures(fenAfter);
-  if (pos) R.push('POSITIONAL CONTEXT: ' + pos);
+  if (pos) posNotes.push(pos);
+  const ks = kingSafetyNotes(fenAfter);
+  if (ks) posNotes.push(ks);
+  const un = undevelopedPieces(fenAfter);
+  if (un) posNotes.push(un);
+  if (posNotes.length) R.push('POSITION: ' + posNotes.join(' | '));
 
-  const ks = kingStatus(fenAfter);
-  if (ks) R.push('KING SAFETY: ' + ks);
+  // Real winning captures (only if the engine plays them)
+  const wc = winningCaptures(fenAfter);
+  if (wc.length) {
+    const confirmed = wc.filter(x => engineLines.some(l => lineUsesMotif(l, { type:'capture', square: x.square })));
+    const real = confirmed.length ? confirmed : wc.filter(x => x.gain >= 3); // big wins only if unconfirmed
+    if (real.length) {
+      R.push('WINNING CAPTURES FOR ' + stm + ': ' + real.map(x =>
+        x.piece + ' on ' + x.square + (x.free ? ' is free' : ' (wins ' + (x.gain >= 3 ? 'material' : 'a pawn') + ')')
+      ).join('; '));
+    }
+  }
 
-  const checks = checksAvailable(fenAfter);
-  if (checks.length) R.push('CHECKS AVAILABLE (to ' + stm + '): ' + checks.join(', '));
-
-  const attacked = attackedEnemyPieces(fenAfter);
-  if (attacked.length) R.push('ATTACKED PIECES (' + stm + ' attacks): ' + attacked.join('; '));
-
-  const hang = hangingPieces(fenAfter);
-  if (hang.length) R.push('HANGING FOR ' + stm + ': ' + hang.map(h => (h.color === 'w' ? 'White ' : 'Black ') + h.piece.toUpperCase() + ' on ' + h.square + ' (' + h.reason + ')').join('; '));
-
+  // Pins/skewers — only those the engine actually uses
   const ps = pinsAndSkewers(fenAfter);
-  if (ps.length) R.push('PINS/SKEWERS: ' + ps.map(x => x.type === 'pin'
-    ? (x.pinnedColor === 'w' ? 'White ' : 'Black ') + x.pinnedPiece.toUpperCase() + ' on ' + x.pinned + ' pinned to king on ' + x.toKing + ' by ' + x.byPiece.toUpperCase() + ' on ' + x.by
-    : 'skewer: ' + x.frontPiece.toUpperCase() + ' on ' + x.front + ' in front of ' + x.behindPiece.toUpperCase() + ' on ' + x.behind
-  ).join('; '));
+  const activePs = ps.filter(p => engineLines.some(l => lineUsesMotif(l, p)));
+  if (activePs.length) {
+    R.push('PINS/SKEWERS IN PLAY: ' + activePs.map(x => x.type === 'pin'
+      ? x.pinnedPiece + ' on ' + x.pinned + ' pinned to king by ' + x.byPiece + ' on ' + x.by
+      : 'skewer: ' + x.frontPiece + '/' + x.behindPiece + ' on ' + x.front + '/' + x.behind
+    ).join('; '));
+  }
 
-  const pa = pieceActivity(fenAfter);
-  if (pa) R.push('PIECE ACTIVITY: ' + pa);
-
-  const bestMate = engineLines.find(l => l.scoreType === 'mate' && l.score > 0);
-  if (bestMate) R.push('FORCED MATE for ' + stm + ' in ' + bestMate.score + ': ' + bestMate.numbered);
-
+  // Threats via null-move
   const nullFen = nullMove(fenAfter);
   if (isValidFen(nullFen)) {
     const t = await getEngineMultiPV(nullFen, { multipv: 1 });
@@ -1103,8 +1117,8 @@ async function buildTacticalReport(fenAfter, moveSan, moverSide, maxLines) {
       const tl = t.lines[0];
       const isMate = /^#/.test(String(tl.eval));
       const evNum = parseFloat(String(tl.eval).replace('#', ''));
-      if (isMate || (!isNaN(evNum) && Math.abs(evNum) >= 0.5))
-        R.push('THREAT (if ' + stm + ' passes): ' + tl.numbered);
+      if (isMate || (!isNaN(evNum) && Math.abs(evNum) >= 1.0))
+        R.push('THREAT (if ' + stm + ' ignores the position): ' + tl.numbered);
     }
   }
 
@@ -1578,7 +1592,7 @@ async function copySelectedBatch() {
     wikiCount++;
   }
   const wikiSnippet = wikiCount
-    ? '=== WIKI MOVE-BY-MOVE REFERENCE (' + wikiCount + ' entries — paraphrase, do not copy) ===\n' + wikiText
+    ? '=== WIKI MOVE-BY-MOVE REFERENCE (' + wikiCount + ' entries — this is the VOICE model) ===\n' + wikiText
     : '';
 
   const headerFrame = (pgnMeta.eco || pgnMeta.opening)
@@ -1658,43 +1672,36 @@ async function copySelectedBatch() {
   progressFill.style.width = '100%';
 
   const N = total;
-  const fullPrompt = `You are a grandmaster chess author writing a short opening-course note for each move. Every note is SHORT, concrete, tactical or positional, and explains WHY.
+  const fullPrompt = `You are a grandmaster chess author annotating an opening course.
+
+=== PRIMARY VOICE MODEL ===
+If a WIKI MOVE-BY-MOVE REFERENCE block is present, that is your PRIMARY voice model. Copy its register exactly: short sentences, concrete detail about what the move does and why, no fluff. Then use the TACTICAL REPORT as a silent, secondary check — pull ONE relevant fact from it only if it adds to the picture. Never list the tactical report line by line; weave one fact in.
 
 === OUTPUT ===
-Return a JSON object with EXACTLY ${N} keys, one per [ID]. Do not skip, merge, or reorder keys.
+Return a JSON object with EXACTLY ${N} keys, one per [ID] below. Do not skip, merge, or reorder keys.
 
 === LENGTH — HARD RULE ===
-Each note: ONE or TWO short sentences. Maximum 30 words. Prefer less.
+Each note: ONE to TWO short sentences. Maximum 35 words. Prefer less.
 
-=== TACTICAL + POSITIONAL MENTION — MANDATORY ===
-Every single note MUST include AT LEAST ONE concrete fact from the TACTICAL REPORT or POSITIONAL CONTEXT. Choose the sharpest one:
-- a check available ("with the check, the king stays on e1")
-- an attacked piece by name and square ("the c4-bishop is attacked twice")
-- a pin or skewer ("the knight is pinned to the king")
-- a hanging piece ("the b2-pawn is hanging")
-- an open or half-open file by letter ("the half-open a-file and b-file are ours")
-- an undeveloped piece ("the rook on a8 is still asleep")
-- a king-safety fact ("the king is uncastled with no pawn shield")
-- a material count in words ("we are a pawn down")
-- a threat shown in THREAT or ENGINE lines
+=== HOW TO THINK ABOUT A MOVE ===
+Ask three questions, answer in the note:
+  1. What does this move DO on the board? (which square, which file, which piece improves)
+  2. WHY does that matter for the plan? (attack, defence, space, king safety, structure)
+  3. Which ONE concrete fact from the report anchors it? (a file, an attacked piece, a threat, king position, development)
 
-If the move has no tactical or positional content — say so honestly: "A quiet move. Nothing is attacked; we complete development and wait."
+If the move is quiet and there is no concrete fact — say so honestly:
+"A quiet move. Nothing is attacked; we complete development and wait."
 
-Bad (no fact, no reason):
-- "The bishop develops to a good square."
-- "We improve the position."
+=== CHESS VOCABULARY — USE CORRECT TERMS ===
+Right: "en prise", "defended twice", "attacks the c4-bishop", "wins a pawn", "the half-open a-file", "the bishop on g5 pins the knight", "we double rooks", "the queen steps off the diagonal", "the king walks to g8", "no pawn shield".
+Wrong (never use): "the queen is unprotected" for a queen that is actively attacking; "hanging" for a piece that has no defender but is not actually capturable for gain; "the piece supports the pawn" when the piece is not defending it; "the bishop is protected" when only the queen defends it.
+Hanging means: the piece can actually be captured right now, and the capture wins material.
 
-Good (fact + reason):
-- "We play ...Nf6, hitting the c4-bishop a second time. White cannot defend it and keep the d4-knight."
-- "The bishop goes to g7. Its diagonal hits d4, and the half-open a-file and b-file are ours."
-- "We give up the b2-pawn. The bishop on g7 and the rook on a8 give full compensation on the queenside."
-
-=== NEVER NARRATE FUTURE MOVES — HARD RULE ===
-The note is ONLY about the move being annotated and the position right after it.
+=== NEVER NARRATE FUTURE MOVES ===
+The note is ONLY about the move just played and the position right after.
 - Do NOT say what we plan to play on the opponent's next turn.
 - Do NOT say what the opponent will play on our next turn.
-- Do NOT list a sequence of upcoming moves.
-- Do NOT use "next", "then", "followed by", or "the plan is" when followed by moves.
+- Do NOT list moves. Never use "next", "then", "followed by", or "the plan is" before moves.
 
 === NEVER SAY (the reader sees these already) ===
 - "gives check", "with check", "the check lands on the king"
@@ -1703,54 +1710,24 @@ The note is ONLY about the move being annotated and the position right after it.
 Do NOT repeat the same feature in two consecutive notes.
 
 === LINE LEADS TO / LINE ENDS AT — USE, DO NOT DESCRIBE ===
-Use LINE ENDS AT to JUDGE this move:
-  $10/$11/$12 → equal
-  $13         → unclear
-  $14         → White slightly better
-  $15         → with compensation
-  $16         → White is better
-  $17         → Black is better
-  $18         → White is winning
-  $19         → Black is winning
-NEVER quote or list the moves from LINE LEADS TO / LINE ENDS AT.
+Use LINE ENDS AT to JUDGE the current move:
+  $10/$11/$12 → equal.  $13 → unclear.  $14 → White slightly better.
+  $15 → with compensation.  $16 → White is better.  $17 → Black is better.
+  $18/$19 → winning for White / Black.
+Never quote or list the moves.
 
-=== POSITION SYMBOL → MANDATORY EXPLANATION ===
-POSITION AFTER: <symbol> means the annotator's verdict. Your note is the REASON.
-  =/∞ or ∞/=  → "Black has full compensation: the half-open a-file and b-file and the pressure on b2 give lasting play."
-  =           → "The position is equal. Our pieces are placed and White has no target."
-  ∞           → "Unclear. We have the better structure; White has the bishop pair."
-  ±  or  ∓    → "White is slightly better — the bishop on c4 beats the knight on c8."
+=== POSITION SYMBOL — mandatory explanation ===
+  =/∞ or ∞/=  → "Black has full compensation: [the concrete asset]."
+  =           → "The position is equal. [Why]."
+  ∞           → "Unclear. [Whose play is easier and why]."
+  ±  or  ∓    → "[Side] is slightly better — [the concrete edge]."
 
-=== VOICE (this is how a GM talks — copy it) ===
-- "A useful prophylactic move. Black prepares ...b5 and avoids committing the centre too early."
-- "We strike immediately, before White can fully establish it."
-- "Black has fully equalized. The bishop becomes active on the long diagonal and the queenside initiative gives easy play."
-- "White protects the bishop and keeps the option of long castling."
-- "Black has compensation in the form of the bishop pair and pressure against the centre."
+=== TONE — do NOT use these words ===
+centralises, stabilising, coordination, creating imbalances, long-term asset,
+positional understanding, showcases, demonstrates, highlights, dynamic equilibrium.
 
 Short sentences. Simple words. Correct grammar. British spelling.
 Use "we"/"our" for ${weSide}; "${theySide}"/"they" for ${theySide}.
-
-Never use: centralises, stabilising, coordination, creating imbalances, long-term asset, positional understanding, showcases, demonstrates, highlights, dynamic equilibrium.
-
-=== GM SYMBOL TABLE ===
-  ?? → blunder — explain what goes wrong.
-  ?! → dubious — explain the risk.
-  !  → good — explain the plus.
-
-=== TACTICAL REPORT FIELDS (how to read them) ===
-CHECKS AVAILABLE — moves the side to move can play that give check.
-ATTACKED PIECES — enemy pieces the side to move is attacking, with the number of attackers.
-HANGING FOR — undefended or cheaply attacked pieces.
-PINS/SKEWERS — pinned pieces and skewers, with attacker and target squares.
-PIECE ACTIVITY — undeveloped pieces still on their home squares.
-KING SAFETY — whether each king is castled and shielded.
-THREAT — what the side that just moved would play if the opponent passed.
-
-Use one of these facts per note. Never invent a fact. Never contradict the report.
-
-=== WIKI REFERENCE ===
-Use it as a MODEL for VOICE and CONTENT. Paraphrase — never copy.
 
 We play ${weSide}. They play ${theySide}.
 
