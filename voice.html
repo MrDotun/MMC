@@ -4,8 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v6.3 | Decipher Chess Academy</title>
-<!-- build: 2026-10-12-voice-v6.3-pick12 -->
+<title>GM Variation Master · v6.6 | Decipher Chess Academy</title>
+<!-- build: 2026-10-12-voice-v6.6-wiki-full -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -38,7 +38,7 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Deep Wikipedia + 12-move pick · v6.3</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Full wiki reference · v6.6</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center flex-wrap">
 <span id="sf-badge" class="sf-badge loading">Engine loading…</span>
@@ -238,6 +238,7 @@ let reviewEngineToken = 0, mainEngineToken = 0;
 let reviewLine = [], reviewLineIdx = 0;
 let wikiEntries = [];
 let openingsDB = [], openingsMap = {};
+let lastBatchIds = [];
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 /* ===================== OPENINGS DB ===================== */
@@ -278,8 +279,7 @@ async function ensureOpeningsDB() {
   if (all.length > 100) {
     openingsDB = all;
     try { localStorage.setItem(OPENINGS_DB_KEY, JSON.stringify(all)); } catch (e) {}
-    buildOpeningsMap();
-    setDbBadge('on', all.length + ' openings');
+    buildOpeningsMap(); setDbBadge('on', all.length + ' openings');
     return all;
   }
   setDbBadge('off', 'DB failed');
@@ -314,18 +314,16 @@ function findOpeningByECO(eco) {
   return m.length ? m.sort((a,b) => a.moves.length - b.moves.length)[0] : null;
 }
 
-/* ===================== WIKIPEDIA (multi-article) ===================== */
+/* ===================== WIKIPEDIA ===================== */
 const WIKI_CACHE_KEY = 'gm_wiki_cache_v3';
 function getWikiCache() { try { return JSON.parse(localStorage.getItem(WIKI_CACHE_KEY) || '{}'); } catch (e) { return {}; } }
 function setWikiCache(c) { try { localStorage.setItem(WIKI_CACHE_KEY, JSON.stringify(c)); } catch (e) {} }
-
 function logWiki(msg) {
   const el = document.getElementById('detect-info');
   if (el) el.innerText = (el.innerText ? el.innerText + '\n' : '') + msg;
   console.log('[WIKI]', msg);
 }
 function clearWikiLog() { const el = document.getElementById('detect-info'); if (el) el.innerText = ''; }
-
 async function searchWikipediaTitle(query) {
   const url = 'https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=' +
               encodeURIComponent(query + ' chess') + '&format=json&origin=*&srlimit=8';
@@ -334,22 +332,16 @@ async function searchWikipediaTitle(query) {
     const data = await res.json();
     const hits = (data.query && data.query.search) || [];
     if (!hits.length) return null;
-    for (const h of hits) {
-      if (/gambit|defence|defense|opening|attack|variation|sicilian|indian|benoni|benko/i.test(h.title)) return h.title;
-    }
+    for (const h of hits) if (/gambit|defence|defense|opening|attack|variation|sicilian|indian|benoni|benko/i.test(h.title)) return h.title;
     return hits[0].title;
   } catch (e) { return null; }
 }
-
 async function fetchWikiHtml(title) {
   const slug = title.replace(/ /g, '_');
   try {
     const url = 'https://en.wikipedia.org/api/rest_v1/page/html/' + encodeURIComponent(slug);
     const res = await fetch(url, { redirect: 'follow' });
-    if (res.ok) {
-      const html = await res.text();
-      if (html && html.length > 1000) return { html, source: 'REST v1' };
-    }
+    if (res.ok) { const html = await res.text(); if (html && html.length > 1000) return { html, source: 'REST v1' }; }
   } catch (e) {}
   try {
     const url = 'https://en.wikipedia.org/w/api.php?action=parse&page=' + encodeURIComponent(title) +
@@ -357,19 +349,15 @@ async function fetchWikiHtml(title) {
     const res = await fetch(url);
     if (res.ok) {
       const data = await res.json();
-      if (data && data.parse && data.parse.text && data.parse.text['*']) {
+      if (data && data.parse && data.parse.text && data.parse.text['*'])
         return { html: data.parse.text['*'], source: 'Action API' };
-      }
     }
   } catch (e) {}
   return null;
 }
-
 function parseWikiOpeningHtml(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  const out = [];
-  const seen = new Set();
-
+  const out = []; const seen = new Set();
   function add(move, comment, origin) {
     const trimmed = String(comment || '').replace(/\s+/g, ' ').trim();
     if (trimmed.length < 50) return;
@@ -378,35 +366,26 @@ function parseWikiOpeningHtml(html) {
     seen.add(key);
     out.push({ move: (move || '').slice(0, 100), comment: trimmed.slice(0, 900), origin: origin || '' });
   }
-
   const moveAnywhere = /(\d+\.{1,3}(?:\.\.\.)?\s*[a-hRNBQK][a-h1-8x=+#\-O]*(?:\s+[a-hRNBQK][a-h1-8x=+#\-O]*){0,4})/;
-
   const headers = doc.querySelectorAll('h2, h3, h4');
   for (const h of headers) {
     const title = (h.textContent || '').replace(/\[edit\]/g, '').trim();
     if (!title || title.length > 200) continue;
     const mm = title.match(moveAnywhere);
-    let comment = '';
-    let el = h.nextElementSibling;
-    let steps = 0;
+    let comment = ''; let el = h.nextElementSibling; let steps = 0;
     while (el && !/^H[234]$/.test(el.tagName) && steps < 25) {
       const paras = [];
       if (el.tagName === 'SECTION') el.querySelectorAll('p').forEach(p => paras.push(p));
       else if (el.tagName === 'P') paras.push(el);
-      else if (el.tagName === 'DIV' || el.tagName === 'UL' || el.tagName === 'OL')
-        el.querySelectorAll('p').forEach(p => paras.push(p));
+      else if (el.tagName === 'DIV' || el.tagName === 'UL' || el.tagName === 'OL') el.querySelectorAll('p').forEach(p => paras.push(p));
       for (const p of paras) {
         const t = (p.textContent || '').replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim();
         if (t.length > 40 && !/^\[/.test(t)) comment += t + ' ';
       }
-      el = el.nextElementSibling;
-      steps++;
+      el = el.nextElementSibling; steps++;
     }
-    if (comment.length >= 60) {
-      add(mm ? mm[1].trim() : title, comment, 'section:' + title.slice(0, 60));
-    }
+    if (comment.length >= 60) add(mm ? mm[1].trim() : title, comment, 'section:' + title.slice(0, 60));
   }
-
   const moveCountRe = /\d+\.{1,3}\s*(?:\.\.\.\s*)?[a-hRNBQK][a-h1-8x=+#\-O]*/g;
   const paras = doc.querySelectorAll('p');
   for (const p of paras) {
@@ -418,7 +397,6 @@ function parseWikiOpeningHtml(html) {
     const label = moveMatches.slice(0, 4).join(' ');
     add(label, text, 'para');
   }
-
   if (out.length === 0) {
     const keywords = /gambit|pawn|bishop|knight|rook|queen|king|centre|center|attack|defen[cs]e|sacrifice|develop|initiative|files|diagonal|square|castl|file|line|variation/i;
     for (const p of paras) {
@@ -432,14 +410,12 @@ function parseWikiOpeningHtml(html) {
   }
   return out.slice(0, 40);
 }
-
 function buildWikiCandidates(openingName) {
-  const candidates = [];
-  const seen = new Set();
+  const candidates = [], seen = new Set();
   const push = (q, label) => {
     const k = String(q || '').toLowerCase().trim();
     if (!k || seen.has(k) || k.length < 3) return;
-    seen.add(k); candidates.push({ q: q, label: label });
+    seen.add(k); candidates.push({ q, label });
   };
   if (openingsDB.length) {
     const mainLine = globalChunks.filter(c => c.variationLevel === 0 && c.san)
@@ -480,13 +456,9 @@ function buildWikiCandidates(openingName) {
   }
   return candidates;
 }
-
 async function fetchWikipediaMulti(openingName) {
   const candidates = buildWikiCandidates(openingName);
-  const merged = [];
-  const seenComments = new Set();
-  const tried = new Set();
-
+  const merged = [], seenComments = new Set(), tried = new Set();
   for (const cand of candidates) {
     const key = cand.q.toLowerCase().trim();
     if (tried.has(key)) continue;
@@ -495,11 +467,7 @@ async function fetchWikipediaMulti(openingName) {
     let fetched = await fetchWikiHtml(cand.q);
     if (!fetched) {
       const sr = await searchWikipediaTitle(cand.q);
-      if (sr && !tried.has(sr.toLowerCase())) {
-        tried.add(sr.toLowerCase());
-        logWiki('  ↳ search → "' + sr + '"');
-        fetched = await fetchWikiHtml(sr);
-      }
+      if (sr && !tried.has(sr.toLowerCase())) { tried.add(sr.toLowerCase()); logWiki('  ↳ search → "' + sr + '"'); fetched = await fetchWikiHtml(sr); }
     }
     if (!fetched) { logWiki('  ✗ no article'); continue; }
     const parsed = parseWikiOpeningHtml(fetched.html);
@@ -508,29 +476,24 @@ async function fetchWikipediaMulti(openingName) {
       for (const p of parsed) {
         const kk = (p.comment || '').slice(0, 200).toLowerCase();
         if (seenComments.has(kk)) continue;
-        seenComments.add(kk);
-        p._source = cand.q;
-        merged.push(p);
+        seenComments.add(kk); p._source = cand.q; merged.push(p);
       }
     }
   }
   if (merged.length) merged._sourceTitle = candidates.map(c => c.q).filter((v, i, a) => a.indexOf(v) === i).slice(0, 4).join(' + ');
   return merged;
 }
-
 function normaliseOpeningName(raw) {
   let s = String(raw || '').trim();
   s = s.replace(/\s+/g, ' ');
   s = s.replace(/\b(gambit|defence|defense|attack|variation|system|opening)[aeiou]+\b/gi, (m, w) => w);
   return s;
 }
-
 async function enrichFromWikipedia() {
   clearWikiLog();
   const btn = document.getElementById('wiki-btn');
   const origBtnText = btn.innerText;
   btn.disabled = true; btn.innerText = '⏳ Searching…';
-
   let name = (document.getElementById('opening-name').value || '').trim();
   if (!name) {
     if (pgnMeta.opening) name = pgnMeta.opening + (pgnMeta.variation ? ', ' + pgnMeta.variation : '');
@@ -539,63 +502,41 @@ async function enrichFromWikipedia() {
     document.getElementById('opening-name').value = name;
   }
   logWiki('Searching Wikipedia for: "' + name + '"');
-  logWiki('Context: opening="' + pgnMeta.opening + '", variation="' + pgnMeta.variation + '", event="' + pgnMeta.event + '"');
-
   const cacheKey = 'multi::' + (name + '|' + pgnMeta.opening + '|' + pgnMeta.variation + '|' + pgnMeta.event).toLowerCase().trim();
   const cache = getWikiCache();
   let parsed = cache[cacheKey];
-
   if (!parsed || !parsed.length) {
     parsed = await fetchWikipediaMulti(name);
-    if (!parsed || !parsed.length) {
-      logWiki('✗ No commentary found for any candidate.');
-      logWiki('Try: (a) exact spelling, (b) the parent opening, (c) Research prompt.');
-      btn.disabled = false; btn.innerText = origBtnText;
-      return;
-    }
-    cache[cacheKey] = parsed;
-    setWikiCache(cache);
-  } else {
-    logWiki('✓ Using cached result (' + parsed.length + ' entries)');
-  }
-
+    if (!parsed || !parsed.length) { logWiki('✗ No commentary found.'); btn.disabled = false; btn.innerText = origBtnText; return; }
+    cache[cacheKey] = parsed; setWikiCache(cache);
+  } else logWiki('✓ Using cached result (' + parsed.length + ' entries)');
   if (parsed && parsed.length) wikiEntries = parsed;
   const sourceTitle = parsed._sourceTitle || name;
   const current = (() => { try { return JSON.parse(document.getElementById('ideas-pack').value || '[]'); } catch (e) { return []; } })();
-  const wikiIdeas = parsed
-    .filter(x => x.comment && x.comment.length > 30)
+  const wikiIdeas = parsed.filter(x => x.comment && x.comment.length > 30)
     .map(x => '[Wiki ' + (x.origin || x._source || '') + (x.move ? ' ' + x.move.slice(0, 50) : '') + '] ' + x.comment);
   const existing = new Set(current);
-  const merged = current.slice();
-  let added = 0;
+  const merged = current.slice(); let added = 0;
   for (const w of wikiIdeas) if (!existing.has(w)) { merged.push(w); added++; }
   document.getElementById('ideas-pack').value = JSON.stringify(merged, null, 2);
   updatePackStatus(merged.length, 'wiki');
   logWiki('✓ Sources: ' + sourceTitle);
-  logWiki('✓ Added ' + added + ' entries to Ideas Pack.');
+  logWiki('✓ Added ' + added + ' entries.');
   logWiki('⚠ Click "Save pack" then copy the batch.');
   btn.disabled = false; btn.innerText = origBtnText;
 }
-
 async function debugWiki() {
   clearWikiLog();
   const name = (document.getElementById('opening-name').value || '').trim() || 'Benko Gambit';
   logWiki('=== DEBUG for "' + name + '" ===');
-  logWiki('Header context:');
-  logWiki('  ECO: ' + (pgnMeta.eco || '(none)'));
-  logWiki('  Opening: ' + (pgnMeta.opening || '(none)'));
-  logWiki('  Variation: ' + (pgnMeta.variation || '(none)'));
-  logWiki('  Event: ' + (pgnMeta.event || '(none)'));
   const candidates = buildWikiCandidates(name);
   logWiki('Candidates:');
   for (const c of candidates) logWiki('  · "' + c.q + '" (' + c.label + ')');
-  logWiki('→ Running full multi-article fetch…');
   const parsed = await fetchWikipediaMulti(name);
   logWiki('=== Result: ' + (parsed ? parsed.length : 0) + ' entries ===');
   if (parsed && parsed.length) {
     logWiki('Sample 1:');
     logWiki('  Move: ' + (parsed[0].move || '(none)'));
-    logWiki('  Origin: ' + (parsed[0].origin || parsed[0]._source || ''));
     logWiki('  Text: ' + parsed[0].comment.slice(0, 180) + '…');
   }
 }
@@ -608,7 +549,7 @@ function updatePackStatus(n, mode) {
   const el = document.getElementById('pack-status'); if (!el) return;
   if (!n) { el.className = 'pack-badge empty'; el.innerText = 'empty'; return; }
   el.className = 'pack-badge ' + (mode || 'ready');
-  el.innerText = n + ' idea' + (n > 1 ? 's' : '') + (mode === 'wiki' ? ' (wiki)' : mode === 'header' ? ' (headers)' : ' ready');
+  el.innerText = n + ' idea' + (n > 1 ? 's' : '') + (mode === 'wiki' ? ' (wiki)' : ' ready');
 }
 function saveIdeasPack() {
   const raw = document.getElementById('ideas-pack').value.trim();
@@ -616,13 +557,8 @@ function saveIdeasPack() {
   const side = (document.getElementById('opening-side').value || 'Black').trim();
   if (!raw) { clearIdeasPack(); return; }
   let arr;
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) arr = parsed.map(x => String(x).trim()).filter(Boolean);
-    else arr = [raw];
-  } catch (e) {
-    arr = raw.split(/\n+/).map(s => s.replace(/^[\-\*\d\.\)\s]+/, '').trim()).filter(Boolean);
-  }
+  try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) arr = parsed.map(x => String(x).trim()).filter(Boolean); else arr = [raw]; }
+  catch (e) { arr = raw.split(/\n+/).map(s => s.replace(/^[\-\*\d\.\)\s]+/, '').trim()).filter(Boolean); }
   if (!arr.length) { alert('Nothing to save.'); return; }
   localStorage.setItem(PACK_KEY, JSON.stringify(arr));
   localStorage.setItem(PACK_NAME_KEY, name);
@@ -780,7 +716,7 @@ async function sfAnalyze(fen, opts = {}) {
 }
 async function getEngineRefutationWS(fen, retries = 1) {
   if (!isValidFen(fen)) return null;
-  const wantVariants = 5, depthWant = 15, thinkMs = 500;
+  const wantVariants = 3, depthWant = 15, thinkMs = 500;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const result = await new Promise((resolve) => {
@@ -802,9 +738,7 @@ async function getEngineRefutationWS(fen, retries = 1) {
           const lines = rows.slice(0, wantVariants).map((data) => {
             const uciCont = Array.isArray(data.continuationArr) ? data.continuationArr : [];
             let firstSan = data.san || '';
-            if (!firstSan && data.move && data.move.length >= 4) {
-              firstSan = uciListToSan(fen, [data.move], 1)[0] || data.move;
-            }
+            if (!firstSan && data.move && data.move.length >= 4) firstSan = uciListToSan(fen, [data.move], 1)[0] || data.move;
             const restSan = uciListToSan(
               (() => {
                 try {
@@ -813,17 +747,12 @@ async function getEngineRefutationWS(fen, retries = 1) {
                   else if (data.move) { const u = data.move; ch.move({ from: u.slice(0,2), to: u.slice(2,4), promotion: u[4] || 'q' }); }
                   return ch.fen();
                 } catch (e) { return fen; }
-              })(), uciCont, 10
+              })(), uciCont, 8
             );
-            const allSan = [firstSan].concat(restSan).filter(Boolean).slice(0, 8);
-            return {
-              eval: data.eval, san: firstSan,
-              continuation: restSan.join(' '),
-              numbered: formatPvNumberedSans(allSan, fen),
-              allSan, scoreType: 'cp',
-              score: parseFloat(String(data.eval)) * 100 || 0,
-              invalid: false
-            };
+            const allSan = [firstSan].concat(restSan).filter(Boolean).slice(0, 6);
+            return { eval: data.eval, san: firstSan, continuation: restSan.join(' '),
+              numbered: formatPvNumberedSans(allSan, fen), allSan,
+              scoreType: 'cp', score: parseFloat(String(data.eval)) * 100 || 0, invalid: false };
           });
           if (!lines.length) { resolve(null); return; }
           const top = lines[0];
@@ -849,10 +778,7 @@ async function getEngineRefutationWS(fen, retries = 1) {
         ws.onclose = () => { clearTimeout(timer); finish(); };
       });
       if (result && !result.invalid && result.lines && result.lines.length) return result;
-    } catch (e) {
-      if (attempt === retries) return null;
-      await delay(600);
-    }
+    } catch (e) { if (attempt === retries) return null; await delay(600); }
   }
   return null;
 }
@@ -860,7 +786,7 @@ function uciListToSan(fen, uciMoves, maxPlies) {
   const out = [];
   try {
     const ch = new Chess(); if (!ch.load(fen)) return out;
-    const limit = maxPlies || 8;
+    const limit = maxPlies || 6;
     for (let i = 0; i < uciMoves.length && out.length < limit; i++) {
       const u = String(uciMoves[i] || '').trim(); if (!u || u.length < 4) continue;
       const mv = ch.move({ from: u.slice(0,2), to: u.slice(2,4), promotion: u.length > 4 ? u[4] : 'q' });
@@ -886,7 +812,7 @@ function formatPvNumberedSans(sans, fen) {
 function sfLinesToEngineData(sfLines, fen) {
   if (!sfLines || !sfLines.length) return { lines: [], invalid: true };
   const lines = sfLines.map((l, i) => {
-    const sans = uciListToSan(fen, l.pvUci, 12);
+    const sans = uciListToSan(fen, l.pvUci, 8);
     return {
       multipv: l.multipv || (i + 1),
       eval: l.scoreType === 'mate' ? (l.score > 0 ? '#' + l.score : '#-' + Math.abs(l.score)) : (l.score / 100).toFixed(2),
@@ -902,40 +828,28 @@ async function getEngineMultiPV(fen, opts = {}) {
   if (!isValidFen(fen)) return { lines: [], invalid: true };
   const depth = opts.depth || parseInt(document.getElementById('engine-depth')?.value || '16', 10);
   const multipv = opts.multipv || 5;
-
   if (!SF_POOL.length) await initSFPool();
   const ready = SF_POOL.filter(s => s.ready);
   if (ready.length) {
     const sfLines = await sfAnalyze(fen, { depth, multipv, timeoutMs: opts.timeoutMs });
-    if (sfLines && sfLines.length) {
-      const data = sfLinesToEngineData(sfLines, fen);
-      data.source = 'stockfish'; return data;
-    }
+    if (sfLines && sfLines.length) { const data = sfLinesToEngineData(sfLines, fen); data.source = 'stockfish'; return data; }
   }
-
   const cacheKey = 'ws::' + fen;
   if (engineCache[cacheKey]) return engineCache[cacheKey];
   setSfBadge('ws', 'HTTP engine');
   const ws = await getEngineRefutationWS(fen);
-  if (ws && !ws.invalid && ws.lines && ws.lines.length) {
-    ws.source = 'chess-api';
-    engineCache[cacheKey] = ws;
-    return ws;
-  }
+  if (ws && !ws.invalid && ws.lines && ws.lines.length) { ws.source = 'chess-api'; engineCache[cacheKey] = ws; return ws; }
   setSfBadge('off', 'No engine');
   return { lines: [], invalid: true, text: 'No engine' };
 }
-
 async function testEngine() {
   const startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
   const depth = parseInt(document.getElementById('engine-depth').value, 10);
-  const data = await getEngineMultiPV(startFen, { depth: Math.min(depth, 14), multipv: 3 });
+  const data = await getEngineMultiPV(startFen, { depth: Math.min(depth, 14), multipv: 2 });
   if (data && !data.invalid && data.lines && data.lines.length) {
     const src = data.source === 'stockfish' ? 'local SF' : (data.source === 'chess-api' ? 'chess-api.com' : 'unknown');
-    alert('✓ Engine working.\n\nSource: ' + src + '\nTop: ' + data.lines[0].eval + ' ' + data.lines[0].numbered.slice(0, 60));
-  } else {
-    alert('✗ Engine failed.');
-  }
+    alert('✓ Engine working.\n\nSource: ' + src);
+  } else alert('✗ Engine failed.');
 }
 
 /* ===================== TACTICAL SCANNER ===================== */
@@ -1029,21 +943,54 @@ function lineUsesMotif(line, motif) {
   if (motif.type === 'skewer') return f4.some(s => s.includes('x' + motif.front)) || f4.some(s => s.includes('x' + motif.behind));
   return false;
 }
-async function buildTacticalReport(fenAfter, moveSan, moverSide) {
+
+/* ===================== POSITION FEATURES ===================== */
+function positionFeatures(fen) {
+  const chess = new Chess(fen); if (!chess) return '';
+  const board = chess.board();
+  const files = 'abcdefgh';
+  const wP = new Array(8).fill(0), bP = new Array(8).fill(0);
+  let wK = '', bK = '';
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f]; if (!p) continue;
+    if (p.type === 'p') { if (p.color === 'w') wP[f]++; else bP[f]++; }
+    if (p.type === 'k') { if (p.color === 'w') wK = files[f] + (8 - r); else bK = files[f] + (8 - r); }
+  }
+  const feats = [];
+  const openFiles = [], wHalf = [], bHalf = [];
+  for (let f = 0; f < 8; f++) {
+    if (wP[f] === 0 && bP[f] === 0) openFiles.push(files[f]);
+    else if (wP[f] === 0 && bP[f] > 0) wHalf.push(files[f]);
+    else if (bP[f] === 0 && wP[f] > 0) bHalf.push(files[f]);
+  }
+  if (openFiles.length) feats.push('Open files: ' + openFiles.join(','));
+  if (wHalf.length) feats.push('Half-open for White: ' + wHalf.join(','));
+  if (bHalf.length) feats.push('Half-open for Black: ' + bHalf.join(','));
+  const qW = wP[0]+wP[1]+wP[2], qB = bP[0]+bP[1]+bP[2];
+  const kW = wP[5]+wP[6]+wP[7], kB = bP[5]+bP[6]+bP[7];
+  if (qB >= qW + 2) feats.push('Black has more pawns on the queenside');
+  if (qW >= qB + 2) feats.push('White has more pawns on the queenside');
+  if (kW >= kB + 2) feats.push('White has more pawns on the kingside');
+  if (kB >= kW + 2) feats.push('Black has more pawns on the kingside');
+  if (wK && wK[0] === 'e' && (wK[1] === '1' || wK[1] === '8')) feats.push('White king still on e1 (uncastled)');
+  if (bK && bK[0] === 'e' && (bK[1] === '1' || bK[1] === '8')) feats.push('Black king still on e8 (uncastled)');
+  return feats.slice(0, 3).join('. ');
+}
+
+async function buildTacticalReport(fenAfter, moveSan, moverSide, maxLines) {
+  const limit = maxLines || 2;
   const R = [];
   const chess = new Chess(fenAfter); if (!chess) return '(invalid FEN)';
   const stm = chess.turn() === 'w' ? 'White' : 'Black';
-  const engineData = await getEngineMultiPV(fenAfter, { multipv: 5 });
-  const engineLines = (engineData && !engineData.invalid && engineData.lines) ? engineData.lines : [];
-  const src = engineData && engineData.source ? engineData.source : '?';
+  const engineData = await getEngineMultiPV(fenAfter, { multipv: limit });
+  const engineLines = (engineData && !engineData.invalid && engineData.lines) ? engineData.lines.slice(0, limit) : [];
   const mat = materialCount(fenAfter);
   const diff = mat.w - mat.b;
   const evalForMover = moverSide === 'White' ? diff : -diff;
   R.push('=== TACTICAL REPORT ===');
-  R.push('Move: ' + moveSan + ' (' + moverSide + ' just played)');
-  R.push('FEN after: ' + fenAfter);
-  R.push('Side to move after: ' + stm);
   R.push('Material for ' + moverSide + ': ' + (evalForMover >= 0 ? '+' : '') + evalForMover);
+  const pos = positionFeatures(fenAfter);
+  if (pos) R.push('POSITIONAL CONTEXT: ' + pos);
   const bestMate = engineLines.find(l => l.scoreType === 'mate' && l.score > 0);
   if (bestMate) R.push('FORCED MATE for ' + stm + ' in ' + bestMate.score + ': ' + bestMate.numbered);
   const nullFen = nullMove(fenAfter);
@@ -1059,18 +1006,16 @@ async function buildTacticalReport(fenAfter, moveSan, moverSide) {
   }
   const hang = hangingPieces(fenAfter);
   const activeHang = hang.filter(h => engineLines.some(l => lineUsesMotif(l, h)));
-  if (activeHang.length) R.push('TACTIC (hanging, engine line uses it): ' +
+  if (activeHang.length) R.push('TACTIC: ' +
     activeHang.map(h => (h.color === 'w' ? 'White ' : 'Black ') + h.piece.toUpperCase() + ' on ' + h.square).join('; '));
   const ps = pinsAndSkewers(fenAfter);
   const activePins = ps.filter(p => engineLines.some(l => lineUsesMotif(l, p)));
-  if (activePins.length) R.push('TACTIC (pin/skewer, engine line uses it): ' + activePins.map(x => x.type === 'pin'
+  if (activePins.length) R.push('TACTIC: ' + activePins.map(x => x.type === 'pin'
     ? (x.pinnedColor === 'w' ? 'White ' : 'Black ') + x.pinnedPiece.toUpperCase() + ' on ' + x.pinned + ' pinned to king on ' + x.toKing
     : 'skewer: ' + x.front + '-' + x.behind).join('; '));
   if (engineLines.length) {
-    R.push('ENGINE LINES (top ' + engineLines.length + ', source: ' + src + '):');
+    R.push('ENGINE (top ' + engineLines.length + '):');
     engineLines.forEach((l, i) => R.push('  #' + (i+1) + ' ' + (l.eval || '?') + ': ' + l.numbered));
-  } else {
-    R.push('ENGINE LINES: unavailable');
   }
   return R.join('\n');
 }
@@ -1126,9 +1071,7 @@ function processPgn(isLoad = false) {
   const input = document.getElementById('pgn-input').value; if (!input) return;
   pgnMeta = parsePgnHeaders(input);
   renderHeaderPills();
-
   pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[O0]-[O0](?:-[O0])?[+#]?|[a-hRNBQK][a-hRNBQK1-8x\-=+#]*[?!]*|[a-h][1-8](?:=[RNBQ])?[+#]?[?!]*)/g) || [];
-
   let chunks = [], moveNumber = 0, variationLevel = 0;
   let depthPlyCounts = { 0: 0 }, lastChunkAtLevel = {};
   let chess = new Chess();
@@ -1137,7 +1080,6 @@ function processPgn(isLoad = false) {
   const normFen = (f) => { if (!f || typeof f !== 'string') return f; try { const t = new Chess(); if (t.load(f)) return t.fen(); } catch (e) {} return f; };
   const fenAtTip = () => (plyStack.length === 0 ? startFen : plyStack[plyStack.length-1].fenAfter);
   const loadTip = () => { chess.load(fenAtTip()); return normFen(chess.fen()); };
-
   pgnTokens.forEach((token, index) => {
     if (token.startsWith('[') || token.startsWith('{')) return;
     if (token === '(') {
@@ -1154,41 +1096,31 @@ function processPgn(isLoad = false) {
     if (/^\d+\./.test(token)) { moveNumber = parseInt(token, 10); return; }
     if (token.startsWith('$')) return;
     if (!/^([a-hRNBQK]|[O0]-)/.test(token)) return;
-
     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
     const fenBefore = normFen(loadTip());
-
     let cleanMove = token.replace(/\$\d+/g,'').replace(/[!?]+/g,'').replace(/[±∓∞]/g,'')
       .replace(/[=\/+\-]+$/g,'').replace(/[^a-zA-Z0-9=\+\-#O]/g,'').trim();
     if (/=$/.test(cleanMove)) cleanMove = cleanMove.replace(/=$/,'');
     cleanMove = cleanMove.replace(/0/g, 'O');
-
     let mv = chess.move(cleanMove, { sloppy: true });
     if (!mv) { const nc = cleanMove.replace(/[+#]/g,''); if (nc !== cleanMove) mv = chess.move(nc, { sloppy: true }); }
     if (!mv) { const alt = token.replace(/[!?$±∓∞=\/\+\-].*$/g,'').replace(/0/g,'O').trim(); if (alt && alt !== cleanMove) mv = chess.move(alt, { sloppy: true }); }
-
     let parsedOk = !!mv, sanUsed = '', fenAfter = fenBefore;
     if (mv) { fenAfter = normFen(chess.fen()); sanUsed = mv.san; plyStack.push({ san: sanUsed, fenBefore, fenAfter }); }
-    else { sanUsed = token.replace(/[!?$±∓∞].*$/,'').replace(/[=\/+\-]+$/,'').trim(); }
-
+    else sanUsed = token.replace(/[!?$±∓∞].*$/,'').replace(/[=\/+\-]+$/,'').trim();
     let evalSymbol = '';
     const nextToken = pgnTokens[index + 1];
-    if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken) || /^[\+\-=±∓∞\/]+$/.test(nextToken)))
-      evalSymbol = ' ' + nextToken;
-
+    if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken) || /^[\+\-=±∓∞\/]+$/.test(nextToken))) evalSymbol = ' ' + nextToken;
     const isVarStart = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
     const pathArray = plyStack.map(p => p.san);
-
     chunks.push({
       id: 'CHK_' + chunks.length + '_M' + moveNumber + '_V' + variationLevel,
       target: token + evalSymbol, moveNum: moveNumber, tokenIndex: index,
       isMainLine: variationLevel === 0, isVariationStart: isVarStart, isVariationEnd: false,
-      fen: fenBefore, fenAfter, moveParsed: parsedOk, variationLevel,
-      pathArray, san: sanUsed
+      fen: fenBefore, fenAfter, moveParsed: parsedOk, variationLevel, pathArray, san: sanUsed
     });
     lastChunkAtLevel[variationLevel] = chunks[chunks.length - 1];
   });
-
   if (lastChunkAtLevel[0]) lastChunkAtLevel[0].isVariationEnd = true;
   for (let i = 0; i < chunks.length; i++) {
     const c = chunks[i], nextSans = [];
@@ -1203,7 +1135,6 @@ function processPgn(isLoad = false) {
     }
     c.nextMoves = nextSans;
   }
-
   globalChunks = chunks;
   document.getElementById('workspace').classList.remove('hidden');
   document.getElementById('copy-btn').classList.remove('hidden');
@@ -1216,7 +1147,6 @@ function processPgn(isLoad = false) {
   if (document.getElementById('notes-saved-count')) document.getElementById('notes-saved-count').innerText = '0 notes saved';
   updateUI();
   saveState();
-
   setTimeout(async () => {
     if (!openingsDB.length) await ensureOpeningsDB();
     const sans = getMainLineSANs();
@@ -1231,9 +1161,7 @@ function processPgn(isLoad = false) {
       document.getElementById('opening-name').value = pgnMeta.opening + (pgnMeta.variation ? ', ' + pgnMeta.variation : '');
       logWiki('✓ Header: ' + pgnMeta.opening + '. Auto-pulling wiki…');
       setTimeout(() => enrichFromWikipedia(), 300);
-    } else {
-      logWiki('No opening detected. Type a name or use Research prompt.');
-    }
+    } else logWiki('No opening detected. Type a name or use Research prompt.');
   }, 100);
 }
 function getMainLineSANs() {
@@ -1241,28 +1169,22 @@ function getMainLineSANs() {
     .sort((a, b) => a.tokenIndex - b.tokenIndex).map(c => c.san);
 }
 
-/* ===================== MOVE SELECTION — 12 important picks ===================== */
+/* ===================== MOVE SELECTION ===================== */
 function getSelectedIndices() {
   if (selStart === null) return [];
   const endIdx = selEnd !== null ? selEnd : selStart;
   const range = [];
   for (let i = selStart; i <= endIdx; i++) range.push(i);
   if (!range.length) return [];
-
-  // Small selection: send everything
   if (range.length <= 14) return range;
-
-  // Larger selection: pick exactly 12 important moves
   const TARGET = 12;
   const mustInclude = new Set([selStart, endIdx]);
-
   const scored = [];
   for (const i of range) {
-    const c = globalChunks[i];
-    if (!c) continue;
+    const c = globalChunks[i]; if (!c) continue;
     let score = 0;
     if (c.isVariationStart) { score += 20; mustInclude.add(i); }
-    if (c.isVariationEnd)   { score += 20; mustInclude.add(i); }
+    if (c.isVariationEnd) { score += 20; mustInclude.add(i); }
     if (/\?\?/.test(c.target)) score += 15;
     if (/\?!/.test(c.target)) score += 12;
     if (/!\?/.test(c.target)) score += 10;
@@ -1276,21 +1198,13 @@ function getSelectedIndices() {
     if (c.variationLevel === 0 && i < 12) score += 3;
     scored.push({ i, score });
   }
-
   scored.sort((a, b) => b.score - a.score);
-  for (const s of scored) {
-    if (mustInclude.size >= TARGET) break;
-    mustInclude.add(s.i);
-  }
-
+  for (const s of scored) { if (mustInclude.size >= TARGET) break; mustInclude.add(s.i); }
   if (mustInclude.size < TARGET) {
     const need = TARGET - mustInclude.size;
     const stride = Math.max(1, Math.floor(range.length / (need + 1)));
-    for (let k = stride; k < range.length && mustInclude.size < TARGET; k += stride) {
-      mustInclude.add(range[k]);
-    }
+    for (let k = stride; k < range.length && mustInclude.size < TARGET; k += stride) mustInclude.add(range[k]);
   }
-
   return Array.from(mustInclude).sort((a, b) => a - b);
 }
 
@@ -1356,9 +1270,9 @@ function clearVoiceNote() {
 }
 function formatEngineLines(data) {
   if (!data || data.invalid || !data.lines || !data.lines.length) return '<p class="text-slate-500 italic">No engine tips</p>';
-  return data.lines.slice(0, 8).map((ln, i) => {
+  return data.lines.slice(0, 5).map((ln, i) => {
     const ev = ln.eval || '?';
-    const moves = ln.numbered ? String(ln.numbered).split(/\s+/).slice(0, 12).join(' ') : '';
+    const moves = ln.numbered ? String(ln.numbered).split(/\s+/).slice(0, 10).join(' ') : '';
     const rank = i === 0 ? 'text-emerald-400' : 'text-slate-300';
     return '<div class="' + rank + '">#' + (i+1) + ' <span class="gold-text font-bold">' + ev + '</span> ' + moves + '</div>';
   }).join('');
@@ -1498,7 +1412,20 @@ function updateUI() {
   document.getElementById('stats').innerText = globalChunks.length + ' TOTAL MOVES';
 }
 
-/* ===================== COPY BATCH ===================== */
+/* ===================== DISTIL OBJECTIVES ===================== */
+function distilObjectives(ideasPack, max) {
+  const n = max || 6;
+  const out = [];
+  for (const idea of ideasPack) {
+    if (out.length >= n) break;
+    const clean = String(idea).replace(/\s+/g, ' ').trim();
+    if (!clean) continue;
+    out.push(clean.length > 160 ? clean.slice(0, 157) + '…' : clean);
+  }
+  return out;
+}
+
+/* ===================== COPY BATCH — compact + positional + full wiki ===================== */
 async function copySelectedBatch() {
   if (selStart === null || selEnd === null) { alert('Pick start and end moves.'); return; }
   const btn = document.getElementById('copy-btn'), btnText = document.getElementById('copy-text');
@@ -1508,17 +1435,75 @@ async function copySelectedBatch() {
 
   const ideasPack = loadIdeasPack();
   const openingName = (localStorage.getItem(PACK_NAME_KEY) || '').trim();
-  const openingFrame = ideasPack.length
-    ? '=== OPENING FRAME — ' + (openingName || 'this course') + ' ===\n' + ideasPack.map((s, i) => (i+1) + '. ' + s).join('\n') + '\n\nWhen a move fits one of these, name it in one clause.\n'
+
+  // Split ideas pack: curated ideas vs wiki-tagged entries (avoid duplication)
+  const curatedIdeas = [];
+  const wikiTagged = [];
+  for (const s of ideasPack) {
+    const str = String(s || '').trim();
+    if (!str) continue;
+    if (str.startsWith('[Wiki')) wikiTagged.push(str);
+    else curatedIdeas.push(str);
+  }
+
+  // OBJECTIVES: 6 curated ideas max, 160 chars each
+  const objectives = distilObjectives(curatedIdeas, 6);
+  const objectivesBlock = objectives.length
+    ? '=== OPENING OBJECTIVES — ' + (openingName || 'this course') + ' ===\n' +
+      objectives.map((s, i) => (i+1) + '. ' + s).join('\n') + '\n'
     : '';
-  const wikiFrame = wikiEntries.length
-    ? '=== WIKIPEDIA OPENING COMMENTARY (reference only) ===\n' + wikiEntries.map(x => (x.move ? x.move + ': ' : '') + x.comment).join('\n') + '\n'
+
+  // WIKI: use raw wikiEntries if available; else unpack the [Wiki …] items from the ideas pack
+  let wikiList = [];
+  if (wikiEntries.length) wikiList = wikiEntries;
+  else if (wikiTagged.length) {
+    wikiList = wikiTagged.map(s => {
+      const m = s.match(/^\[Wiki\s*([^\]]*)\]\s*(.+)$/);
+      return m ? { move: m[1].trim(), comment: m[2].trim() } : { move: '', comment: s };
+    });
+  }
+
+  // Get SANs of the moves in the batch so we can match wiki entries to them
+  const idx = getSelectedIndices();
+  const batchMoveSans = idx.map(i => {
+    const ch = globalChunks[i];
+    return ch && ch.san ? String(ch.san).toLowerCase() : '';
+  }).filter(Boolean);
+
+  // Split wiki: entries that mention a batch move vs the rest
+  const matchedWiki = [];
+  const unmatchedWiki = [];
+  for (const w of wikiList) {
+    const wm = String(w.move || '').toLowerCase();
+    let hit = false;
+    for (const san of batchMoveSans) {
+      if (san && wm.includes(san)) { hit = true; break; }
+    }
+    if (hit) matchedWiki.push(w);
+    else unmatchedWiki.push(w);
+  }
+  const finalWiki = matchedWiki.concat(unmatchedWiki);
+
+  // Total wiki cap: 6 KB, per entry 500 chars — matched entries first
+  let wikiText = '';
+  let wikiCount = 0;
+  for (const w of finalWiki) {
+    const comment = String(w.comment || '').slice(0, 500);
+    const line = (w.move ? w.move + ': ' : '') + comment;
+    if (wikiText.length + line.length > 6000) break;
+    wikiText += line + '\n';
+    wikiCount++;
+  }
+  const wikiSnippet = wikiCount
+    ? '=== WIKI MOVE-BY-MOVE REFERENCE (' + wikiCount + ' entries — paraphrase, do not copy) ===\n' + wikiText
     : '';
+
   const headerFrame = (pgnMeta.eco || pgnMeta.opening)
-    ? '=== PGN HEADERS ===\n' + (pgnMeta.eco ? 'ECO: ' + pgnMeta.eco + '\n' : '') +
+    ? '=== PGN HEADERS ===\n' +
+      (pgnMeta.eco ? 'ECO: ' + pgnMeta.eco + '\n' : '') +
       (pgnMeta.opening ? 'Opening: ' + pgnMeta.opening + '\n' : '') +
       (pgnMeta.variation ? 'Variation: ' + pgnMeta.variation + '\n' : '') +
-      (pgnMeta.event ? 'Event: ' + pgnMeta.event + '\n' : '') + '\n'
+      (pgnMeta.event ? 'Event: ' + pgnMeta.event + '\n' : '')
     : '';
 
   const side = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
@@ -1526,7 +1511,7 @@ async function copySelectedBatch() {
   const theySide = side === 'white' ? 'Black' : 'White';
   saveCurrentMoveNote();
 
-  const idx = getSelectedIndices();
+  lastBatchIds = idx.map(i => globalChunks[i] && globalChunks[i].id).filter(Boolean);
   const batch = []; const total = idx.length;
   for (let s = 0; s < idx.length; s++) {
     const i = idx[s], c = globalChunks[i], step = s + 1;
@@ -1546,30 +1531,28 @@ async function copySelectedBatch() {
 
     let lineOutput = '[ID: ' + c.id + ']';
     lineOutput += '\nMOVE: ' + c.moveNum + '. ' + moveWithSign + ' by ' + sideJustPlayed;
-
     const gmEvalMark = tgt.match(/[=±∓∞]+\/[*=±∓∞]+|[=±∓∞]+/);
     if (signOnly) lineOutput += '\nGM SYMBOL: ' + signOnly;
-    if (gmEvalMark) lineOutput += '\nPOSITION AFTER MOVE: ' + gmEvalMark[0] + ' (use the matching phrase in the table)';
-
+    if (gmEvalMark) lineOutput += '\nPOSITION AFTER: ' + gmEvalMark[0];
     lineOutput += '\nFEN: ' + (fenAfter || 'unavailable');
     lineOutput += '\nVOICE NOTE: ' + (userNotes[c.id] || '(none)');
-
     if (fenAfter) {
-      btnText.innerHTML = '<div class="spinner"></div>Tactics [' + step + '/' + total + ']…';
+      btnText.innerHTML = '<div class="spinner"></div>[' + step + '/' + total + ']…';
       await delay(10);
-      try { lineOutput += '\n' + await buildTacticalReport(fenAfter, moveWithSign, sideJustPlayed); } catch (e) {}
+      try { lineOutput += '\n' + await buildTacticalReport(fenAfter, moveWithSign, sideJustPlayed, 2); } catch (e) {}
     }
     progressFill.style.width = (((step - 1) / total) * 100) + '%';
     batch.push(lineOutput);
   }
   progressFill.style.width = '100%';
 
-  const fullPrompt = `You are a grandmaster chess author annotating an opening course.
+  const N = total;
+  const fullPrompt = `You are a grandmaster chess author writing an opening course. Every note must explain WHY the move fits the plan, in terms of the opening's objectives and the positional context — not just what square a piece goes to.
 
-=== VOICE — COPY THESE EXAMPLES ===
+=== OUTPUT ===
+Return a JSON object with EXACTLY ${N} keys, one per [ID] below. Do not skip or merge keys.
 
-These are real GM course annotations. Your notes must sound exactly like these:
-
+=== VOICE (copy this register) ===
 - "A useful prophylactic move. Black prepares ...b5 and avoids committing the centre too early."
 - "We strike immediately, before White can fully establish it."
 - "Black has fully equalized. The bishop becomes active on the long diagonal and the queenside initiative gives easy play."
@@ -1579,53 +1562,66 @@ These are real GM course annotations. Your notes must sound exactly like these:
 - "Black has compensation in the form of the bishop pair and pressure against the centre."
 - "This is a typical Benko idea: give the pawn, take the open file, and play against b2."
 
-=== HOW TO WRITE ===
 Short sentences. Simple words. Correct grammar. British spelling.
-Use "we" and "our" for moves by ${weSide}. Use "${theySide}" and "they" for ${theySide}.
-Name pieces and squares: "the knight on d4", "the c4-bishop", "the e5-square".
+Use "we"/"our" for ${weSide}; "${theySide}"/"they" for ${theySide}.
 
-Never use: centralises, stabilising, coordination, creating imbalances, long-term asset,
-positional understanding, showcases, demonstrates, highlights, dynamic equilibrium.
-
+Never use: centralises, stabilising, coordination, creating imbalances, long-term asset, positional understanding, showcases, demonstrates, highlights, dynamic equilibrium.
 Never describe the opponent's next move. Never describe our next move.
 
-=== GM SYMBOL TABLE (mandatory) ===
-If a batch item has "POSITION AFTER MOVE: <symbol>", you MUST use the matching phrase:
+=== HOW TO EXPLAIN A MOVE (mandatory method) ===
+For every move, do TWO things:
+ 1. STATE the concrete action: which piece goes where, which square is taken, which file opens.
+ 2. STATE the objective it serves — check it against the OPENING OBJECTIVES and the POSITIONAL CONTEXT (open files, half-open files, pawn majority on one side, king safety, which side the play is on).
 
+Bad (what to avoid):
+- "...Qa5+ supports the c5-pawn."
+- "The knight develops to f3."
+- "The bishop improves."
+
+Good (what to aim for):
+- "...Qa5+ starts queenside counterplay. With the a-file and b-file half-open for us, the queen steps off the c-file and eyes the light squares; the check also wins a tempo before we finish the queenside setup."
+- "We give back the c5-pawn to reach a position with clear play on the queenside: our rooks belong on b8 and a8, our bishop on g7 hits d4, and White's king is still in the centre."
+- "This move opens the b-file for us. With the b-pawn gone, the rook on a8 will slide to b8 and we double against b2."
+
+=== GM SYMBOL TABLE (mandatory) ===
+If a batch item says "POSITION AFTER: <symbol>", use the matching phrase:
   =   → "The position is equal."
-  =/∞ → "Black has compensation for the pawn." OR "White has compensation for the pawn." (pick the side who is down material)
+  =/∞ → "Black has compensation for the pawn." (or White, whichever side is down material)
   ∞/= → same as =/∞ (pick the side who is down material)
   ∞   → "The position is unclear, but easier for [side] to play."
   ±   → "White is slightly better."
   ∓   → "Black is slightly better."
 
-If a batch item has "GM SYMBOL: ??", the move is a blunder — explain what goes wrong.
-If a batch item has "GM SYMBOL: ?!", the move is dubious — explain the risk.
-If a batch item has "GM SYMBOL: !", the move is good — explain the plus.
+If "GM SYMBOL: ??", the move is a blunder — explain what goes wrong.
+If "GM SYMBOL: ?!", dubious — explain the risk.
+If "GM SYMBOL: !", good — explain the plus.
 
 === TACTICAL REPORT ===
 Ground truth. Never contradict it. If TACTIC or THREAT is not listed, don't mention pins or hanging pieces.
+Use POSITIONAL CONTEXT to anchor the note to the correct part of the board.
 
-=== WHY A MOVE WAS PLAYED ===
-One clear reason, supported by the report, the opening frame, or the position. If nothing special, say what square the piece goes to and why.
-
-Return ONLY JSON. Keys = IDs. Values = the note text. No markdown.
+=== WIKI REFERENCE ===
+If a WIKI MOVE-BY-MOVE REFERENCE block is present, use it to inform WHY the move was played.
+Paraphrase in GM register — never copy sentences verbatim.
 
 We play ${weSide}. They play ${theySide}.
 
 ${headerFrame}
-${openingFrame}
-${wikiFrame}
+${objectivesBlock}
+${wikiSnippet}
 
-=== BATCH ===
+Return ONLY a JSON object with ${N} keys. Keys = IDs. Values = the note text.
+
+=== BATCH (${N} moves) ===
 ${batch.join('\n\n')}`;
 
   const finish = () => {
     btnText.innerText = 'Copy Selected Batch';
     btn.classList.remove('opacity-80', 'cursor-not-allowed'); btn.disabled = false;
     setTimeout(() => { progressFill.style.width = '0%'; }, 1500);
-    const engineUsed = batch.filter(x => /ENGINE LINES \(top/.test(x)).length;
-    alert('Copied ' + total + ' positions.\n' + engineUsed + ' with engine lines.');
+    const bytes = fullPrompt.length;
+    const kb = (bytes / 1024).toFixed(1);
+    alert('Copied ' + N + ' moves.\nBatch size: ~' + kb + ' KB.\nWiki entries in batch: ' + wikiCount + '.\nAll ' + N + ' keys requested.');
   };
   navigator.clipboard.writeText(fullPrompt).then(finish).catch(() => {
     const ta = document.createElement('textarea'); ta.value = fullPrompt;
@@ -1642,6 +1638,8 @@ function verifyAiOutput() {
   if (!raw.trim()) { result.innerHTML = '<p class="text-slate-500 italic">Paste AI output first.</p>'; return; }
   const map = extractChunkMap(raw);
   if (!map || !Object.keys(map).length) { result.innerHTML = '<p class="text-slate-500 italic">No CHK_ IDs found.</p>'; return; }
+  const missing = [];
+  if (lastBatchIds.length) for (const id of lastBatchIds) if (!map[id]) missing.push(id);
   const warnings = [];
   for (const id of Object.keys(map)) {
     const chunk = globalChunks.find(c => c.id === id);
@@ -1665,13 +1663,18 @@ function verifyAiOutput() {
     }
     if (issues.length) warnings.push({ id, issues });
   }
-  if (!warnings.length) {
-    result.innerHTML = '<p class="text-emerald-400">✓ ' + Object.keys(map).length + ' notes verified.</p>';
-    return;
-  }
-  result.innerHTML = '<p class="text-amber-400 mb-2">⚠ ' + warnings.length + ' issues:</p>' +
-    warnings.map(w => '<div class="border-l-2 border-red-500/50 pl-2 mb-1"><span class="gold-text text-[10px]">' + w.id + '</span><br>' +
-      w.issues.map(i => '<span class="text-red-300">• ' + i + '</span>').join('<br>') + '</div>').join('');
+  let html = '';
+  if (missing.length) {
+    html += '<p class="text-amber-400 mb-2">⚠ AI returned ' + Object.keys(map).length + ' of ' + lastBatchIds.length + '. Missing:</p>' +
+      '<div class="text-amber-300 text-[10px] font-mono mb-2">' + missing.join(', ') + '</div>' +
+      '<p class="text-slate-400 italic mb-3">Ask: "You skipped ' + missing.length + ' moves. Reply with ONLY the JSON keys for: ' + missing.slice(0,5).join(', ') + (missing.length > 5 ? ' …' : '') + '".</p>';
+  } else if (lastBatchIds.length) html += '<p class="text-emerald-400 mb-2">✓ All ' + lastBatchIds.length + ' moves present.</p>';
+  if (warnings.length) {
+    html += '<p class="text-amber-400 mb-2">⚠ ' + warnings.length + ' notes with square/piece issues:</p>' +
+      warnings.map(w => '<div class="border-l-2 border-red-500/50 pl-2 mb-1"><span class="gold-text text-[10px]">' + w.id + '</span><br>' +
+        w.issues.map(i => '<span class="text-red-300">• ' + i + '</span>').join('<br>') + '</div>').join('');
+  } else html += '<p class="text-emerald-400">✓ No square/piece contradictions.</p>';
+  result.innerHTML = html;
 }
 function extractChunkMap(text) {
   const map = {};
@@ -1692,10 +1695,8 @@ function extractChunkMap(text) {
 function rebuildPgn() {
   const raw = document.getElementById('ai-json').value;
   let aiData;
-  try {
-    aiData = extractChunkMap(raw);
-    if (!aiData || !Object.keys(aiData).length) throw new Error('No IDs');
-  } catch (e) { alert('Failed to parse AI output.'); return; }
+  try { aiData = extractChunkMap(raw); if (!aiData || !Object.keys(aiData).length) throw new Error('No IDs'); }
+  catch (e) { alert('Failed to parse AI output.'); return; }
   const working = [...pgnTokens];
   const sorted = Object.keys(aiData).sort((a, b) => {
     const ia = globalChunks.find(c => c.id === a)?.tokenIndex || 0;
