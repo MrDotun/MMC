@@ -4,8 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v5.0 Final | Decipher Chess Academy</title>
-<!-- build: 2026-10-12-voice-v5.0-wikipedia -->
+<title>GM Variation Master · v5.1 | Decipher Chess Academy</title>
+<!-- build: 2026-10-12-voice-v5.1-engine-fix -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -24,7 +24,7 @@ textarea:focus,input[type="text"]:focus{border-color:#d4af37!important;outline:n
 .spinner{border:3px solid rgba(255,255,255,.1);border-left-color:#1e293b;border-radius:50%;width:16px;height:16px;animation:spin 1s linear infinite;display:inline-block;vertical-align:middle;margin-right:8px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .sf-badge{display:inline-block;padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;text-transform:uppercase}
-.sf-badge.on{background:#064e3b;color:#6ee7b7}.sf-badge.off{background:#450a0a;color:#fca5a5}.sf-badge.loading{background:#3f2d06;color:#fcd34d}
+.sf-badge.on{background:#064e3b;color:#6ee7b7}.sf-badge.off{background:#450a0a;color:#fca5a5}.sf-badge.loading{background:#3f2d06;color:#fcd34d}.sf-badge.ws{background:#1e3a8a;color:#93c5fd}
 .pack-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase}
 .pack-badge.empty{background:#334155;color:#94a3b8}.pack-badge.ready{background:#064e3b;color:#6ee7b7}.pack-badge.auto{background:#1e3a8a;color:#93c5fd}.pack-badge.wiki{background:#4c1d95;color:#c4b5fd}
 details>summary{cursor:pointer;list-style:none}details>summary::-webkit-details-marker{display:none}
@@ -36,10 +36,10 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Perfect GM course annotation · v5.0 Wikipedia</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Perfect GM course annotation · v5.1 engine fix</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center">
-<span id="sf-badge" class="sf-badge loading">SF loading…</span>
+<span id="sf-badge" class="sf-badge loading">Engine loading…</span>
 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
 <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
 </nav>
@@ -111,10 +111,12 @@ Import<input type="file" accept=".json,.txt" class="hidden" onchange="importPack
 <label class="flex items-center gap-2 px-3 py-2 bg-slate-900 rounded-xl text-xs">
 <span class="text-slate-400 uppercase font-bold">Depth</span>
 <select id="engine-depth" class="bg-slate-800 text-emerald-400 rounded-lg px-2 py-1 font-bold border border-slate-600">
-<option value="14">14 (fast)</option><option value="16" selected>16</option>
+<option value="12">12 (very fast)</option>
+<option value="14">14 (fast)</option><option value="16" selected>16 (default)</option>
 <option value="18">18 (balanced)</option><option value="20">20</option><option value="22">22 (slow)</option>
 </select>
 </label>
+<button onclick="testEngine()" class="px-4 py-3 bg-slate-800 text-slate-300 font-bold rounded-xl uppercase text-xs hover:bg-slate-700">🧪 Test engine</button>
 <button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden shadow-lg shadow-yellow-900/20"><span id="copy-text">Copy Selected Batch</span></button>
 <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
 </div>
@@ -241,7 +243,7 @@ let engineCache = {};
 let sfCache = new Map();
 let reviewEngineToken = 0, mainEngineToken = 0;
 let reviewLine = [], reviewLineIdx = 0;
-let wikiEntries = []; // [{move, comment}]
+let wikiEntries = [];
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 /* ============================================================
@@ -403,7 +405,6 @@ function getMainLineSANs() {
     .sort((a, b) => a.tokenIndex - b.tokenIndex)
     .map(c => c.san);
 }
-
 function detectOpening(sanList) {
   if (!sanList || sanList.length < 4) return null;
   const norm = sanList.map(s => String(s).replace(/[!?+#]/g, '').trim());
@@ -422,7 +423,6 @@ function detectOpening(sanList) {
   }
   return best;
 }
-
 function autoDetectAndLoad() {
   const sans = getMainLineSANs();
   if (!sans.length) { alert('Initialize a PGN first.'); return; }
@@ -454,7 +454,6 @@ function updatePackStatus(n, mode) {
   el.className = 'pack-badge ' + (mode || 'ready');
   el.innerText = n + ' idea' + (n > 1 ? 's' : '') + (mode === 'auto' ? ' (auto)' : mode === 'wiki' ? ' (wiki)' : ' ready');
 }
-
 function saveIdeasPack() {
   const raw = document.getElementById('ideas-pack').value.trim();
   const name = (document.getElementById('opening-name').value || '').trim();
@@ -478,7 +477,6 @@ function saveIdeasPack() {
   document.getElementById('ideas-pack').value = JSON.stringify(arr, null, 2);
   updatePackStatus(arr.length, 'ready');
 }
-
 function clearIdeasPack() {
   localStorage.removeItem(PACK_KEY); localStorage.removeItem(PACK_NAME_KEY); localStorage.removeItem(PACK_SIDE_KEY);
   document.getElementById('ideas-pack').value = ''; document.getElementById('opening-name').value = '';
@@ -486,7 +484,6 @@ function clearIdeasPack() {
   wikiEntries = [];
   updatePackStatus(0);
 }
-
 function loadIdeasPack() {
   try {
     const saved = localStorage.getItem(PACK_KEY);
@@ -501,14 +498,12 @@ function loadIdeasPack() {
     return arr;
   } catch (e) { updatePackStatus(0); return []; }
 }
-
 function appendPackItem() {
   let arr = [];
   try { arr = JSON.parse(localStorage.getItem(PACK_KEY) || '[]'); } catch (e) {}
   arr.push('');
   document.getElementById('ideas-pack').value = JSON.stringify(arr, null, 2);
 }
-
 function exportPack() {
   const raw = document.getElementById('ideas-pack').value.trim();
   const name = (document.getElementById('opening-name').value || 'ideas').trim().replace(/[^a-z0-9]+/gi, '_');
@@ -524,7 +519,6 @@ function exportPack() {
   a.download = 'ideas_' + name + '.json';
   a.click();
 }
-
 function importPack(event) {
   const f = event.target.files[0];
   if (!f) return;
@@ -545,7 +539,6 @@ function importPack(event) {
   };
   r.readAsText(f);
 }
-
 function copyResearchPrompt() {
   const name = (document.getElementById('opening-name').value || '').trim() || 'this opening';
   const side = (document.getElementById('opening-side').value || 'Black').trim();
@@ -569,22 +562,13 @@ alternative, and one or two common mistakes club players make.`;
 }
 
 /* ============================================================
-   WIKIPEDIA — fetch + parse + cache
+   WIKIPEDIA
    ============================================================ */
-function getWikiCache() {
-  try { return JSON.parse(localStorage.getItem(WIKI_CACHE_KEY) || '{}'); }
-  catch (e) { return {}; }
-}
-function setWikiCache(c) {
-  try { localStorage.setItem(WIKI_CACHE_KEY, JSON.stringify(c)); } catch (e) {}
-}
+function getWikiCache() { try { return JSON.parse(localStorage.getItem(WIKI_CACHE_KEY) || '{}'); } catch (e) { return {}; } }
+function setWikiCache(c) { try { localStorage.setItem(WIKI_CACHE_KEY, JSON.stringify(c)); } catch (e) {} }
 
 async function fetchWikipediaOpening(openingName) {
-  const variants = [
-    openingName,
-    openingName.replace(/\s*\(.*?\)\s*/g, '').trim(),
-    openingName + ' chess',
-  ];
+  const variants = [openingName, openingName.replace(/\s*\(.*?\)\s*/g, '').trim(), openingName + ' chess'];
   for (const v of variants) {
     const slug = v.replace(/ /g, '_');
     const url = 'https://en.wikipedia.org/api/rest_v1/page/html/' + encodeURIComponent(slug);
@@ -594,16 +578,13 @@ async function fetchWikipediaOpening(openingName) {
       const html = await res.text();
       const parsed = parseWikiOpeningHtml(html);
       if (parsed.length) return parsed;
-    } catch (e) { /* try next */ }
+    } catch (e) {}
   }
   return null;
 }
-
 function parseWikiOpeningHtml(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const out = [];
-
-  // Pattern B: sections with headers like "5...a6"
   const headers = doc.querySelectorAll('h2, h3, h4');
   for (const h of headers) {
     const title = (h.textContent || '').replace(/\[edit\]/g, '').trim();
@@ -617,106 +598,124 @@ function parseWikiOpeningHtml(html) {
         const t = (el.textContent || '').trim();
         if (t.length > 25 && !/^\[/.test(t)) comment += t + ' ';
       }
-      el = el.nextElementSibling;
-      steps++;
+      el = el.nextElementSibling; steps++;
     }
     comment = comment.trim();
     if (comment) out.push({ move: m[1].trim(), comment });
   }
-
-  // Pattern A: paragraphs starting with a move sequence "1.e4 c5 2.Nf3..."
   const paras = doc.querySelectorAll('p');
   for (const p of paras) {
     const text = (p.textContent || '').replace(/\[\d+\]/g, '').trim();
     if (text.length < 40) continue;
     if (!/^\d+\./.test(text)) continue;
-    // extract the leading move sequence (numbers.dots + SAN)
     const mm = text.match(/^((?:\d+\.{1,3}\s*(?:[a-hRNBQK][a-h1-8x=+#\-O]*\s*)+){1,20})/);
     if (!mm) continue;
     const movesSeq = mm[1].trim();
     const comment = text.slice(movesSeq.length).trim();
     if (comment.length > 30) out.push({ move: movesSeq, comment });
   }
-
-  // De-duplicate by comment text
   const seen = new Set();
   const uniq = [];
   for (const e of out) {
     const key = (e.move + '|' + e.comment).slice(0, 200);
     if (seen.has(key)) continue;
-    seen.add(key);
-    uniq.push(e);
+    seen.add(key); uniq.push(e);
   }
   return uniq.slice(0, 24);
 }
-
 async function enrichFromWikipedia() {
   const name = (document.getElementById('opening-name').value || '').trim();
   const info = document.getElementById('detect-info');
   if (!name) { alert('Enter an opening name first.'); return; }
   info.innerText = 'Fetching Wikipedia…';
-
   const cache = getWikiCache();
   let parsed = cache[name];
   if (!parsed) {
     parsed = await fetchWikipediaOpening(name);
     if (!parsed || !parsed.length) { info.innerText = 'No Wikipedia commentary found for "' + name + '".'; return; }
-    cache[name] = parsed;
-    setWikiCache(cache);
+    cache[name] = parsed; setWikiCache(cache);
   }
-
   wikiEntries = parsed;
-
-  // Merge into textarea as extended ideas
   const current = (() => { try { return JSON.parse(document.getElementById('ideas-pack').value || '[]'); } catch (e) { return []; } })();
-  const wikiIdeas = parsed
-    .filter(x => x.comment && x.comment.length > 30)
+  const wikiIdeas = parsed.filter(x => x.comment && x.comment.length > 30)
     .map(x => '[Wiki ' + (x.move || '').slice(0, 40) + '] ' + x.comment);
-
-  // Avoid duplicating anything already present
   const existing = new Set(current);
   const merged = current.slice();
   for (const w of wikiIdeas) if (!existing.has(w)) merged.push(w);
-
   document.getElementById('ideas-pack').value = JSON.stringify(merged, null, 2);
   updatePackStatus(merged.length, 'wiki');
-  info.innerText = '✓ Added ' + (merged.length - current.length) + ' Wikipedia entries (total ' + merged.length + '). Review and Save Pack.';
+  info.innerText = '✓ Added ' + (merged.length - current.length) + ' Wikipedia entries (total ' + merged.length + ').';
 }
 
 /* ============================================================
-   STOCKFISH POOL — 2 PARALLEL WORKERS
+   ENGINE POOL — Stockfish local + chess-api.com fallback
    ============================================================ */
 const SF_POOL = [];
+let sfDiagnostic = 'idle';
+let wsFallbackActive = false;
+
 function setSfBadge(state, text) {
   const b = document.getElementById('sf-badge');
   if (!b) return;
-  b.classList.remove('on','off','loading');
+  b.classList.remove('on','off','loading','ws');
   b.classList.add(state);
   b.innerText = text;
 }
-function initSFPool() {
+
+async function createStockfishWorker() {
+  // Method 1: fetch as text, create blob URL, spawn worker (works everywhere)
+  const cdns = [
+    'https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js',
+    'https://unpkg.com/stockfish.js@10.0.2/stockfish.js'
+  ];
+  for (const url of cdns) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const code = await res.text();
+      const blob = new Blob([code], { type: 'application/javascript' });
+      const blobUrl = URL.createObjectURL(blob);
+      const w = new Worker(blobUrl);
+      return w;
+    } catch (e) { console.warn('Stockfish CDN failed:', url, e); }
+  }
+  return null;
+}
+
+async function initSFPool() {
   if (SF_POOL.length) return;
-  setSfBadge('loading', 'SF loading…');
+  sfDiagnostic = 'loading';
+  setSfBadge('loading', 'Engine loading…');
   for (let i = 0; i < 2; i++) {
     const slot = { worker: null, ready: false, busy: false, handler: null, chain: Promise.resolve() };
-    try {
-      slot.worker = new Worker('https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js');
-    } catch (e) { console.warn('SF worker unavailable', e); }
-    if (!slot.worker) continue;
-    slot.worker.onmessage = (e) => {
+    const w = await createStockfishWorker();
+    if (!w) { console.warn('Stockfish worker ' + i + ' could not be created'); continue; }
+    slot.worker = w;
+    w.onmessage = (e) => {
       const s = typeof e.data === 'string' ? e.data : (e.data && e.data.data) || '';
       if (!s) return;
       if (s === 'uciok') {
         slot.ready = true;
-        slot.worker.postMessage('setoption name Hash value 32');
-        slot.worker.postMessage('setoption name Threads value 1');
-        if (SF_POOL.every(x => x.ready)) setSfBadge('on', 'SF ready ×2');
+        w.postMessage('setoption name Hash value 32');
+        w.postMessage('setoption name Threads value 1');
+        const readyCount = SF_POOL.filter(x => x.ready).length;
+        if (readyCount >= 1) setSfBadge('on', 'SF ready ×' + readyCount);
       }
       if (slot.busy && slot.handler) slot.handler(s);
     };
-    slot.worker.onerror = () => { slot.ready = false; setSfBadge('off', 'SF off'); };
-    slot.worker.postMessage('uci');
+    w.onerror = (e) => {
+      console.warn('Stockfish error slot ' + i, e);
+      slot.ready = false;
+    };
+    w.postMessage('uci');
     SF_POOL.push(slot);
+  }
+  if (!SF_POOL.length) {
+    sfDiagnostic = 'failed';
+    setSfBadge('ws', 'HTTP engine');
+    console.warn('Stockfish unavailable — will use chess-api.com HTTP fallback');
+  } else {
+    sfDiagnostic = 'ready';
   }
 }
 
@@ -774,16 +773,107 @@ async function sfAnalyzeOnSlot(slot, fen, opts) {
 
 let sfRR = 0;
 async function sfAnalyze(fen, opts = {}) {
-  if (!SF_POOL.length) initSFPool();
-  if (!SF_POOL.length) return null;
-  const start = Date.now();
-  while (Date.now() - start < 4000) {
-    if (SF_POOL.every(s => s.ready)) break;
-    await delay(50);
-  }
-  const slot = SF_POOL[sfRR % SF_POOL.length];
+  if (!SF_POOL.length) await initSFPool();
+  const readySlots = SF_POOL.filter(s => s.ready);
+  if (!readySlots.length) return null;
+  const slot = readySlots[sfRR % readySlots.length];
   sfRR++;
   return sfAnalyzeOnSlot(slot, fen, opts);
+}
+
+/* ============================================================
+   chess-api.com WEBSOCKET FALLBACK
+   ============================================================ */
+async function getEngineRefutationWS(fen, retries = 1) {
+  if (!isValidFen(fen)) return null;
+  const wantVariants = 5;
+  const depthWant = 15;
+  const thinkMs = 500;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const result = await new Promise((resolve) => {
+        let settled = false;
+        const byKey = {};
+        let ws;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          try { ws && ws.close(); } catch (e) {}
+          const rows = Object.values(byKey);
+          const bits = fen.split(/\s+/);
+          const blackToMove = bits[1] === 'b';
+          rows.sort((a, b) => {
+            const ea = typeof a.eval === 'number' ? a.eval : 0;
+            const eb = typeof b.eval === 'number' ? b.eval : 0;
+            return blackToMove ? (ea - eb) : (eb - ea);
+          });
+          const lines = rows.slice(0, wantVariants).map((data) => {
+            const uciCont = Array.isArray(data.continuationArr) ? data.continuationArr : [];
+            let firstSan = data.san || '';
+            if (!firstSan && data.move && data.move.length >= 4) {
+              firstSan = uciListToSan(fen, [data.move], 1)[0] || data.move;
+            }
+            const restSan = uciListToSan(
+              (() => {
+                try {
+                  const ch = new Chess(); ch.load(fen);
+                  if (firstSan) ch.move(firstSan, { sloppy: true });
+                  else if (data.move) {
+                    const u = data.move;
+                    ch.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || 'q' });
+                  }
+                  return ch.fen();
+                } catch (e) { return fen; }
+              })(),
+              uciCont, 10
+            );
+            const allSan = [firstSan].concat(restSan).filter(Boolean).slice(0, 8);
+            return {
+              eval: data.eval,
+              san: firstSan,
+              continuation: restSan.join(' '),
+              numbered: formatPvNumberedSans(allSan, fen),
+              allSan,
+              scoreType: 'cp', score: parseFloat(String(data.eval)) * 100 || 0,
+              invalid: false
+            };
+          });
+          if (!lines.length) { resolve(null); return; }
+          const top = lines[0];
+          resolve({ lines, eval: top.eval, san: top.san, continuation: top.continuation, invalid: false });
+        };
+        const timer = setTimeout(finish, 6000);
+        try { ws = new WebSocket('wss://chess-api.com/v1'); }
+        catch (e) { clearTimeout(timer); resolve(null); return; }
+        ws.onopen = () => {
+          ws.send(JSON.stringify({ fen, variants: wantVariants, depth: depthWant, maxThinkingTime: thinkMs }));
+        };
+        ws.onmessage = (ev) => {
+          try {
+            const data = JSON.parse(ev.data);
+            if (data.type !== 'move' && data.type !== 'bestmove') return;
+            const key = data.move || data.san || data.lan;
+            if (!key) return;
+            const prev = byKey[key];
+            if (!prev || (data.depth || 0) >= (prev.depth || 0)) byKey[key] = data;
+            const deep = Object.values(byKey).filter(x => (x.depth || 0) >= 8);
+            if (deep.length >= wantVariants && data.type === 'bestmove') {
+              clearTimeout(timer);
+              setTimeout(finish, 200);
+            }
+          } catch (e) {}
+        };
+        ws.onerror = () => { clearTimeout(timer); finish(); };
+        ws.onclose = () => { clearTimeout(timer); finish(); };
+      });
+      if (result && !result.invalid && result.lines && result.lines.length) return result;
+    } catch (e) {
+      if (attempt === retries) return null;
+      await delay(600);
+    }
+  }
+  return null;
 }
 
 function uciListToSan(fen, uciMoves, maxPlies) {
@@ -804,7 +894,6 @@ function uciListToSan(fen, uciMoves, maxPlies) {
   } catch (e) {}
   return out;
 }
-
 function formatPvNumberedSans(sans, fen) {
   const parts = [];
   try {
@@ -820,7 +909,6 @@ function formatPvNumberedSans(sans, fen) {
   } catch (e) { return sans.join(' '); }
   return parts.join(' ');
 }
-
 function sfLinesToEngineData(sfLines, fen) {
   if (!sfLines || !sfLines.length) return { lines: [], invalid: true, text: 'No SF lines' };
   const lines = sfLines.map((l, i) => {
@@ -846,11 +934,53 @@ async function getEngineMultiPV(fen, opts = {}) {
   if (!isValidFen(fen)) return { lines: [], invalid: true, text: 'INVALID FEN' };
   const depth = opts.depth || parseInt(document.getElementById('engine-depth')?.value || '16', 10);
   const multipv = opts.multipv || 5;
-  const sfLines = await sfAnalyze(fen, { depth, multipv, timeoutMs: opts.timeoutMs });
-  if (sfLines && sfLines.length) return sfLinesToEngineData(sfLines, fen);
-  const cached = engineCache[fen];
-  if (cached) return cached;
-  return { lines: [], invalid: true, text: 'No engine' };
+
+  // 1. Try local Stockfish
+  if (!SF_POOL.length) await initSFPool();
+  const readySlots = SF_POOL.filter(s => s.ready);
+  if (readySlots.length) {
+    const sfLines = await sfAnalyze(fen, { depth, multipv, timeoutMs: opts.timeoutMs });
+    if (sfLines && sfLines.length) {
+      const data = sfLinesToEngineData(sfLines, fen);
+      data.source = 'stockfish';
+      return data;
+    }
+  }
+
+  // 2. Fall back to chess-api.com (HTTP WebSocket)
+  const cacheKey = 'ws::' + fen;
+  if (engineCache[cacheKey]) return engineCache[cacheKey];
+  wsFallbackActive = true;
+  setSfBadge('ws', 'HTTP engine');
+  const ws = await getEngineRefutationWS(fen);
+  if (ws && !ws.invalid && ws.lines && ws.lines.length) {
+    ws.source = 'chess-api';
+    engineCache[cacheKey] = ws;
+    return ws;
+  }
+
+  // 3. Nothing works
+  setSfBadge('off', 'No engine');
+  return { lines: [], invalid: true, text: 'No engine available' };
+}
+
+/* ============================================================
+   TEST ENGINE
+   ============================================================ */
+async function testEngine() {
+  const startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  const depth = parseInt(document.getElementById('engine-depth').value, 10);
+  const info = document.getElementById('stats');
+  info.innerText = 'Testing engine…';
+  const data = await getEngineMultiPV(startFen, { depth: Math.min(depth, 14), multipv: 3 });
+  if (data && !data.invalid && data.lines && data.lines.length) {
+    const src = data.source === 'stockfish' ? 'local Stockfish' : (data.source === 'chess-api' ? 'chess-api.com HTTP' : 'unknown');
+    alert('✓ Engine working.\n\nSource: ' + src + '\nDepth: ' + Math.min(depth, 14) + '\nTop line: ' + data.lines[0].eval + ' ' + data.lines[0].numbered.slice(0, 60));
+    info.innerText = 'Engine OK (' + src + ')';
+  } else {
+    alert('✗ Engine not working.\n\nCheck the browser console for errors. You may be offline, or your network may block the Stockfish CDN.\n\nTry reloading the page.');
+    info.innerText = 'Engine FAILED';
+  }
 }
 
 /* ============================================================
@@ -888,7 +1018,6 @@ function attackersOfBoard(board, sq, byColor) {
   }
   return out;
 }
-
 function hangingPieces(fen) {
   const chess = new Chess(fen); if (!chess) return [];
   const board = chess.board(), stm = chess.turn();
@@ -907,7 +1036,6 @@ function hangingPieces(fen) {
   }
   return out;
 }
-
 function pinsAndSkewers(fen) {
   const chess = new Chess(fen); if (!chess) return [];
   const board = chess.board(), stm = chess.turn();
@@ -937,14 +1065,12 @@ function pinsAndSkewers(fen) {
   }
   return out;
 }
-
 function nullMove(fen) {
   const p = fen.split(' ');
   p[1] = p[1] === 'w' ? 'b' : 'w';
   p[3] = '-';
   return p.join(' ');
 }
-
 function materialCount(fen) {
   const chess = new Chess(fen); if (!chess) return { w: 0, b: 0 };
   let w = 0, b = 0;
@@ -954,7 +1080,6 @@ function materialCount(fen) {
   }
   return { w, b };
 }
-
 function lineUsesMotif(line, motif) {
   if (!line || !line.allSan || !line.allSan.length) return false;
   const f4 = line.allSan.slice(0, 4);
@@ -978,6 +1103,7 @@ async function buildTacticalReport(fenAfter, moveSan, moverSide) {
 
   const engineData = await getEngineMultiPV(fenAfter, { multipv: 5 });
   const engineLines = (engineData && !engineData.invalid && engineData.lines) ? engineData.lines : [];
+  const src = engineData && engineData.source ? engineData.source : 'unknown';
 
   const mat = materialCount(fenAfter);
   const diff = mat.w - mat.b;
@@ -1021,10 +1147,10 @@ async function buildTacticalReport(fenAfter, moveSan, moverSide) {
   }
 
   if (engineLines.length) {
-    R.push('ENGINE LINES (top ' + engineLines.length + '):');
+    R.push('ENGINE LINES (top ' + engineLines.length + ', source: ' + src + '):');
     engineLines.forEach((l, i) => R.push('  #' + (i + 1) + ' ' + (l.eval || '?') + ': ' + l.numbered));
   } else {
-    R.push('ENGINE LINES: unavailable');
+    R.push('ENGINE LINES: unavailable (engine offline — do not cite any moves from this section)');
   }
   return R.join('\n');
 }
@@ -1032,10 +1158,10 @@ async function buildTacticalReport(fenAfter, moveSan, moverSide) {
 /* ============================================================
    INIT
    ============================================================ */
-window.onload = () => {
+window.onload = async () => {
   board = Chessboard('board', { pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', position: 'start' });
   reviewBoard = Chessboard('review-board', { pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', position: 'start' });
-  initSFPool();
+  initSFPool(); // fire and forget
   loadIdeasPack();
   const saved = localStorage.getItem('gm_master_state');
   if (saved) {
@@ -1053,7 +1179,6 @@ function isValidFen(fen) {
   if (parts.length < 4) return false;
   try { const c = new Chess(); return c.load(fen); } catch (e) { return false; }
 }
-
 function switchTab(tab) {
   document.getElementById('view-fragmenter').classList.toggle('hidden', tab !== 'fragmenter');
   document.getElementById('view-reassembler').classList.toggle('hidden', tab !== 'reassembler');
@@ -1089,9 +1214,7 @@ function processPgn(isLoad = false) {
     if (token === '(') {
       branchStack.push({ plies: plyStack.map(p => ({ san: p.san, fenBefore: p.fenBefore, fenAfter: p.fenAfter })), level: variationLevel });
       if (plyStack.length > 0) plyStack.pop();
-      loadTip();
-      variationLevel++;
-      depthPlyCounts[variationLevel] = 0;
+      loadTip(); variationLevel++; depthPlyCounts[variationLevel] = 0;
       return;
     }
     if (token === ')') {
@@ -1222,10 +1345,9 @@ function getSelectedIndices() {
 }
 
 /* ============================================================
-   VOICE NOTES
+   VOICE
    ============================================================ */
 let voiceRecognition = null, voiceListening = false;
-
 function toggleVoiceNote() {
   const status = document.getElementById('voice-note-status');
   const label = document.getElementById('voice-note-label');
@@ -1287,7 +1409,6 @@ function toggleVoiceNote() {
   };
   try { voiceRecognition.start(); } catch (e) { voiceListening = false; if (status) status.innerText = 'Mic error.'; }
 }
-
 function saveCurrentMoveNote() {
   if (reviewIndex === null) return;
   const c = globalChunks[reviewIndex]; if (!c) return;
@@ -1303,7 +1424,6 @@ function saveCurrentMoveNote() {
     el2.classList.toggle('ring-yellow-500', !!(id && userNotes[id]));
   });
 }
-
 function formatEngineLines(engineData) {
   if (!engineData || engineData.invalid || !engineData.lines || !engineData.lines.length)
     return '<p class="text-slate-500 italic">No engine tips</p>';
@@ -1314,7 +1434,6 @@ function formatEngineLines(engineData) {
     return '<div class="' + rank + '"><span class="text-slate-500">#' + (i + 1) + '</span> <span class="gold-text font-bold">' + ev + '</span> <span>' + (moves || '—') + '</span></div>';
   }).join('');
 }
-
 async function loadEngineForPanel(fen, linesElId, statusElId, tokenRef, opts = {}) {
   const linesEl = document.getElementById(linesElId);
   const statusEl = document.getElementById(statusElId);
@@ -1326,9 +1445,9 @@ async function loadEngineForPanel(fen, linesElId, statusElId, tokenRef, opts = {
   const data = await getEngineMultiPV(fen, opts);
   if (myToken !== tokenRef.n) return;
   linesEl.innerHTML = formatEngineLines(data);
-  statusEl.innerText = (data && !data.invalid) ? 'ready' : 'failed';
+  const src = data && data.source ? (data.source === 'stockfish' ? 'SF' : 'HTTP') : '';
+  statusEl.innerText = (data && !data.invalid) ? 'ready ' + src : 'failed';
 }
-
 function buildReviewLine(chunkIndex) {
   const c = globalChunks[chunkIndex];
   if (!c) return { positions: [], focusIdx: 0 };
@@ -1357,7 +1476,6 @@ function buildReviewLine(chunkIndex) {
   }
   return { positions, focusIdx };
 }
-
 function applyReviewLinePosition() {
   if (!reviewLine.length) return;
   reviewLineIdx = Math.max(0, Math.min(reviewLineIdx, reviewLine.length - 1));
@@ -1375,7 +1493,6 @@ function applyReviewLinePosition() {
     { get n() { return reviewEngineToken; }, set n(v) { reviewEngineToken = v; } },
     { depth: 14, multipv: 5 });
 }
-
 function reviewStep(delta) {
   if (!reviewLine.length) return;
   const next = reviewLineIdx + delta;
@@ -1383,7 +1500,6 @@ function reviewStep(delta) {
   reviewLineIdx = next;
   applyReviewLinePosition();
 }
-
 function stopVoiceIfNeeded() {
   if (voiceListening && voiceRecognition) {
     voiceListening = false;
@@ -1393,7 +1509,6 @@ function stopVoiceIfNeeded() {
     if (btn) btn.classList.remove('ring-2', 'ring-emerald-400');
   }
 }
-
 function clearVoiceNote() {
   stopVoiceIfNeeded();
   const noteEl = document.getElementById('move-note'); if (noteEl) noteEl.value = '';
@@ -1401,7 +1516,6 @@ function clearVoiceNote() {
   saveCurrentMoveNote();
   const status = document.getElementById('voice-note-status'); if (status) status.innerText = 'Note cleared.';
 }
-
 function updateBatchStepLabel() {
   const indices = getSelectedIndices();
   const lab = document.getElementById('batch-step-label');
@@ -1417,7 +1531,6 @@ function updateBatchStepLabel() {
   if (prevBtn) prevBtn.disabled = pos <= 0;
   if (nextBtn) nextBtn.disabled = pos < 0 || pos >= indices.length - 1;
 }
-
 function batchStep(delta) {
   const indices = getSelectedIndices();
   if (!indices.length) return;
@@ -1427,7 +1540,6 @@ function batchStep(delta) {
   stopVoiceIfNeeded();
   showReviewPosition(indices[next]);
 }
-
 function signHintFromTarget(target) {
   const t = String(target || '');
   if (/\?\?/.test(t)) return 'GM: blunder (??) — explain what goes wrong';
@@ -1438,7 +1550,6 @@ function signHintFromTarget(target) {
   if (/!/.test(t)) return 'GM: good (!) — explain the plus';
   return 'GM: no special mark — explain the plan briefly';
 }
-
 function showReviewPosition(chunkIndex) {
   saveCurrentMoveNote();
   stopVoiceIfNeeded();
@@ -1461,7 +1572,6 @@ function showReviewPosition(chunkIndex) {
   if (signEl) signEl.innerText = signHintFromTarget(c.target);
   updateBatchStepLabel();
 }
-
 function updateBatchReview() {
   const panel = document.getElementById('batch-review');
   if (selStart === null || selEnd === null) { panel.classList.add('hidden'); return; }
@@ -1485,7 +1595,6 @@ function updateBatchReview() {
   const noteEl = document.getElementById('move-note');
   if (noteEl && !noteEl._bound) { noteEl.addEventListener('input', saveCurrentMoveNote); noteEl._bound = true; }
 }
-
 function selectChunk(index) {
   if (selStart === null || (selStart !== null && selEnd !== null)) {
     selStart = index; selEnd = null;
@@ -1515,6 +1624,14 @@ async function copySelectedBatch() {
   const progressFill = document.getElementById('progress-fill');
   btn.classList.add('opacity-80', 'cursor-not-allowed'); btn.disabled = true;
 
+  // Warm up engine if not ready
+  if (!SF_POOL.length) await initSFPool();
+  const anyReady = SF_POOL.some(s => s.ready);
+  if (!anyReady) {
+    const proceed = confirm('Local Stockfish is not ready.\n\nThe tool will use chess-api.com HTTP fallback (slower, depth ~15).\n\nProceed?');
+    if (!proceed) { btn.classList.remove('opacity-80', 'cursor-not-allowed'); btn.disabled = false; return; }
+  }
+
   const ideasPack = loadIdeasPack();
   const openingName = (localStorage.getItem(PACK_NAME_KEY) || '').trim();
   const openingFrame = ideasPack.length
@@ -1522,12 +1639,10 @@ async function copySelectedBatch() {
       ideasPack.map((s, i) => (i + 1) + '. ' + s).join('\n') +
       '\n\nThese ideas are the strategic backdrop for the whole course. When a move fits one, name it in one clause.\nWhen a move deviates, say why the position has changed.\n'
     : '=== OPENING FRAME: (none saved) ===\n';
-
   const wikiFrame = wikiEntries.length
     ? '=== WIKIPEDIA OPENING COMMENTARY (reference only — paraphrase in GM register) ===\n' +
       wikiEntries.map(x => (x.move ? x.move + ': ' : '') + x.comment).join('\n') + '\n'
     : '';
-
   const repertoireSide = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
   const weSide = repertoireSide === 'white' ? 'White' : 'Black';
   const theySide = repertoireSide === 'white' ? 'Black' : 'White';
@@ -1570,7 +1685,7 @@ async function copySelectedBatch() {
       try {
         const report = await buildTacticalReport(fenAfter, moveWithSign, sideJustPlayed);
         lineOutput += '\n' + report;
-      } catch (e) { lineOutput += '\n(Tactical report unavailable)'; }
+      } catch (e) { lineOutput += '\n(Tactical report unavailable: ' + e.message + ')'; }
     } else {
       lineOutput += '\n(No valid FEN)';
     }
@@ -1606,12 +1721,14 @@ TACTICAL REPORT — computed facts:
   - FORCED MATE (if any),
   - THREAT (what the mover plays if the opponent does nothing),
   - TACTIC lines (hanging / pin / skewer) ONLY when an engine line exploits them,
-  - top 5 engine lines.
+  - top 5 engine lines with evals.
 
 === HOW TO USE THE TACTICAL REPORT ===
 The report is ground truth. Never contradict it. Never invent pieces or squares.
 The report is deliberately quiet: if a TACTIC is not listed, do NOT mention pins,
 hanging pieces, or "weak squares". A pin no line exploits is noise.
+If the ENGINE LINES section says "unavailable", you have NO engine facts for that move —
+rely on FEN + opening frame only, and do not cite specific engine moves.
 
 === HOW TO USE THE WIKIPEDIA COMMENTARY (when present) ===
 It is a reference, not gospel. It may be written by a non-GM and may be slightly outdated.
@@ -1638,6 +1755,7 @@ When the move is an opening move, use expressions like:
 - Saying what the opponent plays on our turn, or vice versa.
 - Mentioning a pin or hanging piece unless the TACTICAL REPORT lists it.
 - Copying Wikipedia sentences verbatim.
+- Citing engine moves if the report says engine lines are unavailable.
 
 === EQUAL / UNKNOWN / COMPENSATION ===
 Equal (=, $10-12): "The position is equal." / "Black has fully equalized."
@@ -1660,7 +1778,8 @@ ${batchString}`;
 
   const finish = () => {
     resetCopyBtnUI(btn, btnText, statsText, progressFill, total);
-    alert('Batch copied!\n' + total + ' positions.\n\nIdeas: ' + ideasPack.length + ' | Wiki: ' + wikiEntries.length);
+    const engineUsed = batchData.filter(x => /ENGINE LINES \(top/.test(x)).length;
+    alert('Batch copied!\n' + total + ' positions.\n' + engineUsed + ' with engine lines.\n\nIdeas: ' + ideasPack.length + ' | Wiki: ' + wikiEntries.length);
   };
   const fallback = () => {
     const ta = document.createElement('textarea'); ta.value = fullPrompt;
@@ -1677,7 +1796,6 @@ function resetCopyBtnUI(btn, btnText, statsText, progressFill, total) {
   btn.classList.remove('opacity-80', 'cursor-not-allowed'); btn.disabled = false;
   setTimeout(() => { progressFill.style.width = '0%'; }, 1500);
 }
-
 function updateUI() {
   const container = document.getElementById('chunks-container');
   container.innerHTML = '';
@@ -1726,7 +1844,6 @@ function checkNoteAgainstFEN(note, fen) {
   }
   return issues;
 }
-
 function verifyAiOutput() {
   const raw = document.getElementById('ai-json').value;
   const result = document.getElementById('verify-results');
@@ -1748,7 +1865,6 @@ function verifyAiOutput() {
     warnings.map(w => '<div class="border-l-2 border-red-500/50 pl-2 mb-1"><span class="gold-text text-[10px]">' + w.id + '</span><br>' +
       w.issues.map(i => '<span class="text-red-300">• ' + i + '</span>').join('<br>') + '</div>').join('');
 }
-
 function extractChunkMap(text) {
   const map = {};
   const firstBrace = text.indexOf('{'), lastBrace = text.lastIndexOf('}');
@@ -1775,17 +1891,13 @@ function extractChunkMap(text) {
   }
   return map;
 }
-
 function rebuildPgn() {
   const raw = document.getElementById('ai-json').value;
   let aiData;
   try {
     aiData = extractChunkMap(raw);
     if (!aiData || !Object.keys(aiData).length) throw new Error('No chunk IDs');
-  } catch (e) {
-    alert('Failed to parse AI output. Paste the full response.');
-    return;
-  }
+  } catch (e) { alert('Failed to parse AI output. Paste the full response.'); return; }
   const workingTokens = [...pgnTokens];
   const sortedIds = Object.keys(aiData).sort((a, b) => {
     const ia = globalChunks.find(c => c.id === a)?.tokenIndex || 0;
@@ -1801,11 +1913,9 @@ function rebuildPgn() {
   });
   document.getElementById('final-pgn').value = workingTokens.join(' ');
 }
-
 function saveState() {
   localStorage.setItem('gm_master_state', JSON.stringify({ original: document.getElementById('pgn-input').value }));
 }
-
 function clearAll() {
   if (!confirm('Reset everything? Your saved Ideas Pack and Wikipedia cache will also be cleared.')) return;
   localStorage.removeItem('gm_master_state');
@@ -1813,12 +1923,10 @@ function clearAll() {
   localStorage.removeItem(WIKI_CACHE_KEY);
   location.reload();
 }
-
 function copyToClipboard(id) {
   navigator.clipboard.writeText(document.getElementById(id).value);
   alert('Copied!');
 }
-
 function downloadPgn() {
   const val = document.getElementById('final-pgn').value;
   const blob = new Blob([val], { type: 'text/plain' });
@@ -1830,23 +1938,3 @@ function downloadPgn() {
 </script>
 </body>
 </html>
-```
-
----
-
-Workflow
-
-1. Paste the PGN → Initialize Data. The main line is auto-scanned.
-2. Opening detection runs immediately: if it matches the built-in library (12 openings), the Ideas Pack is populated with the module's curated GM ideas and the badge turns blue "N ideas (auto)".
-3. If no match → click 📖 Pull from Wikipedia. The tool fetches en.wikipedia.org, parses move-by-move commentary, and appends it to the Ideas Pack. Badge turns purple "N ideas (wiki)". Edit anything you don't like.
-4. Save Pack. Every batch you copy from here on carries the frame + Wikipedia reference.
-5. Click Copy Selected Batch → paste into your LLM → get JSON back.
-6. Switch to Re-assembler → paste JSON → click 🔍 Verify against FENs (catches hallucinations like "the knight on d4" when there's no knight on d4) → Inject annotations & rebuild → download.
-
-What the LLM gets per batch
-
-· Opening Frame — curated GM ideas (auto or manual).
-· Wikipedia Commentary — move-by-move reference (paraphrased, never copied).
-· Per move: FEN, voice note, material balance, forced mate detection, null-move threat, verified tactics only (pins/hanging filtered to those an engine line actually uses), top 5 engine lines at depth 16.
-
-The three-tier knowledge stack — library → Wikipedia → your research prompt — covers any opening, and the prompt rules keep every note at GM register: opening ideas named briefly, tactics only when real, no square-by-square narration, no move scripts.
