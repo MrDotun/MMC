@@ -4,8 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v8.0 | Decipher Chess Academy</title>
-<!-- build: 2026-10-13-voice-v8.0-pipeline -->
+<title>GM Variation Master · v8.1 | Decipher Chess Academy</title>
+<!-- build: 2026-10-13-voice-v8.1-simple-stage1 -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -38,7 +38,7 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">4-stage pipeline + intention board · v8.0</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Free GM draft · refine pipeline · v8.1</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center flex-wrap">
 <span id="sf-badge" class="sf-badge loading">Engine loading…</span>
@@ -252,7 +252,7 @@ Import<input type="file" accept=".json,.txt" class="hidden" onchange="importPack
 <button onclick="stage3Copy()" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">3. Copy Refine Prompt</button>
 <button onclick="stage4Copy()" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">4. Copy JSON Prompt</button>
 </div>
-<p class="text-[10px] text-slate-500 italic">Stage 1: AI writes free draft. Stage 2: you mark plans. Stage 3: AI refines in simple English. Stage 4: AI returns JSON for the Re-assembler.</p>
+<p class="text-[10px] text-slate-500 italic">Stage 1: AI writes a free GM draft from FEN only. Stage 2: you mark plans. Stage 3: AI refines in simple English. Stage 4: AI returns JSON for the Re-assembler.</p>
 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
 <div>
 <label class="text-[10px] text-slate-500 uppercase">Paste Stage 1 response</label>
@@ -1172,58 +1172,56 @@ async function buildFactList(fenAfter, moverSide) {
   return facts;
 }
 
-/* ===================== COMPOSER ===================== */
-function composeNote(chunk, facts, gmEval, wikiEntry, explorer, ourSide) {
+/* ===================== COMPOSER (uses delta facts only) ===================== */
+function composeNote(chunk, allFacts, deltaFacts, gmEval, wikiEntry, explorer, ourSide) {
   const mover = (chunk.fen || '').split(' ')[1] === 'w' ? 'White' : 'Black';
   const we = (mover === ourSide) ? 'We' : mover;
   const san = (chunk.san || '').trim() || 'the move';
   const isCheck = /[+#]/.test(chunk.target || '');
   const sentences = [];
+
   if (wikiEntry && wikiEntry.comment) {
     const txt = String(wikiEntry.comment).replace(/\s+/g, ' ').trim();
     const first = txt.split(/(?<=[.!?])\s+/)[0].trim();
-    if (first.length > 25 && first.length < 240) sentences.push(/[.!?]$/.test(first) ? first : first + '.');
+    if (first.length > 25 && first.length < 260) sentences.push(/[.!?]$/.test(first) ? first : first + '.');
   }
   if (!sentences.length) {
-    const intent = facts.find(f => /^INTENT\s*[—:-]/i.test(f));
-    if (intent) {
-      const clean = intent.replace(/^INTENT\s*[—:-]+\s*/i, '').trim();
-      sentences.push(we + ' continue with ' + clean + '.');
-    }
+    const intent = deltaFacts.find(f => /^INTENT\s*[—:-]/i.test(f));
+    if (intent) { const clean = intent.replace(/^INTENT\s*[—:-]+\s*/i, '').trim(); sentences.push(we + ' continue with ' + clean + '.'); }
   }
   if (!sentences.length) {
-    const threat = facts.find(f => /^THREAT/i.test(f));
-    if (threat) {
-      const m = threat.match(/THREAT[^:]*:\s*(.+)$/i);
-      if (m) sentences.push(we + ' create a threat. The engine sees ' + m[1].trim().split(/\s+/).slice(0, 6).join(' ') + '.');
-    }
+    const threat = deltaFacts.find(f => /^THREAT/i.test(f));
+    if (threat) { const m = threat.match(/THREAT[^:]*:\s*(.+)$/i); if (m) sentences.push(we + ' create a threat. ' + m[1].trim().split(/\s+/).slice(0, 6).join(' ') + '.'); }
   }
   if (!sentences.length) {
-    const pair = facts.find(f => /bishop pair/i.test(f));
-    const passed = facts.find(f => /passed pawn/i.test(f));
-    const centre = facts.find(f => /strong pawn centre/i.test(f));
-    const file = facts.find(f => /half-open for (white|black)/i.test(f));
-    const stuck = facts.find(f => /blocked by own pawn/i.test(f));
-    if (pair) sentences.push(we + ' play ' + san + '. ' + pair + '.');
-    else if (passed) sentences.push(we + ' play ' + san + '. ' + passed + '.');
-    else if (centre) sentences.push(we + ' play ' + san + '. ' + centre + '.');
-    else if (file) sentences.push(we + ' play ' + san + '. ' + file + '.');
-    else if (stuck) sentences.push(we + ' play ' + san + '. ' + stuck + '.');
-  }
-  if (!sentences.length) {
-    const wc = facts.find(f => /WINNING CAPTURES/i.test(f));
+    const wc = deltaFacts.find(f => /WINNING CAPTURES/i.test(f));
     if (wc) sentences.push(we + ' play ' + san + '. ' + wc.replace(/^WINNING CAPTURES [^:]+:\s*/i, '') + '.');
   }
+  if (!sentences.length) {
+    const newFile   = deltaFacts.find(f => /half-open for (white|black)/i.test(f));
+    const newCentre = deltaFacts.find(f => /strong pawn centre/i.test(f));
+    const newPassed = deltaFacts.find(f => /passed pawn/i.test(f));
+    const newStuck  = deltaFacts.find(f => /blocked by own pawn/i.test(f));
+    const newPin    = deltaFacts.find(f => /^PINS/i.test(f));
+    const newKS     = deltaFacts.find(f => /king.*(still on|no pawn shield)/i.test(f));
+    if (newFile)   sentences.push(we + ' play ' + san + '. ' + newFile + '.');
+    else if (newCentre) sentences.push(we + ' play ' + san + '. ' + newCentre + '.');
+    else if (newPassed) sentences.push(we + ' play ' + san + '. ' + newPassed + '.');
+    else if (newPin)    sentences.push(we + ' play ' + san + '. ' + newPin + '.');
+    else if (newStuck)  sentences.push(we + ' play ' + san + '. ' + newStuck + '.');
+    else if (newKS)     sentences.push(we + ' play ' + san + '. ' + newKS + '.');
+  }
   if (!sentences.length && isCheck) sentences.push(we + ' play ' + san + ' with check.');
-  if (!sentences.length) sentences.push(we + ' play ' + san + '. A quiet move.');
+  if (!sentences.length) sentences.push(we + ' play ' + san + '.');
+
   if (explorer && (explorer.white + explorer.draws + explorer.black) >= 20) {
     const total = explorer.white + explorer.draws + explorer.black;
     const wPct = Math.round(explorer.white / total * 100);
     const bPct = Math.round(explorer.black / total * 100);
     if (mover === 'White' && wPct >= 55) sentences.push('White has scored ' + wPct + '% in master games.');
     else if (mover === 'Black' && bPct >= 55) sentences.push('Black has scored ' + bPct + '% in master games.');
-    else if (mover === 'White' && wPct <= 40 && bPct >= 50) sentences.push('Despite this, Black has scored ' + bPct + '%.');
-    else if (mover === 'Black' && bPct <= 40 && wPct >= 50) sentences.push('Despite this, White has scored ' + wPct + '%.');
+    else if (mover === 'White' && wPct <= 40 && bPct >= 50) sentences.push('Black has scored ' + bPct + '% in master games.');
+    else if (mover === 'Black' && bPct <= 40 && wPct >= 50) sentences.push('White has scored ' + wPct + '% in master games.');
   }
   if (sentences.length < 2) {
     if (gmEval === '=/∞' || gmEval === '∞/=') sentences.push('Black has full compensation for the pawn.');
@@ -1758,46 +1756,29 @@ function parseIdSections(text) {
   return map;
 }
 
+/* STAGE 1 — bare bones. FEN + move only. Let the AI annotate freely. */
 function buildStage1Prompt(idx, openingName, objectives, wikiSnippet) {
-  const N = idx.length;
   const side = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
   const ourSide = side === 'white' ? 'White' : 'Black';
-  let out = `You are a grandmaster chess author writing an opening-course book. For each move below, write a short natural GM annotation (1–2 sentences). Write freely — no format rules, no forbidden words, just write the way a strong GM would in a game collection.
+  let out = `You are a 2700+ grandmaster annotating your own opening preparation.
 
-Use any of the context given: the wiki text (this is the voice to copy), the engine lines, the positional facts, the intent manoeuvre.
+For each position below, write a short annotation (1–2 sentences) explaining the move the way you would in a game collection — the idea, the plan, the point of it. Write freely.
 
-Return in EXACTLY this format — no JSON, no markdown fences:
+We play ${ourSide}.
+
+Return EXACTLY this format — no JSON, no markdown fences:
 
 ### <ID>
-<your annotation>
+<annotation>
 
-### <ID>
-<your annotation>
-
-We play ${ourSide}. They play ${ourSide === 'White' ? 'Black' : 'White'}.
-${openingName ? 'Opening: ' + openingName + '\n' : ''}
-${objectives.length ? '=== OPENING OBJECTIVES (author) ===\n' + objectives.join('\n') + '\n' : ''}
-${wikiSnippet ? '\n=== WIKI REFERENCE ===\n' + wikiSnippet + '\n' : ''}
-
-=== BATCH (${N} moves) ===\n`;
+=== POSITIONS ===\n`;
   for (const i of idx) {
     const c = globalChunks[i];
     const sideJustPlayed = (c.fen || '').split(' ')[1] === 'w' ? 'White' : 'Black';
     const sanDisplay = (c.san || c.target || '').replace(/[!?]+/g, '').replace(/\$\d+/g, '').trim();
     out += '\n### ' + c.id + '\n';
-    out += 'MOVE: ' + c.moveNum + '. ' + sanDisplay + ' by ' + sideJustPlayed + '\n';
-    if (/[?!]/.test(c.target)) out += 'GM SYMBOL: ' + (c.target.match(/[?!]+/) || [''])[0] + '\n';
-    const gm = (c.target || '').match(/[=±∓∞]+\/[*=±∓∞]+|[=±∓∞]+/);
-    if (gm) out += 'POSITION AFTER: ' + gm[0] + '\n';
     out += 'FEN: ' + (c.fenAfter || c.fen) + '\n';
-    if (c._reviewedFacts && c._reviewedFacts.length) out += 'FACTS: ' + c._reviewedFacts.join(' | ') + '\n';
-    if (userNotes[c.id]) out += 'AUTHOR NOTE: ' + userNotes[c.id] + '\n';
-    const sanLower = String(c.san || '').toLowerCase();
-    const wikiHit = (wikiEntries || []).find(w => {
-      const wm = String(w.move || '').toLowerCase();
-      return sanLower && wm.includes(sanLower);
-    });
-    if (wikiHit) out += 'WIKI (voice model): ' + String(wikiHit.comment).slice(0, 900) + '\n';
+    out += 'MOVE: ' + c.moveNum + '. ' + sanDisplay + ' by ' + sideJustPlayed + '\n';
   }
   return out;
 }
@@ -1938,7 +1919,7 @@ function stage4Ingest() {
   document.getElementById('pipeline-status').innerText = 'Stage 4 ingested · ' + n + ' notes';
 }
 
-/* ===================== COMPOSE & COPY ===================== */
+/* ===================== COMPOSE & COPY (uses delta facts) ===================== */
 async function copySelectedBatch() {
   if (selStart === null || selEnd === null) { alert('Pick start and end moves.'); return; }
   const btn = document.getElementById('copy-btn'), btnText = document.getElementById('copy-text');
@@ -1967,7 +1948,7 @@ async function copySelectedBatch() {
   saveCurrentMoveNote();
   lastBatchIds = idx.map(i => globalChunks[i] && globalChunks[i].id).filter(Boolean);
   const batch = []; const total = idx.length;
-  const summary = { composed: 0, withExplorer: 0, withWiki: 0 };
+  const summary = { composed: 0, withExplorer: 0, withWiki: 0, withDelta: 0 };
   for (let s = 0; s < idx.length; s++) {
     const i = idx[s], c = globalChunks[i], step = s + 1;
     const sideJustPlayed = (c.fen || '').split(' ')[1] === 'w' ? 'White' : 'Black';
@@ -1985,9 +1966,24 @@ async function copySelectedBatch() {
     const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter)) ? c.fenAfter : (isValidFen(c.fen) ? c.fen : null);
     btnText.innerHTML = '<div class="spinner"></div>Composing [' + step + '/' + total + ']…';
     progressFill.style.width = (((step - 1) / total) * 100) + '%';
+
+    // Facts — reviewed wins, else auto-detect delta
     let facts = [];
-    if (c._reviewedFacts && c._reviewedFacts.length) facts = c._reviewedFacts;
-    else if (fenAfter) { try { facts = await buildFactList(fenAfter, sideJustPlayed); } catch (e) {} }
+    let deltaFacts = [];
+    if (c._reviewedFacts && c._reviewedFacts.length) {
+      facts = c._reviewedFacts;
+      deltaFacts = c._reviewedFacts;
+    } else if (fenAfter) {
+      try {
+        const factsBefore = await buildFactList(c.fen, sideJustPlayed);
+        facts = await buildFactList(fenAfter, sideJustPlayed);
+        const beforeSet = new Set(factsBefore);
+        deltaFacts = facts.filter(f => !beforeSet.has(f));
+        if (deltaFacts.length) summary.withDelta++;
+      } catch (e) {}
+    }
+    c._deltaFacts = deltaFacts;
+
     const sanLower = String(c.san || '').toLowerCase();
     const wikiEntry = wikiList.find(w => { const wm = String(w.move || '').toLowerCase(); return sanLower && wm.includes(sanLower); });
     if (wikiEntry) summary.withWiki++;
@@ -1995,8 +1991,9 @@ async function copySelectedBatch() {
     if (fenAfter) { try { explorer = await lichessExplorer(fenAfter); } catch (e) {} if (explorer && (explorer.white + explorer.draws + explorer.black) > 0) summary.withExplorer++; }
     const gmEvalMark = tgt.match(/[=±∓∞]+\/[*=±∓∞]+|[=±∓∞]+/);
     const gmEval = gmEvalMark ? gmEvalMark[0] : '';
-    const draftNote = composeNote(c, facts, gmEval, wikiEntry, explorer, ourSide);
+    const draftNote = composeNote(c, facts, deltaFacts, gmEval, wikiEntry, explorer, ourSide);
     if (draftNote) summary.composed++;
+
     let lineOutput = '[ID: ' + c.id + ']';
     lineOutput += '\nMOVE: ' + c.moveNum + '. ' + moveWithSign + ' by ' + sideJustPlayed;
     if (signOnly) lineOutput += '\nGM SYMBOL: ' + signOnly;
@@ -2004,7 +2001,8 @@ async function copySelectedBatch() {
     lineOutput += '\nFEN: ' + (fenAfter || 'unavailable');
     const vn = userNotes[c.id];
     if (vn) lineOutput += '\nVOICE NOTE (author): ' + vn;
-    if (facts.length) lineOutput += '\nFACTS: ' + facts.join(' | ');
+    if (deltaFacts.length) lineOutput += '\nDELTA FACTS (what this move did): ' + deltaFacts.join(' | ');
+    else if (facts.length) lineOutput += '\nFACTS: ' + facts.slice(0, 3).join(' | ');
     if (explorer && (explorer.white + explorer.draws + explorer.black) > 0) {
       const tot = explorer.white + explorer.draws + explorer.black;
       const topMove = (explorer.moves && explorer.moves[0]) ? explorer.moves[0].san : '';
@@ -2046,7 +2044,7 @@ ${batch.join('\n\n')}`;
     btn.classList.remove('opacity-80', 'cursor-not-allowed'); btn.disabled = false;
     setTimeout(() => { progressFill.style.width = '0%'; }, 1500);
     const kb = (fullPrompt.length / 1024).toFixed(1);
-    alert('Composed ' + N + ' notes.\nBatch size: ~' + kb + ' KB.\nWith wiki: ' + summary.withWiki + '\nWith explorer: ' + summary.withExplorer);
+    alert('Composed ' + N + ' notes.\nBatch size: ~' + kb + ' KB.\nWith wiki: ' + summary.withWiki + '\nWith explorer: ' + summary.withExplorer + '\nWith delta facts: ' + summary.withDelta);
   };
   navigator.clipboard.writeText(fullPrompt).then(finish).catch(() => {
     const ta = document.createElement('textarea'); ta.value = fullPrompt;
