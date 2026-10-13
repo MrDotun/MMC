@@ -4,8 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v8.1 | Decipher Chess Academy</title>
-<!-- build: 2026-10-13-voice-v8.1-simple-stage1 -->
+<title>GM Variation Master · v8.4 | Decipher Chess Academy</title>
+<!-- build: 2026-10-13-voice-v8.4-nag-normalize -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -38,7 +38,7 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">4-stage pipeline · simple Stage 1 · v8.1</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Signs, variation-end, NAG-normalised · v8.4</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center flex-wrap">
 <span id="sf-badge" class="sf-badge loading">Engine loading…</span>
@@ -230,13 +230,13 @@ Import<input type="file" accept=".json,.txt" class="hidden" onchange="importPack
 
 <div id="facts-review-panel" class="hidden glass p-6 rounded-2xl space-y-4">
 <div class="flex items-center justify-between">
-<h2 class="text-lg font-bold gold-text">Phase 2 — Review facts</h2>
+<h2 class="text-lg font-bold gold-text">Review positional facts</h2>
 <span id="facts-review-count" class="text-[10px] text-slate-500 uppercase"></span>
 </div>
-<p class="text-xs text-slate-400 italic">Untick any fact you disagree with. The composer uses only what you leave ticked.</p>
+<p class="text-xs text-slate-400 italic">Untick any fact you disagree with. Facts you leave ticked can be used as context in Stage 3.</p>
 <div id="facts-review-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[500px] overflow-y-auto pr-1"></div>
 <div class="flex gap-3">
-<button onclick="applyFactsReview()" class="flex-1 py-3 gold-bg rounded-xl font-bold uppercase text-xs">✓ Apply &amp; Compose</button>
+<button onclick="applyFactsReview()" class="flex-1 py-3 gold-bg rounded-xl font-bold uppercase text-xs">✓ Save reviewed facts</button>
 <button onclick="closeFactsReview()" class="px-6 py-3 bg-slate-800 rounded-xl font-bold uppercase text-xs text-slate-300">Cancel</button>
 </div>
 </div>
@@ -249,10 +249,18 @@ Import<input type="file" accept=".json,.txt" class="hidden" onchange="importPack
 <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
 <button onclick="stage1Copy()" class="py-2 gold-bg rounded font-bold uppercase text-[11px]">1. Copy Draft Prompt</button>
 <button onclick="stage2Start()" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">2. Mark Plans</button>
-<button onclick="stage3Copy()" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">3. Copy Refine Prompt</button>
+<button onclick="stage3Copy(event)" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">3. Copy Refine Prompt</button>
 <button onclick="stage4Copy()" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">4. Copy JSON Prompt</button>
 </div>
-<p class="text-[10px] text-slate-500 italic">Stage 1: AI writes a free GM draft. Stage 2: you mark plans. Stage 3: AI refines in simple English. Stage 4: AI returns JSON for the Re-assembler.</p>
+<p class="text-[10px] text-slate-500 italic">Stage 1: free GM draft. Stage 2: you mark plans. Stage 3: refine with chosen context. Stage 4: JSON for the Re-assembler.</p>
+<div class="flex flex-wrap gap-3 text-[11px] text-slate-300 mt-2 border-t border-slate-700 pt-2">
+<span class="text-[10px] text-slate-500 uppercase self-center font-bold">Stage 3 context:</span>
+<label class="cursor-pointer"><input type="checkbox" id="ctx-wiki" class="mr-1">Wiki reference</label>
+<label class="cursor-pointer"><input type="checkbox" id="ctx-engine" class="mr-1">Engine lines</label>
+<label class="cursor-pointer"><input type="checkbox" id="ctx-facts" class="mr-1">Positional facts</label>
+<label class="cursor-pointer"><input type="checkbox" id="ctx-explorer" class="mr-1">Master game stats</label>
+<span class="text-[10px] text-slate-500 italic self-center">All off = only your Stage 1 draft + your marked plans.</span>
+</div>
 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
 <div>
 <label class="text-[10px] text-slate-500 uppercase">Paste Stage 1 response</label>
@@ -847,63 +855,6 @@ function attackersOfBoard(board, sq, byColor) {
   }
   return out;
 }
-function winningCaptures(fen) {
-  const chess = new Chess(fen); if (!chess) return [];
-  const board = chess.board();
-  const stm = chess.turn(), enemy = stm === 'w' ? 'b' : 'w';
-  const names = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen' };
-  const out = [];
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f];
-    if (!p || p.color !== enemy || p.type === 'k') continue;
-    const sq = frToSq(f, r);
-    const atk = attackersOfBoard(board, sq, stm);
-    if (!atk.length) continue;
-    let cheapestSq = null, cheapestVal = 999;
-    for (const as of atk) {
-      const [af, ar] = sqToFR(as);
-      const ap = board[ar][af];
-      if (PIECE_VAL[ap.type] < cheapestVal) { cheapestVal = PIECE_VAL[ap.type]; cheapestSq = as; }
-    }
-    const test = new Chess(fen);
-    try { if (!test.move({ from: cheapestSq, to: sq, promotion: 'q' })) continue; } catch (e) { continue; }
-    const newBoard = test.board();
-    const defs = attackersOfBoard(newBoard, sq, enemy);
-    let netGain;
-    if (defs.length === 0) netGain = PIECE_VAL[p.type] - cheapestVal;
-    else {
-      let cd = 999;
-      for (const ds of defs) { const [df, dr] = sqToFR(ds); const dp = newBoard[dr][df]; if (dp && PIECE_VAL[dp.type] < cd) cd = PIECE_VAL[dp.type]; }
-      netGain = PIECE_VAL[p.type] - Math.max(cheapestVal, cd);
-    }
-    if (netGain >= 1) out.push({ piece: names[p.type], square: sq, color: p.color, gain: netGain, free: defs.length === 0 });
-  }
-  return out.slice(0, 4);
-}
-function pinsAndSkewers(fen) {
-  const chess = new Chess(fen); if (!chess) return [];
-  const board = chess.board(), stm = chess.turn(), enemy = stm === 'w' ? 'b' : 'w';
-  const dirsB = [[1,1],[1,-1],[-1,1],[-1,-1]], dirsR = [[1,0],[-1,0],[0,1],[0,-1]];
-  const out = [];
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p || p.color !== stm || !['b','r','q'].includes(p.type)) continue;
-    const dirs = p.type === 'b' ? dirsB : p.type === 'r' ? dirsR : [...dirsB, ...dirsR];
-    for (const [df, dr] of dirs) {
-      let cf = f+df, cr = r+dr, first = null, second = null;
-      while (cf>=0&&cf<8&&cr>=0&&cr<8) {
-        const q = board[cr][cf];
-        if (q) { if (!first) { if (q.color === stm) break; first = { sq: frToSq(cf,cr), p:q }; } else { second = { sq: frToSq(cf,cr), p:q }; break; } }
-        cf += df; cr += dr;
-      }
-      if (first && second && second.p.color === enemy && second.p.type === 'k')
-        out.push({ type:'pin', pinned:first.sq, pinnedPiece:first.p.type, pinnedColor:first.p.color, toKing:second.sq, by:frToSq(f,r), byPiece:p.type });
-      else if (first && second && second.p.color === stm && PIECE_VAL[first.p.type] > PIECE_VAL[second.p.type])
-        out.push({ type:'skewer', front:first.sq, frontPiece:first.p.type, behind:second.sq, behindPiece:second.p.type, by:frToSq(f,r), byPiece:p.type });
-    }
-  }
-  return out;
-}
-function nullMove(fen) { const p = fen.split(' '); p[1] = p[1] === 'w' ? 'b' : 'w'; p[3] = '-'; return p.join(' '); }
 function kingSafetyNotes(fen) {
   const chess = new Chess(fen); if (!chess) return '';
   const board = chess.board();
@@ -1126,6 +1077,63 @@ function lineUsesMotif(line, motif) {
   if (motif.type === 'pin') return f4.some(s => s.includes('x' + motif.pinned)) || f4.some(s => s.includes(motif.by));
   return false;
 }
+function winningCaptures(fen) {
+  const chess = new Chess(fen); if (!chess) return [];
+  const board = chess.board();
+  const stm = chess.turn(), enemy = stm === 'w' ? 'b' : 'w';
+  const names = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen' };
+  const out = [];
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f];
+    if (!p || p.color !== enemy || p.type === 'k') continue;
+    const sq = frToSq(f, r);
+    const atk = attackersOfBoard(board, sq, stm);
+    if (!atk.length) continue;
+    let cheapestSq = null, cheapestVal = 999;
+    for (const as of atk) {
+      const [af, ar] = sqToFR(as);
+      const ap = board[ar][af];
+      if (PIECE_VAL[ap.type] < cheapestVal) { cheapestVal = PIECE_VAL[ap.type]; cheapestSq = as; }
+    }
+    const test = new Chess(fen);
+    try { if (!test.move({ from: cheapestSq, to: sq, promotion: 'q' })) continue; } catch (e) { continue; }
+    const newBoard = test.board();
+    const defs = attackersOfBoard(newBoard, sq, enemy);
+    let netGain;
+    if (defs.length === 0) netGain = PIECE_VAL[p.type] - cheapestVal;
+    else {
+      let cd = 999;
+      for (const ds of defs) { const [df, dr] = sqToFR(ds); const dp = newBoard[dr][df]; if (dp && PIECE_VAL[dp.type] < cd) cd = PIECE_VAL[dp.type]; }
+      netGain = PIECE_VAL[p.type] - Math.max(cheapestVal, cd);
+    }
+    if (netGain >= 1) out.push({ piece: names[p.type], square: sq, color: p.color, gain: netGain, free: defs.length === 0 });
+  }
+  return out.slice(0, 4);
+}
+function pinsAndSkewers(fen) {
+  const chess = new Chess(fen); if (!chess) return [];
+  const board = chess.board(), stm = chess.turn(), enemy = stm === 'w' ? 'b' : 'w';
+  const dirsB = [[1,1],[1,-1],[-1,1],[-1,-1]], dirsR = [[1,0],[-1,0],[0,1],[0,-1]];
+  const out = [];
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const p = board[r][f]; if (!p || p.color !== stm || !['b','r','q'].includes(p.type)) continue;
+    const dirs = p.type === 'b' ? dirsB : p.type === 'r' ? dirsR : [...dirsB, ...dirsR];
+    for (const [df, dr] of dirs) {
+      let cf = f+df, cr = r+dr, first = null, second = null;
+      while (cf>=0&&cf<8&&cr>=0&&cr<8) {
+        const q = board[cr][cf];
+        if (q) { if (!first) { if (q.color === stm) break; first = { sq: frToSq(cf,cr), p:q }; } else { second = { sq: frToSq(cf,cr), p:q }; break; } }
+        cf += df; cr += dr;
+      }
+      if (first && second && second.p.color === enemy && second.p.type === 'k')
+        out.push({ type:'pin', pinned:first.sq, pinnedPiece:first.p.type, pinnedColor:first.p.color, toKing:second.sq, by:frToSq(f,r), byPiece:p.type });
+      else if (first && second && second.p.color === stm && PIECE_VAL[first.p.type] > PIECE_VAL[second.p.type])
+        out.push({ type:'skewer', front:first.sq, frontPiece:first.p.type, behind:second.sq, behindPiece:second.p.type, by:frToSq(f,r), byPiece:p.type });
+    }
+  }
+  return out;
+}
+function nullMove(fen) { const p = fen.split(' '); p[1] = p[1] === 'w' ? 'b' : 'w'; p[3] = '-'; return p.join(' '); }
 async function buildFactList(fenAfter, moverSide) {
   const facts = [];
   const chess = new Chess(fenAfter); if (!chess) return facts;
@@ -1170,67 +1178,6 @@ async function buildFactList(fenAfter, moverSide) {
     }
   }
   return facts;
-}
-
-/* ===================== COMPOSER ===================== */
-function composeNote(chunk, allFacts, deltaFacts, gmEval, wikiEntry, explorer, ourSide) {
-  const mover = (chunk.fen || '').split(' ')[1] === 'w' ? 'White' : 'Black';
-  const we = (mover === ourSide) ? 'We' : mover;
-  const san = (chunk.san || '').trim() || 'the move';
-  const isCheck = /[+#]/.test(chunk.target || '');
-  const sentences = [];
-  if (wikiEntry && wikiEntry.comment) {
-    const txt = String(wikiEntry.comment).replace(/\s+/g, ' ').trim();
-    const first = txt.split(/(?<=[.!?])\s+/)[0].trim();
-    if (first.length > 25 && first.length < 260) sentences.push(/[.!?]$/.test(first) ? first : first + '.');
-  }
-  if (!sentences.length) {
-    const intent = deltaFacts.find(f => /^INTENT\s*[—:-]/i.test(f));
-    if (intent) { const clean = intent.replace(/^INTENT\s*[—:-]+\s*/i, '').trim(); sentences.push(we + ' continue with ' + clean + '.'); }
-  }
-  if (!sentences.length) {
-    const threat = deltaFacts.find(f => /^THREAT/i.test(f));
-    if (threat) { const m = threat.match(/THREAT[^:]*:\s*(.+)$/i); if (m) sentences.push(we + ' create a threat. ' + m[1].trim().split(/\s+/).slice(0, 6).join(' ') + '.'); }
-  }
-  if (!sentences.length) {
-    const wc = deltaFacts.find(f => /WINNING CAPTURES/i.test(f));
-    if (wc) sentences.push(we + ' play ' + san + '. ' + wc.replace(/^WINNING CAPTURES [^:]+:\s*/i, '') + '.');
-  }
-  if (!sentences.length) {
-    const newFile = deltaFacts.find(f => /half-open for (white|black)/i.test(f));
-    const newCentre = deltaFacts.find(f => /strong pawn centre/i.test(f));
-    const newPassed = deltaFacts.find(f => /passed pawn/i.test(f));
-    const newStuck = deltaFacts.find(f => /blocked by own pawn/i.test(f));
-    const newPin = deltaFacts.find(f => /^PINS/i.test(f));
-    const newKS = deltaFacts.find(f => /king.*(still on|no pawn shield)/i.test(f));
-    if (newFile) sentences.push(we + ' play ' + san + '. ' + newFile + '.');
-    else if (newCentre) sentences.push(we + ' play ' + san + '. ' + newCentre + '.');
-    else if (newPassed) sentences.push(we + ' play ' + san + '. ' + newPassed + '.');
-    else if (newPin) sentences.push(we + ' play ' + san + '. ' + newPin + '.');
-    else if (newStuck) sentences.push(we + ' play ' + san + '. ' + newStuck + '.');
-    else if (newKS) sentences.push(we + ' play ' + san + '. ' + newKS + '.');
-  }
-  if (!sentences.length && isCheck) sentences.push(we + ' play ' + san + ' with check.');
-  if (!sentences.length) sentences.push(we + ' play ' + san + '.');
-  if (explorer && (explorer.white + explorer.draws + explorer.black) >= 20) {
-    const total = explorer.white + explorer.draws + explorer.black;
-    const wPct = Math.round(explorer.white / total * 100);
-    const bPct = Math.round(explorer.black / total * 100);
-    if (mover === 'White' && wPct >= 55) sentences.push('White has scored ' + wPct + '% in master games.');
-    else if (mover === 'Black' && bPct >= 55) sentences.push('Black has scored ' + bPct + '% in master games.');
-    else if (mover === 'White' && wPct <= 40 && bPct >= 50) sentences.push('Black has scored ' + bPct + '% in master games.');
-    else if (mover === 'Black' && bPct <= 40 && wPct >= 50) sentences.push('White has scored ' + wPct + '% in master games.');
-  }
-  if (sentences.length < 2) {
-    if (gmEval === '=/∞' || gmEval === '∞/=') sentences.push('Black has full compensation for the pawn.');
-    else if (gmEval === '=') sentences.push('The position is equal.');
-    else if (gmEval === '∞') sentences.push('Unclear, but easier for us to play.');
-    else if (gmEval === '±') sentences.push('White is slightly better.');
-    else if (gmEval === '∓') sentences.push('Black is slightly better.');
-  }
-  let note = sentences.slice(0, 2).join(' ').replace(/\s+/g, ' ').trim();
-  if (note.length > 280) note = note.slice(0, 277).replace(/\s+\S*$/, '') + '…';
-  return note;
 }
 
 /* ===================== INIT ===================== */
@@ -1280,7 +1227,11 @@ function processPgn(isLoad = false) {
   const input = document.getElementById('pgn-input').value; if (!input) return;
   pgnMeta = parsePgnHeaders(input);
   renderHeaderPills();
-  pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[O0]-[O0](?:-[O0])?[+#]?|[a-hRNBQK][a-hRNBQK1-8x\-=+#]*[?!]*|[a-h][1-8](?:=[RNBQ])?[+#]?[?!]*)/g) || [];
+
+  // Normalize non-standard "13$" / "44$" NAGs to standard "$13" / "$44"
+  const normalizedInput = input.replace(/\b(\d{1,3})\$/g, '$$$1');
+
+  pgnTokens = normalizedInput.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[O0]-[O0](?:-[O0])?[+#]?|[a-hRNBQK][a-hRNBQK1-8x\-=+#]*[?!]*|[a-h][1-8](?:=[RNBQ])?[+#]?[?!]*)/g) || [];
   let chunks = [], moveNumber = 0, variationLevel = 0;
   let depthPlyCounts = { 0: 0 }, lastChunkAtLevel = {};
   let chess = new Chess();
@@ -1669,7 +1620,6 @@ function applyFactsReview() {
     if (c) c._reviewedFacts = arr.filter(x => x.checked).map(x => x.text);
   }
   closeFactsReview();
-  copySelectedBatch();
 }
 
 /* ===================== STAGE 2 — INTENTION BOARD ===================== */
@@ -1733,28 +1683,134 @@ function saveIntention() {
 }
 
 /* ===================== STAGE 1/3/4 — PIPELINE ===================== */
-function parseIdSections(text) {
-  const map = {};
-  const re = /###\s*(CHK_\d+_M\d+_V\d+)\s*\n([\s\S]*?)(?=\n###\s*CHK_|\s*$)/g;
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    const id = m[1].trim();
-    const note = m[2].trim().replace(/\s+/g, ' ');
-    if (id && note) map[id] = note;
+
+const NAG_MAP = {
+  '$1': 'good move (!)',
+  '$2': 'poor move (?)',
+  '$3': 'very good move (!!)',
+  '$4': 'blunder (??)',
+  '$5': 'speculative (!?)',
+  '$6': 'questionable (?!, dubious)',
+  '$10': 'equal (=)',
+  '$11': 'equal, quiet',
+  '$12': 'equal, active',
+  '$13': 'unclear position (∞)',
+  '$14': 'slight advantage White (⩲)',
+  '$15': 'slight advantage Black (⩱)',
+  '$16': 'moderate advantage White (±)',
+  '$17': 'moderate advantage Black (∓)',
+  '$18': 'decisive advantage White (+-)',
+  '$19': 'decisive advantage Black (-+)',
+  '$44': 'with compensation (=/∞)'
+};
+function decodeNAG(nag) { return NAG_MAP[nag] || ''; }
+
+function findVariationEnd(chunk) {
+  if (!chunk || !chunk.isVariationStart) return null;
+  const startIdx = globalChunks.indexOf(chunk);
+  if (startIdx < 0) return null;
+  for (let j = startIdx; j < globalChunks.length; j++) {
+    const n = globalChunks[j];
+    if (n.variationLevel < chunk.variationLevel) break;
+    if (n.variationLevel === chunk.variationLevel && n.isVariationEnd) return n;
   }
-  if (!Object.keys(map).length) {
-    const fallback = /(CHK_\d+_M\d+_V\d+)\s*[:\-–]\s*(.+?)(?=\s*CHK_|\s*$)/gs;
-    let n;
-    while ((n = fallback.exec(text)) !== null) {
-      const id = n[1].trim();
-      const note = n[2].trim().replace(/\s+/g, ' ');
-      if (id && note) map[id] = note;
+  return null;
+}
+
+function formatMoveSigns(c, includeVariationEnd) {
+  const lines = [];
+  const rawTarget = String(c.target || '').trim();
+
+  const qualitySign = (rawTarget.match(/[?!]+/) || [''])[0];
+  if (qualitySign) {
+    const meaning = qualitySign === '!!' ? 'brilliant' :
+                    qualitySign === '??' ? 'blunder' :
+                    qualitySign === '!?' ? 'interesting' :
+                    qualitySign === '?!' ? 'dubious' :
+                    qualitySign === '!' ? 'good' :
+                    qualitySign === '?' ? 'mistake' : '';
+    lines.push('MOVE MARK: ' + qualitySign + (meaning ? ' (' + meaning + ')' : ''));
+  }
+
+  const nags = rawTarget.match(/\$\d+/g) || [];
+  for (const nag of nags) {
+    const d = decodeNAG(nag);
+    lines.push('NAG: ' + nag + (d ? ' (' + d + ')' : ''));
+  }
+
+  const evalMatch = rawTarget.match(/[=±∓∞]+\/[*=±∓∞]+|[=±∓∞]+/);
+  if (evalMatch) {
+    const sym = evalMatch[0];
+    const meaning =
+      sym === '=' ? 'equal' :
+      sym === '∞' ? 'unclear' :
+      sym === '±' ? 'White slightly better' :
+      sym === '∓' ? 'Black slightly better' :
+      /^=\/∞/.test(sym) ? 'White has compensation' :
+      /^∞\/=/.test(sym) ? 'Black has compensation' : '';
+    lines.push('POSITION EVAL: ' + sym + (meaning ? ' (' + meaning + ')' : ''));
+  }
+
+  if (includeVariationEnd && c.isVariationStart) {
+    const endChunk = findVariationEnd(c);
+    if (endChunk) {
+      const endTarget = String(endChunk.target || '').trim();
+      const endQuality = (endTarget.match(/[?!]+/) || [''])[0];
+      const endSan = (endChunk.san || '').replace(/[?!$].*$/, '').trim();
+      const isWhiteEnd = ((endChunk.pathArray || []).length % 2 === 1);
+      const endPrefix = isWhiteEnd ? endChunk.moveNum + '.' : endChunk.moveNum + '...';
+      let summary = endPrefix + endSan + endQuality;
+
+      const bits = [];
+      const endEval = endTarget.match(/[=±∓∞]+\/[*=±∓∞]+|[=±∓∞]+/);
+      if (endEval) {
+        const sym = endEval[0];
+        const meaning =
+          sym === '=' ? 'equal' :
+          sym === '∞' ? 'unclear' :
+          sym === '±' ? 'White slightly better' :
+          sym === '∓' ? 'Black slightly better' :
+          /^=\/∞/.test(sym) ? 'White has compensation' :
+          /^∞\/=/.test(sym) ? 'Black has compensation' : '';
+        bits.push(sym + (meaning ? ' (' + meaning + ')' : ''));
+      }
+      const endNags = endTarget.match(/\$\d+/g) || [];
+      const lastNag = endNags[endNags.length - 1];
+      if (lastNag && decodeNAG(lastNag)) bits.push(lastNag + ' (' + decodeNAG(lastNag) + ')');
+
+      lines.push('VARIATION ENDS AT: ' + summary + (bits.length ? ' — ' + bits.join('; ') : ''));
     }
   }
+  return lines;
+}
+
+function parseIdSections(text) {
+  const map = {};
+  const lines = text.split('\n');
+  let currentId = null;
+  let currentNote = [];
+  const idOnlyRe = /^[\s#*]*(CHK_\d+_M\d+_V\d+)[\s#*:.\-–]*$/;
+  const idWithTextRe = /^[\s#*]*(CHK_\d+_M\d+_V\d+)[\s#*:.\-–]+\s*(.+)$/;
+  function flush() {
+    if (currentId) {
+      const note = currentNote.join(' ').replace(/\s+/g, ' ').trim();
+      if (note) map[currentId] = note;
+    }
+    currentId = null;
+    currentNote = [];
+  }
+  for (const raw of lines) {
+    const line = raw.trim();
+    const m1 = line.match(idOnlyRe);
+    if (m1) { flush(); currentId = m1[1]; continue; }
+    const m2 = line.match(idWithTextRe);
+    if (m2) { flush(); currentId = m2[1]; currentNote.push(m2[2].trim()); continue; }
+    if (currentId && line) currentNote.push(line);
+  }
+  flush();
   return map;
 }
 
-/* ---------- STAGE 1 — SIMPLE FREE GM DRAFT ---------- */
 function buildStage1Prompt(idx, openingName, objectives, wikiSnippet) {
   const side = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
   const ourSide = side === 'white' ? 'White' : 'Black';
@@ -1762,6 +1818,12 @@ function buildStage1Prompt(idx, openingName, objectives, wikiSnippet) {
   let out = `You are a 2700+ grandmaster annotating your own opening preparation.
 
 For each position below, write a short annotation (1–2 sentences) explaining the move the way you would in a game collection — the idea, the plan, the point of it. Write freely.
+
+The annotator has left signs on some moves. Respect them:
+- MOVE MARK (!, ?, !?, ?!, !!, ??) is the annotator's verdict on the move quality.
+- NAG ($1–$6 move quality, $10–$13 equality/unclear, $14–$19 advantage, $44 compensation) is the annotator's verdict in coded form.
+- POSITION EVAL is the annotator's view of the position right after this move.
+- VARIATION ENDS AT appears on the FIRST move of a variation and tells you where this line is heading in evaluation terms. Your note on a variation's first move must reflect that destination.
 
 We play ${ourSide}.
 
@@ -1775,16 +1837,27 @@ Return EXACTLY this format — no JSON, no markdown fences:
   for (const i of idx) {
     const c = globalChunks[i];
     const sideJustPlayed = (c.fen || '').split(' ')[1] === 'w' ? 'White' : 'Black';
-    const sanDisplay = (c.san || c.target || '').replace(/[!?]+/g, '').replace(/\$\d+/g, '').trim();
+    const rawTarget = String(c.target || '').trim();
+    const qualitySign = (rawTarget.match(/[?!]+/) || [''])[0];
+    const sanClean = (c.san || rawTarget.replace(/[?!$].*$/, '')).replace(/\s+/g, ' ').trim();
+    const moveWithSign = qualitySign ? sanClean + qualitySign : sanClean;
+
     out += '\n### ' + c.id + '\n';
     out += 'FEN: ' + (c.fenAfter || c.fen) + '\n';
-    out += 'MOVE: ' + c.moveNum + '. ' + sanDisplay + ' by ' + sideJustPlayed + '\n';
+    out += 'MOVE: ' + c.moveNum + '. ' + moveWithSign + ' by ' + sideJustPlayed + '\n';
+
+    const signLines = formatMoveSigns(c, true);
+    for (const line of signLines) out += line + '\n';
   }
   return out;
 }
 
-/* ---------- STAGE 3 — REFINE ---------- */
-function buildStage3Prompt(idx, drafts) {
+async function buildStage3Prompt(idx, drafts) {
+  const ctxWiki = document.getElementById('ctx-wiki')?.checked;
+  const ctxEngine = document.getElementById('ctx-engine')?.checked;
+  const ctxFacts = document.getElementById('ctx-facts')?.checked;
+  const ctxExplorer = document.getElementById('ctx-explorer')?.checked;
+
   let out = `Below are draft chess annotations and the author's marked plans.
 
 Rewrite each note using very simple, correct English. 1–2 short sentences. Use the author's plans if given.
@@ -1795,7 +1868,9 @@ Rules:
 - NEVER tell the opponent's next move on our move.
 - NEVER tell our next move on the opponent's move.
 - NEVER list a sequence of future moves. No "next", "then", "followed by".
-- Do not invent facts. Only use what is in the draft or the author's plans.
+- Do not invent facts. Only use what is in the DRAFT, the author's PLANS, and any MOVE MARK / NAG / POSITION EVAL / VARIATION ENDS AT / WIKI / ENGINE / FACTS / MASTER GAMES lines provided.
+
+The annotator's marks are ground truth. If the move is marked ?! or NAG $6 (dubious), the refined note must reflect that. If VARIATION ENDS AT says the line reaches compensation, the note on the variation's first move must say so.
 
 Return in EXACTLY this format — no JSON, no markdown fences:
 
@@ -1803,6 +1878,7 @@ Return in EXACTLY this format — no JSON, no markdown fences:
 <refined note>
 
 === NOTES AND PLANS ===\n`;
+
   for (const i of idx) {
     const c = globalChunks[i];
     const draft = drafts[c.id] || '';
@@ -1811,15 +1887,50 @@ Return in EXACTLY this format — no JSON, no markdown fences:
     if (intents.feat && intents.feat.length) plans.push('Features to highlight: ' + intents.feat.join(', '));
     if (intents.moves && intents.moves.length) plans.push('Marked plan moves: ' + intents.moves.join(' '));
     if (intents.note) plans.push('Author note: ' + intents.note);
+
     out += '\n### ' + c.id + '\n';
     out += 'MOVE: ' + c.moveNum + '. ' + (c.san || '') + '\n';
-    out += 'DRAFT: ' + (draft || '(no draft)') + '\n';
+    if (draft) out += 'DRAFT: ' + draft + '\n';
     if (plans.length) out += plans.join('\n') + '\n';
+
+    const signLines = formatMoveSigns(c, true);
+    for (const line of signLines) out += line + '\n';
+
+    if (ctxWiki) {
+      const sanLower = String(c.san || '').toLowerCase();
+      const wikiHit = (wikiEntries || []).find(w => {
+        const wm = String(w.move || '').toLowerCase();
+        return sanLower && wm.includes(sanLower);
+      });
+      if (wikiHit) out += 'WIKI: ' + String(wikiHit.comment).slice(0, 800) + '\n';
+    }
+    if (ctxEngine && c.fenAfter) {
+      try {
+        const eng = await getEngineMultiPV(c.fenAfter, { depth: 14, multipv: 2 });
+        if (eng && !eng.invalid && eng.lines && eng.lines.length) {
+          out += 'ENGINE: ' + eng.lines.slice(0, 2).map((l, k) =>
+            '#' + (k + 1) + ' ' + l.eval + ': ' + l.numbered
+          ).join(' | ') + '\n';
+        }
+      } catch (e) {}
+    }
+    if (ctxFacts) {
+      const fx = (c._deltaFacts && c._deltaFacts.length) ? c._deltaFacts : (c._reviewedFacts || []);
+      if (fx.length) out += 'FACTS: ' + fx.join(' | ') + '\n';
+    }
+    if (ctxExplorer && c.fenAfter) {
+      try {
+        const ex = await lichessExplorer(c.fenAfter);
+        if (ex && (ex.white + ex.draws + ex.black) > 0) {
+          const tot = ex.white + ex.draws + ex.black;
+          out += 'MASTER GAMES: ' + tot + ' games. White ' + Math.round(ex.white / tot * 100) + '%, Draws ' + Math.round(ex.draws / tot * 100) + '%, Black ' + Math.round(ex.black / tot * 100) + '%.\n';
+        }
+      } catch (e) {}
+    }
   }
   return out;
 }
 
-/* ---------- STAGE 4 — JSON ---------- */
 function buildStage4Prompt(idx, refined) {
   let out = `Convert the notes below to a JSON object. Key = ID, Value = note text. Nothing else — no prose, no markdown fences.\n\n`;
   for (const i of idx) {
@@ -1832,8 +1943,7 @@ function buildStage4Prompt(idx, refined) {
 async function stage1Copy() {
   if (selStart === null || selEnd === null) { alert('Pick a start and end move.'); return; }
   const idx = getSelectedIndices();
-  const openingName = (localStorage.getItem(PACK_NAME_KEY) || '').trim();
-  const prompt = buildStage1Prompt(idx, openingName, [], '');
+  const prompt = buildStage1Prompt(idx, '', [], '');
   await navigator.clipboard.writeText(prompt);
   document.getElementById('pipeline-status').innerText = 'Stage 1 copied · paste into AI';
   alert('Stage 1 prompt copied (' + idx.length + ' moves).\nPaste into your LLM. Then paste the response into the "Stage 1" box and click Ingest.');
@@ -1848,7 +1958,7 @@ function stage1Ingest() {
   const raw = document.getElementById('stage1-response').value;
   const map = parseIdSections(raw);
   const n = Object.keys(map).length;
-  if (!n) { alert('No IDs found in the Stage 1 response.'); return; }
+  if (!n) { alert('No IDs found in the Stage 1 response.\n\nThe parser looks for lines starting with "CHK_", "### CHK_", or "**CHK_**" followed by the ID. Check that your AI response kept those markers.'); return; }
   for (const id of Object.keys(map)) {
     const c = globalChunks.find(x => x.id === id);
     if (c) c._draft = map[id];
@@ -1857,16 +1967,31 @@ function stage1Ingest() {
   alert('Ingested ' + n + ' drafts.');
 }
 
-async function stage3Copy() {
+async function stage3Copy(event) {
   if (selStart === null || selEnd === null) { alert('Pick a batch.'); return; }
   const idx = getSelectedIndices();
   const drafts = {};
   for (const i of idx) { const c = globalChunks[i]; if (c._draft) drafts[c.id] = c._draft; }
   if (!Object.keys(drafts).length) { alert('No drafts found. Run Stage 1 first.'); return; }
-  const prompt = buildStage3Prompt(idx, drafts);
-  await navigator.clipboard.writeText(prompt);
-  document.getElementById('pipeline-status').innerText = 'Stage 3 copied · paste into AI';
-  alert('Stage 3 refine prompt copied. Paste into your LLM, then paste response into the "Stage 3" box.');
+
+  const btn = event?.target || document.querySelector('button[onclick*="stage3Copy"]');
+  const origText = btn ? btn.innerText : '';
+  if (btn) { btn.disabled = true; btn.innerText = 'Preparing…'; }
+
+  try {
+    const prompt = await buildStage3Prompt(idx, drafts);
+    await navigator.clipboard.writeText(prompt);
+    const included = [];
+    if (document.getElementById('ctx-wiki')?.checked) included.push('wiki');
+    if (document.getElementById('ctx-engine')?.checked) included.push('engine');
+    if (document.getElementById('ctx-facts')?.checked) included.push('facts');
+    if (document.getElementById('ctx-explorer')?.checked) included.push('explorer');
+    const ctxText = included.length ? included.join(', ') : 'drafts + plans only';
+    document.getElementById('pipeline-status').innerText = 'Stage 3 copied · ' + ctxText;
+    alert('Stage 3 refine prompt copied.\n\nContext included: ' + ctxText + '\n\nPaste into your LLM, then paste the response into the "Stage 3" box.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = origText || '3. Copy Refine Prompt'; }
+  }
 }
 
 function stage3Ingest() {
@@ -1902,135 +2027,6 @@ function stage4Ingest() {
   document.getElementById('ai-json').value = raw;
   switchTab('reassembler');
   document.getElementById('pipeline-status').innerText = 'Stage 4 ingested · ' + n + ' notes';
-}
-
-/* ===================== COMPOSE & COPY ===================== */
-async function copySelectedBatch() {
-  if (selStart === null || selEnd === null) { alert('Pick start and end moves.'); return; }
-  const btn = document.getElementById('copy-btn'), btnText = document.getElementById('copy-text');
-  const progressFill = document.getElementById('progress-fill');
-  btn.classList.add('opacity-80', 'cursor-not-allowed'); btn.disabled = true;
-  if (!SF_POOL.length) await initSFPool();
-  const ideasPack = loadIdeasPack();
-  const openingName = (localStorage.getItem(PACK_NAME_KEY) || '').trim();
-  const curatedIdeas = [], wikiTagged = [];
-  for (const s of ideasPack) {
-    const str = String(s || '').trim(); if (!str) continue;
-    if (str.startsWith('[Wiki')) wikiTagged.push(str); else curatedIdeas.push(str);
-  }
-  const objectives = curatedIdeas.slice(0, 5).map(s => String(s).length > 140 ? String(s).slice(0, 137) + '…' : s);
-  let wikiList = [];
-  if (wikiEntries.length) wikiList = wikiEntries;
-  else if (wikiTagged.length) {
-    wikiList = wikiTagged.map(s => {
-      const m = s.match(/^\[Wiki\s*([^\]]*)\]\s*(.+)$/);
-      return m ? { move: m[1].trim(), comment: m[2].trim() } : { move: '', comment: s };
-    });
-  }
-  const idx = getSelectedIndices();
-  const side = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
-  const ourSide = side === 'white' ? 'White' : 'Black';
-  saveCurrentMoveNote();
-  lastBatchIds = idx.map(i => globalChunks[i] && globalChunks[i].id).filter(Boolean);
-  const batch = []; const total = idx.length;
-  const summary = { composed: 0, withExplorer: 0, withWiki: 0 };
-  for (let s = 0; s < idx.length; s++) {
-    const i = idx[s], c = globalChunks[i], step = s + 1;
-    const sideJustPlayed = (c.fen || '').split(' ')[1] === 'w' ? 'White' : 'Black';
-    const tgt = c.target || '';
-    const hasBlunder = /\?\?/.test(tgt), hasDubious = /\?!/.test(tgt);
-    const hasInteresting = /!\?/.test(tgt), hasBrilliant = /!!/.test(tgt);
-    const hasMistake = /\?/.test(tgt) && !hasBlunder && !hasDubious;
-    const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
-    let signOnly = '';
-    if (hasBlunder) signOnly = '??'; else if (hasDubious) signOnly = '?!';
-    else if (hasInteresting) signOnly = '!?'; else if (hasBrilliant) signOnly = '!!';
-    else if (hasMistake) signOnly = '?'; else if (hasGood) signOnly = '!';
-    const sanDisplay = (c.san || tgt).replace(/[!?]+/g, '').replace(/\$\d+/g, '').trim() || tgt;
-    const moveWithSign = signOnly ? sanDisplay + signOnly : sanDisplay;
-    const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter)) ? c.fenAfter : (isValidFen(c.fen) ? c.fen : null);
-    btnText.innerHTML = '<div class="spinner"></div>Composing [' + step + '/' + total + ']…';
-    progressFill.style.width = (((step - 1) / total) * 100) + '%';
-    let facts = [];
-    let deltaFacts = [];
-    if (c._reviewedFacts && c._reviewedFacts.length) {
-      facts = c._reviewedFacts;
-      deltaFacts = c._reviewedFacts;
-    } else if (fenAfter) {
-      try {
-        const factsBefore = await buildFactList(c.fen, sideJustPlayed);
-        facts = await buildFactList(fenAfter, sideJustPlayed);
-        const beforeSet = new Set(factsBefore);
-        deltaFacts = facts.filter(f => !beforeSet.has(f));
-      } catch (e) {}
-    }
-    c._deltaFacts = deltaFacts;
-    const sanLower = String(c.san || '').toLowerCase();
-    const wikiEntry = wikiList.find(w => { const wm = String(w.move || '').toLowerCase(); return sanLower && wm.includes(sanLower); });
-    if (wikiEntry) summary.withWiki++;
-    let explorer = null;
-    if (fenAfter) { try { explorer = await lichessExplorer(fenAfter); } catch (e) {} if (explorer && (explorer.white + explorer.draws + explorer.black) > 0) summary.withExplorer++; }
-    const gmEvalMark = tgt.match(/[=±∓∞]+\/[*=±∓∞]+|[=±∓∞]+/);
-    const gmEval = gmEvalMark ? gmEvalMark[0] : '';
-    const draftNote = composeNote(c, facts, deltaFacts, gmEval, wikiEntry, explorer, ourSide);
-    if (draftNote) summary.composed++;
-    let lineOutput = '[ID: ' + c.id + ']';
-    lineOutput += '\nMOVE: ' + c.moveNum + '. ' + moveWithSign + ' by ' + sideJustPlayed;
-    if (signOnly) lineOutput += '\nGM SYMBOL: ' + signOnly;
-    if (gmEval) lineOutput += '\nPOSITION AFTER: ' + gmEval;
-    lineOutput += '\nFEN: ' + (fenAfter || 'unavailable');
-    const vn = userNotes[c.id];
-    if (vn) lineOutput += '\nVOICE NOTE (author): ' + vn;
-    if (deltaFacts.length) lineOutput += '\nWHAT THIS MOVE DID: ' + deltaFacts.join(' | ');
-    if (explorer && (explorer.white + explorer.draws + explorer.black) > 0) {
-      const tot = explorer.white + explorer.draws + explorer.black;
-      const topMove = (explorer.moves && explorer.moves[0]) ? explorer.moves[0].san : '';
-      lineOutput += '\nEXPLORER: ' + (explorer.opening ? explorer.opening.name : '') + ' · ' + tot + ' master games · top=' + topMove;
-    }
-    lineOutput += '\nDRAFT NOTE (chess is final — polish English only):\n' + draftNote;
-    batch.push(lineOutput);
-  }
-  progressFill.style.width = '100%';
-  const N = total;
-  const fullPrompt = `You are a copy-editor for a chess book. You do NOT play chess. You do NOT know chess.
-
-=== YOUR JOB ===
-Each batch item has a DRAFT NOTE written by a chess tool. The chess content is FINAL and CORRECT. Your only jobs:
-1. If the draft reads cleanly, return it unchanged.
-2. Fix grammar, spelling, or awkward phrasing.
-3. Shorten if over 30 words. Never lengthen.
-4. Return "(none)" if the draft is empty.
-
-=== FORBIDDEN ===
-- Do NOT add chess facts. No "develops the bishop", no "gains space", no "improves the position".
-- Do NOT mention a square or piece not already in the draft.
-- Do NOT narrate future moves.
-- Do NOT explain what a move is for. If the draft doesn't say, it stays unsaid.
-
-=== OUTPUT ===
-Return ONLY a JSON object with EXACTLY ${N} keys. Keys = the [ID]s. Values = the polished note text.
-No markdown. No commentary.
-
-We play ${ourSide}. They play ${ourSide === 'White' ? 'Black' : 'White'}.
-
-${openingName ? 'Opening: ' + openingName + '\n' : ''}
-${objectives.length ? '=== OPENING OBJECTIVES (author) ===\n' + objectives.map((s,i) => (i+1) + '. ' + s).join('\n') + '\n' : ''}
-
-=== BATCH (${N} moves) ===
-${batch.join('\n\n')}`;
-  const finish = () => {
-    btnText.innerText = 'Compose & Copy';
-    btn.classList.remove('opacity-80', 'cursor-not-allowed'); btn.disabled = false;
-    setTimeout(() => { progressFill.style.width = '0%'; }, 1500);
-    const kb = (fullPrompt.length / 1024).toFixed(1);
-    alert('Composed ' + N + ' notes.\nBatch size: ~' + kb + ' KB.\nWith wiki: ' + summary.withWiki + '\nWith explorer: ' + summary.withExplorer);
-  };
-  navigator.clipboard.writeText(fullPrompt).then(finish).catch(() => {
-    const ta = document.createElement('textarea'); ta.value = fullPrompt;
-    document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); finish(); } catch (e) { alert('Copy failed.'); }
-    document.body.removeChild(ta);
-  });
 }
 
 /* ===================== REASSEMBLER ===================== */
