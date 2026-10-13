@@ -4,8 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v8.4 | Decipher Chess Academy</title>
-<!-- build: 2026-10-13-voice-v8.4-nag-normalize -->
+<title>GM Variation Master · v8.6 | Decipher Chess Academy</title>
+<!-- build: 2026-10-13-voice-v8.6-editor-and-engine-plan -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -38,7 +38,7 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Signs, variation-end, NAG-normalised · v8.4</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Editor stage 3 · engine plan · v8.6</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center flex-wrap">
 <span id="sf-badge" class="sf-badge loading">Engine loading…</span>
@@ -249,17 +249,17 @@ Import<input type="file" accept=".json,.txt" class="hidden" onchange="importPack
 <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
 <button onclick="stage1Copy()" class="py-2 gold-bg rounded font-bold uppercase text-[11px]">1. Copy Draft Prompt</button>
 <button onclick="stage2Start()" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">2. Mark Plans</button>
-<button onclick="stage3Copy(event)" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">3. Copy Refine Prompt</button>
+<button onclick="stage3Copy(event)" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">3. Copy Verify Prompt</button>
 <button onclick="stage4Copy()" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">4. Copy JSON Prompt</button>
 </div>
-<p class="text-[10px] text-slate-500 italic">Stage 1: free GM draft. Stage 2: you mark plans. Stage 3: refine with chosen context. Stage 4: JSON for the Re-assembler.</p>
+<p class="text-[10px] text-slate-500 italic">Stage 1: free GM draft. Stage 2: you mark plans. Stage 3: AI verifies and trims (never adds). Stage 4: JSON for the Re-assembler. Stages 2 and 3 are optional.</p>
 <div class="flex flex-wrap gap-3 text-[11px] text-slate-300 mt-2 border-t border-slate-700 pt-2">
 <span class="text-[10px] text-slate-500 uppercase self-center font-bold">Stage 3 context:</span>
 <label class="cursor-pointer"><input type="checkbox" id="ctx-wiki" class="mr-1">Wiki reference</label>
 <label class="cursor-pointer"><input type="checkbox" id="ctx-engine" class="mr-1">Engine lines</label>
-<label class="cursor-pointer"><input type="checkbox" id="ctx-facts" class="mr-1">Positional facts</label>
+<label class="cursor-pointer"><input type="checkbox" id="ctx-facts" class="mr-1" checked>Positional facts</label>
 <label class="cursor-pointer"><input type="checkbox" id="ctx-explorer" class="mr-1">Master game stats</label>
-<span class="text-[10px] text-slate-500 italic self-center">All off = only your Stage 1 draft + your marked plans.</span>
+<span class="text-[10px] text-slate-500 italic self-center">Facts on by default = engine plan and square whitelist.</span>
 </div>
 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
 <div>
@@ -1134,6 +1134,16 @@ function pinsAndSkewers(fen) {
   return out;
 }
 function nullMove(fen) { const p = fen.split(' '); p[1] = p[1] === 'w' ? 'b' : 'w'; p[3] = '-'; return p.join(' '); }
+
+/* ---- NEW: engine plan phrase ---- */
+function enginePlanPhrase(engineLines, stm) {
+  if (!engineLines || !engineLines.length) return '';
+  const top = engineLines[0];
+  if (!top || !top.allSan || top.allSan.length < 3) return '';
+  const picks = top.allSan.slice(0, 5);
+  return picks.join(' ');
+}
+
 async function buildFactList(fenAfter, moverSide) {
   const facts = [];
   const chess = new Chess(fenAfter); if (!chess) return facts;
@@ -1150,8 +1160,14 @@ async function buildFactList(fenAfter, moverSide) {
   for (const w of weakPawns(fenAfter)) facts.push(w.side + ' ' + w.type + ' pawn on ' + w.square);
   const pos = positionFeatures(fenAfter); if (pos) facts.push(pos);
   const un = undevelopedPieces(fenAfter); if (un) facts.push(un);
+
   const engineData = await getEngineMultiPV(fenAfter, { multipv: 2 });
   const engineLines = (engineData && !engineData.invalid && engineData.lines) ? engineData.lines.slice(0, 2) : [];
+
+  // NEW: engine plan phrase — first 5 moves of the top line
+  const planPhrase = enginePlanPhrase(engineLines, stm);
+  if (planPhrase) facts.push('ENGINE PLAN (' + stm + ' to move, top line): ' + planPhrase);
+
   const wc = winningCaptures(fenAfter);
   if (wc.length) {
     const confirmed = wc.filter(x => engineLines.some(l => lineUsesMotif(l, { type:'capture', square: x.square })));
@@ -1227,10 +1243,7 @@ function processPgn(isLoad = false) {
   const input = document.getElementById('pgn-input').value; if (!input) return;
   pgnMeta = parsePgnHeaders(input);
   renderHeaderPills();
-
-  // Normalize non-standard "13$" / "44$" NAGs to standard "$13" / "$44"
   const normalizedInput = input.replace(/\b(\d{1,3})\$/g, '$$$1');
-
   pgnTokens = normalizedInput.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[O0]-[O0](?:-[O0])?[+#]?|[a-hRNBQK][a-hRNBQK1-8x\-=+#]*[?!]*|[a-h][1-8](?:=[RNBQ])?[+#]?[?!]*)/g) || [];
   let chunks = [], moveNumber = 0, variationLevel = 0;
   let depthPlyCounts = { 0: 0 }, lastChunkAtLevel = {};
@@ -1852,57 +1865,58 @@ Return EXACTLY this format — no JSON, no markdown fences:
   return out;
 }
 
+/* ---------- STAGE 3 — VERIFIER / EDITOR (never adds) ---------- */
 async function buildStage3Prompt(idx, drafts) {
   const ctxWiki = document.getElementById('ctx-wiki')?.checked;
   const ctxEngine = document.getElementById('ctx-engine')?.checked;
   const ctxFacts = document.getElementById('ctx-facts')?.checked;
   const ctxExplorer = document.getElementById('ctx-explorer')?.checked;
 
-  let out = `Below are draft chess annotations and the author's marked plans.
+  let out = `You are a chess-book copy-editor. You are NOT a chess author. You do NOT add chess ideas.
 
-Rewrite each note using very simple, correct English. 1–2 short sentences. Use the author's plans if given.
+Your ONLY job for each note below:
+1. If the DRAFT is already correct and readable, keep it as-is (or trim 1–2 words).
+2. If the DRAFT contains a claim that is NOT supported by the FACTS, ENGINE, or SIGN lines, DELETE that claim.
+3. If the DRAFT mentions a square or piece that is not in the FACTS or ENGINE lines, DELETE that sentence.
+4. Never add a square, a piece, a plan, or a tactical idea that was not already in the DRAFT, FACTS, ENGINE, or SIGN lines.
 
-Rules:
-- On our move: describe OUR plan.
-- On their move: describe THEIR plan.
-- NEVER tell the opponent's next move on our move.
-- NEVER tell our next move on the opponent's move.
-- NEVER list a sequence of future moves. No "next", "then", "followed by".
-- Do not invent facts. Only use what is in the DRAFT, the author's PLANS, and any MOVE MARK / NAG / POSITION EVAL / VARIATION ENDS AT / WIKI / ENGINE / FACTS / MASTER GAMES lines provided.
+If the DRAFT is empty or nothing survives after cutting, output: (none)
 
-The annotator's marks are ground truth. If the move is marked ?! or NAG $6 (dubious), the refined note must reflect that. If VARIATION ENDS AT says the line reaches compensation, the note on the variation's first move must say so.
+HARD RULES — these override everything:
+- NEVER write "light squares" or "dark squares" unless that exact phrase appears in FACTS or WIKI.
+- NEVER write "passed pawn" unless FACTS says "passed pawn".
+- NEVER write "open file" for a file that isn't in FACTS.
+- NEVER invent a knight, bishop, rook, or queen square. Only the squares in FACTS, ENGINE, or the DRAFT.
+- NEVER describe what will happen next. Only the move played and the position right after.
+- If the DRAFT says a piece is on a square and the FACTS do not list that piece on that square, cut it.
 
-Return in EXACTLY this format — no JSON, no markdown fences:
+Return EXACTLY this format — no JSON, no markdown fences:
 
 ### <ID>
-<refined note>
+<edited note or (none)>
 
-=== NOTES AND PLANS ===\n`;
+=== NOTES ===\n`;
 
   for (const i of idx) {
     const c = globalChunks[i];
     const draft = drafts[c.id] || '';
     const intents = c._intentions || {};
     const plans = [];
-    if (intents.feat && intents.feat.length) plans.push('Features to highlight: ' + intents.feat.join(', '));
-    if (intents.moves && intents.moves.length) plans.push('Marked plan moves: ' + intents.moves.join(' '));
+    if (intents.feat && intents.feat.length) plans.push('Author feature flags: ' + intents.feat.join(', '));
+    if (intents.moves && intents.moves.length) plans.push('Author marked moves: ' + intents.moves.join(' '));
     if (intents.note) plans.push('Author note: ' + intents.note);
 
     out += '\n### ' + c.id + '\n';
     out += 'MOVE: ' + c.moveNum + '. ' + (c.san || '') + '\n';
-    if (draft) out += 'DRAFT: ' + draft + '\n';
+    out += 'DRAFT: ' + (draft || '(none)') + '\n';
     if (plans.length) out += plans.join('\n') + '\n';
 
     const signLines = formatMoveSigns(c, true);
     for (const line of signLines) out += line + '\n';
 
-    if (ctxWiki) {
-      const sanLower = String(c.san || '').toLowerCase();
-      const wikiHit = (wikiEntries || []).find(w => {
-        const wm = String(w.move || '').toLowerCase();
-        return sanLower && wm.includes(sanLower);
-      });
-      if (wikiHit) out += 'WIKI: ' + String(wikiHit.comment).slice(0, 800) + '\n';
+    if (ctxFacts) {
+      const fx = (c._deltaFacts && c._deltaFacts.length) ? c._deltaFacts : (c._reviewedFacts || []);
+      if (fx.length) out += 'FACTS: ' + fx.join(' | ') + '\n';
     }
     if (ctxEngine && c.fenAfter) {
       try {
@@ -1914,9 +1928,13 @@ Return in EXACTLY this format — no JSON, no markdown fences:
         }
       } catch (e) {}
     }
-    if (ctxFacts) {
-      const fx = (c._deltaFacts && c._deltaFacts.length) ? c._deltaFacts : (c._reviewedFacts || []);
-      if (fx.length) out += 'FACTS: ' + fx.join(' | ') + '\n';
+    if (ctxWiki) {
+      const sanLower = String(c.san || '').toLowerCase();
+      const wikiHit = (wikiEntries || []).find(w => {
+        const wm = String(w.move || '').toLowerCase();
+        return sanLower && wm.includes(sanLower);
+      });
+      if (wikiHit) out += 'WIKI: ' + String(wikiHit.comment).slice(0, 800) + '\n';
     }
     if (ctxExplorer && c.fenAfter) {
       try {
@@ -1958,7 +1976,7 @@ function stage1Ingest() {
   const raw = document.getElementById('stage1-response').value;
   const map = parseIdSections(raw);
   const n = Object.keys(map).length;
-  if (!n) { alert('No IDs found in the Stage 1 response.\n\nThe parser looks for lines starting with "CHK_", "### CHK_", or "**CHK_**" followed by the ID. Check that your AI response kept those markers.'); return; }
+  if (!n) { alert('No IDs found in the Stage 1 response.\n\nThe parser looks for lines starting with "CHK_", "### CHK_", or "**CHK_**" followed by the ID.'); return; }
   for (const id of Object.keys(map)) {
     const c = globalChunks.find(x => x.id === id);
     if (c) c._draft = map[id];
@@ -1988,43 +2006,92 @@ async function stage3Copy(event) {
     if (document.getElementById('ctx-explorer')?.checked) included.push('explorer');
     const ctxText = included.length ? included.join(', ') : 'drafts + plans only';
     document.getElementById('pipeline-status').innerText = 'Stage 3 copied · ' + ctxText;
-    alert('Stage 3 refine prompt copied.\n\nContext included: ' + ctxText + '\n\nPaste into your LLM, then paste the response into the "Stage 3" box.');
+    alert('Stage 3 verify prompt copied.\n\nContext included: ' + ctxText + '\n\nPaste into your LLM, then paste the response into the "Stage 3" box.');
   } finally {
-    if (btn) { btn.disabled = false; btn.innerText = origText || '3. Copy Refine Prompt'; }
+    if (btn) { btn.disabled = false; btn.innerText = origText || '3. Copy Verify Prompt'; }
   }
 }
 
+/* ---------- STAGE 3 INGEST — with square verification ---------- */
 function stage3Ingest() {
   const raw = document.getElementById('stage3-response').value;
   const map = parseIdSections(raw);
   const n = Object.keys(map).length;
   if (!n) { alert('No IDs found in the Stage 3 response.'); return; }
+
+  const warnings = [];
+  for (const id of Object.keys(map)) {
+    const c = globalChunks.find(x => x.id === id);
+    if (!c || !c.fenAfter || !isValidFen(c.fenAfter)) continue;
+    const note = String(map[id]);
+    const chess = new Chess(c.fenAfter);
+    const board = chess.board();
+    const files = 'abcdefgh';
+    const map2 = {};
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+      const p = board[r][f];
+      if (p) map2[files[f] + (8 - r)] = { type: p.type, color: p.color };
+    }
+    const re = /\b(white|black)?\s*(king|queen|rook|bishop|knight|pawn)s?\s+on\s+([a-h][1-8])/gi;
+    let m;
+    while ((m = re.exec(note)) !== null) {
+      const sq = m[3].toLowerCase();
+      const actual = map2[sq];
+      if (!actual) { warnings.push({ id, text: '"' + m[0] + '" — ' + sq + ' is EMPTY' }); continue; }
+      const claimed = m[2].toLowerCase().replace(/s$/, '');
+      if (actual.type !== claimed[0]) {
+        warnings.push({ id, text: '"' + m[0] + '" — ' + sq + ' has a ' + actual.type.toUpperCase() });
+      }
+    }
+  }
+
   for (const id of Object.keys(map)) {
     const c = globalChunks.find(x => x.id === id);
     if (c) c._refined = map[id];
   }
+
   document.getElementById('pipeline-status').innerText = 'Stage 3 ingested · ' + n + ' refined';
-  alert('Ingested ' + n + ' refined notes.');
+  if (warnings.length) {
+    const msg = warnings.slice(0, 8).map(w => '· ' + w.id + ': ' + w.text).join('\n');
+    alert('Ingested ' + n + ' refined notes.\n\n⚠ Square warnings (' + warnings.length + '):\n' + msg + (warnings.length > 8 ? '\n…' : ''));
+  } else {
+    alert('Ingested ' + n + ' refined notes.\nNo square issues detected.');
+  }
 }
 
 async function stage4Copy() {
   if (selStart === null || selEnd === null) { alert('Pick a batch.'); return; }
   const idx = getSelectedIndices();
-  const refined = {};
-  for (const i of idx) { const c = globalChunks[i]; if (c._refined) refined[c.id] = c._refined; }
-  if (!Object.keys(refined).length) { alert('No refined notes. Run Stage 3 first.'); return; }
-  const prompt = buildStage4Prompt(idx, refined);
+  const notes = {};
+  for (const i of idx) {
+    const c = globalChunks[i];
+    if (c._refined) notes[c.id] = c._refined;
+    else if (c._draft) notes[c.id] = c._draft;
+  }
+  if (!Object.keys(notes).length) {
+    alert('No notes found. Run Stage 1 first, or paste your notes somewhere before Stage 4.');
+    return;
+  }
+  const prompt = buildStage4Prompt(idx, notes);
   await navigator.clipboard.writeText(prompt);
-  document.getElementById('pipeline-status').innerText = 'Stage 4 copied · paste into AI';
-  alert('Stage 4 JSON prompt copied. Paste into your LLM, then paste the JSON into the Stage 4 box.');
+  const usedRefined = idx.filter(i => globalChunks[i]._refined).length;
+  const usedDraft = idx.filter(i => !globalChunks[i]._refined && globalChunks[i]._draft).length;
+  document.getElementById('pipeline-status').innerText = 'Stage 4 copied · ' + usedRefined + ' refined, ' + usedDraft + ' drafts';
+  alert('Stage 4 JSON prompt copied.\n\nUsing ' + usedRefined + ' refined notes and ' + usedDraft + ' drafts.');
 }
 
 function stage4Ingest() {
   const raw = document.getElementById('stage4-response').value;
-  const map = extractChunkMap(raw);
+  let map = extractChunkMap(raw);
+  if (!map || !Object.keys(map).length) {
+    map = parseIdSections(raw);
+  }
   const n = Object.keys(map).length;
-  if (!n) { alert('No IDs found in the Stage 4 JSON.'); return; }
-  document.getElementById('ai-json').value = raw;
+  if (!n) {
+    alert('No notes found. Either paste the AI JSON, or paste notes in the form "CHK_xx_Mx_Vx" on its own line followed by the text.');
+    return;
+  }
+  document.getElementById('ai-json').value = JSON.stringify(map, null, 2);
   switchTab('reassembler');
   document.getElementById('pipeline-status').innerText = 'Stage 4 ingested · ' + n + ' notes';
 }
@@ -2047,7 +2114,10 @@ function verifyAiOutput() {
     const board = chess.board();
     const map2 = {};
     const names = { k:'king', q:'queen', r:'rook', b:'bishop', n:'knight', p:'pawn' };
-    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const p = board[r][f]; if (p) map2[frToSq(f, r)] = { type: p.type, color: p.color }; }
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+      const p = board[r][f];
+      if (p) map2[frToSq(f, r)] = { type: p.type, color: p.color };
+    }
     const re = /\b(white|black)?\s*(king|queen|rook|bishop|knight|pawns?)\s+on\s+([a-h][1-8])/gi;
     let m; const issues = [];
     while ((m = re.exec(note)) !== null) {
