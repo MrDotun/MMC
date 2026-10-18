@@ -4,8 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v8.8 | Decipher Chess Academy</title>
-<!-- build: 2026-10-18-auto-wiki-json -->
+<title>GM Variation Master · v8.9 | Decipher Chess Academy</title>
+<!-- build: 2026-10-18-stage1-wiki-json -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -38,7 +38,7 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Editor stage 3 · engine plan · v8.8</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Editor stage 3 · engine plan · v8.9</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center flex-wrap">
 <span id="sf-badge" class="sf-badge loading">Engine loading…</span>
@@ -291,7 +291,7 @@ Import JSON<input type="file" accept=".json" class="hidden" onchange="corpusImpo
 <button onclick="stage3Copy(event)" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">3. Copy Verify Prompt</button>
 <button onclick="stage4Copy()" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">4. Copy JSON Prompt</button>
 </div>
-<p class="text-[10px] text-slate-500 italic">Stage 1: free GM draft. Stage 2: load wiki + corpus context. Stage 3: AI verifies and trims (never adds). Stage 4: JSON for the Re-assembler.</p>
+<p class="text-[10px] text-slate-500 italic">Stage 1: Copy prompt + Wiki ideas to get final JSON. Stages 2-4 are optional.</p>
 <div class="flex flex-wrap gap-3 text-[11px] text-slate-300 mt-2 border-t border-slate-700 pt-2">
 <span class="text-[10px] text-slate-500 uppercase self-center font-bold">Stage 3 context:</span>
 <label class="cursor-pointer"><input type="checkbox" id="ctx-wiki" class="mr-1">Wiki reference</label>
@@ -1947,7 +1947,7 @@ function applyFactsReview() {
   closeFactsReview();
 }
 
-/* ===================== STAGE 2 — INTENTION BOARD (preserved, not in main flow) ===================== */
+/* ===================== STAGE 2 — INTENTION BOARD ===================== */
 function openIntentionForChunk(chunkId) {
   const c = globalChunks.find(x => x.id === chunkId); if (!c) return;
   currentIntentionId = chunkId;
@@ -2140,9 +2140,19 @@ function buildStage1Prompt(idx, openingName, objectives, wikiSnippet) {
   const side = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
   const ourSide = side === 'white' ? 'White' : 'Black';
 
+  // Compile the Wiki Ideas to pass into the prompt
+  let wikiBlock = '';
+  if (wikiEntries && wikiEntries.length > 0) {
+    wikiBlock = (wikiEntries || []).slice(0, 15).map(w =>
+      '· ' + (w.move ? w.move.slice(0, 60) + ' — ' : '') + String(w.comment || '').slice(0, 400)
+    ).join('\n');
+  }
+
   let out = `You are a 2700+ grandmaster annotating your own opening preparation.
 
 For each position below, write a short annotation (1–2 sentences) explaining the move the way you would in a game collection — the idea, the plan, the point of it. Write freely.
+
+Use the general opening ideas provided below to guide your annotations, matching the tone and depth.
 
 The annotator has left signs on some moves. Respect them:
 - MOVE MARK (!, ?, !?, ?!, !!, ??) is the annotator's verdict on the move quality.
@@ -2152,12 +2162,15 @@ The annotator has left signs on some moves. Respect them:
 
 We play ${ourSide}.
 
-CRITICAL: Every section MUST begin with its ID exactly as given (### CHK_xxx_Mn_Vn). Do not skip, merge, or renumber IDs.
+${wikiBlock ? '=== WIKI OPENING IDEAS ===\n' + wikiBlock + '\n\n' : ''}
 
-Return EXACTLY this format — no JSON, no markdown fences:
+CRITICAL INSTRUCTION: You MUST return the output as a single, valid JSON object. The keys must be the exact IDs provided below (e.g. "CHK_1_M1_V0"). The values must be your annotation strings. Do not return anything else — no markdown, no prose, just the JSON.
 
-### <ID>
-<annotation>
+Example output format:
+{
+  "CHK_1_M1_V0": "1.e4 controls the center and opens lines for the bishop and queen.",
+  "CHK_2_M1_V0": "1...c5 is the Sicilian, fighting for the center asymmetrically."
+}
 
 === POSITIONS ===\n`;
 
@@ -2176,11 +2189,6 @@ Return EXACTLY this format — no JSON, no markdown fences:
     const signLines = formatMoveSigns(c, true);
     for (const line of signLines) out += line + '\n';
   }
-
-  const wikiBlock = (wikiEntries || []).slice(0, 8).map(w =>
-    '· ' + (w.move ? w.move.slice(0, 60) + ' — ' : '') + String(w.comment || '').slice(0, 400)
-  ).join('\n');
-  if (wikiBlock) out += '\n=== WIKI STYLE ANCHORS ===\n' + wikiBlock + '\n';
 
   return out;
 }
@@ -2291,84 +2299,39 @@ function buildStage4Prompt(idx, refined) {
 
 async function stage1Copy() {
   if (selStart === null || selEnd === null) { alert('Pick a start and end move.'); return; }
+  
+  // Ensure Wiki is loaded before copying
+  if (!wikiEntries || wikiEntries.length === 0) {
+     const ideasRaw = document.getElementById('ideas-pack').value.trim();
+     if (!ideasRaw) {
+         await enrichFromWikipedia();
+     }
+  }
+
   const idx = getSelectedIndices();
+  lastBatchIds = idx.map(i => globalChunks[i].id);
   const prompt = buildStage1Prompt(idx, '', [], '');
+  
   await navigator.clipboard.writeText(prompt);
   document.getElementById('pipeline-status').innerText = 'Stage 1 copied · paste into AI';
-  alert('Stage 1 prompt copied (' + idx.length + ' moves).\nPaste into your LLM. Then paste the response into the "Stage 1" box and click Ingest.');
+  alert('Prompt copied with Wiki Ideas (' + idx.length + ' moves).\n\n1. Paste it into your LLM.\n2. Copy the JSON it returns.\n3. Paste that JSON directly into the Re-assembler (Step 1).');
 }
 
 async function stage2Start() {
   const status = document.getElementById('pipeline-status');
-  status.innerText = 'Stage 2 · loading wiki + generating JSON…';
-  
+  status.innerText = 'Stage 2 · loading wiki + corpus…';
   const ideasRaw = document.getElementById('ideas-pack').value.trim();
   if (!ideasRaw || wikiEntries.length === 0) {
     try { await enrichFromWikipedia(); } catch (e) {}
   }
-  
-  if (selStart === null || selEnd === null) { alert('Pick a batch first.'); return; }
-  const idx = getSelectedIndices();
-  const map = {};
-  
-  for (const i of idx) {
-    const c = globalChunks[i];
-    if (!c) continue;
-    
-    const sanClean = (c.san || '').toLowerCase();
-    const moveNumStr = c.moveNum + ".";
-    let annotation = "";
-    
-    // 1. Try to find a matching comment in Wiki entries
-    for (const w of wikiEntries) {
-      const wMove = (w.move || "").toLowerCase();
-      // Check if the wiki entry specifically mentions this move number and SAN
-      if (wMove.includes(moveNumStr + " " + sanClean) || wMove.includes(moveNumStr + "." + sanClean)) {
-        annotation = w.comment;
-        break;
-      }
-    }
-    
-    // 2. Fallback: if no exact match, try just the SAN (e.g. if Wiki just says "e4")
-    if (!annotation) {
-      for (const w of wikiEntries) {
-        const wMove = (w.move || "").toLowerCase();
-        if (wMove.includes(sanClean)) {
-          annotation = w.comment;
-          break;
-        }
-      }
-    }
-    
-    // 3. Fallback: try the Ideas Pack if it has a specific note
-    if (!annotation) {
-      try {
-        const packArr = JSON.parse(ideasRaw);
-        const match = packArr.find(p => p.toLowerCase().includes(sanClean));
-        if (match) annotation = match;
-      } catch(e) {}
-    }
-    
-    // Clean up and limit length to make it look like a GM note
-    if (annotation) {
-      let sentences = annotation.match(/[^.!?]+[.!?]+/g) || [annotation];
-      annotation = sentences.slice(0, 2).join(' ').trim();
-      map[c.id] = annotation;
-    } else {
-      map[c.id] = "(none)";
-    }
-  }
-  
-  const jsonText = JSON.stringify(map, null, 2);
-  document.getElementById('ai-json').value = jsonText;
-  document.getElementById('stage4-response').value = jsonText;
-  
+  try { await corpusUpdateStats(); } catch (e) {}
+  const stats = await corpusUpdateStats();
+  const lines = [];
+  lines.push(wikiEntries.length ? ('wiki: ' + wikiEntries.length + ' entries') : 'wiki: none');
+  lines.push(stats && stats.count ? ('corpus: ' + stats.count + ' entries') : 'corpus: empty — load PGNs first');
+  status.innerText = 'Stage 2 done · ' + lines.join(' · ');
   switchTab('reassembler');
-  verifyAiOutput();
-  rebuildPgn();
-  
-  status.innerText = 'Stage 2 done · auto-annotated from Wiki.';
-  alert('Successfully generated JSON annotations from Wiki for ' + idx.length + ' moves.\n\nThe tool has jumped to the Re-assembler and built the final PGN for you.');
+  alert('Wiki and corpus ready.\n\n' + lines.join('\n') + '\n\nNow paste the Stage 1 prompt response into "Step 1: Paste AI JSON" or run Stage 3 first.');
 }
 
 function stage1Ingest() {
