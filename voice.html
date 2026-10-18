@@ -600,8 +600,6 @@ function normaliseOpeningName(raw) {
   s = s.replace(/\b(gambit|defence|defense|attack|variation|system|opening)[aeiou]+\b/gi, (m, w) => w);
   return s;
 }
-
-/* ---- Build CHK-keyed JSON straight for the Re-assembler ---- */
 function buildWikiChunkMap(parsedEntries) {
   const map = {};
   if (!parsedEntries || !parsedEntries.length) return map;
@@ -1264,7 +1262,6 @@ function pinsAndSkewers(fen) {
 }
 function nullMove(fen) { const p = fen.split(' '); p[1] = p[1] === 'w' ? 'b' : 'w'; p[3] = '-'; return p.join(' '); }
 
-/* ---- engine plan phrase ---- */
 function enginePlanPhrase(engineLines, stm) {
   if (!engineLines || !engineLines.length) return '';
   const top = engineLines[0];
@@ -1322,7 +1319,6 @@ async function buildFactList(fenAfter, moverSide) {
     }
   }
 
-  // CORPUS retrieval
   try {
     const fam = (document.getElementById('corpus-family')?.value || '').trim()
              || (document.getElementById('opening-name')?.value || '').trim();
@@ -2037,7 +2033,7 @@ function applyFactsReview() {
   closeFactsReview();
 }
 
-/* ===================== STAGE 2 — INTENTION BOARD (preserved, not in main flow) ===================== */
+/* ===================== STAGE 2 — INTENTION BOARD ===================== */
 function openIntentionForChunk(chunkId) {
   const c = globalChunks.find(x => x.id === chunkId); if (!c) return;
   currentIntentionId = chunkId;
@@ -2100,23 +2096,13 @@ function saveIntention() {
 /* ===================== STAGE 1/3/4 — PIPELINE ===================== */
 
 const NAG_MAP = {
-  '$1': 'good move (!)',
-  '$2': 'poor move (?)',
-  '$3': 'very good move (!!)',
-  '$4': 'blunder (??)',
-  '$5': 'speculative (!?)',
-  '$6': 'questionable (?!, dubious)',
-  '$10': 'equal (=)',
-  '$11': 'equal, quiet',
-  '$12': 'equal, active',
-  '$13': 'unclear position (∞)',
-  '$14': 'slight advantage White (⩲)',
-  '$15': 'slight advantage Black (⩱)',
-  '$16': 'moderate advantage White (±)',
-  '$17': 'moderate advantage Black (∓)',
-  '$18': 'decisive advantage White (+-)',
-  '$19': 'decisive advantage Black (-+)',
-  '$44': 'with compensation (=/∞)'
+  '$1': 'good move (!)', '$2': 'poor move (?)', '$3': 'very good move (!!)',
+  '$4': 'blunder (??)', '$5': 'speculative (!?)', '$6': 'questionable (?!, dubious)',
+  '$10': 'equal (=)', '$11': 'equal, quiet', '$12': 'equal, active',
+  '$13': 'unclear position (∞)', '$14': 'slight advantage White (⩲)',
+  '$15': 'slight advantage Black (⩱)', '$16': 'moderate advantage White (±)',
+  '$17': 'moderate advantage Black (∓)', '$18': 'decisive advantage White (+-)',
+  '$19': 'decisive advantage Black (-+)', '$44': 'with compensation (=/∞)'
 };
 function decodeNAG(nag) { return NAG_MAP[nag] || ''; }
 
@@ -2161,7 +2147,10 @@ function evalLabelForUs(evalStr, ourColor) {
   return txt + ' clearly worse for us';
 }
 
-/* ---- Per-move engine context for Stage 1 / Stage 3 ---- */
+/* ---- Per-move engine context for Stage 1 / Stage 3 ----
+   Always emits a block so downstream prompts never lose the section,
+   collects OUR moves from every PV line, and reports threats via
+   multipv spread.  we = ourSide ("we"/"our"), them = theySide ("White"/"Black"). */
 async function buildEngineContext(c, ourSide) {
   if (!c || !c.fenAfter || !isValidFen(c.fenAfter)) return '';
   const ourColor = ourSide === 'White' ? 'w' : 'b';
@@ -2176,75 +2165,78 @@ async function buildEngineContext(c, ourSide) {
   } else if (c.isVariationEnd && c.variationLevel > 0) {
     isClosing = true;
   }
-  if (!evalChunk.fenAfter || !isValidFen(evalChunk.fenAfter)) return '';
+  const fenForEval = (evalChunk.fenAfter && isValidFen(evalChunk.fenAfter)) ? evalChunk.fenAfter : c.fenAfter;
+  if (!fenForEval || !isValidFen(fenForEval)) return '';
 
-  const stmColor = evalChunk.fenAfter.split(' ')[1];
+  const stmColor = fenForEval.split(' ')[1];
   const stmIsUs  = stmColor === ourColor;
 
   let data = null;
-  try { data = await getEngineMultiPV(evalChunk.fenAfter, { depth: 12, multipv: 5 }); } catch (e) {}
-  if (!data || data.invalid || !data.lines || !data.lines.length) return '';
+  try { data = await getEngineMultiPV(fenForEval, { depth: 14, multipv: 5 }); } catch (e) {}
 
-  // OUR MOVES ONLY (filter by turn parity)
   const ourIdeas = [];
-  for (const l of data.lines.slice(0, 2)) {
-    let turn = stmColor;
-    for (const san of (l.allSan || [])) {
-      if (turn === ourColor && san) {
-        const entry = (ourColor === 'b' ? '...' : '') + san;
-        if (!ourIdeas.includes(entry)) ourIdeas.push(entry);
+  let evalStr = 'engine unavailable';
+  let hasEngine = false;
+
+  if (data && !data.invalid && data.lines && data.lines.length) {
+    hasEngine = true;
+    evalStr = evalLabelForUs(data.lines[0].eval, ourColor);
+    for (const l of data.lines) {
+      if (!l.allSan || !l.allSan.length) continue;
+      let turn = stmColor;
+      for (const san of l.allSan) {
+        if (turn === ourColor && san) {
+          if (!ourIdeas.includes(san)) ourIdeas.push(san);
+        }
+        turn = turn === 'w' ? 'b' : 'w';
+        if (ourIdeas.length >= 6) break;
       }
-      turn = turn === 'w' ? 'b' : 'w';
-      if (ourIdeas.length >= 4) break;
+      if (ourIdeas.length >= 6) break;
     }
   }
 
-  const evalStr = evalLabelForUs(data.lines[0].eval, ourColor);
-  let out = '';
+  const header = isClosing
+    ? ('\n=== VARIATION CLOSES — OUR PLANS (' + ourSide + ') ===\n')
+    : '\n=== ENGINE CONTEXT ===\n';
+  let out = header;
+  out += 'Eval: ' + evalStr + '. ' + (stmIsUs ? 'It is our turn.' : 'It is ' + theySide + "'s turn.") + '\n';
+  if (ourIdeas.length) {
+    out += 'Our next moves (per engine): ' + ourIdeas.join(', ') + '\n';
+  } else if (hasEngine) {
+    out += 'Our next moves (per engine): (no concrete move found)\n';
+  } else {
+    out += 'Our next moves (per engine): (engine not loaded — describe position features instead)\n';
+  }
+  const pos = positionFeatures(fenForEval);
+  if (pos) out += 'Structure: ' + pos + '\n';
 
   if (isClosing) {
-    out += '\n=== VARIATION CLOSES — ' + ourSide.toUpperCase() + "'S PLANS ===\n";
-    out += 'Eval: ' + evalStr + '. ' + (stmIsUs ? 'We move next.' : 'They move next.') + '\n';
-    if (ourIdeas.length) out += 'We continue with: ' + ourIdeas.join(', ') + '\n';
-    const pos = positionFeatures(evalChunk.fenAfter);
-    if (pos) out += 'Structure: ' + pos + '\n';
-    out += 'RULE: plans for us only. Say where the line leaves us, then what we do next. Never narrate the opponent\'s plan.\n';
-  } else {
-    out += '\nENGINE: ' + evalStr + '. ' + (stmIsUs ? 'We move next.' : 'They move next.') + '\n';
-    if (ourIdeas.length) out += 'Our ideas: ' + ourIdeas.join(', ') + '\n';
-    const pos = positionFeatures(evalChunk.fenAfter);
-    if (pos) out += 'Structure: ' + pos + '\n';
+    out += 'Closing rule: say where the line leaves us (better/worse for us) and give our next plan. Use format: "We capture the knight and continue with Ng6 and g6 ideas. The open files give us a slightly better position."\n';
   }
 
-  // THREAT DETECTION via multipv spread (best vs 3rd–5th)
-  if (data.lines.length >= 3) {
+  if (hasEngine && data.lines.length >= 3) {
     const evals = data.lines.map(l => evalForUs(l.eval, ourColor));
     const worstEval = evals[Math.min(4, evals.length - 1)];
     const spread = Math.abs(evals[0] - worstEval);
     if (spread >= 1.0) {
-      out += '⚠ PRECISION NEEDED (gap ' + spread.toFixed(1) + ' between best and 3rd–5th)\n';
       if (stmIsUs) {
         const punishes = [];
         for (let i = 1; i < Math.min(4, data.lines.length); i++) {
           const l = data.lines[i];
           if (l.allSan && l.allSan[0] && l.allSan[1]) {
-            punishes.push({
-              ourAlt:      l.allSan[0],
-              theirPunish: l.allSan[1],
-              eval:        evalLabelForUs(l.eval, ourColor)
-            });
+            punishes.push({ ourAlt: l.allSan[0], theirPunish: l.allSan[1], eval: evalLabelForUs(l.eval, ourColor) });
           }
         }
         if (punishes.length) {
-          out += 'If we play imprecisely:\n';
+          out += '⚠ PRECISION NEEDED (gap ' + spread.toFixed(1) + '):\n';
           for (const p of punishes.slice(0, 2)) {
-            out += '  · ' + p.ourAlt + ' → ' + p.theirPunish + ' (' + p.eval + ')\n';
+            out += '  · if we play ' + p.ourAlt + ', ' + theySide + ' punishes with ' + p.theirPunish + ' (' + p.eval + ')\n';
           }
           out += 'Say it plainly: "' + theySide + ' threatens ' + punishes[0].theirPunish + ' if we play imprecisely."\n';
         }
       } else {
         const theirBest = data.lines[0].allSan && data.lines[0].allSan[0];
-        if (theirBest) out += 'Their main threat: ' + theirBest + '.\n';
+        if (theirBest) out += '⚠ ' + theySide + ' threatens: ' + theirBest + '.\n';
       }
     }
   }
@@ -2348,6 +2340,7 @@ function parseIdSections(text) {
 async function buildStage1Prompt(idx, openingName, objectives, wikiSnippet) {
   const side = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
   const ourSide = side === 'white' ? 'White' : 'Black';
+  const theySide = ourSide === 'White' ? 'Black' : 'White';
 
   let out = `You are a 2700+ grandmaster annotating your own opening preparation.
 
@@ -2359,17 +2352,17 @@ The annotator has left signs on some moves. Respect them:
 - POSITION EVAL is the annotator's view of the position right after this move.
 - VARIATION ENDS AT appears on the FIRST move of a variation and tells you where this line is heading in evaluation terms. Your note on a variation's first move must reflect that destination.
 
-We play ${ourSide}.
+We play ${ourSide}. Refer to us as "we"/"our". Refer to the opponent as "${theySide}" — never as "the opponent".
 
 CRITICAL: Every section MUST begin with its ID exactly as given (### CHK_xxx_Mn_Vn). Do not skip, merge, or renumber IDs.
 
 STYLE RULES — always apply:
-- Do NOT quote moves. Never write "15. Bc6", "Bc6" or "12...Ng6". Refer to the piece and square ("the bishop on c6") or to the action ("this exchange"). The MOVE: line already names the move.
-- Write from OUR side: "we"/"our" for ${ourSide}, "the opponent" for the other side.
-- When a section carries VARIATION CLOSES — PLANS FOR US, the note must say where the line leaves us: whose favour, and our next ideas — as in "We capture the knight and continue with ...Ng6 and ...g6 ideas. The open files give us a slightly better position." Only ever give plans for us, never for the opponent.
-- Only narrate OUR moves and OUR plans. When describing a threat you may name the opponent's punishing move ("Nxc6"), but never narrate their wider plan.
-- When an ENGINE block appears, quote our moves as "Ng6" (White) or "...g6" (Black). When a PRECISION NEEDED block appears, name the threat — e.g. "White threatens Nxc6 if we play imprecisely."
-- When a VARIATION CLOSES block appears, use the closing format: "We capture the knight and continue with ...Ng6 and ...g6 ideas. The open files give us a slightly better position."
+- Do NOT include move numbers. Never write "15. Bc6" or "12...Ng6".
+- Bare SAN is allowed when citing a move: "we continue with Ng6" (White) or "we continue with ...Ng6" (Black). Prefer prose ("the bishop on c6") where it reads naturally.
+- Write from OUR side: "we"/"our" for ${ourSide}, "${theySide}" for the other side.
+- USE the "Our next moves (per engine)" line: weave at least one of those moves into every annotation where the line is not empty. Only when it reads "(engine not loaded…)" or "(no concrete move found)" may you fall back to describing the structure.
+- When a section carries "VARIATION CLOSES — OUR PLANS", the note must state where the line leaves us (better/worse for us) and our next ideas — e.g. "We capture the knight and continue with ...Ng6 and ...g6 ideas. The open files give us a slightly better position." Only ever give plans for us, never for ${theySide}.
+- When a "PRECISION NEEDED" block appears, name the threat explicitly: "${theySide} threatens Nxc6 if we play imprecisely."
 
 Return EXACTLY this format — no JSON, no markdown fences:
 
@@ -2405,7 +2398,7 @@ Return EXACTLY this format — no JSON, no markdown fences:
   return out;
 }
 
-/* ---------- STAGE 3 — VERIFIER / EDITOR (never adds) ---------- */
+/* ---------- STAGE 3 — VERIFIER / EDITOR ---------- */
 async function buildStage3Prompt(idx, drafts) {
   const ctxWiki = document.getElementById('ctx-wiki')?.checked;
   const ctxEngine = document.getElementById('ctx-engine')?.checked;
@@ -2414,6 +2407,7 @@ async function buildStage3Prompt(idx, drafts) {
 
   const side = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
   const ourSide = side === 'white' ? 'White' : 'Black';
+  const theySide = ourSide === 'White' ? 'Black' : 'White';
 
   let out = `You are a chess-book copy-editor. You are NOT a chess author. You do NOT add chess ideas.
 
@@ -2422,8 +2416,10 @@ Your ONLY job for each note below:
 2. If the DRAFT contains a claim that is NOT supported by the FACTS, ENGINE, or SIGN lines, DELETE that claim.
 3. If the DRAFT mentions a square or piece that is not in the FACTS or ENGINE lines, DELETE that sentence.
 4. Never add a square, a piece, a plan, or a tactical idea that was not already in the DRAFT, FACTS, ENGINE, or SIGN lines.
-5. If the DRAFT quotes a move ("15. Bc6", "Bc6", "12...Ng6"), rewrite it without the notation ("the bishop on c6", "this exchange") or delete the sentence.
-6. Where a "VARIATION CLOSES — PLANS FOR US" block appears, keep the draft's closing summary (the verdict + our next ideas) if it agrees with that block. Cut any plan for the opponent.
+5. If the DRAFT contains move numbers ("15. Bc6", "12...Ng6"), remove the number and keep the move as bare SAN ("Bc6") or as prose ("the bishop on c6").
+6. Where a "VARIATION CLOSES — OUR PLANS" block appears, keep the draft's closing summary (the verdict + our next ideas) if it agrees with that block. Cut any plan for ${theySide}.
+
+We play ${ourSide}. Refer to us as "we"/"our". Refer to the opponent as "${theySide}" — never as "the opponent".
 
 If the DRAFT is empty or nothing survives after cutting, output: (none)
 
@@ -2432,12 +2428,12 @@ HARD RULES — these override everything:
 - NEVER write "passed pawn" unless FACTS says "passed pawn".
 - NEVER write "open file" for a file that isn't in FACTS.
 - NEVER invent a knight, bishop, rook, or queen square. Only the squares in FACTS, ENGINE, or the DRAFT.
-- NEVER describe what will happen next — EXCEPT in a closing note, where plans for us drawn from VARIATION CLOSES — PLANS FOR US are allowed. Plans for the opponent are always forbidden.
-- NEVER quote a move. No "15. Bc6", no "Bc6", no "12...Ng6". Say "the bishop on c6" or "this exchange". Bare squares ("c6", "the c-file") are fine.
-- If the DRAFT says a piece is on a square and the FACTS do not list that piece on that square, cut it.
-- Do NOT add opponent plans. Our moves and our threats only. The one exception: a PRECISION NEEDED block names the opponent's punishing move — you may name that move, nothing more.
-- If the ENGINE block lists "Our ideas", do not contradict them. If a DRAFT names a move that is not in Our ideas or is not the opponent's named punish, cut it or trim it to a general idea.
-- If a VARIATION CLOSES block appears, the draft may keep its closing summary (verdict + our continuing ideas) if it agrees with the block. Cut any plan for the opponent.
+- NEVER describe what will happen next — EXCEPT in a closing note, where plans for us drawn from "VARIATION CLOSES — OUR PLANS" are allowed. Plans for ${theySide} are always forbidden.
+- NEVER include move numbers. No "15. Bc6", no "12...Ng6". Bare SAN is fine: "we continue with Ng6". Prose is fine: "the bishop on c6".
+- If the DRAFT says a piece is on a square and FACTS does not list that piece on that square, cut it.
+- Do NOT add plans for ${theySide}. Our moves and our threats only. The one exception: a PRECISION NEEDED block names ${theySide}'s punishing move — you may name that move, nothing more.
+- If "Our next moves (per engine)" is populated, do not contradict it. If the DRAFT names a move that is not in that list and not ${theySide}'s named punish, trim it to a general idea.
+- If "VARIATION CLOSES — OUR PLANS" appears, keep the closing summary (verdict + our continuing ideas) if it agrees with the block. Cut any plan for ${theySide}.
 
 Return EXACTLY this format — no JSON, no markdown fences:
 
@@ -2471,16 +2467,6 @@ Return EXACTLY this format — no JSON, no markdown fences:
     if (ctxFacts) {
       const fx = (c._deltaFacts && c._deltaFacts.length) ? c._deltaFacts : (c._reviewedFacts || []);
       if (fx.length) out += 'FACTS: ' + fx.join(' | ') + '\n';
-    }
-    if (ctxEngine && c.fenAfter) {
-      try {
-        const eng = await getEngineMultiPV(c.fenAfter, { depth: 14, multipv: 2 });
-        if (eng && !eng.invalid && eng.lines && eng.lines.length) {
-          out += 'ENGINE: ' + eng.lines.slice(0, 2).map((l, k) =>
-            '#' + (k + 1) + ' ' + l.eval + ': ' + l.numbered
-          ).join(' | ') + '\n';
-        }
-      } catch (e) {}
     }
     if (ctxWiki) {
       const sanLower = String(c.san || '').toLowerCase();
@@ -2526,6 +2512,13 @@ function buildStage4Prompt(idx, refined) {
 async function stage1Copy() {
   if (selStart === null || selEnd === null) { alert('Pick a start and end move.'); return; }
   const idx = getSelectedIndices();
+  lastBatchIds = idx.map(i => globalChunks[i].id);
+  if (document.getElementById('ctx-engine')?.checked) {
+    const ready = SF_POOL.filter(s => s.ready).length;
+    if (ready === 0) {
+      if (!confirm('Stockfish is still loading. Copy without engine lines?')) return;
+    }
+  }
   document.getElementById('pipeline-status').innerText = 'Stage 1 · analysing closing variations…';
   const prompt = await buildStage1Prompt(idx, '', [], '');
   await navigator.clipboard.writeText(prompt);
@@ -2566,9 +2559,17 @@ function stage1Ingest() {
 async function stage3Copy(event) {
   if (selStart === null || selEnd === null) { alert('Pick a batch.'); return; }
   const idx = getSelectedIndices();
+  lastBatchIds = idx.map(i => globalChunks[i].id);
   const drafts = {};
   for (const i of idx) { const c = globalChunks[i]; if (c._draft) drafts[c.id] = c._draft; }
   if (!Object.keys(drafts).length) { alert('No drafts found. Run Stage 1 first.'); return; }
+
+  if (document.getElementById('ctx-engine')?.checked) {
+    const ready = SF_POOL.filter(s => s.ready).length;
+    if (ready === 0) {
+      if (!confirm('Stockfish is still loading. Copy without engine lines?')) return;
+    }
+  }
 
   const btn = event?.target || document.querySelector('button[onclick*="stage3Copy"]');
   const origText = btn ? btn.innerText : '';
@@ -2590,7 +2591,7 @@ async function stage3Copy(event) {
   }
 }
 
-/* ---------- STAGE 3 INGEST — with square + move-quote verification ---------- */
+/* ---------- STAGE 3 INGEST — with square + move-number verification ---------- */
 function stage3Ingest() {
   const raw = document.getElementById('stage3-response').value;
   const map = parseIdSections(raw);
@@ -2598,8 +2599,8 @@ function stage3Ingest() {
   if (!n) { alert('No IDs found in the Stage 3 response.'); return; }
 
   const warnings = [];
-  const quoteWarnings = [];
-  const quoteRe = /\b\d{1,3}\.{1,3}\s*(?:\.\.\.\s*)?(?:[RNBQK][a-h][1-8]|[a-h]x[a-h][1-8]|[a-h][1-8](?:=[RNBQK])?|O-O(?:-O)?)(?![a-zA-Z0-9])|\b(?:[RNBQK][a-h][1-8]|[a-h]x[a-h][1-8]|O-O(?:-O)?|[a-h][1-8]=[RNBQK])(?![a-zA-Z0-9])/;
+  const numberWarnings = [];
+  const numberRe = /\b\d{1,3}\.{1,3}\s*(?:\.\.\.\s*)?(?:[RNBQK][a-h][1-8]|[a-h]x[a-h][1-8]|[a-h][1-8](?:=[RNBQK])?|O-O(?:-O)?)(?![a-zA-Z0-9])/;
   for (const id of Object.keys(map)) {
     const c = globalChunks.find(x => x.id === id);
     if (!c || !c.fenAfter || !isValidFen(c.fenAfter)) continue;
@@ -2627,27 +2628,28 @@ function stage3Ingest() {
 
   for (const id of Object.keys(map)) {
     const c = globalChunks.find(x => x.id === id);
-    const qm = String(map[id] || '').match(quoteRe);
-    if (qm) quoteWarnings.push(id + ': "' + qm[0] + '"');
+    const nm = String(map[id] || '').match(numberRe);
+    if (nm) numberWarnings.push(id + ': "' + nm[0] + '"');
     if (c) c._refined = map[id];
   }
 
   document.getElementById('pipeline-status').innerText = 'Stage 3 ingested · ' + n + ' refined';
-  if (warnings.length || quoteWarnings.length) {
+  if (warnings.length || numberWarnings.length) {
     const parts = [];
     if (warnings.length) parts.push('Square warnings (' + warnings.length + '):\n' +
       warnings.slice(0, 8).map(w => '· ' + w.id + ': ' + w.text).join('\n') + (warnings.length > 8 ? '\n…' : ''));
-    if (quoteWarnings.length) parts.push('Quoted moves (' + quoteWarnings.length + ') — rewrite as piece + square:\n' +
-      quoteWarnings.slice(0, 8).map(q => '· ' + q).join('\n') + (quoteWarnings.length > 8 ? '\n…' : ''));
+    if (numberWarnings.length) parts.push('Numbered moves (' + numberWarnings.length + ') — should be bare SAN or prose:\n' +
+      numberWarnings.slice(0, 8).map(q => '· ' + q).join('\n') + (numberWarnings.length > 8 ? '\n…' : ''));
     alert('Ingested ' + n + ' refined notes.\n\n⚠ ' + parts.join('\n\n'));
   } else {
-    alert('Ingested ' + n + ' refined notes.\nNo square issues detected.');
+    alert('Ingested ' + n + ' refined notes.\nNo issues detected.');
   }
 }
 
 async function stage4Copy() {
   if (selStart === null || selEnd === null) { alert('Pick a batch.'); return; }
   const idx = getSelectedIndices();
+  lastBatchIds = idx.map(i => globalChunks[i].id);
   const notes = {};
   for (const i of idx) {
     const c = globalChunks[i];
@@ -2687,7 +2689,8 @@ function verifyAiOutput() {
   const raw = document.getElementById('ai-json').value;
   const result = document.getElementById('verify-results');
   if (!raw.trim()) { result.innerHTML = '<p class="text-slate-500 italic">Paste AI output first.</p>'; return; }
-  const map = extractChunkMap(raw);
+  let map = extractChunkMap(raw);
+  if (!map || !Object.keys(map).length) map = parseIdSections(raw);
   if (!map || !Object.keys(map).length) { result.innerHTML = '<p class="text-slate-500 italic">No CHK_ IDs found.</p>'; return; }
   const missing = [];
   if (lastBatchIds.length) for (const id of lastBatchIds) if (!map[id]) missing.push(id);
@@ -2745,23 +2748,36 @@ function extractChunkMap(text) {
 }
 function rebuildPgn() {
   const raw = document.getElementById('ai-json').value;
-  let aiData;
-  try { aiData = extractChunkMap(raw); if (!aiData || !Object.keys(aiData).length) throw new Error('No IDs'); }
-  catch (e) { alert('Failed to parse AI output.'); return; }
+  let aiData = extractChunkMap(raw);
+  if (!aiData || !Object.keys(aiData).length) {
+    aiData = parseIdSections(raw);
+  }
+  if (!aiData || !Object.keys(aiData).length) {
+    alert('Failed to parse AI output.\n\nPaste either JSON { "CHK_…": "…" } or prose with CHK_ IDs on their own line.');
+    return;
+  }
   const working = [...pgnTokens];
   const sorted = Object.keys(aiData).sort((a, b) => {
     const ia = globalChunks.find(c => c.id === a)?.tokenIndex || 0;
     const ib = globalChunks.find(c => c.id === b)?.tokenIndex || 0;
     return ib - ia;
   });
+  const dropped = [];
   sorted.forEach(id => {
     const ch = globalChunks.find(c => c.id === id);
     if (ch && aiData[id]) {
       const cl = String(aiData[id]).replace(/^[{[\s]+|[}\]\s]+$/g, '').trim();
       if (cl) working[ch.tokenIndex] += ' { ' + cl + ' }';
+    } else if (aiData[id]) {
+      dropped.push(id);
     }
   });
   document.getElementById('final-pgn').value = working.join(' ');
+  if (dropped.length) {
+    alert('Warning: ' + dropped.length + ' note(s) had IDs not found in the current PGN and were skipped:\n' +
+      dropped.slice(0, 8).join('\n') + (dropped.length > 8 ? '\n…' : '') +
+      '\n\nDid you re-Initialize after the AI ran?');
+  }
 }
 function saveState() { localStorage.setItem('gm_master_state', JSON.stringify({ original: document.getElementById('pgn-input').value })); }
 function clearAll() {
