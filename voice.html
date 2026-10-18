@@ -4,8 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v8.7 | Decipher Chess Academy</title>
-<!-- build: 2026-10-15-voice-v8.7-corpus-and-stage2-wiki -->
+<title>GM Variation Master · v8.8 | Decipher Chess Academy</title>
+<!-- build: 2026-10-18-auto-wiki-json -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -38,7 +38,7 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Editor stage 3 · engine plan · v8.7</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Editor stage 3 · engine plan · v8.8</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center flex-wrap">
 <span id="sf-badge" class="sf-badge loading">Engine loading…</span>
@@ -2300,19 +2300,75 @@ async function stage1Copy() {
 
 async function stage2Start() {
   const status = document.getElementById('pipeline-status');
-  status.innerText = 'Stage 2 · loading wiki + corpus…';
+  status.innerText = 'Stage 2 · loading wiki + generating JSON…';
+  
   const ideasRaw = document.getElementById('ideas-pack').value.trim();
   if (!ideasRaw || wikiEntries.length === 0) {
     try { await enrichFromWikipedia(); } catch (e) {}
   }
-  try { await corpusUpdateStats(); } catch (e) {}
-  const stats = await corpusUpdateStats();
-  const lines = [];
-  lines.push(wikiEntries.length ? ('wiki: ' + wikiEntries.length + ' entries') : 'wiki: none');
-  lines.push(stats && stats.count ? ('corpus: ' + stats.count + ' entries') : 'corpus: empty — load PGNs first');
-  status.innerText = 'Stage 2 done · ' + lines.join(' · ');
+  
+  if (selStart === null || selEnd === null) { alert('Pick a batch first.'); return; }
+  const idx = getSelectedIndices();
+  const map = {};
+  
+  for (const i of idx) {
+    const c = globalChunks[i];
+    if (!c) continue;
+    
+    const sanClean = (c.san || '').toLowerCase();
+    const moveNumStr = c.moveNum + ".";
+    let annotation = "";
+    
+    // 1. Try to find a matching comment in Wiki entries
+    for (const w of wikiEntries) {
+      const wMove = (w.move || "").toLowerCase();
+      // Check if the wiki entry specifically mentions this move number and SAN
+      if (wMove.includes(moveNumStr + " " + sanClean) || wMove.includes(moveNumStr + "." + sanClean)) {
+        annotation = w.comment;
+        break;
+      }
+    }
+    
+    // 2. Fallback: if no exact match, try just the SAN (e.g. if Wiki just says "e4")
+    if (!annotation) {
+      for (const w of wikiEntries) {
+        const wMove = (w.move || "").toLowerCase();
+        if (wMove.includes(sanClean)) {
+          annotation = w.comment;
+          break;
+        }
+      }
+    }
+    
+    // 3. Fallback: try the Ideas Pack if it has a specific note
+    if (!annotation) {
+      try {
+        const packArr = JSON.parse(ideasRaw);
+        const match = packArr.find(p => p.toLowerCase().includes(sanClean));
+        if (match) annotation = match;
+      } catch(e) {}
+    }
+    
+    // Clean up and limit length to make it look like a GM note
+    if (annotation) {
+      let sentences = annotation.match(/[^.!?]+[.!?]+/g) || [annotation];
+      annotation = sentences.slice(0, 2).join(' ').trim();
+      map[c.id] = annotation;
+    } else {
+      map[c.id] = "(none)";
+    }
+  }
+  
+  const jsonText = JSON.stringify(map, null, 2);
+  document.getElementById('ai-json').value = jsonText;
+  document.getElementById('stage4-response').value = jsonText;
+  
   switchTab('reassembler');
-  alert('Wiki and corpus ready.\n\n' + lines.join('\n') + '\n\nNow paste the Stage 1 prompt response into "Step 1: Paste AI JSON" or run Stage 3 first.');
+  verifyAiOutput();
+  rebuildPgn();
+  
+  status.innerText = 'Stage 2 done · auto-annotated from Wiki.';
+  alert('Successfully generated JSON annotations from Wiki for ' + idx.length + ' moves.\n\nThe tool has jumped to the Re-assembler and built the final PGN for you.');
 }
 
 function stage1Ingest() {
