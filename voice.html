@@ -5,7 +5,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GM Variation Master · v8.7 | Decipher Chess Academy</title>
-<!-- build: 2026-10-15-voice-v8.7-corpus-and-stage2-wiki -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -157,8 +156,8 @@ Import JSON<input type="file" accept=".json" class="hidden" onchange="corpusImpo
 </select>
 </label>
 <button onclick="testEngine()" class="px-4 py-3 bg-slate-800 text-slate-300 font-bold rounded-xl uppercase text-xs hover:bg-slate-700">🧪 Test</button>
+<button onclick="debugEngine()" class="px-4 py-3 bg-slate-800 text-slate-300 font-bold rounded-xl uppercase text-xs hover:bg-slate-700">🔍 Engine</button>
 <button onclick="extractAndReview()" id="review-facts-btn" class="px-6 py-3 bg-emerald-700 hover:bg-emerald-600 rounded-xl font-bold uppercase text-xs hidden">🔬 Review Facts</button>
-<button onclick="copySelectedBatch()" id="copy-btn" class="px-6 py-3 gold-bg rounded-xl font-bold uppercase text-xs hidden"><span id="copy-text">Compose &amp; Copy</span></button>
 <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
 </div>
 </div>
@@ -286,9 +285,9 @@ Import JSON<input type="file" accept=".json" class="hidden" onchange="corpusImpo
 <span id="pipeline-status" class="text-[10px] text-slate-500 uppercase"></span>
 </div>
 <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-<button onclick="stage1Copy()" class="py-2 gold-bg rounded font-bold uppercase text-[11px]">1. Copy Draft Prompt</button>
+<button id="stage1-btn" onclick="stage1Copy()" class="py-2 gold-bg rounded font-bold uppercase text-[11px]">1. Copy Draft Prompt</button>
 <button onclick="stage2Start()" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">2. Wiki + Corpus</button>
-<button onclick="stage3Copy(event)" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">3. Copy Verify Prompt</button>
+<button id="stage3-btn" onclick="stage3Copy(event)" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">3. Copy Verify Prompt</button>
 <button onclick="stage4Copy()" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">4. Copy JSON Prompt</button>
 </div>
 <p class="text-[10px] text-slate-500 italic">Stage 1: free GM draft. Stage 2: load wiki + corpus context. Stage 3: AI verifies and trims (never adds). Stage 4: JSON for the Re-assembler.</p>
@@ -365,7 +364,29 @@ let openingsDB = [], openingsMap = {};
 let lastBatchIds = [];
 let reviewedFacts = {};
 let planBoard = null, planChess = null, planMovesList = [], currentIntentionId = null;
+let sfInitAttempted = false;
 const delay = ms => new Promise(r => setTimeout(r, ms));
+
+/* ===================== CLIPBOARD HELPER ===================== */
+async function copyTextToClipboard(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e2) { return false; }
+}
 
 /* ===================== OPENINGS DB ===================== */
 const OPENINGS_DB_KEY = 'gm_openings_db_v2';
@@ -604,65 +625,32 @@ function buildWikiChunkMap(parsedEntries) {
   const map = {};
   if (!parsedEntries || !parsedEntries.length) return map;
   if (!globalChunks || !globalChunks.length) return map;
-
   let targetChunks;
-  if (selStart !== null) {
-    const idx = getSelectedIndices();
-    targetChunks = idx.map(i => globalChunks[i]).filter(Boolean);
-  } else {
-    targetChunks = globalChunks.filter(c => c.variationLevel === 0);
-  }
+  if (selStart !== null) { const idx = getSelectedIndices(); targetChunks = idx.map(i => globalChunks[i]).filter(Boolean); }
+  else { targetChunks = globalChunks.filter(c => c.variationLevel === 0); }
   if (!targetChunks.length) return map;
-
   const SAN_RE = /^(?:[a-h][1-8](?:=[nbrq])?|[a-h]x[a-h][1-8](?:=[nbrq])?|[nbrqk][a-h]?[1-8]?x?[a-h][1-8]|o-o(?:-o)?)$/;
   function moveTokens(wikiMove) {
-    const cleaned = String(wikiMove || '')
-      .replace(/\[edit\]/gi, ' ')
-      .replace(/[!?+#]/g, '')
-      .replace(/\d+\s*\.{1,3}/g, ' ')
-      .toLowerCase()
-      .replace(/0/g, 'o');
+    const cleaned = String(wikiMove || '').replace(/\[edit\]/gi, ' ').replace(/[!?+#]/g, '').replace(/\d+\s*\.{1,3}/g, ' ').toLowerCase().replace(/0/g, 'o');
     return cleaned.split(/\s+/).filter(t => SAN_RE.test(t));
   }
-
-  const sanLookup = {};
-  const general = [];
+  const sanLookup = {}, general = [];
   for (const w of parsedEntries) {
     const toks = moveTokens(w.move);
-    if (toks.length) {
-      for (const t of toks) if (!sanLookup[t]) sanLookup[t] = w;
-    } else {
-      general.push(w);
-    }
+    if (toks.length) { for (const t of toks) if (!sanLookup[t]) sanLookup[t] = w; }
+    else general.push(w);
   }
-
-  const generalSnippet = general
-    .map(w => String(w.comment || '').trim())
-    .filter(Boolean)
-    .join(' ')
-    .slice(0, 600);
-
+  const generalSnippet = general.map(w => String(w.comment || '').trim()).filter(Boolean).join(' ').slice(0, 600);
   for (const c of targetChunks) {
     const cleanSan = String(c.san || '').replace(/[!?+#]/g, '').toLowerCase().trim();
     if (!cleanSan) continue;
-
-    let matched = sanLookup[cleanSan]
-              || sanLookup[cleanSan.replace(/o/g, '0')]
-              || sanLookup[cleanSan.replace(/0/g, 'o')];
-
-    if (matched) {
-      map[c.id] = String(matched.comment).slice(0, 500);
-    } else if (generalSnippet && (c.isVariationStart || c.moveNum <= 2)) {
-      map[c.id] = generalSnippet.slice(0, 300);
-    }
+    let matched = sanLookup[cleanSan] || sanLookup[cleanSan.replace(/o/g, '0')] || sanLookup[cleanSan.replace(/0/g, 'o')];
+    if (matched) map[c.id] = String(matched.comment).slice(0, 500);
+    else if (generalSnippet && (c.isVariationStart || c.moveNum <= 2)) map[c.id] = generalSnippet.slice(0, 300);
   }
-
-  if (Object.keys(map).length === 0 && generalSnippet && targetChunks[0]) {
-    map[targetChunks[0].id] = generalSnippet.slice(0, 500);
-  }
+  if (Object.keys(map).length === 0 && generalSnippet && targetChunks[0]) map[targetChunks[0].id] = generalSnippet.slice(0, 500);
   return map;
 }
-
 async function enrichFromWikipedia() {
   clearWikiLog();
   const btn = document.getElementById('wiki-btn');
@@ -685,10 +673,8 @@ async function enrichFromWikipedia() {
   } else logWiki('✓ Cached (' + parsed.length + ' entries)');
   if (parsed && parsed.length) wikiEntries = parsed;
   const sourceTitle = parsed._sourceTitle || name;
-
   const chunkMap = buildWikiChunkMap(parsed);
-  const nChunks  = Object.keys(chunkMap).length;
-
+  const nChunks = Object.keys(chunkMap).length;
   if (nChunks > 0) {
     const jsonStr = JSON.stringify(chunkMap, null, 2);
     document.getElementById('ideas-pack').value = jsonStr;
@@ -696,7 +682,6 @@ async function enrichFromWikipedia() {
     const s4 = document.getElementById('stage4-response');
     if (s4) s4.value = jsonStr;
     logWiki('✓ Assembler-ready JSON: ' + nChunks + ' move notes.');
-    logWiki('  → Click "Send to Re-assembler" (or paste "Paste AI JSON").');
   } else {
     const wikiIdeas = parsed.filter(x => x.comment && x.comment.length > 30)
       .map(x => '[Wiki ' + (x.origin || x._source || '') + (x.move ? ' ' + x.move.slice(0, 50) : '') + '] ' + x.comment);
@@ -728,24 +713,19 @@ function updatePackStatus(n, mode) {
   el.innerText = n + ' idea' + (n !== 1 ? 's' : '') + (mode === 'wiki' ? ' (wiki)' : ' ready');
 }
 function saveIdeasPack() {
-  const raw  = document.getElementById('ideas-pack').value.trim();
+  const raw = document.getElementById('ideas-pack').value.trim();
   const name = (document.getElementById('opening-name').value || '').trim();
   const side = (document.getElementById('opening-side').value || 'Black').trim();
   if (!raw) { clearIdeasPack(); return; }
-
   let arr;
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) arr = parsed.map(x => String(x).trim()).filter(Boolean);
     else if (parsed && typeof parsed === 'object') arr = parsed;
     else arr = [raw];
-  } catch (e) {
-    arr = raw.split(/\n+/).map(s => s.replace(/^[\-\*\d\.\)\s]+/, '').trim()).filter(Boolean);
-  }
-
+  } catch (e) { arr = raw.split(/\n+/).map(s => s.replace(/^[\-\*\d\.\)\s]+/, '').trim()).filter(Boolean); }
   const cnt = Array.isArray(arr) ? arr.length : (arr && typeof arr === 'object' ? Object.keys(arr).length : 0);
   if (!cnt) { alert('Nothing to save.'); return; }
-
   localStorage.setItem(PACK_KEY, JSON.stringify(arr));
   localStorage.setItem(PACK_NAME_KEY, name);
   localStorage.setItem(PACK_SIDE_KEY, side);
@@ -760,12 +740,11 @@ function clearIdeasPack() {
 function loadIdeasPack() {
   try {
     const saved = localStorage.getItem(PACK_KEY);
-    const name  = localStorage.getItem(PACK_NAME_KEY) || '';
-    const side  = localStorage.getItem(PACK_SIDE_KEY) || 'Black';
+    const name = localStorage.getItem(PACK_NAME_KEY) || '';
+    const side = localStorage.getItem(PACK_SIDE_KEY) || 'Black';
     if (document.getElementById('opening-name')) document.getElementById('opening-name').value = name;
     if (document.getElementById('opening-side')) document.getElementById('opening-side').value = side;
     if (!saved) { updatePackStatus(0); return []; }
-
     const arr = JSON.parse(saved);
     document.getElementById('ideas-pack').value = JSON.stringify(arr, null, 2);
     const cnt = Array.isArray(arr) ? arr.length : (arr && typeof arr === 'object' ? Object.keys(arr).length : 0);
@@ -803,7 +782,7 @@ function copyResearchPrompt() {
   const name = (document.getElementById('opening-name').value || '').trim() || 'this opening';
   const side = (document.getElementById('opening-side').value || 'Black').trim();
   const prompt = `You are a grandmaster chess author. Give me 10-14 short strings (JSON array only) of the strategic ideas, plans and pawn-structure themes of the ${name} from ${side}'s perspective. British spelling.`;
-  navigator.clipboard.writeText(prompt).then(() => alert('Copied.')).catch(() => {});
+  copyTextToClipboard(prompt).then(() => alert('Copied.')).catch(() => {});
 }
 
 /* ===================== ENGINE ===================== */
@@ -813,42 +792,62 @@ function setSfBadge(state, text) {
   b.classList.remove('on','off','loading','ws'); b.classList.add(state); b.innerText = text;
 }
 async function createSFWorker() {
-  const cdns = ['https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js', 'https://unpkg.com/stockfish.js@10.0.2/stockfish.js'];
+  const cdns = [
+    'https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js',
+    'https://unpkg.com/stockfish.js@10.0.2/stockfish.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js'
+  ];
   for (const url of cdns) {
     try {
-      const res = await fetch(url); if (!res.ok) continue;
+      const ctl = new AbortController();
+      const timer = setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 4000);
+      const res = await fetch(url, { signal: ctl.signal });
+      clearTimeout(timer);
+      if (!res.ok) continue;
       const code = await res.text();
-      return new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
-    } catch (e) {}
+      if (!code || code.length < 1000) continue;
+      try {
+        const blob = new Blob([code], { type: 'application/javascript' });
+        const w = new Worker(URL.createObjectURL(blob));
+        console.log('[GM] Worker created from ' + url);
+        return w;
+      } catch (e) { console.warn('[GM] Worker create failed:', e); }
+    } catch (e) { console.warn('[GM] Fetch failed:', url, e && e.message); }
   }
   return null;
 }
 async function initSFPool() {
-  if (SF_POOL.length) return;
+  if (SF_POOL.length || sfInitAttempted) return;
+  sfInitAttempted = true;
   setSfBadge('loading', 'Engine loading…');
-  for (let i = 0; i < 2; i++) {
-    const slot = { worker: null, ready: false, busy: false, handler: null, chain: Promise.resolve() };
-    const w = await createSFWorker(); if (!w) continue;
-    slot.worker = w;
-    w.onmessage = (e) => {
-      const s = typeof e.data === 'string' ? e.data : (e.data && e.data.data) || '';
-      if (!s) return;
-      if (s === 'uciok') {
-        slot.ready = true;
-        w.postMessage('setoption name Hash value 32'); w.postMessage('setoption name Threads value 1');
-        const c = SF_POOL.filter(x => x.ready).length;
-        if (c >= 1) setSfBadge('on', 'SF ready ×' + c);
-      }
-      if (slot.busy && slot.handler) slot.handler(s);
-    };
-    w.onerror = () => { slot.ready = false; };
-    w.postMessage('uci'); SF_POOL.push(slot);
-  }
-  if (!SF_POOL.length) setSfBadge('ws', 'HTTP engine');
+  try {
+    for (let i = 0; i < 2; i++) {
+      const slot = { worker: null, ready: false, busy: false, handler: null, chain: Promise.resolve() };
+      const w = await createSFWorker();
+      if (!w) continue;
+      slot.worker = w;
+      w.onmessage = (e) => {
+        const s = typeof e.data === 'string' ? e.data : (e.data && e.data.data) || '';
+        if (!s) return;
+        if (s === 'uciok') {
+          slot.ready = true;
+          try { w.postMessage('setoption name Hash value 32'); w.postMessage('setoption name Threads value 1'); } catch (e) {}
+          const c = SF_POOL.filter(x => x.ready).length;
+          if (c >= 1) setSfBadge('on', 'SF ready ×' + c);
+        }
+        if (slot.busy && slot.handler) slot.handler(s);
+      };
+      w.onerror = (e) => { console.warn('[GM] Worker error:', e && e.message); slot.ready = false; };
+      try { w.postMessage('uci'); } catch (e) {}
+      SF_POOL.push(slot);
+    }
+  } catch (e) { console.error('[GM] initSFPool:', e); }
+  if (!SF_POOL.length) setSfBadge('off', 'Engine unavailable');
+  else if (!SF_POOL.some(s => s.ready)) setSfBadge('loading', 'Waiting for UCI…');
 }
-async function waitForEngine(timeoutMs = 8000) {
+async function waitForEngine(timeoutMs = 3000) {
   if (SF_POOL.some(s => s.ready)) return true;
-  if (!SF_POOL.length) await initSFPool();
+  if (!sfInitAttempted) await initSFPool();
   if (SF_POOL.some(s => s.ready)) return true;
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -859,7 +858,7 @@ async function waitForEngine(timeoutMs = 8000) {
 }
 async function sfAnalyzeOnSlot(slot, fen, opts) {
   const depth = opts.depth || 16, multipv = opts.multipv || 5;
-  const timeoutMs = opts.timeoutMs || (depth >= 20 ? 12000 : depth >= 18 ? 9000 : 6000);
+  const timeoutMs = opts.timeoutMs || (depth >= 20 ? 10000 : depth >= 18 ? 8000 : 5000);
   const key = fen + '::' + depth + '::' + multipv;
   if (sfCache.has(key)) return sfCache.get(key);
   if (!slot.worker || !slot.ready) return null;
@@ -884,11 +883,13 @@ async function sfAnalyzeOnSlot(slot, fen, opts) {
         done = true; slot.handler = null; slot.busy = false;
         const rows = Object.values(lines).sort((a,b) => a.multipv - b.multipv);
         sfCache.set(key, rows); resolve(rows);
-      }, 500);
+      }, 400);
     }, timeoutMs);
-    slot.worker.postMessage('setoption name MultiPV value ' + multipv);
-    slot.worker.postMessage('position fen ' + fen);
-    slot.worker.postMessage('go depth ' + depth);
+    try {
+      slot.worker.postMessage('setoption name MultiPV value ' + multipv);
+      slot.worker.postMessage('position fen ' + fen);
+      slot.worker.postMessage('go depth ' + depth);
+    } catch (e) { done = true; clearTimeout(timer); slot.handler = null; slot.busy = false; resolve([]); }
   });
   const chained = slot.chain.then(() => { slot.busy = true; return run(); });
   slot.chain = chained.catch(() => {}); return chained;
@@ -943,22 +944,39 @@ function sfLinesToEngineData(sfLines, fen) {
 }
 async function getEngineMultiPV(fen, opts = {}) {
   if (!isValidFen(fen)) return { lines: [], invalid: true };
+  if (!SF_POOL.some(s => s.ready)) return { lines: [], invalid: true }; /* fast-fail */
   const depth = opts.depth || parseInt(document.getElementById('engine-depth')?.value || '16', 10);
   const multipv = opts.multipv || 5;
-  if (!SF_POOL.length) await initSFPool();
-  const ready = SF_POOL.filter(s => s.ready);
-  if (ready.length) {
-    const sfLines = await sfAnalyze(fen, { depth, multipv, timeoutMs: opts.timeoutMs });
-    if (sfLines && sfLines.length) { const data = sfLinesToEngineData(sfLines, fen); data.source = 'stockfish'; return data; }
-  }
+  const sfLines = await sfAnalyze(fen, { depth, multipv, timeoutMs: opts.timeoutMs });
+  if (sfLines && sfLines.length) { const data = sfLinesToEngineData(sfLines, fen); data.source = 'stockfish'; return data; }
   return { lines: [], invalid: true };
 }
 async function testEngine() {
   const startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-  const depth = parseInt(document.getElementById('engine-depth').value, 10);
-  const data = await getEngineMultiPV(startFen, { depth: Math.min(depth, 14), multipv: 2 });
-  if (data && !data.invalid && data.lines && data.lines.length) alert('✓ Engine working.');
-  else alert('✗ Engine failed.');
+  document.getElementById('pipeline-status').innerText = 'Testing engine…';
+  const ready = await waitForEngine(5000);
+  if (!ready) { document.getElementById('pipeline-status').innerText = 'Engine failed to load'; alert('✗ Engine failed to load. Check the browser console (F12) for [GM] messages.'); return; }
+  const data = await getEngineMultiPV(startFen, { depth: 12, multipv: 2 });
+  if (data && !data.invalid && data.lines && data.lines.length) { document.getElementById('pipeline-status').innerText = 'Engine OK'; alert('✓ Engine working. Top: ' + data.lines[0].san + ' ' + data.lines[0].eval); }
+  else { document.getElementById('pipeline-status').innerText = 'Engine ready but no output'; alert('✗ Engine UCI OK but no lines returned.'); }
+}
+async function debugEngine() {
+  const info = [
+    'SF_POOL.length: ' + SF_POOL.length,
+    'Ready: ' + SF_POOL.filter(s => s.ready).length,
+    'Attempted: ' + sfInitAttempted,
+    'Worker present: ' + SF_POOL.map(s => !!s.worker).join(',') || 'none',
+    'Cache entries: ' + sfCache.size
+  ].join('\n');
+  console.log('[GM Debug]', info, SF_POOL);
+  const tryNow = confirm('Engine status:\n\n' + info + '\n\nTry to reload engine now?');
+  if (tryNow) {
+    sfInitAttempted = false;
+    SF_POOL.length = 0;
+    await initSFPool();
+    await delay(1500);
+    alert('After reload — SF_POOL: ' + SF_POOL.length + ', Ready: ' + SF_POOL.filter(s => s.ready).length);
+  }
 }
 
 /* ===================== SCANNERS ===================== */
@@ -995,8 +1013,7 @@ function attackersOfBoard(board, sq, byColor) {
 }
 function kingSafetyNotes(fen) {
   const chess = new Chess(fen); if (!chess) return '';
-  const board = chess.board();
-  const notes = [];
+  const board = chess.board(); const notes = [];
   for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
     const p = board[r][f]; if (!p || p.type !== 'k') continue;
     const side = p.color === 'w' ? 'White' : 'Black';
@@ -1032,15 +1049,13 @@ function undevelopedPieces(fen) {
 }
 function positionFeatures(fen) {
   const chess = new Chess(fen); if (!chess) return '';
-  const board = chess.board();
-  const files = 'abcdefgh';
+  const board = chess.board(); const files = 'abcdefgh';
   const wP = new Array(8).fill(0), bP = new Array(8).fill(0);
   for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
     const p = board[r][f]; if (!p) continue;
     if (p.type === 'p') { if (p.color === 'w') wP[f]++; else bP[f]++; }
   }
-  const feats = [];
-  const openFiles = [], wHalf = [], bHalf = [];
+  const feats = []; const openFiles = [], wHalf = [], bHalf = [];
   for (let f = 0; f < 8; f++) {
     if (wP[f] === 0 && bP[f] === 0) openFiles.push(files[f]);
     else if (wP[f] === 0 && bP[f] > 0) wHalf.push(files[f]);
@@ -1175,24 +1190,20 @@ function weakPawns(fen) {
     const p = board[r][f]; if (!p || p.type !== 'p') continue;
     pbf[p.color][f].push(8 - r);
   }
-  for (const side of ['w', 'b']) {
-    for (let f = 0; f < 8; f++) {
-      const ranks = pbf[side][f]; if (!ranks.length) continue;
-      const lh = f > 0 && pbf[side][f - 1].length > 0, rh = f < 7 && pbf[side][f + 1].length > 0;
-      const sideName = side === 'w' ? 'White' : 'Black';
-      if (!lh && !rh && ranks.length === 1) out.push({ side: sideName, type: 'isolated', square: files[f] + ranks[0] });
-      if (ranks.length >= 2) out.push({ side: sideName, type: 'doubled', square: files[f] + ranks[0] });
-    }
+  for (const side of ['w', 'b']) for (let f = 0; f < 8; f++) {
+    const ranks = pbf[side][f]; if (!ranks.length) continue;
+    const lh = f > 0 && pbf[side][f - 1].length > 0, rh = f < 7 && pbf[side][f + 1].length > 0;
+    const sideName = side === 'w' ? 'White' : 'Black';
+    if (!lh && !rh && ranks.length === 1) out.push({ side: sideName, type: 'isolated', square: files[f] + ranks[0] });
+    if (ranks.length >= 2) out.push({ side: sideName, type: 'doubled', square: files[f] + ranks[0] });
   }
   return out.slice(0, 5);
 }
 function findManeuver(fen, pvSanList) {
   if (!pvSanList || pvSanList.length < 3) return null;
-  const chess = new Chess(fen);
-  const moves = [];
+  const chess = new Chess(fen); const moves = [];
   for (const san of pvSanList) {
-    const m = chess.move(san, { sloppy: true });
-    if (!m) break;
+    const m = chess.move(san, { sloppy: true }); if (!m) break;
     moves.push({ san, from: m.from, to: m.to, piece: m.piece, color: m.color });
     if (moves.length >= 8) break;
   }
@@ -1277,8 +1288,7 @@ function enginePlanPhrase(engineLines, stm) {
   if (!engineLines || !engineLines.length) return '';
   const top = engineLines[0];
   if (!top || !top.allSan || top.allSan.length < 3) return '';
-  const picks = top.allSan.slice(0, 5);
-  return picks.join(' ');
+  return top.allSan.slice(0, 5).join(' ');
 }
 
 async function buildFactList(fenAfter, moverSide) {
@@ -1297,13 +1307,10 @@ async function buildFactList(fenAfter, moverSide) {
   for (const w of weakPawns(fenAfter)) facts.push(w.side + ' ' + w.type + ' pawn on ' + w.square);
   const pos = positionFeatures(fenAfter); if (pos) facts.push(pos);
   const un = undevelopedPieces(fenAfter); if (un) facts.push(un);
-
   const engineData = await getEngineMultiPV(fenAfter, { multipv: 2 });
   const engineLines = (engineData && !engineData.invalid && engineData.lines) ? engineData.lines.slice(0, 2) : [];
-
   const planPhrase = enginePlanPhrase(engineLines, stm);
   if (planPhrase) facts.push('ENGINE PLAN (' + stm + ' to move, top line): ' + planPhrase);
-
   const wc = winningCaptures(fenAfter);
   if (wc.length) {
     const confirmed = wc.filter(x => engineLines.some(l => lineUsesMotif(l, { type:'capture', square: x.square })));
@@ -1323,34 +1330,25 @@ async function buildFactList(fenAfter, moverSide) {
       const tl = t.lines[0];
       const isMate = /^#/.test(String(tl.eval));
       const evNum = parseFloat(String(tl.eval).replace('#', ''));
-      if (isMate || (!isNaN(evNum) && Math.abs(evNum) >= 1.0))
-        facts.push('THREAT (if ' + stm + ' passes): ' + tl.numbered);
+      if (isMate || (!isNaN(evNum) && Math.abs(evNum) >= 1.0)) facts.push('THREAT (if ' + stm + ' passes): ' + tl.numbered);
       const man = findManeuver(nullFen, tl.allSan || []);
       if (man) facts.push('INTENT: ' + man.type + ' — ' + man.pathSan.join(' then ') + ' → ' + man.target);
     }
   }
-
   try {
-    const fam = (document.getElementById('corpus-family')?.value || '').trim()
-             || (document.getElementById('opening-name')?.value || '').trim();
+    const fam = (document.getElementById('corpus-family')?.value || '').trim() || (document.getElementById('opening-name')?.value || '').trim();
     const similar = await queryCorpus(fenAfter, fam, 3);
     if (similar.length) {
-      const block = similar.map(s =>
-        '(' + s.moveNum + (s.isWhite ? '.' : '...') + ' ' + s.san +
-        (s.tags && s.tags.length ? ' [' + s.tags.join(',') + ']' : '') +
-        ') ' + s.comment.slice(0, 300)
-      ).join(' || ');
+      const block = similar.map(s => '(' + s.moveNum + (s.isWhite ? '.' : '...') + ' ' + s.san + (s.tags && s.tags.length ? ' [' + s.tags.join(',') + ']' : '') + ') ' + s.comment.slice(0, 300)).join(' || ');
       facts.push('CORPUS: ' + block);
     }
   } catch (e) {}
-
   return facts;
 }
 
 /* ===================== ANNOTATION CORPUS ===================== */
 const CORPUS_DB = 'gm_corpus_v1';
 const CORPUS_STORE = 'entries';
-
 function openCorpusDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(CORPUS_DB, 1);
@@ -1370,8 +1368,7 @@ function openCorpusDB() {
 function posKey(fen) { const p = String(fen || '').split(/\s+/); return p.slice(0, 4).join(' '); }
 function corpusStructureKey(fen) {
   const chess = new Chess(fen); if (!chess) return '';
-  const board = chess.board();
-  const pawns = [], mat = { w: {}, b: {} };
+  const board = chess.board(); const pawns = [], mat = { w: {}, b: {} };
   for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
     const p = board[r][f]; if (!p) continue;
     if (p.type === 'p') pawns.push(f + ':' + r + ':' + p.color);
@@ -1383,11 +1380,9 @@ function corpusStructureKey(fen) {
 function classifyCorpusMove(fenBefore, san, prevSan) {
   const tags = [];
   const test = new Chess(fenBefore); if (!test) return tags;
-  const mv = test.move(san.replace(/[!?]+/g, ''), { sloppy: true });
-  if (!mv) return tags;
+  const mv = test.move(san.replace(/[!?]+/g, ''), { sloppy: true }); if (!mv) return tags;
   const piece = mv.piece, to = mv.to;
-  const toFile = to.charCodeAt(0) - 97;
-  const toRank = parseInt(to[1], 10);
+  const toFile = to.charCodeAt(0) - 97; const toRank = parseInt(to[1], 10);
   const isCapture = !!mv.flags.match(/[ce]/);
   const isCheck = san.includes('+') || san.includes('#');
   if (isCapture && prevSan && prevSan.includes('x')) tags.push('recapture');
@@ -1400,10 +1395,7 @@ function classifyCorpusMove(fenBefore, san, prevSan) {
     if ((mv.color === 'w' && toRank >= 5) || (mv.color === 'b' && toRank <= 4)) tags.push('rook_lift');
     let ownPawnsOnFile = 0;
     const board = new Chess(fenBefore).board();
-    for (let r = 0; r < 8; r++) {
-      const p = board[r][toFile];
-      if (p && p.type === 'p' && p.color === mv.color) ownPawnsOnFile++;
-    }
+    for (let r = 0; r < 8; r++) { const p = board[r][toFile]; if (p && p.type === 'p' && p.color === mv.color) ownPawnsOnFile++; }
     if (ownPawnsOnFile === 0) tags.push('open_file');
   }
   if (piece === 'b' && ['b7','g7','b2','g2'].includes(to)) tags.push('fianchetto');
@@ -1427,11 +1419,8 @@ function parseCorpusPgnText(pgn, family) {
     const familyTag = family || headers.Opening || headers.Event || 'unknown';
     const body = gameText.replace(/\[[^\]]*\]/g, ' ').trim();
     const tokens = body.match(/(\{[^}]*\}|\$\d+|\(|\)|\d+\.{1,3}|O-O(?:-O)?[+#]?|[a-hRNBQK][a-hRNBQK1-8x\-=+#]*[?!]*|1-0|0-1|1\/2-1\/2|\*)/g) || [];
-    const chess = new Chess();
-    const varStack = [];
-    let pendingComment = '';
-    let moveNum = 1;
-    let prevSan = '';
+    const chess = new Chess(); const varStack = [];
+    let pendingComment = ''; let moveNum = 1; let prevSan = '';
     for (const tok of tokens) {
       if (tok.startsWith('{')) { pendingComment = tok.slice(1, -1).trim(); continue; }
       if (tok.startsWith('$')) continue;
@@ -1446,19 +1435,9 @@ function parseCorpusPgnText(pgn, family) {
       const fenAfter = chess.fen();
       if (pendingComment && varStack.length === 0 && pendingComment.length >= 40) {
         const tags = classifyCorpusMove(fenBefore, mv.san, prevSan);
-        entries.push({
-          fenKey: posKey(fenBefore),
-          fenAfterKey: posKey(fenAfter),
-          structureKey: corpusStructureKey(fenBefore),
-          openingFamily: familyTag,
-          san: mv.san, moveNum,
-          isWhite: mv.color === 'w',
-          comment: pendingComment.slice(0, 2000),
-          tags
-        });
+        entries.push({ fenKey: posKey(fenBefore), fenAfterKey: posKey(fenAfter), structureKey: corpusStructureKey(fenBefore), openingFamily: familyTag, san: mv.san, moveNum, isWhite: mv.color === 'w', comment: pendingComment.slice(0, 2000), tags });
       }
-      pendingComment = '';
-      prevSan = mv.san;
+      pendingComment = ''; prevSan = mv.san;
       if (mv.color === 'b') moveNum++;
     }
   }
@@ -1480,8 +1459,7 @@ async function corpusLoadFiles(event) {
       const tx = db.transaction(CORPUS_STORE, 'readwrite');
       const store = tx.objectStore(CORPUS_STORE);
       for (const e of entries) store.add(e);
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
+      tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
     });
     total += entries.length;
   }
@@ -1501,33 +1479,23 @@ async function corpusUpdateStats() {
       const c = e.target.result;
       if (c) {
         count++;
-        uniqFen.add(c.value.fenKey);
-        uniqStruct.add(c.value.structureKey);
-        families.add(c.value.openingFamily);
+        uniqFen.add(c.value.fenKey); uniqStruct.add(c.value.structureKey); families.add(c.value.openingFamily);
         for (const t of c.value.tags || []) tags[t] = (tags[t] || 0) + 1;
         c.continue();
       } else resolve({ count, uniqFen: uniqFen.size, uniqStruct: uniqStruct.size, families: [...families], tags });
     };
     req.onerror = () => resolve({ count: 0, uniqFen: 0, uniqStruct: 0, families: [], tags: {} });
   });
-  const topTags = Object.entries(stats.tags).sort((a,b) => b[1]-a[1]).slice(0, 12)
-    .map(([t,n]) => t + ':' + n).join(', ');
+  const topTags = Object.entries(stats.tags).sort((a,b) => b[1]-a[1]).slice(0, 12).map(([t,n]) => t + ':' + n).join(', ');
   const el = document.getElementById('corpus-stats');
   if (!stats.count) { el.innerText = 'No corpus loaded.'; return stats; }
-  el.innerText =
-    'Entries: ' + stats.count + '\n' +
-    'Unique positions: ' + stats.uniqFen + '\n' +
-    'Unique structures: ' + stats.uniqStruct + '\n' +
-    'Families: ' + stats.families.slice(0, 8).join(', ') + '\n' +
-    'Tags: ' + topTags;
+  el.innerText = 'Entries: ' + stats.count + '\nUnique positions: ' + stats.uniqFen + '\nUnique structures: ' + stats.uniqStruct + '\nFamilies: ' + stats.families.slice(0, 8).join(', ') + '\nTags: ' + topTags;
   return stats;
 }
 async function queryCorpus(fen, family, k = 4) {
   const db = await openCorpusDB();
-  const fenK = posKey(fen);
-  const structK = corpusStructureKey(fen);
-  const results = [];
-  const seen = new Set();
+  const fenK = posKey(fen); const structK = corpusStructureKey(fen);
+  const results = []; const seen = new Set();
   async function collect(indexName, key, score, familyFilter) {
     if (!key) return;
     await new Promise((resolve) => {
@@ -1538,8 +1506,7 @@ async function queryCorpus(fen, family, k = 4) {
         for (const e of req.result || []) {
           if (seen.has(e.id)) continue;
           if (familyFilter && e.openingFamily && !String(e.openingFamily).toLowerCase().includes(String(familyFilter).toLowerCase())) continue;
-          seen.add(e.id);
-          results.push({ ...e, score });
+          seen.add(e.id); results.push({ ...e, score });
         }
         resolve();
       };
@@ -1553,28 +1520,15 @@ async function queryCorpus(fen, family, k = 4) {
 }
 async function corpusClear() {
   const db = await openCorpusDB();
-  await new Promise((resolve) => {
-    const tx = db.transaction(CORPUS_STORE, 'readwrite');
-    tx.objectStore(CORPUS_STORE).clear();
-    tx.oncomplete = resolve; tx.onerror = resolve;
-  });
+  await new Promise((resolve) => { const tx = db.transaction(CORPUS_STORE, 'readwrite'); tx.objectStore(CORPUS_STORE).clear(); tx.oncomplete = resolve; tx.onerror = resolve; });
   await corpusUpdateStats();
-  const s = document.getElementById('corpus-status');
-  s.innerText = 'empty'; s.className = 'pack-badge empty';
+  const s = document.getElementById('corpus-status'); s.innerText = 'empty'; s.className = 'pack-badge empty';
 }
 async function corpusExport() {
   const db = await openCorpusDB();
-  const all = await new Promise((resolve) => {
-    const tx = db.transaction(CORPUS_STORE, 'readonly');
-    const req = tx.objectStore(CORPUS_STORE).getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => resolve([]);
-  });
+  const all = await new Promise((resolve) => { const tx = db.transaction(CORPUS_STORE, 'readonly'); const req = tx.objectStore(CORPUS_STORE).getAll(); req.onsuccess = () => resolve(req.result || []); req.onerror = () => resolve([]); });
   const blob = new Blob([JSON.stringify(all)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'corpus_' + Date.now() + '.json';
-  a.click();
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'corpus_' + Date.now() + '.json'; a.click();
 }
 async function corpusImport(event) {
   const f = event.target.files[0]; if (!f) return;
@@ -1583,8 +1537,7 @@ async function corpusImport(event) {
   if (!Array.isArray(arr)) { alert('Expected array.'); return; }
   const db = await openCorpusDB();
   await new Promise((resolve, reject) => {
-    const tx = db.transaction(CORPUS_STORE, 'readwrite');
-    const store = tx.objectStore(CORPUS_STORE);
+    const tx = db.transaction(CORPUS_STORE, 'readwrite'); const store = tx.objectStore(CORPUS_STORE);
     for (const e of arr) { delete e.id; store.add(e); }
     tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
   });
@@ -1598,17 +1551,15 @@ async function corpusTestQuery() {
   const fam = (document.getElementById('corpus-family').value || '').trim();
   const hits = await queryCorpus(fen, fam, 5);
   if (!hits.length) { el.innerText = 'No matches.'; return; }
-  el.innerHTML = hits.map(h =>
-    '<div class="mb-2 pb-2 border-b border-slate-700"><span class="gold-text text-[10px]">' +
-    h.moveNum + (h.isWhite ? '. ' : '... ') + h.san + ' — ' + h.openingFamily +
-    ' [' + (h.tags || []).join(',') + ']</span><br>' + h.comment.slice(0, 220) + '</div>'
-  ).join('');
+  el.innerHTML = hits.map(h => '<div class="mb-2 pb-2 border-b border-slate-700"><span class="gold-text text-[10px]">' + h.moveNum + (h.isWhite ? '. ' : '... ') + h.san + ' — ' + h.openingFamily + ' [' + (h.tags || []).join(',') + ']</span><br>' + h.comment.slice(0, 220) + '</div>').join('');
 }
 
 /* ===================== INIT ===================== */
 window.onload = async () => {
-  board = Chessboard('board', { pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', position: 'start' });
-  reviewBoard = Chessboard('review-board', { pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', position: 'start' });
+  try {
+    board = Chessboard('board', { pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', position: 'start' });
+    reviewBoard = Chessboard('review-board', { pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', position: 'start' });
+  } catch (e) { console.error('[GM] Board init:', e); }
   initSFPool();
   ensureOpeningsDB();
   loadIdeasPack();
@@ -1631,11 +1582,7 @@ function switchTab(tab) {
 }
 function parsePgnHeaders(input) {
   const meta = { eco:'', opening:'', variation:'', white:'', black:'', event:'' };
-  const pat = {
-    eco: /\[ECO\s+"([^"]*)"\]/i, opening: /\[Opening\s+"([^"]*)"\]/i,
-    variation: /\[Variation\s+"([^"]*)"\]/i, white: /\[White\s+"([^"]*)"\]/i,
-    black: /\[Black\s+"([^"]*)"\]/i, event: /\[Event\s+"([^"]*)"\]/i
-  };
+  const pat = { eco: /\[ECO\s+"([^"]*)"\]/i, opening: /\[Opening\s+"([^"]*)"\]/i, variation: /\[Variation\s+"([^"]*)"\]/i, white: /\[White\s+"([^"]*)"\]/i, black: /\[Black\s+"([^"]*)"\]/i, event: /\[Event\s+"([^"]*)"\]/i };
   for (const [k, re] of Object.entries(pat)) { const m = input.match(re); if (m) meta[k] = m[1].trim(); }
   return meta;
 }
@@ -1694,12 +1641,7 @@ function processPgn(isLoad = false) {
     if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken) || /^[\+\-=±∓∞\/]+$/.test(nextToken))) evalSymbol = ' ' + nextToken;
     const isVarStart = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
     const pathArray = plyStack.map(p => p.san);
-    chunks.push({
-      id: 'CHK_' + chunks.length + '_M' + moveNumber + '_V' + variationLevel,
-      target: token + evalSymbol, moveNum: moveNumber, tokenIndex: index,
-      isMainLine: variationLevel === 0, isVariationStart: isVarStart, isVariationEnd: false,
-      fen: fenBefore, fenAfter, moveParsed: parsedOk, variationLevel, pathArray, san: sanUsed
-    });
+    chunks.push({ id: 'CHK_' + chunks.length + '_M' + moveNumber + '_V' + variationLevel, target: token + evalSymbol, moveNum: moveNumber, tokenIndex: index, isMainLine: variationLevel === 0, isVariationStart: isVarStart, isVariationEnd: false, fen: fenBefore, fenAfter, moveParsed: parsedOk, variationLevel, pathArray, san: sanUsed });
     lastChunkAtLevel[variationLevel] = chunks[chunks.length - 1];
   });
   if (lastChunkAtLevel[0]) lastChunkAtLevel[0].isVariationEnd = true;
@@ -1715,15 +1657,14 @@ function processPgn(isLoad = false) {
       nextFull.push((n.target || '').trim());
       j++;
     }
-    c.nextMoves = nextSans;
-    c.nextMovesFull = nextFull;
+    c.nextMoves = nextSans; c.nextMovesFull = nextFull;
   }
   globalChunks = chunks;
   document.getElementById('workspace').classList.remove('hidden');
-  document.getElementById('copy-btn').classList.remove('hidden');
-  document.getElementById('review-facts-btn').classList.remove('hidden');
+  const cb = document.getElementById('copy-btn'); if (cb) cb.classList.remove('hidden');
+  const rfb = document.getElementById('review-facts-btn'); if (rfb) rfb.classList.remove('hidden');
   selStart = null; selEnd = null; reviewIndex = null;
-  board.position('start', false);
+  if (board) board.position('start', false);
   document.getElementById('fen-output').value = '';
   document.getElementById('batch-review').classList.add('hidden');
   document.getElementById('facts-review-panel').classList.add('hidden');
@@ -1733,18 +1674,20 @@ function processPgn(isLoad = false) {
   updateUI();
   saveState();
   setTimeout(async () => {
-    if (!openingsDB.length) await ensureOpeningsDB();
-    const sans = getMainLineSANs();
-    const matched = findOpeningByMoves(sans);
-    if (matched) {
-      document.getElementById('opening-name').value = matched.name;
-      document.getElementById('opening-side').value = (document.getElementById('repertoire-side')?.value === 'white') ? 'White' : 'Black';
-      logWiki('✓ DB match: ' + matched.name + ' (ECO ' + matched.eco + ')');
-      setTimeout(() => enrichFromWikipedia(), 300);
-    } else if (pgnMeta.opening) {
-      document.getElementById('opening-name').value = pgnMeta.opening + (pgnMeta.variation ? ', ' + pgnMeta.variation : '');
-      setTimeout(() => enrichFromWikipedia(), 300);
-    } else logWiki('No opening detected.');
+    try {
+      if (!openingsDB.length) await ensureOpeningsDB();
+      const sans = getMainLineSANs();
+      const matched = findOpeningByMoves(sans);
+      if (matched) {
+        document.getElementById('opening-name').value = matched.name;
+        document.getElementById('opening-side').value = (document.getElementById('repertoire-side')?.value === 'white') ? 'White' : 'Black';
+        logWiki('✓ DB match: ' + matched.name + ' (ECO ' + matched.eco + ')');
+        setTimeout(() => enrichFromWikipedia().catch(() => {}), 300);
+      } else if (pgnMeta.opening) {
+        document.getElementById('opening-name').value = pgnMeta.opening + (pgnMeta.variation ? ', ' + pgnMeta.variation : '');
+        setTimeout(() => enrichFromWikipedia().catch(() => {}), 300);
+      } else logWiki('No opening detected.');
+    } catch (e) { console.warn('[GM] post-process:', e); }
   }, 100);
 }
 function getMainLineSANs() {
@@ -1858,6 +1801,7 @@ async function loadEngineForPanel(fen, linesElId, statusElId, tokenRef, opts) {
   if (!linesEl || !statusEl) return;
   if (!fen || !isValidFen(fen)) { linesEl.innerHTML = '<p class="text-slate-500 italic">Invalid FEN</p>'; return; }
   const myToken = ++tokenRef.n;
+  if (!SF_POOL.some(s => s.ready)) { linesEl.innerHTML = '<p class="text-slate-500 italic">Engine not ready</p>'; statusEl.innerText = 'no engine'; return; }
   linesEl.innerHTML = '<p class="text-slate-500"><span class="spinner"></span>Analyzing…</p>';
   const data = await getEngineMultiPV(fen, opts || { depth: 16, multipv: 5 });
   if (myToken !== tokenRef.n) return;
@@ -1894,8 +1838,7 @@ function applyReviewLinePosition() {
   const p = document.getElementById('btn-review-prev'), n = document.getElementById('btn-review-next');
   if (p) p.disabled = reviewLineIdx <= 0; if (n) n.disabled = reviewLineIdx >= reviewLine.length - 1;
   if (pos.fen && isValidFen(pos.fen) && reviewBoard) reviewBoard.position(pos.fen, false);
-  loadEngineForPanel(pos.fen, 'review-engine-lines', 'review-engine-status',
-    { get n() { return reviewEngineToken; }, set n(v) { reviewEngineToken = v; } }, { depth: 14, multipv: 5 });
+  loadEngineForPanel(pos.fen, 'review-engine-lines', 'review-engine-status', { get n() { return reviewEngineToken; }, set n(v) { reviewEngineToken = v; } }, { depth: 14, multipv: 5 });
 }
 function reviewStep(d) { if (!reviewLine.length) return; const n = reviewLineIdx + d; if (n < 0 || n >= reviewLine.length) return; reviewLineIdx = n; applyReviewLinePosition(); }
 function signHintFromTarget(target) {
@@ -1913,13 +1856,10 @@ function showReviewPosition(ci) {
   reviewIndex = ci; const c = globalChunks[ci]; if (!c) return;
   const ne = document.getElementById('move-note'); if (ne) ne.value = userNotes[c.id] || '';
   const sh = document.getElementById('review-sign-hint'); if (sh) sh.innerText = signHintFromTarget(c.target);
-  document.querySelectorAll('#review-move-list .review-item').forEach(el => {
-    el.classList.toggle('selected-start', parseInt(el.dataset.idx, 10) === ci);
-  });
+  document.querySelectorAll('#review-move-list .review-item').forEach(el => { el.classList.toggle('selected-start', parseInt(el.dataset.idx, 10) === ci); });
   const built = buildReviewLine(ci); reviewLine = built.positions; reviewLineIdx = built.focusIdx;
   applyReviewLinePosition();
-  const ml = document.getElementById('review-move-label');
-  if (ml) ml.innerText = c.moveNum + '. ' + c.target;
+  const ml = document.getElementById('review-move-label'); if (ml) ml.innerText = c.moveNum + '. ' + c.target;
   updateBatchStepLabel();
   try { openIntentionForChunk(c.id); } catch (e) {}
 }
@@ -1963,9 +1903,8 @@ function selectChunk(i) {
     selStart = i; selEnd = null;
     const fen = globalChunks[i].fenAfter || globalChunks[i].fen;
     document.getElementById('fen-output').value = fen;
-    if (isValidFen(fen)) board.position(fen, false);
-    loadEngineForPanel(fen, 'main-engine-lines', 'main-engine-status',
-      { get n() { return mainEngineToken; }, set n(v) { mainEngineToken = v; } }, { depth: 16, multipv: 5 });
+    if (isValidFen(fen) && board) board.position(fen, false);
+    loadEngineForPanel(fen, 'main-engine-lines', 'main-engine-status', { get n() { return mainEngineToken; }, set n(v) { mainEngineToken = v; } }, { depth: 16, multipv: 5 });
     document.getElementById('batch-review').classList.add('hidden');
     document.getElementById('facts-review-panel').classList.add('hidden');
   } else {
@@ -1997,8 +1936,7 @@ async function extractAndReview() {
   document.getElementById('facts-review-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
   reviewedFacts = {};
   for (const i of idx) {
-    const c = globalChunks[i];
-    if (!c || !c.fenAfter) continue;
+    const c = globalChunks[i]; if (!c || !c.fenAfter) continue;
     const mover = (c.fen || '').split(' ')[1] === 'w' ? 'White' : 'Black';
     const facts = await buildFactList(c.fenAfter, mover);
     reviewedFacts[c.id] = facts.map(t => ({ text: t, checked: true }));
@@ -2007,29 +1945,19 @@ async function extractAndReview() {
   renderFactsReview();
 }
 function renderFactsReview() {
-  const container = document.getElementById('facts-review-list');
-  container.innerHTML = '';
+  const container = document.getElementById('facts-review-list'); container.innerHTML = '';
   let total = 0, totalChecked = 0;
   for (const [id, arr] of Object.entries(reviewedFacts)) {
-    const c = globalChunks.find(x => x.id === id);
-    if (!c) continue;
-    if (!arr.length) continue;
-    const card = document.createElement('div');
-    card.className = 'glass p-3 rounded-xl';
+    const c = globalChunks.find(x => x.id === id); if (!c || !arr.length) continue;
+    const card = document.createElement('div'); card.className = 'glass p-3 rounded-xl';
     card.innerHTML = '<p class="text-[10px] gold-text font-bold mb-2">' + c.moveNum + '. ' + c.target + '</p>';
     for (let k = 0; k < arr.length; k++) {
-      total++;
-      if (arr[k].checked) totalChecked++;
-      const row = document.createElement('label');
-      row.className = 'flex items-start gap-2 text-xs text-slate-300 mb-1 cursor-pointer';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = arr[k].checked;
+      total++; if (arr[k].checked) totalChecked++;
+      const row = document.createElement('label'); row.className = 'flex items-start gap-2 text-xs text-slate-300 mb-1 cursor-pointer';
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = arr[k].checked;
       cb.onchange = () => { arr[k].checked = cb.checked; renderFactsReview(); };
-      const span = document.createElement('span');
-      span.textContent = arr[k].text;
-      row.appendChild(cb); row.appendChild(span);
-      card.appendChild(row);
+      const span = document.createElement('span'); span.textContent = arr[k].text;
+      row.appendChild(cb); row.appendChild(span); card.appendChild(row);
     }
     container.appendChild(card);
   }
@@ -2054,13 +1982,9 @@ function openIntentionForChunk(chunkId) {
   planChess = new Chess(c.fenAfter || c.fen);
   for (const san of planMovesList) { try { planChess.move(san, { sloppy: true }); } catch (e) {} }
   if (!planBoard) {
-    planBoard = Chessboard('plan-board', {
-      draggable: true,
-      position: planChess.fen(),
-      pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
-      onDrop: handlePlanDrop,
-      onSnapEnd: () => planBoard.position(planChess.fen())
-    });
+    try {
+      planBoard = Chessboard('plan-board', { draggable: true, position: planChess.fen(), pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', onDrop: handlePlanDrop, onSnapEnd: () => planBoard.position(planChess.fen()) });
+    } catch (e) {}
   } else planBoard.position(planChess.fen(), false);
   document.querySelectorAll('.feat-cb').forEach(cb => { cb.checked = saved.feat.includes(cb.dataset.feat); });
   document.getElementById('plan-moves').value = planMovesList.join(' ');
@@ -2072,8 +1996,7 @@ function handlePlanDrop(source, target) {
   const legal = chess.moves({ verbose: true });
   const mv = legal.find(m => m.from === source && m.to === target);
   if (!mv) return 'snapback';
-  chess.move(mv);
-  planMovesList.push(mv.san);
+  chess.move(mv); planMovesList.push(mv.san);
   document.getElementById('plan-moves').value = planMovesList.join(' ');
 }
 function planUndo() {
@@ -2082,45 +2005,29 @@ function planUndo() {
   const c = globalChunks.find(x => x.id === currentIntentionId); if (!c) return;
   planChess = new Chess(c.fenAfter || c.fen);
   for (const san of planMovesList) { try { planChess.move(san, { sloppy: true }); } catch (e) {} }
-  planBoard.position(planChess.fen(), false);
+  if (planBoard) planBoard.position(planChess.fen(), false);
   document.getElementById('plan-moves').value = planMovesList.join(' ');
 }
 function planClear() {
   const c = globalChunks.find(x => x.id === currentIntentionId); if (!c) return;
-  planMovesList = [];
-  planChess = new Chess(c.fenAfter || c.fen);
-  planBoard.position(planChess.fen(), false);
+  planMovesList = []; planChess = new Chess(c.fenAfter || c.fen);
+  if (planBoard) planBoard.position(planChess.fen(), false);
   document.getElementById('plan-moves').value = '';
 }
 function saveIntention() {
   const c = globalChunks.find(x => x.id === currentIntentionId); if (!c) return;
   const feat = [];
   document.querySelectorAll('.feat-cb').forEach(cb => { if (cb.checked) feat.push(cb.dataset.feat); });
-  c._intentions = {
-    feat,
-    moves: planMovesList.slice(),
-    note: (document.getElementById('intention-note').value || '').trim()
-  };
+  c._intentions = { feat, moves: planMovesList.slice(), note: (document.getElementById('intention-note').value || '').trim() };
   document.getElementById('intention-saved').innerText = '✓ Saved';
 }
 
 /* ===================== STAGE 1/3/4 — PIPELINE ===================== */
-
-const NAG_MAP = {
-  '$1': 'good move (!)', '$2': 'poor move (?)', '$3': 'very good move (!!)',
-  '$4': 'blunder (??)', '$5': 'speculative (!?)', '$6': 'questionable (?!, dubious)',
-  '$10': 'equal (=)', '$11': 'equal, quiet', '$12': 'equal, active',
-  '$13': 'unclear position (∞)', '$14': 'slight advantage White (⩲)',
-  '$15': 'slight advantage Black (⩱)', '$16': 'moderate advantage White (±)',
-  '$17': 'moderate advantage Black (∓)', '$18': 'decisive advantage White (+-)',
-  '$19': 'decisive advantage Black (-+)', '$44': 'with compensation (=/∞)'
-};
+const NAG_MAP = { '$1': 'good move (!)', '$2': 'poor move (?)', '$3': 'very good move (!!)', '$4': 'blunder (??)', '$5': 'speculative (!?)', '$6': 'questionable (?!, dubious)', '$10': 'equal (=)', '$11': 'equal, quiet', '$12': 'equal, active', '$13': 'unclear position (∞)', '$14': 'slight advantage White (⩲)', '$15': 'slight advantage Black (⩱)', '$16': 'moderate advantage White (±)', '$17': 'moderate advantage Black (∓)', '$18': 'decisive advantage White (+-)', '$19': 'decisive advantage Black (-+)', '$44': 'with compensation (=/∞)' };
 function decodeNAG(nag) { return NAG_MAP[nag] || ''; }
-
 function findVariationEnd(chunk) {
   if (!chunk || !chunk.isVariationStart) return null;
-  const startIdx = globalChunks.indexOf(chunk);
-  if (startIdx < 0) return null;
+  const startIdx = globalChunks.indexOf(chunk); if (startIdx < 0) return null;
   for (let j = startIdx; j < globalChunks.length; j++) {
     const n = globalChunks[j];
     if (n.variationLevel < chunk.variationLevel) break;
@@ -2128,17 +2035,14 @@ function findVariationEnd(chunk) {
   }
   return null;
 }
-
 function evalForUs(evalStr, ourColor) {
   const s = String(evalStr || '');
   if (/^#/.test(s)) {
     let n = parseInt(s.slice(1), 10); if (isNaN(n)) n = 0;
-    let forUs = n > 0;
-    if (ourColor === 'b') forUs = !forUs;
+    let forUs = n > 0; if (ourColor === 'b') forUs = !forUs;
     return forUs ? 100 : -100;
   }
-  const v = parseFloat(s);
-  if (isNaN(v)) return 0;
+  const v = parseFloat(s); if (isNaN(v)) return 0;
   return ourColor === 'b' ? -v : v;
 }
 function evalLabelForUs(evalStr, ourColor) {
@@ -2150,103 +2054,75 @@ function evalLabelForUs(evalStr, ourColor) {
   }
   const v = evalForUs(s, ourColor);
   const txt = (v >= 0 ? '+' : '') + v.toFixed(2);
-  if (v >=  1.5) return txt + ' clearly better for us';
-  if (v >=  0.5) return txt + ' slightly better for us';
-  if (v >  -0.5) return txt + ' roughly balanced';
-  if (v >  -1.5) return txt + ' slightly worse for us';
+  if (v >= 1.5) return txt + ' clearly better for us';
+  if (v >= 0.5) return txt + ' slightly better for us';
+  if (v > -0.5) return txt + ' roughly balanced';
+  if (v > -1.5) return txt + ' slightly worse for us';
   return txt + ' clearly worse for us';
 }
-
-/* ---- THREAT DETECTION — runs on every move ----
-   Uses multipv divergence (1st vs 2nd/3rd) to find precision-required moments,
-   and surfaces concrete threats such as "White threatens Bxh7#". */
 async function detectThreats(fenAfter, ourColor, theySide) {
   if (!isValidFen(fenAfter)) return '';
+  if (!SF_POOL.some(s => s.ready)) return ''; /* fast-fail */
   const stm = fenAfter.split(' ')[1];
   const isOurTurn = stm === ourColor;
   const out = [];
-
   let data = null;
   try { data = await getEngineMultiPV(fenAfter, { depth: 14, multipv: 4 }); } catch (e) {}
   if (!data || data.invalid || !data.lines || !data.lines.length) return '';
-
-  // 1) Forced-mate line by whoever is to move — surface it
   for (let i = 0; i < Math.min(2, data.lines.length); i++) {
-    const l = data.lines[i];
-    const ev = String(l.eval || '');
-    const mv = l.allSan && l.allSan[0];
+    const l = data.lines[i]; const ev = String(l.eval || ''); const mv = l.allSan && l.allSan[0];
     if (!mv || !/^#/.test(ev)) continue;
     const n = parseInt(ev.slice(1), 10);
     if (n > 0) {
-      if (isOurTurn) {
-        out.push('WE HAVE MATE: ' + mv + (n === 1 ? '#' : ' (mate in ' + n + ')') + ' — play it.');
-      } else {
-        out.push('THREAT: ' + theySide + ' threatens ' + mv + (n === 1 ? '#' : ' (mate in ' + n + ')') + '.');
-      }
+      if (isOurTurn) out.push('WE HAVE MATE: ' + mv + (n === 1 ? '#' : ' (mate in ' + n + ')') + ' — play it.');
+      else out.push('THREAT: ' + theySide + ' threatens ' + mv + (n === 1 ? '#' : ' (mate in ' + n + ')') + '.');
       break;
     }
   }
-
-  // 2) Multipv divergence — the precision moment
   const evals = data.lines.map(l => evalForUs(l.eval, stm));
   if (evals.length >= 2) {
-    const best = evals[0];
-    const second = evals[1];
-    const third = evals.length >= 3 ? evals[2] : second;
-    const gapToSecond = Math.abs(best - second);
-    const gapToThird = Math.abs(best - third);
-    const maxGap = Math.max(gapToSecond, gapToThird);
-
+    const best = evals[0], second = evals[1], third = evals.length >= 3 ? evals[2] : second;
+    const maxGap = Math.max(Math.abs(best - second), Math.abs(best - third));
     if (maxGap >= 1.0) {
       if (isOurTurn) {
         const bestMove = data.lines[0].allSan && data.lines[0].allSan[0];
         const punishes = [];
         for (let i = 1; i < Math.min(3, data.lines.length); i++) {
           const l = data.lines[i];
-          const ourAlt = l.allSan && l.allSan[0];
-          const theirPunish = l.allSan && l.allSan[1];
+          const ourAlt = l.allSan && l.allSan[0], theirPunish = l.allSan && l.allSan[1];
           if (ourAlt && theirPunish) punishes.push({ ourAlt, theirPunish, eval: l.eval });
         }
         if (bestMove && punishes.length) {
-          out.push('PRECISION NEEDED: we must play ' + bestMove + '. ' +
-            punishes.slice(0, 2).map(p => 'If we play ' + p.ourAlt + ', ' + theySide + ' punishes with ' + p.theirPunish + ' (' + evalLabelForUs(p.eval, ourColor) + ')').join('; ') + '.');
+          out.push('PRECISION NEEDED: we must play ' + bestMove + '. ' + punishes.slice(0, 2).map(p => 'If we play ' + p.ourAlt + ', ' + theySide + ' punishes with ' + p.theirPunish + ' (' + evalLabelForUs(p.eval, ourColor) + ')').join('; ') + '.');
           out.push('THREAT: ' + theySide + ' threatens ' + punishes[0].theirPunish + ' if we are imprecise.');
         }
       } else {
         const theirBest = data.lines[0].allSan && data.lines[0].allSan[0];
         if (theirBest) {
-          out.push('PRECISION NEEDED (for ' + theySide + '): ' + theySide + ' must play ' + theirBest + ' here — that is their main threat.');
+          out.push('PRECISION NEEDED (for ' + theySide + '): ' + theySide + ' must play ' + theirBest + ' here.');
           out.push('THREAT: ' + theySide + ' threatens ' + theirBest + '.');
         }
       }
     } else {
-      // No big divergence, but check for a simple forcing move (capture / check) at the top
       const topMove = data.lines[0].allSan && data.lines[0].allSan[0];
-      if (topMove && !isOurTurn && (/x/.test(topMove) || /[+#]/.test(topMove))) {
-        out.push('THREAT: ' + theySide + ' threatens ' + topMove + '.');
-      }
+      if (topMove && !isOurTurn && (/x/.test(topMove) || /[+#]/.test(topMove))) out.push('THREAT: ' + theySide + ' threatens ' + topMove + '.');
     }
   }
-
   return out.join('\n');
 }
-
-/* ---- ENGINE IDEAS — only at a variation close ---- */
 async function variationCloseIdeas(c, ourColor, theySide) {
   const isClose = (c.isVariationStart || c.isVariationEnd) && c.variationLevel > 0;
   if (!isClose) return '';
-
+  if (!SF_POOL.some(s => s.ready)) return '';
   let closeFen = c.fenAfter;
   if (c.isVariationStart && !c.isVariationEnd) {
     const endChunk = findVariationEnd(c);
     if (endChunk && endChunk.fenAfter && isValidFen(endChunk.fenAfter)) closeFen = endChunk.fenAfter;
   }
   if (!closeFen || !isValidFen(closeFen)) return '';
-
   let data = null;
   try { data = await getEngineMultiPV(closeFen, { depth: 14, multipv: 3 }); } catch (e) {}
   if (!data || data.invalid || !data.lines || !data.lines.length) return '';
-
   const stmColor = closeFen.split(' ')[1];
   const ourIdeas = [];
   for (const l of data.lines.slice(0, 2)) {
@@ -2259,76 +2135,39 @@ async function variationCloseIdeas(c, ourColor, theySide) {
     }
     if (ourIdeas.length >= 3) break;
   }
-
   const evalStr = evalLabelForUs(data.lines[0].eval, ourColor);
   const prefix = ourColor === 'b' ? '...' : '';
-
   let out = '\n=== VARIATION CLOSES — OUR IDEAS (' + (ourColor === 'w' ? 'White' : 'Black') + ') ===\n';
   out += 'Eval here: ' + evalStr + '.\n';
-  if (ourIdeas.length) {
-    out += 'We continue with ' + ourIdeas.map(m => prefix + m).join(' and ') + ' ideas next.\n';
-  }
+  if (ourIdeas.length) out += 'We continue with ' + ourIdeas.map(m => prefix + m).join(' and ') + ' ideas next.\n';
   out += 'Phrase the note as: "We continue with ' + (ourIdeas.length ? prefix + ourIdeas[0] : 'our plan') + ' ideas next." — closing sentence only, no other plans for ' + theySide + '.\n';
   return out;
 }
-
-/* ---- Per-move engine context: threats on every move, ideas only at close ---- */
 async function buildEngineContext(c, ourSide) {
   if (!c || !c.fenAfter || !isValidFen(c.fenAfter)) return '';
+  if (!SF_POOL.some(s => s.ready)) return ''; /* fast-fail when no engine */
   const ourColor = ourSide === 'White' ? 'w' : 'b';
   const theySide = ourColor === 'w' ? 'Black' : 'White';
-
   let out = '';
-
-  // THREAT CHECK — every move
-  try {
-    const th = await detectThreats(c.fenAfter, ourColor, theySide);
-    if (th) out += th + '\n';
-  } catch (e) {}
-
-  // ENGINE IDEAS — only at variation close
-  try {
-    const close = await variationCloseIdeas(c, ourColor, theySide);
-    if (close) out += close;
-  } catch (e) {}
-
+  try { const th = await detectThreats(c.fenAfter, ourColor, theySide); if (th) out += th + '\n'; } catch (e) {}
+  try { const close = await variationCloseIdeas(c, ourColor, theySide); if (close) out += close; } catch (e) {}
   return out;
 }
-
 function formatMoveSigns(c, includeVariationEnd) {
-  const lines = [];
-  const rawTarget = String(c.target || '').trim();
-
+  const lines = []; const rawTarget = String(c.target || '').trim();
   const qualitySign = (rawTarget.match(/[?!]+/) || [''])[0];
   if (qualitySign) {
-    const meaning = qualitySign === '!!' ? 'brilliant' :
-                    qualitySign === '??' ? 'blunder' :
-                    qualitySign === '!?' ? 'interesting' :
-                    qualitySign === '?!' ? 'dubious' :
-                    qualitySign === '!' ? 'good' :
-                    qualitySign === '?' ? 'mistake' : '';
+    const meaning = qualitySign === '!!' ? 'brilliant' : qualitySign === '??' ? 'blunder' : qualitySign === '!?' ? 'interesting' : qualitySign === '?!' ? 'dubious' : qualitySign === '!' ? 'good' : qualitySign === '?' ? 'mistake' : '';
     lines.push('MOVE MARK: ' + qualitySign + (meaning ? ' (' + meaning + ')' : ''));
   }
-
   const nags = rawTarget.match(/\$\d+/g) || [];
-  for (const nag of nags) {
-    const d = decodeNAG(nag);
-    lines.push('NAG: ' + nag + (d ? ' (' + d + ')' : ''));
-  }
-
+  for (const nag of nags) { const d = decodeNAG(nag); lines.push('NAG: ' + nag + (d ? ' (' + d + ')' : '')); }
   const evalMatch = rawTarget.match(/[=±∓∞]+\/[*=±∓∞]+|[=±∓∞]+/);
   if (evalMatch) {
     const sym = evalMatch[0];
-    const meaning =
-      sym === '=' ? 'equal' :
-      sym === '∞' ? 'unclear' :
-      sym === '±' ? 'White slightly better' :
-      sym === '∓' ? 'Black slightly better' :
-      /^=\/∞/.test(sym) ? 'White has compensation' :
-      /^∞\/=/.test(sym) ? 'Black has compensation' : '';
+    const meaning = sym === '=' ? 'equal' : sym === '∞' ? 'unclear' : sym === '±' ? 'White slightly better' : sym === '∓' ? 'Black slightly better' : /^=\/∞/.test(sym) ? 'White has compensation' : /^∞\/=/.test(sym) ? 'Black has compensation' : '';
     lines.push('POSITION EVAL: ' + sym + (meaning ? ' (' + meaning + ')' : ''));
   }
-
   if (includeVariationEnd && c.isVariationStart) {
     const endChunk = findVariationEnd(c);
     if (endChunk) {
@@ -2338,62 +2177,39 @@ function formatMoveSigns(c, includeVariationEnd) {
       const isWhiteEnd = ((endChunk.pathArray || []).length % 2 === 1);
       const endPrefix = isWhiteEnd ? endChunk.moveNum + '.' : endChunk.moveNum + '...';
       let summary = endPrefix + endSan + endQuality;
-
       const bits = [];
       const endEval = endTarget.match(/[=±∓∞]+\/[*=±∓∞]+|[=±∓∞]+/);
       if (endEval) {
         const sym = endEval[0];
-        const meaning =
-          sym === '=' ? 'equal' :
-          sym === '∞' ? 'unclear' :
-          sym === '±' ? 'White slightly better' :
-          sym === '∓' ? 'Black slightly better' :
-          /^=\/∞/.test(sym) ? 'White has compensation' :
-          /^∞\/=/.test(sym) ? 'Black has compensation' : '';
+        const meaning = sym === '=' ? 'equal' : sym === '∞' ? 'unclear' : sym === '±' ? 'White slightly better' : sym === '∓' ? 'Black slightly better' : /^=\/∞/.test(sym) ? 'White has compensation' : /^∞\/=/.test(sym) ? 'Black has compensation' : '';
         bits.push(sym + (meaning ? ' (' + meaning + ')' : ''));
       }
       const endNags = endTarget.match(/\$\d+/g) || [];
       const lastNag = endNags[endNags.length - 1];
       if (lastNag && decodeNAG(lastNag)) bits.push(lastNag + ' (' + decodeNAG(lastNag) + ')');
-
       lines.push('VARIATION ENDS AT: ' + summary + (bits.length ? ' — ' + bits.join('; ') : ''));
     }
   }
   return lines;
 }
-
 function parseIdSections(text) {
-  const map = {};
-  const lines = text.split('\n');
-  let currentId = null;
-  let currentNote = [];
+  const map = {}; const lines = text.split('\n');
+  let currentId = null; let currentNote = [];
   const idOnlyRe = /^[\s#*]*(CHK_\d+_M\d+_V\d+)[\s#*:.\-–]*$/;
   const idWithTextRe = /^[\s#*]*(CHK_\d+_M\d+_V\d+)[\s#*:.\-–]+\s*(.+)$/;
-  function flush() {
-    if (currentId) {
-      const note = currentNote.join(' ').replace(/\s+/g, ' ').trim();
-      if (note) map[currentId] = note;
-    }
-    currentId = null;
-    currentNote = [];
-  }
+  function flush() { if (currentId) { const note = currentNote.join(' ').replace(/\s+/g, ' ').trim(); if (note) map[currentId] = note; } currentId = null; currentNote = []; }
   for (const raw of lines) {
     const line = raw.trim();
-    const m1 = line.match(idOnlyRe);
-    if (m1) { flush(); currentId = m1[1]; continue; }
-    const m2 = line.match(idWithTextRe);
-    if (m2) { flush(); currentId = m2[1]; currentNote.push(m2[2].trim()); continue; }
+    const m1 = line.match(idOnlyRe); if (m1) { flush(); currentId = m1[1]; continue; }
+    const m2 = line.match(idWithTextRe); if (m2) { flush(); currentId = m2[1]; currentNote.push(m2[2].trim()); continue; }
     if (currentId && line) currentNote.push(line);
   }
-  flush();
-  return map;
+  flush(); return map;
 }
-
 async function buildStage1Prompt(idx, openingName, objectives, wikiSnippet) {
   const side = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
   const ourSide = side === 'white' ? 'White' : 'Black';
   const theySide = ourSide === 'White' ? 'Black' : 'White';
-
   let out = `You are a 2700+ grandmaster annotating your own opening preparation.
 
 For each position below, write a short annotation (1–2 sentences) explaining the move the way you would in a game collection — the idea, the plan, the point of it. Write freely.
@@ -2412,9 +2228,9 @@ STYLE RULES — always apply:
 - Do NOT include move numbers. Never write "15. Bc6" or "12...Ng6".
 - Bare SAN is allowed when citing a move: "we continue with Ng6" (White) or "we continue with ...Ng6" (Black).
 - Write from OUR side: "we"/"our" for ${ourSide}, "${theySide}" for the other side.
-- A "THREAT:" line names a concrete threat by ${theySide}. Quote it literally in the note, e.g. "${theySide} threatens Bxh7#". Never generalise it.
+- A "THREAT:" line names a concrete threat by ${theySide}. Quote it literally, e.g. "${theySide} threatens Bxh7#". Never generalise it.
 - A "PRECISION NEEDED" line marks an important moment where we must play the top move. Say so, and name the punishing move if we are imprecise.
-- A "VARIATION CLOSES" line appears ONLY at the end of a variation. Paraphrase it as the closing sentence of that move's note, e.g. "We continue with ...g6 ideas next." No other plans after a close.
+- A "VARIATION CLOSES" line appears ONLY at the end of a variation. Paraphrase it as the closing sentence of that move's note, e.g. "We continue with ...g6 ideas next."
 
 Return EXACTLY this format — no JSON, no markdown fences:
 
@@ -2422,44 +2238,32 @@ Return EXACTLY this format — no JSON, no markdown fences:
 <annotation>
 
 === POSITIONS ===\n`;
-
   for (const i of idx) {
-    const c = globalChunks[i];
+    const c = globalChunks[i]; if (!c) continue;
     const sideJustPlayed = (c.fen || '').split(' ')[1] === 'w' ? 'White' : 'Black';
     const rawTarget = String(c.target || '').trim();
     const qualitySign = (rawTarget.match(/[?!]+/) || [''])[0];
     const sanClean = (c.san || rawTarget.replace(/[?!$].*$/, '')).replace(/\s+/g, ' ').trim();
     const moveWithSign = qualitySign ? sanClean + qualitySign : sanClean;
-
     out += '\n### ' + c.id + '\n';
     out += 'FEN: ' + (c.fenAfter || c.fen) + '\n';
     out += 'MOVE: ' + c.moveNum + '. ' + moveWithSign + ' by ' + sideJustPlayed + '\n';
-
     const signLines = formatMoveSigns(c, true);
     for (const line of signLines) out += line + '\n';
-
-    const vctx = await buildEngineContext(c, ourSide);
-    if (vctx) out += vctx;
+    try { const vctx = await buildEngineContext(c, ourSide); if (vctx) out += vctx; } catch (e) {}
   }
-
-  const wikiBlock = (wikiEntries || []).slice(0, 8).map(w =>
-    '· ' + (w.move ? w.move.slice(0, 60) + ' — ' : '') + String(w.comment || '').slice(0, 400)
-  ).join('\n');
+  const wikiBlock = (wikiEntries || []).slice(0, 8).map(w => '· ' + (w.move ? w.move.slice(0, 60) + ' — ' : '') + String(w.comment || '').slice(0, 400)).join('\n');
   if (wikiBlock) out += '\n=== WIKI STYLE ANCHORS ===\n' + wikiBlock + '\n';
-
   return out;
 }
-
 async function buildStage3Prompt(idx, drafts) {
   const ctxWiki = document.getElementById('ctx-wiki')?.checked;
   const ctxEngine = document.getElementById('ctx-engine')?.checked;
   const ctxFacts = document.getElementById('ctx-facts')?.checked;
   const ctxExplorer = document.getElementById('ctx-explorer')?.checked;
-
   const side = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
   const ourSide = side === 'white' ? 'White' : 'Black';
   const theySide = ourSide === 'White' ? 'Black' : 'White';
-
   let out = `You are a chess-book copy-editor. You are NOT a chess author. You do NOT add chess ideas.
 
 Your ONLY job for each note below:
@@ -2479,7 +2283,7 @@ HARD RULES — these override everything:
 - NEVER write "passed pawn" unless FACTS says "passed pawn".
 - NEVER write "open file" for a file that isn't in FACTS.
 - NEVER invent a knight, bishop, rook, or queen square. Only the squares in FACTS, ENGINE, or the DRAFT.
-- NEVER describe what will happen next — EXCEPT in a closing sentence drawn from "VARIATION CLOSES — OUR IDEAS" ("we continue with ...g6 ideas next"). Plans for ${theySide} are always forbidden.
+- NEVER describe what will happen next — EXCEPT in a closing sentence drawn from "VARIATION CLOSES — OUR IDEAS". Plans for ${theySide} are always forbidden.
 - NEVER include move numbers. No "15. Bc6", no "12...Ng6". Bare SAN is fine: "we continue with Ng6". Prose is fine: "the bishop on c6".
 - If the DRAFT says a piece is on a square and FACTS does not list that piece on that square, cut it.
 - A "THREAT:" line names ${theySide}'s concrete threat — keep it literal ("${theySide} threatens Bxh7#"). Never soften it into a plan.
@@ -2491,39 +2295,28 @@ Return EXACTLY this format — no JSON, no markdown fences:
 <edited note or (none)>
 
 === NOTES ===\n`;
-
   for (const i of idx) {
-    const c = globalChunks[i];
+    const c = globalChunks[i]; if (!c) continue;
     const draft = drafts[c.id] || '';
     const intents = c._intentions || {};
     const plans = [];
     if (intents.feat && intents.feat.length) plans.push('Author feature flags: ' + intents.feat.join(', '));
     if (intents.moves && intents.moves.length) plans.push('Author marked moves: ' + intents.moves.join(' '));
     if (intents.note) plans.push('Author note: ' + intents.note);
-
     out += '\n### ' + c.id + '\n';
     out += 'MOVE: ' + c.moveNum + '. ' + (c.san || '') + '\n';
     out += 'DRAFT: ' + (draft || '(none)') + '\n';
     if (plans.length) out += plans.join('\n') + '\n';
-
     const signLines = formatMoveSigns(c, true);
     for (const line of signLines) out += line + '\n';
-
-    if (ctxEngine) {
-      const vctx = await buildEngineContext(c, ourSide);
-      if (vctx) out += vctx;
-    }
-
+    if (ctxEngine) { try { const vctx = await buildEngineContext(c, ourSide); if (vctx) out += vctx; } catch (e) {} }
     if (ctxFacts) {
       const fx = (c._deltaFacts && c._deltaFacts.length) ? c._deltaFacts : (c._reviewedFacts || []);
       if (fx.length) out += 'FACTS: ' + fx.join(' | ') + '\n';
     }
     if (ctxWiki) {
       const sanLower = String(c.san || '').toLowerCase();
-      const wikiHit = (wikiEntries || []).find(w => {
-        const wm = String(w.move || '').toLowerCase();
-        return sanLower && wm.includes(sanLower);
-      });
+      const wikiHit = (wikiEntries || []).find(w => { const wm = String(w.move || '').toLowerCase(); return sanLower && wm.includes(sanLower); });
       if (wikiHit) out += 'WIKI: ' + String(wikiHit.comment).slice(0, 800) + '\n';
     }
     if (ctxExplorer && c.fenAfter) {
@@ -2537,223 +2330,172 @@ Return EXACTLY this format — no JSON, no markdown fences:
     }
     if (document.getElementById('corpus-family')) {
       try {
-        const fam = (document.getElementById('corpus-family').value || '').trim()
-                 || (document.getElementById('opening-name')?.value || '').trim();
+        const fam = (document.getElementById('corpus-family').value || '').trim() || (document.getElementById('opening-name')?.value || '').trim();
         const sim = await queryCorpus(c.fenAfter, fam, 2);
-        if (sim.length) {
-          out += 'CORPUS (real GM comments on similar positions — do not copy verbatim, use only to confirm claims): ' +
-                 sim.map(s => s.comment.slice(0, 200)).join(' || ') + '\n';
-        }
+        if (sim.length) out += 'CORPUS (real GM comments on similar positions — do not copy verbatim): ' + sim.map(s => s.comment.slice(0, 200)).join(' || ') + '\n';
       } catch (e) {}
     }
   }
   return out;
 }
-
 function buildStage4Prompt(idx, refined) {
   let out = `Convert the notes below to a JSON object. Key = ID, Value = note text. Nothing else — no prose, no markdown fences.\n\n`;
-  for (const i of idx) {
-    const c = globalChunks[i];
-    out += '### ' + c.id + '\n' + (refined[c.id] || '') + '\n\n';
-  }
+  for (const i of idx) { const c = globalChunks[i]; out += '### ' + c.id + '\n' + (refined[c.id] || '') + '\n\n'; }
   return out;
 }
-
 async function stage1Copy() {
-  if (selStart === null || selEnd === null) { alert('Pick a start and end move.'); return; }
-  const idx = getSelectedIndices();
-  lastBatchIds = idx.map(i => globalChunks[i].id);
-
-  document.getElementById('pipeline-status').innerText = 'Waiting for engine…';
-  const ready = await waitForEngine(8000);
-  if (!ready) {
-    if (!confirm('Stockfish did not load within 8 seconds. Copy anyway without engine threats?')) return;
+  const statusEl = document.getElementById('pipeline-status');
+  const btn = document.getElementById('stage1-btn');
+  try {
+    if (selStart === null || selEnd === null) { alert('Pick a start and end move.'); return; }
+    const idx = getSelectedIndices();
+    if (!idx.length) { alert('No moves selected.'); return; }
+    lastBatchIds = idx.map(i => globalChunks[i].id);
+    if (btn) { btn.disabled = true; btn.innerText = 'Building…'; }
+    statusEl.innerText = 'Stage 1 · engine status: ' + (SF_POOL.some(s => s.ready) ? 'ready' : 'loading (will skip engine context)');
+    if (!SF_POOL.some(s => s.ready)) {
+      await waitForEngine(3000);
+    }
+    statusEl.innerText = 'Stage 1 · building prompt…';
+    const prompt = await buildStage1Prompt(idx, '', [], '');
+    const threatLines = (prompt.match(/^THREAT:/gm) || []).length;
+    const precisionLines = (prompt.match(/PRECISION NEEDED/g) || []).length;
+    const closeBlocks = (prompt.match(/=== VARIATION CLOSES/g) || []).length;
+    const ok = await copyTextToClipboard(prompt);
+    if (!ok) { statusEl.innerText = 'Stage 1 · clipboard blocked'; alert('Could not access clipboard. Prompt length: ' + prompt.length + ' chars.\nTry opening the file via http:// instead of file://, or copy from the console.'); console.log(prompt); return; }
+    statusEl.innerText = 'Stage 1 · copied (' + prompt.length + ' chars, ' + threatLines + ' threats, ' + closeBlocks + ' closes)';
+    alert('Stage 1 prompt copied (' + idx.length + ' moves, ' + prompt.length + ' chars).\n\nThreat lines: ' + threatLines + '\nPrecision blocks: ' + precisionLines + '\nVariation closes: ' + closeBlocks + (SF_POOL.some(s => s.ready) ? '' : '\n\n⚠ Engine was not ready — no threats/closes were added.'));
+  } catch (e) {
+    console.error('[GM] stage1Copy error:', e);
+    statusEl.innerText = 'Stage 1 · ERROR: ' + (e && e.message ? e.message : String(e));
+    alert('Error building prompt: ' + (e && e.message ? e.message : String(e)));
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = '1. Copy Draft Prompt'; }
   }
-
-  document.getElementById('pipeline-status').innerText = 'Stage 1 · building prompt…';
-  const prompt = await buildStage1Prompt(idx, '', [], '');
-
-  const threatLines = (prompt.match(/^THREAT:/gm) || []).length;
-  const precisionLines = (prompt.match(/PRECISION NEEDED/g) || []).length;
-  const closeBlocks = (prompt.match(/=== VARIATION CLOSES/g) || []).length;
-
-  await navigator.clipboard.writeText(prompt);
-
-  document.getElementById('pipeline-status').innerText =
-    'Stage 1 copied · ' + threatLines + ' threats, ' + precisionLines + ' precision, ' + closeBlocks + ' closes';
-
-  let msg = 'Stage 1 prompt copied (' + idx.length + ' moves).\n\n';
-  msg += 'Threat lines (every move): ' + threatLines + '\n';
-  msg += 'Precision-needed blocks: ' + precisionLines + '\n';
-  msg += 'Variation-close blocks: ' + closeBlocks + '\n';
-  msg += '\nPaste into your LLM. Then paste the response into the "Stage 1" box and click Ingest.';
-  alert(msg);
 }
-
 async function stage2Start() {
   const status = document.getElementById('pipeline-status');
   status.innerText = 'Stage 2 · loading wiki + corpus…';
-  const ideasRaw = document.getElementById('ideas-pack').value.trim();
-  if (!ideasRaw || wikiEntries.length === 0) {
-    try { await enrichFromWikipedia(); } catch (e) {}
-  }
-  try { await corpusUpdateStats(); } catch (e) {}
-  const stats = await corpusUpdateStats();
-  const lines = [];
-  lines.push(wikiEntries.length ? ('wiki: ' + wikiEntries.length + ' entries') : 'wiki: none');
-  lines.push(stats && stats.count ? ('corpus: ' + stats.count + ' entries') : 'corpus: empty — load PGNs first');
-  status.innerText = 'Stage 2 done · ' + lines.join(' · ');
-  switchTab('reassembler');
-  alert('Wiki and corpus ready.\n\n' + lines.join('\n') + '\n\nNow paste the Stage 1 prompt response into "Step 1: Paste AI JSON" or run Stage 3 first.');
+  try {
+    const ideasRaw = document.getElementById('ideas-pack').value.trim();
+    if (!ideasRaw || wikiEntries.length === 0) { try { await enrichFromWikipedia(); } catch (e) {} }
+    const stats = await corpusUpdateStats();
+    const lines = [];
+    lines.push(wikiEntries.length ? ('wiki: ' + wikiEntries.length + ' entries') : 'wiki: none');
+    lines.push(stats && stats.count ? ('corpus: ' + stats.count + ' entries') : 'corpus: empty — load PGNs first');
+    status.innerText = 'Stage 2 done · ' + lines.join(' · ');
+    switchTab('reassembler');
+    alert('Wiki and corpus ready.\n\n' + lines.join('\n'));
+  } catch (e) { status.innerText = 'Stage 2 · error'; alert('Error: ' + (e && e.message)); }
 }
-
 function stage1Ingest() {
   const raw = document.getElementById('stage1-response').value;
   const map = parseIdSections(raw);
   const n = Object.keys(map).length;
-  if (!n) { alert('No IDs found in the Stage 1 response.\n\nThe parser looks for lines starting with "CHK_", "### CHK_", or "**CHK_**" followed by the ID.'); return; }
-  for (const id of Object.keys(map)) {
-    const c = globalChunks.find(x => x.id === id);
-    if (c) c._draft = map[id];
-  }
+  if (!n) { alert('No IDs found. Parser expects lines like "CHK_xxx_Mn_Vn" or "### CHK_xxx_Mn_Vn".'); return; }
+  for (const id of Object.keys(map)) { const c = globalChunks.find(x => x.id === id); if (c) c._draft = map[id]; }
   document.getElementById('pipeline-status').innerText = 'Stage 1 ingested · ' + n + ' drafts';
   alert('Ingested ' + n + ' drafts.');
 }
-
 async function stage3Copy(event) {
-  if (selStart === null || selEnd === null) { alert('Pick a batch.'); return; }
-  const idx = getSelectedIndices();
-  lastBatchIds = idx.map(i => globalChunks[i].id);
-  const drafts = {};
-  for (const i of idx) { const c = globalChunks[i]; if (c._draft) drafts[c.id] = c._draft; }
-  if (!Object.keys(drafts).length) { alert('No drafts found. Run Stage 1 first.'); return; }
-
-  if (document.getElementById('ctx-engine')?.checked) {
-    document.getElementById('pipeline-status').innerText = 'Waiting for engine…';
-    const ready = await waitForEngine(8000);
-    if (!ready) {
-      if (!confirm('Stockfish did not load. Copy anyway without engine threats?')) return;
-    }
-  }
-
-  const btn = event?.target || document.querySelector('button[onclick*="stage3Copy"]');
-  const origText = btn ? btn.innerText : '';
-  if (btn) { btn.disabled = true; btn.innerText = 'Preparing…'; }
-
+  const statusEl = document.getElementById('pipeline-status');
+  const btn = document.getElementById('stage3-btn');
   try {
-    document.getElementById('pipeline-status').innerText = 'Stage 3 · building prompt…';
+    if (selStart === null || selEnd === null) { alert('Pick a batch.'); return; }
+    const idx = getSelectedIndices();
+    lastBatchIds = idx.map(i => globalChunks[i].id);
+    const drafts = {};
+    for (const i of idx) { const c = globalChunks[i]; if (c._draft) drafts[c.id] = c._draft; }
+    if (!Object.keys(drafts).length) { alert('No drafts found. Run Stage 1 first.'); return; }
+    if (btn) { btn.disabled = true; btn.innerText = 'Building…'; }
+    if (document.getElementById('ctx-engine')?.checked && !SF_POOL.some(s => s.ready)) {
+      statusEl.innerText = 'Stage 3 · waiting for engine (3s max)…';
+      await waitForEngine(3000);
+    }
+    statusEl.innerText = 'Stage 3 · building prompt…';
     const prompt = await buildStage3Prompt(idx, drafts);
     const threatLines = (prompt.match(/^THREAT:/gm) || []).length;
     const precisionLines = (prompt.match(/PRECISION NEEDED/g) || []).length;
     const closeBlocks = (prompt.match(/=== VARIATION CLOSES/g) || []).length;
-    await navigator.clipboard.writeText(prompt);
-
+    const ok = await copyTextToClipboard(prompt);
+    if (!ok) { statusEl.innerText = 'Stage 3 · clipboard blocked'; alert('Could not access clipboard. Prompt length: ' + prompt.length + ' chars.'); console.log(prompt); return; }
     const included = [];
     if (document.getElementById('ctx-wiki')?.checked) included.push('wiki');
     if (document.getElementById('ctx-engine')?.checked) included.push('engine');
     if (document.getElementById('ctx-facts')?.checked) included.push('facts');
     if (document.getElementById('ctx-explorer')?.checked) included.push('explorer');
-    const ctxText = included.length ? included.join(', ') : 'drafts + plans only';
-    document.getElementById('pipeline-status').innerText = 'Stage 3 copied · ' + ctxText;
-
-    let msg = 'Stage 3 verify prompt copied.\n\nContext included: ' + ctxText + '\n';
-    if (document.getElementById('ctx-engine')?.checked) {
-      msg += 'Threat lines: ' + threatLines + ' · Precision blocks: ' + precisionLines + ' · Closes: ' + closeBlocks + '\n';
-    }
-    msg += '\nPaste into your LLM, then paste the response into the "Stage 3" box.';
-    alert(msg);
+    const ctxText = included.length ? included.join(', ') : 'drafts only';
+    statusEl.innerText = 'Stage 3 · copied (' + prompt.length + ' chars, ' + ctxText + ')';
+    alert('Stage 3 prompt copied (' + prompt.length + ' chars).\n\nContext: ' + ctxText + '\nThreats: ' + threatLines + ' · Precision: ' + precisionLines + ' · Closes: ' + closeBlocks);
+  } catch (e) {
+    console.error('[GM] stage3Copy error:', e);
+    statusEl.innerText = 'Stage 3 · ERROR: ' + (e && e.message ? e.message : String(e));
+    alert('Error: ' + (e && e.message ? e.message : String(e)));
   } finally {
-    if (btn) { btn.disabled = false; btn.innerText = origText || '3. Copy Verify Prompt'; }
+    if (btn) { btn.disabled = false; btn.innerText = '3. Copy Verify Prompt'; }
   }
 }
-
 function stage3Ingest() {
   const raw = document.getElementById('stage3-response').value;
   const map = parseIdSections(raw);
   const n = Object.keys(map).length;
-  if (!n) { alert('No IDs found in the Stage 3 response.'); return; }
-
-  const warnings = [];
-  const numberWarnings = [];
+  if (!n) { alert('No IDs found in Stage 3 response.'); return; }
+  const warnings = []; const numberWarnings = [];
   const numberRe = /\b\d{1,3}\.{1,3}\s*(?:\.\.\.\s*)?(?:[RNBQK][a-h][1-8]|[a-h]x[a-h][1-8]|[a-h][1-8](?:=[RNBQK])?|O-O(?:-O)?)(?![a-zA-Z0-9])/;
   for (const id of Object.keys(map)) {
     const c = globalChunks.find(x => x.id === id);
     if (!c || !c.fenAfter || !isValidFen(c.fenAfter)) continue;
     const note = String(map[id]);
-    const chess = new Chess(c.fenAfter);
-    const board = chess.board();
-    const files = 'abcdefgh';
-    const map2 = {};
-    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-      const p = board[r][f];
-      if (p) map2[files[f] + (8 - r)] = { type: p.type, color: p.color };
-    }
+    const chess = new Chess(c.fenAfter); const board = chess.board();
+    const files = 'abcdefgh'; const map2 = {};
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const p = board[r][f]; if (p) map2[files[f] + (8 - r)] = { type: p.type, color: p.color }; }
     const re = /\b(white|black)?\s*(king|queen|rook|bishop|knight|pawn)s?\s+on\s+([a-h][1-8])/gi;
     let m;
     while ((m = re.exec(note)) !== null) {
-      const sq = m[3].toLowerCase();
-      const actual = map2[sq];
+      const sq = m[3].toLowerCase(); const actual = map2[sq];
       if (!actual) { warnings.push({ id, text: '"' + m[0] + '" — ' + sq + ' is EMPTY' }); continue; }
       const claimed = m[2].toLowerCase().replace(/s$/, '');
-      if (actual.type !== claimed[0]) {
-        warnings.push({ id, text: '"' + m[0] + '" — ' + sq + ' has a ' + actual.type.toUpperCase() });
-      }
+      if (actual.type !== claimed[0]) warnings.push({ id, text: '"' + m[0] + '" — ' + sq + ' has a ' + actual.type.toUpperCase() });
     }
   }
-
   for (const id of Object.keys(map)) {
     const c = globalChunks.find(x => x.id === id);
     const nm = String(map[id] || '').match(numberRe);
     if (nm) numberWarnings.push(id + ': "' + nm[0] + '"');
     if (c) c._refined = map[id];
   }
-
   document.getElementById('pipeline-status').innerText = 'Stage 3 ingested · ' + n + ' refined';
   if (warnings.length || numberWarnings.length) {
     const parts = [];
-    if (warnings.length) parts.push('Square warnings (' + warnings.length + '):\n' +
-      warnings.slice(0, 8).map(w => '· ' + w.id + ': ' + w.text).join('\n') + (warnings.length > 8 ? '\n…' : ''));
-    if (numberWarnings.length) parts.push('Numbered moves (' + numberWarnings.length + ') — should be bare SAN or prose:\n' +
-      numberWarnings.slice(0, 8).map(q => '· ' + q).join('\n') + (numberWarnings.length > 8 ? '\n…' : ''));
+    if (warnings.length) parts.push('Square warnings (' + warnings.length + '):\n' + warnings.slice(0, 8).map(w => '· ' + w.id + ': ' + w.text).join('\n') + (warnings.length > 8 ? '\n…' : ''));
+    if (numberWarnings.length) parts.push('Numbered moves (' + numberWarnings.length + '):\n' + numberWarnings.slice(0, 8).map(q => '· ' + q).join('\n') + (numberWarnings.length > 8 ? '\n…' : ''));
     alert('Ingested ' + n + ' refined notes.\n\n⚠ ' + parts.join('\n\n'));
-  } else {
-    alert('Ingested ' + n + ' refined notes.\nNo issues detected.');
-  }
+  } else { alert('Ingested ' + n + ' refined notes.\nNo issues detected.'); }
 }
-
 async function stage4Copy() {
-  if (selStart === null || selEnd === null) { alert('Pick a batch.'); return; }
-  const idx = getSelectedIndices();
-  lastBatchIds = idx.map(i => globalChunks[i].id);
-  const notes = {};
-  for (const i of idx) {
-    const c = globalChunks[i];
-    if (c._refined) notes[c.id] = c._refined;
-    else if (c._draft) notes[c.id] = c._draft;
-  }
-  if (!Object.keys(notes).length) {
-    alert('No notes found. Run Stage 1 first, or paste your notes somewhere before Stage 4.');
-    return;
-  }
-  const prompt = buildStage4Prompt(idx, notes);
-  await navigator.clipboard.writeText(prompt);
-  const usedRefined = idx.filter(i => globalChunks[i]._refined).length;
-  const usedDraft = idx.filter(i => !globalChunks[i]._refined && globalChunks[i]._draft).length;
-  document.getElementById('pipeline-status').innerText = 'Stage 4 copied · ' + usedRefined + ' refined, ' + usedDraft + ' drafts';
-  alert('Stage 4 JSON prompt copied.\n\nUsing ' + usedRefined + ' refined notes and ' + usedDraft + ' drafts.');
+  const statusEl = document.getElementById('pipeline-status');
+  try {
+    if (selStart === null || selEnd === null) { alert('Pick a batch.'); return; }
+    const idx = getSelectedIndices();
+    lastBatchIds = idx.map(i => globalChunks[i].id);
+    const notes = {};
+    for (const i of idx) { const c = globalChunks[i]; if (c._refined) notes[c.id] = c._refined; else if (c._draft) notes[c.id] = c._draft; }
+    if (!Object.keys(notes).length) { alert('No notes found. Run Stage 1 first.'); return; }
+    const prompt = buildStage4Prompt(idx, notes);
+    const ok = await copyTextToClipboard(prompt);
+    if (!ok) { alert('Clipboard blocked.'); console.log(prompt); return; }
+    const usedRefined = idx.filter(i => globalChunks[i]._refined).length;
+    const usedDraft = idx.filter(i => !globalChunks[i]._refined && globalChunks[i]._draft).length;
+    statusEl.innerText = 'Stage 4 copied · ' + usedRefined + ' refined, ' + usedDraft + ' drafts';
+    alert('Stage 4 JSON prompt copied.\nUsing ' + usedRefined + ' refined + ' + usedDraft + ' drafts.');
+  } catch (e) { statusEl.innerText = 'Stage 4 · error'; alert('Error: ' + e.message); }
 }
-
 function stage4Ingest() {
   const raw = document.getElementById('stage4-response').value;
   let map = extractChunkMap(raw);
-  if (!map || !Object.keys(map).length) {
-    map = parseIdSections(raw);
-  }
+  if (!map || !Object.keys(map).length) map = parseIdSections(raw);
   const n = Object.keys(map).length;
-  if (!n) {
-    alert('No notes found. Either paste the AI JSON, or paste notes in the form "CHK_xx_Mx_Vx" on its own line followed by the text.');
-    return;
-  }
+  if (!n) { alert('No notes found. Paste JSON { "CHK_…": "…" } or prose with CHK_ IDs.'); return; }
   document.getElementById('ai-json').value = JSON.stringify(map, null, 2);
   switchTab('reassembler');
   document.getElementById('pipeline-status').innerText = 'Stage 4 ingested · ' + n + ' notes';
@@ -2775,18 +2517,13 @@ function verifyAiOutput() {
     if (!chunk || !chunk.fenAfter || !isValidFen(chunk.fenAfter)) continue;
     const note = String(map[id]);
     const chess = new Chess(chunk.fenAfter); if (!chess) continue;
-    const board = chess.board();
-    const map2 = {};
+    const board = chess.board(); const map2 = {};
     const names = { k:'king', q:'queen', r:'rook', b:'bishop', n:'knight', p:'pawn' };
-    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-      const p = board[r][f];
-      if (p) map2[frToSq(f, r)] = { type: p.type, color: p.color };
-    }
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const p = board[r][f]; if (p) map2[frToSq(f, r)] = { type: p.type, color: p.color }; }
     const re = /\b(white|black)?\s*(king|queen|rook|bishop|knight|pawns?)\s+on\s+([a-h][1-8])/gi;
     let m; const issues = [];
     while ((m = re.exec(note)) !== null) {
-      const sq = m[3].toLowerCase();
-      const actual = map2[sq];
+      const sq = m[3].toLowerCase(); const actual = map2[sq];
       if (!actual) { issues.push('"' + m[0] + '" — but ' + sq + ' is EMPTY'); continue; }
       const claimedType = m[2].toLowerCase().replace(/s$/, '');
       if (actual.type !== claimedType[0]) issues.push('"' + m[0] + '" — but ' + sq + ' has a ' + names[actual.type]);
@@ -2794,15 +2531,10 @@ function verifyAiOutput() {
     if (issues.length) warnings.push({ id, issues });
   }
   let html = '';
-  if (missing.length) {
-    html += '<p class="text-amber-400 mb-2">⚠ AI returned ' + Object.keys(map).length + ' of ' + lastBatchIds.length + '. Missing:</p>' +
-      '<div class="text-amber-300 text-[10px] font-mono mb-2">' + missing.join(', ') + '</div>';
-  } else if (lastBatchIds.length) html += '<p class="text-emerald-400 mb-2">✓ All ' + lastBatchIds.length + ' moves present.</p>';
-  if (warnings.length) {
-    html += '<p class="text-amber-400 mb-2">⚠ ' + warnings.length + ' notes with square/piece issues:</p>' +
-      warnings.map(w => '<div class="border-l-2 border-red-500/50 pl-2 mb-1"><span class="gold-text text-[10px]">' + w.id + '</span><br>' +
-        w.issues.map(i => '<span class="text-red-300">• ' + i + '</span>').join('<br>') + '</div>').join('');
-  } else html += '<p class="text-emerald-400">✓ No square/piece contradictions.</p>';
+  if (missing.length) html += '<p class="text-amber-400 mb-2">⚠ AI returned ' + Object.keys(map).length + ' of ' + lastBatchIds.length + '. Missing:</p><div class="text-amber-300 text-[10px] font-mono mb-2">' + missing.join(', ') + '</div>';
+  else if (lastBatchIds.length) html += '<p class="text-emerald-400 mb-2">✓ All ' + lastBatchIds.length + ' moves present.</p>';
+  if (warnings.length) html += '<p class="text-amber-400 mb-2">⚠ ' + warnings.length + ' notes with square/piece issues:</p>' + warnings.map(w => '<div class="border-l-2 border-red-500/50 pl-2 mb-1"><span class="gold-text text-[10px]">' + w.id + '</span><br>' + w.issues.map(i => '<span class="text-red-300">• ' + i + '</span>').join('<br>') + '</div>').join('');
+  else html += '<p class="text-emerald-400">✓ No square/piece contradictions.</p>';
   result.innerHTML = html;
 }
 function extractChunkMap(text) {
@@ -2824,13 +2556,8 @@ function extractChunkMap(text) {
 function rebuildPgn() {
   const raw = document.getElementById('ai-json').value;
   let aiData = extractChunkMap(raw);
-  if (!aiData || !Object.keys(aiData).length) {
-    aiData = parseIdSections(raw);
-  }
-  if (!aiData || !Object.keys(aiData).length) {
-    alert('Failed to parse AI output.\n\nPaste either JSON { "CHK_…": "…" } or prose with CHK_ IDs on their own line.');
-    return;
-  }
+  if (!aiData || !Object.keys(aiData).length) aiData = parseIdSections(raw);
+  if (!aiData || !Object.keys(aiData).length) { alert('Failed to parse. Paste JSON { "CHK_…": "…" } or prose with CHK_ IDs.'); return; }
   const working = [...pgnTokens];
   const sorted = Object.keys(aiData).sort((a, b) => {
     const ia = globalChunks.find(c => c.id === a)?.tokenIndex || 0;
@@ -2843,16 +2570,10 @@ function rebuildPgn() {
     if (ch && aiData[id]) {
       const cl = String(aiData[id]).replace(/^[{[\s]+|[}\]\s]+$/g, '').trim();
       if (cl) working[ch.tokenIndex] += ' { ' + cl + ' }';
-    } else if (aiData[id]) {
-      dropped.push(id);
-    }
+    } else if (aiData[id]) dropped.push(id);
   });
   document.getElementById('final-pgn').value = working.join(' ');
-  if (dropped.length) {
-    alert('Warning: ' + dropped.length + ' note(s) had IDs not found in the current PGN and were skipped:\n' +
-      dropped.slice(0, 8).join('\n') + (dropped.length > 8 ? '\n…' : '') +
-      '\n\nDid you re-Initialize after the AI ran?');
-  }
+  if (dropped.length) alert('Warning: ' + dropped.length + ' note(s) had IDs not found in current PGN and were skipped:\n' + dropped.slice(0, 8).join('\n') + (dropped.length > 8 ? '\n…' : '') + '\n\nDid you re-Initialize after the AI ran?');
 }
 function saveState() { localStorage.setItem('gm_master_state', JSON.stringify({ original: document.getElementById('pgn-input').value })); }
 function clearAll() {
@@ -2862,7 +2583,7 @@ function clearAll() {
   localStorage.removeItem(WIKI_CACHE_KEY); localStorage.removeItem(OPENINGS_DB_KEY);
   location.reload();
 }
-function copyToClipboard(id) { navigator.clipboard.writeText(document.getElementById(id).value); alert('Copied!'); }
+function copyToClipboard(id) { copyTextToClipboard(document.getElementById(id).value).then(ok => alert(ok ? 'Copied!' : 'Clipboard blocked')); }
 function downloadPgn() {
   const val = document.getElementById('final-pgn').value;
   const blob = new Blob([val], { type: 'text/plain' });
