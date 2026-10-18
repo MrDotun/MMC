@@ -4,8 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v8.9 | Decipher Chess Academy</title>
-<!-- build: 2026-10-18-stage1-wiki-json -->
+<title>GM Variation Master · v8.7 | Decipher Chess Academy</title>
+<!-- build: 2026-10-15-voice-v8.7-corpus-and-stage2-wiki -->
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -38,7 +38,7 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Editor stage 3 · engine plan · v8.9</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Editor stage 3 · engine plan · v8.7</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center flex-wrap">
 <span id="sf-badge" class="sf-badge loading">Engine loading…</span>
@@ -291,7 +291,7 @@ Import JSON<input type="file" accept=".json" class="hidden" onchange="corpusImpo
 <button onclick="stage3Copy(event)" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">3. Copy Verify Prompt</button>
 <button onclick="stage4Copy()" class="py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold uppercase text-[11px] text-slate-300">4. Copy JSON Prompt</button>
 </div>
-<p class="text-[10px] text-slate-500 italic">Stage 1: Copy prompt + Wiki ideas to get final JSON. Stages 2-4 are optional.</p>
+<p class="text-[10px] text-slate-500 italic">Stage 1: free GM draft. Stage 2: load wiki + corpus context. Stage 3: AI verifies and trims (never adds). Stage 4: JSON for the Re-assembler.</p>
 <div class="flex flex-wrap gap-3 text-[11px] text-slate-300 mt-2 border-t border-slate-700 pt-2">
 <span class="text-[10px] text-slate-500 uppercase self-center font-bold">Stage 3 context:</span>
 <label class="cursor-pointer"><input type="checkbox" id="ctx-wiki" class="mr-1">Wiki reference</label>
@@ -600,6 +600,71 @@ function normaliseOpeningName(raw) {
   s = s.replace(/\b(gambit|defence|defense|attack|variation|system|opening)[aeiou]+\b/gi, (m, w) => w);
   return s;
 }
+
+/* ---- Build CHK-keyed JSON straight for the Re-assembler ---- */
+function buildWikiChunkMap(parsedEntries) {
+  const map = {};
+  if (!parsedEntries || !parsedEntries.length) return map;
+  if (!globalChunks || !globalChunks.length) return map;
+
+  let targetChunks;
+  if (selStart !== null) {
+    const idx = getSelectedIndices();
+    targetChunks = idx.map(i => globalChunks[i]).filter(Boolean);
+  } else {
+    targetChunks = globalChunks.filter(c => c.variationLevel === 0);
+  }
+  if (!targetChunks.length) return map;
+
+  const SAN_RE = /^(?:[a-h][1-8](?:=[nbrq])?|[a-h]x[a-h][1-8](?:=[nbrq])?|[nbrqk][a-h]?[1-8]?x?[a-h][1-8]|o-o(?:-o)?)$/;
+  function moveTokens(wikiMove) {
+    const cleaned = String(wikiMove || '')
+      .replace(/\[edit\]/gi, ' ')
+      .replace(/[!?+#]/g, '')
+      .replace(/\d+\s*\.{1,3}/g, ' ')
+      .toLowerCase()
+      .replace(/0/g, 'o');
+    return cleaned.split(/\s+/).filter(t => SAN_RE.test(t));
+  }
+
+  const sanLookup = {};
+  const general = [];
+  for (const w of parsedEntries) {
+    const toks = moveTokens(w.move);
+    if (toks.length) {
+      for (const t of toks) if (!sanLookup[t]) sanLookup[t] = w;
+    } else {
+      general.push(w);
+    }
+  }
+
+  const generalSnippet = general
+    .map(w => String(w.comment || '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, 600);
+
+  for (const c of targetChunks) {
+    const cleanSan = String(c.san || '').replace(/[!?+#]/g, '').toLowerCase().trim();
+    if (!cleanSan) continue;
+
+    let matched = sanLookup[cleanSan]
+              || sanLookup[cleanSan.replace(/o/g, '0')]
+              || sanLookup[cleanSan.replace(/0/g, 'o')];
+
+    if (matched) {
+      map[c.id] = String(matched.comment).slice(0, 500);
+    } else if (generalSnippet && (c.isVariationStart || c.moveNum <= 2)) {
+      map[c.id] = generalSnippet.slice(0, 300);
+    }
+  }
+
+  if (Object.keys(map).length === 0 && generalSnippet && targetChunks[0]) {
+    map[targetChunks[0].id] = generalSnippet.slice(0, 500);
+  }
+  return map;
+}
+
 async function enrichFromWikipedia() {
   clearWikiLog();
   const btn = document.getElementById('wiki-btn');
@@ -622,15 +687,26 @@ async function enrichFromWikipedia() {
   } else logWiki('✓ Cached (' + parsed.length + ' entries)');
   if (parsed && parsed.length) wikiEntries = parsed;
   const sourceTitle = parsed._sourceTitle || name;
-  const current = (() => { try { return JSON.parse(document.getElementById('ideas-pack').value || '[]'); } catch (e) { return []; } })();
-  const wikiIdeas = parsed.filter(x => x.comment && x.comment.length > 30).map(x => '[Wiki ' + (x.origin || x._source || '') + (x.move ? ' ' + x.move.slice(0, 50) : '') + '] ' + x.comment);
-  const existing = new Set(current);
-  const merged = current.slice(); let added = 0;
-  for (const w of wikiIdeas) if (!existing.has(w)) { merged.push(w); added++; }
-  document.getElementById('ideas-pack').value = JSON.stringify(merged, null, 2);
-  updatePackStatus(merged.length, 'wiki');
+
+  const chunkMap = buildWikiChunkMap(parsed);
+  const nChunks  = Object.keys(chunkMap).length;
+
+  if (nChunks > 0) {
+    const jsonStr = JSON.stringify(chunkMap, null, 2);
+    document.getElementById('ideas-pack').value = jsonStr;
+    updatePackStatus(nChunks, 'wiki');
+    const s4 = document.getElementById('stage4-response');
+    if (s4) s4.value = jsonStr;
+    logWiki('✓ Assembler-ready JSON: ' + nChunks + ' move notes.');
+    logWiki('  → Click "Send to Re-assembler" (or paste "Paste AI JSON").');
+  } else {
+    const wikiIdeas = parsed.filter(x => x.comment && x.comment.length > 30)
+      .map(x => '[Wiki ' + (x.origin || x._source || '') + (x.move ? ' ' + x.move.slice(0, 50) : '') + '] ' + x.comment);
+    document.getElementById('ideas-pack').value = JSON.stringify(wikiIdeas, null, 2);
+    updatePackStatus(wikiIdeas.length, 'wiki');
+    logWiki('⚠ No move-specific matches — showing general ideas.');
+  }
   logWiki('✓ Sources: ' + sourceTitle);
-  logWiki('✓ Added ' + added + ' entries.');
   btn.disabled = false; btn.innerText = origBtnText;
 }
 async function debugWiki() {
@@ -651,22 +727,32 @@ function updatePackStatus(n, mode) {
   const el = document.getElementById('pack-status'); if (!el) return;
   if (!n) { el.className = 'pack-badge empty'; el.innerText = 'empty'; return; }
   el.className = 'pack-badge ' + (mode || 'ready');
-  el.innerText = n + ' idea' + (n > 1 ? 's' : '') + (mode === 'wiki' ? ' (wiki)' : ' ready');
+  el.innerText = n + ' idea' + (n !== 1 ? 's' : '') + (mode === 'wiki' ? ' (wiki)' : ' ready');
 }
 function saveIdeasPack() {
-  const raw = document.getElementById('ideas-pack').value.trim();
+  const raw  = document.getElementById('ideas-pack').value.trim();
   const name = (document.getElementById('opening-name').value || '').trim();
   const side = (document.getElementById('opening-side').value || 'Black').trim();
   if (!raw) { clearIdeasPack(); return; }
+
   let arr;
-  try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) arr = parsed.map(x => String(x).trim()).filter(Boolean); else arr = [raw]; }
-  catch (e) { arr = raw.split(/\n+/).map(s => s.replace(/^[\-\*\d\.\)\s]+/, '').trim()).filter(Boolean); }
-  if (!arr.length) { alert('Nothing to save.'); return; }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) arr = parsed.map(x => String(x).trim()).filter(Boolean);
+    else if (parsed && typeof parsed === 'object') arr = parsed;
+    else arr = [raw];
+  } catch (e) {
+    arr = raw.split(/\n+/).map(s => s.replace(/^[\-\*\d\.\)\s]+/, '').trim()).filter(Boolean);
+  }
+
+  const cnt = Array.isArray(arr) ? arr.length : (arr && typeof arr === 'object' ? Object.keys(arr).length : 0);
+  if (!cnt) { alert('Nothing to save.'); return; }
+
   localStorage.setItem(PACK_KEY, JSON.stringify(arr));
   localStorage.setItem(PACK_NAME_KEY, name);
   localStorage.setItem(PACK_SIDE_KEY, side);
   document.getElementById('ideas-pack').value = JSON.stringify(arr, null, 2);
-  updatePackStatus(arr.length, 'ready');
+  updatePackStatus(cnt, 'ready');
 }
 function clearIdeasPack() {
   localStorage.removeItem(PACK_KEY); localStorage.removeItem(PACK_NAME_KEY); localStorage.removeItem(PACK_SIDE_KEY);
@@ -676,14 +762,16 @@ function clearIdeasPack() {
 function loadIdeasPack() {
   try {
     const saved = localStorage.getItem(PACK_KEY);
-    const name = localStorage.getItem(PACK_NAME_KEY) || '';
-    const side = localStorage.getItem(PACK_SIDE_KEY) || 'Black';
+    const name  = localStorage.getItem(PACK_NAME_KEY) || '';
+    const side  = localStorage.getItem(PACK_SIDE_KEY) || 'Black';
     if (document.getElementById('opening-name')) document.getElementById('opening-name').value = name;
     if (document.getElementById('opening-side')) document.getElementById('opening-side').value = side;
     if (!saved) { updatePackStatus(0); return []; }
+
     const arr = JSON.parse(saved);
     document.getElementById('ideas-pack').value = JSON.stringify(arr, null, 2);
-    updatePackStatus(arr.length, 'ready');
+    const cnt = Array.isArray(arr) ? arr.length : (arr && typeof arr === 'object' ? Object.keys(arr).length : 0);
+    updatePackStatus(cnt, 'ready');
     return arr;
   } catch (e) { updatePackStatus(0); return []; }
 }
@@ -706,7 +794,9 @@ function importPack(event) {
       document.getElementById('ideas-pack').value = JSON.stringify(arr, null, 2);
       if (parsed.name) document.getElementById('opening-name').value = parsed.name;
       if (parsed.side) document.getElementById('opening-side').value = parsed.side;
-      saveIdeasPack(); alert('Imported ' + arr.length + ' ideas.');
+      saveIdeasPack();
+      const cnt = Array.isArray(arr) ? arr.length : (arr && typeof arr === 'object' ? Object.keys(arr).length : 0);
+      alert('Imported ' + cnt + ' ideas.');
     } catch (e) { alert('Invalid pack file.'); }
   };
   r.readAsText(f);
@@ -1947,7 +2037,7 @@ function applyFactsReview() {
   closeFactsReview();
 }
 
-/* ===================== STAGE 2 — INTENTION BOARD ===================== */
+/* ===================== STAGE 2 — INTENTION BOARD (preserved, not in main flow) ===================== */
 function openIntentionForChunk(chunkId) {
   const c = globalChunks.find(x => x.id === chunkId); if (!c) return;
   currentIntentionId = chunkId;
@@ -2040,6 +2130,125 @@ function findVariationEnd(chunk) {
     if (n.variationLevel === chunk.variationLevel && n.isVariationEnd) return n;
   }
   return null;
+}
+
+/* ---- eval helpers (our-side signed) ---- */
+function evalForUs(evalStr, ourColor) {
+  const s = String(evalStr || '');
+  if (/^#/.test(s)) {
+    let n = parseInt(s.slice(1), 10); if (isNaN(n)) n = 0;
+    let forUs = n > 0;
+    if (ourColor === 'b') forUs = !forUs;
+    return forUs ? 100 : -100;
+  }
+  const v = parseFloat(s);
+  if (isNaN(v)) return 0;
+  return ourColor === 'b' ? -v : v;
+}
+function evalLabelForUs(evalStr, ourColor) {
+  const s = String(evalStr || '');
+  if (/^#/.test(s)) {
+    let n = parseInt(s.slice(1), 10); if (isNaN(n)) n = 0;
+    const forUs = (n > 0) !== (ourColor === 'b');
+    return forUs ? 'mate for us' : 'mate for them';
+  }
+  const v = evalForUs(s, ourColor);
+  const txt = (v >= 0 ? '+' : '') + v.toFixed(2);
+  if (v >=  1.5) return txt + ' clearly better for us';
+  if (v >=  0.5) return txt + ' slightly better for us';
+  if (v >  -0.5) return txt + ' roughly balanced';
+  if (v >  -1.5) return txt + ' slightly worse for us';
+  return txt + ' clearly worse for us';
+}
+
+/* ---- Per-move engine context for Stage 1 / Stage 3 ---- */
+async function buildEngineContext(c, ourSide) {
+  if (!c || !c.fenAfter || !isValidFen(c.fenAfter)) return '';
+  const ourColor = ourSide === 'White' ? 'w' : 'b';
+  const theySide = ourColor === 'w' ? 'Black' : 'White';
+
+  let evalChunk = c, isClosing = false;
+  if (c.isVariationStart) {
+    const endChunk = findVariationEnd(c);
+    if (endChunk && endChunk.fenAfter && isValidFen(endChunk.fenAfter)) {
+      evalChunk = endChunk; isClosing = true;
+    }
+  } else if (c.isVariationEnd && c.variationLevel > 0) {
+    isClosing = true;
+  }
+  if (!evalChunk.fenAfter || !isValidFen(evalChunk.fenAfter)) return '';
+
+  const stmColor = evalChunk.fenAfter.split(' ')[1];
+  const stmIsUs  = stmColor === ourColor;
+
+  let data = null;
+  try { data = await getEngineMultiPV(evalChunk.fenAfter, { depth: 12, multipv: 5 }); } catch (e) {}
+  if (!data || data.invalid || !data.lines || !data.lines.length) return '';
+
+  // OUR MOVES ONLY (filter by turn parity)
+  const ourIdeas = [];
+  for (const l of data.lines.slice(0, 2)) {
+    let turn = stmColor;
+    for (const san of (l.allSan || [])) {
+      if (turn === ourColor && san) {
+        const entry = (ourColor === 'b' ? '...' : '') + san;
+        if (!ourIdeas.includes(entry)) ourIdeas.push(entry);
+      }
+      turn = turn === 'w' ? 'b' : 'w';
+      if (ourIdeas.length >= 4) break;
+    }
+  }
+
+  const evalStr = evalLabelForUs(data.lines[0].eval, ourColor);
+  let out = '';
+
+  if (isClosing) {
+    out += '\n=== VARIATION CLOSES — ' + ourSide.toUpperCase() + "'S PLANS ===\n";
+    out += 'Eval: ' + evalStr + '. ' + (stmIsUs ? 'We move next.' : 'They move next.') + '\n';
+    if (ourIdeas.length) out += 'We continue with: ' + ourIdeas.join(', ') + '\n';
+    const pos = positionFeatures(evalChunk.fenAfter);
+    if (pos) out += 'Structure: ' + pos + '\n';
+    out += 'RULE: plans for us only. Say where the line leaves us, then what we do next. Never narrate the opponent\'s plan.\n';
+  } else {
+    out += '\nENGINE: ' + evalStr + '. ' + (stmIsUs ? 'We move next.' : 'They move next.') + '\n';
+    if (ourIdeas.length) out += 'Our ideas: ' + ourIdeas.join(', ') + '\n';
+    const pos = positionFeatures(evalChunk.fenAfter);
+    if (pos) out += 'Structure: ' + pos + '\n';
+  }
+
+  // THREAT DETECTION via multipv spread (best vs 3rd–5th)
+  if (data.lines.length >= 3) {
+    const evals = data.lines.map(l => evalForUs(l.eval, ourColor));
+    const worstEval = evals[Math.min(4, evals.length - 1)];
+    const spread = Math.abs(evals[0] - worstEval);
+    if (spread >= 1.0) {
+      out += '⚠ PRECISION NEEDED (gap ' + spread.toFixed(1) + ' between best and 3rd–5th)\n';
+      if (stmIsUs) {
+        const punishes = [];
+        for (let i = 1; i < Math.min(4, data.lines.length); i++) {
+          const l = data.lines[i];
+          if (l.allSan && l.allSan[0] && l.allSan[1]) {
+            punishes.push({
+              ourAlt:      l.allSan[0],
+              theirPunish: l.allSan[1],
+              eval:        evalLabelForUs(l.eval, ourColor)
+            });
+          }
+        }
+        if (punishes.length) {
+          out += 'If we play imprecisely:\n';
+          for (const p of punishes.slice(0, 2)) {
+            out += '  · ' + p.ourAlt + ' → ' + p.theirPunish + ' (' + p.eval + ')\n';
+          }
+          out += 'Say it plainly: "' + theySide + ' threatens ' + punishes[0].theirPunish + ' if we play imprecisely."\n';
+        }
+      } else {
+        const theirBest = data.lines[0].allSan && data.lines[0].allSan[0];
+        if (theirBest) out += 'Their main threat: ' + theirBest + '.\n';
+      }
+    }
+  }
+  return out;
 }
 
 function formatMoveSigns(c, includeVariationEnd) {
@@ -2136,23 +2345,13 @@ function parseIdSections(text) {
   return map;
 }
 
-function buildStage1Prompt(idx, openingName, objectives, wikiSnippet) {
+async function buildStage1Prompt(idx, openingName, objectives, wikiSnippet) {
   const side = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
   const ourSide = side === 'white' ? 'White' : 'Black';
-
-  // Compile the Wiki Ideas to pass into the prompt
-  let wikiBlock = '';
-  if (wikiEntries && wikiEntries.length > 0) {
-    wikiBlock = (wikiEntries || []).slice(0, 15).map(w =>
-      '· ' + (w.move ? w.move.slice(0, 60) + ' — ' : '') + String(w.comment || '').slice(0, 400)
-    ).join('\n');
-  }
 
   let out = `You are a 2700+ grandmaster annotating your own opening preparation.
 
 For each position below, write a short annotation (1–2 sentences) explaining the move the way you would in a game collection — the idea, the plan, the point of it. Write freely.
-
-Use the general opening ideas provided below to guide your annotations, matching the tone and depth.
 
 The annotator has left signs on some moves. Respect them:
 - MOVE MARK (!, ?, !?, ?!, !!, ??) is the annotator's verdict on the move quality.
@@ -2162,15 +2361,20 @@ The annotator has left signs on some moves. Respect them:
 
 We play ${ourSide}.
 
-${wikiBlock ? '=== WIKI OPENING IDEAS ===\n' + wikiBlock + '\n\n' : ''}
+CRITICAL: Every section MUST begin with its ID exactly as given (### CHK_xxx_Mn_Vn). Do not skip, merge, or renumber IDs.
 
-CRITICAL INSTRUCTION: You MUST return the output as a single, valid JSON object. The keys must be the exact IDs provided below (e.g. "CHK_1_M1_V0"). The values must be your annotation strings. Do not return anything else — no markdown, no prose, just the JSON.
+STYLE RULES — always apply:
+- Do NOT quote moves. Never write "15. Bc6", "Bc6" or "12...Ng6". Refer to the piece and square ("the bishop on c6") or to the action ("this exchange"). The MOVE: line already names the move.
+- Write from OUR side: "we"/"our" for ${ourSide}, "the opponent" for the other side.
+- When a section carries VARIATION CLOSES — PLANS FOR US, the note must say where the line leaves us: whose favour, and our next ideas — as in "We capture the knight and continue with ...Ng6 and ...g6 ideas. The open files give us a slightly better position." Only ever give plans for us, never for the opponent.
+- Only narrate OUR moves and OUR plans. When describing a threat you may name the opponent's punishing move ("Nxc6"), but never narrate their wider plan.
+- When an ENGINE block appears, quote our moves as "Ng6" (White) or "...g6" (Black). When a PRECISION NEEDED block appears, name the threat — e.g. "White threatens Nxc6 if we play imprecisely."
+- When a VARIATION CLOSES block appears, use the closing format: "We capture the knight and continue with ...Ng6 and ...g6 ideas. The open files give us a slightly better position."
 
-Example output format:
-{
-  "CHK_1_M1_V0": "1.e4 controls the center and opens lines for the bishop and queen.",
-  "CHK_2_M1_V0": "1...c5 is the Sicilian, fighting for the center asymmetrically."
-}
+Return EXACTLY this format — no JSON, no markdown fences:
+
+### <ID>
+<annotation>
 
 === POSITIONS ===\n`;
 
@@ -2188,7 +2392,15 @@ Example output format:
 
     const signLines = formatMoveSigns(c, true);
     for (const line of signLines) out += line + '\n';
+
+    const vctx = await buildEngineContext(c, ourSide);
+    if (vctx) out += vctx;
   }
+
+  const wikiBlock = (wikiEntries || []).slice(0, 8).map(w =>
+    '· ' + (w.move ? w.move.slice(0, 60) + ' — ' : '') + String(w.comment || '').slice(0, 400)
+  ).join('\n');
+  if (wikiBlock) out += '\n=== WIKI STYLE ANCHORS ===\n' + wikiBlock + '\n';
 
   return out;
 }
@@ -2200,6 +2412,9 @@ async function buildStage3Prompt(idx, drafts) {
   const ctxFacts = document.getElementById('ctx-facts')?.checked;
   const ctxExplorer = document.getElementById('ctx-explorer')?.checked;
 
+  const side = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
+  const ourSide = side === 'white' ? 'White' : 'Black';
+
   let out = `You are a chess-book copy-editor. You are NOT a chess author. You do NOT add chess ideas.
 
 Your ONLY job for each note below:
@@ -2207,6 +2422,8 @@ Your ONLY job for each note below:
 2. If the DRAFT contains a claim that is NOT supported by the FACTS, ENGINE, or SIGN lines, DELETE that claim.
 3. If the DRAFT mentions a square or piece that is not in the FACTS or ENGINE lines, DELETE that sentence.
 4. Never add a square, a piece, a plan, or a tactical idea that was not already in the DRAFT, FACTS, ENGINE, or SIGN lines.
+5. If the DRAFT quotes a move ("15. Bc6", "Bc6", "12...Ng6"), rewrite it without the notation ("the bishop on c6", "this exchange") or delete the sentence.
+6. Where a "VARIATION CLOSES — PLANS FOR US" block appears, keep the draft's closing summary (the verdict + our next ideas) if it agrees with that block. Cut any plan for the opponent.
 
 If the DRAFT is empty or nothing survives after cutting, output: (none)
 
@@ -2215,8 +2432,12 @@ HARD RULES — these override everything:
 - NEVER write "passed pawn" unless FACTS says "passed pawn".
 - NEVER write "open file" for a file that isn't in FACTS.
 - NEVER invent a knight, bishop, rook, or queen square. Only the squares in FACTS, ENGINE, or the DRAFT.
-- NEVER describe what will happen next. Only the move played and the position right after.
+- NEVER describe what will happen next — EXCEPT in a closing note, where plans for us drawn from VARIATION CLOSES — PLANS FOR US are allowed. Plans for the opponent are always forbidden.
+- NEVER quote a move. No "15. Bc6", no "Bc6", no "12...Ng6". Say "the bishop on c6" or "this exchange". Bare squares ("c6", "the c-file") are fine.
 - If the DRAFT says a piece is on a square and the FACTS do not list that piece on that square, cut it.
+- Do NOT add opponent plans. Our moves and our threats only. The one exception: a PRECISION NEEDED block names the opponent's punishing move — you may name that move, nothing more.
+- If the ENGINE block lists "Our ideas", do not contradict them. If a DRAFT names a move that is not in Our ideas or is not the opponent's named punish, cut it or trim it to a general idea.
+- If a VARIATION CLOSES block appears, the draft may keep its closing summary (verdict + our continuing ideas) if it agrees with the block. Cut any plan for the opponent.
 
 Return EXACTLY this format — no JSON, no markdown fences:
 
@@ -2241,6 +2462,11 @@ Return EXACTLY this format — no JSON, no markdown fences:
 
     const signLines = formatMoveSigns(c, true);
     for (const line of signLines) out += line + '\n';
+
+    if (ctxEngine) {
+      const vctx = await buildEngineContext(c, ourSide);
+      if (vctx) out += vctx;
+    }
 
     if (ctxFacts) {
       const fx = (c._deltaFacts && c._deltaFacts.length) ? c._deltaFacts : (c._reviewedFacts || []);
@@ -2299,22 +2525,12 @@ function buildStage4Prompt(idx, refined) {
 
 async function stage1Copy() {
   if (selStart === null || selEnd === null) { alert('Pick a start and end move.'); return; }
-  
-  // Ensure Wiki is loaded before copying
-  if (!wikiEntries || wikiEntries.length === 0) {
-     const ideasRaw = document.getElementById('ideas-pack').value.trim();
-     if (!ideasRaw) {
-         await enrichFromWikipedia();
-     }
-  }
-
   const idx = getSelectedIndices();
-  lastBatchIds = idx.map(i => globalChunks[i].id);
-  const prompt = buildStage1Prompt(idx, '', [], '');
-  
+  document.getElementById('pipeline-status').innerText = 'Stage 1 · analysing closing variations…';
+  const prompt = await buildStage1Prompt(idx, '', [], '');
   await navigator.clipboard.writeText(prompt);
   document.getElementById('pipeline-status').innerText = 'Stage 1 copied · paste into AI';
-  alert('Prompt copied with Wiki Ideas (' + idx.length + ' moves).\n\n1. Paste it into your LLM.\n2. Copy the JSON it returns.\n3. Paste that JSON directly into the Re-assembler (Step 1).');
+  alert('Stage 1 prompt copied (' + idx.length + ' moves).\nPaste into your LLM. Then paste the response into the "Stage 1" box and click Ingest.');
 }
 
 async function stage2Start() {
@@ -2374,7 +2590,7 @@ async function stage3Copy(event) {
   }
 }
 
-/* ---------- STAGE 3 INGEST — with square verification ---------- */
+/* ---------- STAGE 3 INGEST — with square + move-quote verification ---------- */
 function stage3Ingest() {
   const raw = document.getElementById('stage3-response').value;
   const map = parseIdSections(raw);
@@ -2382,6 +2598,8 @@ function stage3Ingest() {
   if (!n) { alert('No IDs found in the Stage 3 response.'); return; }
 
   const warnings = [];
+  const quoteWarnings = [];
+  const quoteRe = /\b\d{1,3}\.{1,3}\s*(?:\.\.\.\s*)?(?:[RNBQK][a-h][1-8]|[a-h]x[a-h][1-8]|[a-h][1-8](?:=[RNBQK])?|O-O(?:-O)?)(?![a-zA-Z0-9])|\b(?:[RNBQK][a-h][1-8]|[a-h]x[a-h][1-8]|O-O(?:-O)?|[a-h][1-8]=[RNBQK])(?![a-zA-Z0-9])/;
   for (const id of Object.keys(map)) {
     const c = globalChunks.find(x => x.id === id);
     if (!c || !c.fenAfter || !isValidFen(c.fenAfter)) continue;
@@ -2409,13 +2627,19 @@ function stage3Ingest() {
 
   for (const id of Object.keys(map)) {
     const c = globalChunks.find(x => x.id === id);
+    const qm = String(map[id] || '').match(quoteRe);
+    if (qm) quoteWarnings.push(id + ': "' + qm[0] + '"');
     if (c) c._refined = map[id];
   }
 
   document.getElementById('pipeline-status').innerText = 'Stage 3 ingested · ' + n + ' refined';
-  if (warnings.length) {
-    const msg = warnings.slice(0, 8).map(w => '· ' + w.id + ': ' + w.text).join('\n');
-    alert('Ingested ' + n + ' refined notes.\n\n⚠ Square warnings (' + warnings.length + '):\n' + msg + (warnings.length > 8 ? '\n…' : ''));
+  if (warnings.length || quoteWarnings.length) {
+    const parts = [];
+    if (warnings.length) parts.push('Square warnings (' + warnings.length + '):\n' +
+      warnings.slice(0, 8).map(w => '· ' + w.id + ': ' + w.text).join('\n') + (warnings.length > 8 ? '\n…' : ''));
+    if (quoteWarnings.length) parts.push('Quoted moves (' + quoteWarnings.length + ') — rewrite as piece + square:\n' +
+      quoteWarnings.slice(0, 8).map(q => '· ' + q).join('\n') + (quoteWarnings.length > 8 ? '\n…' : ''));
+    alert('Ingested ' + n + ' refined notes.\n\n⚠ ' + parts.join('\n\n'));
   } else {
     alert('Ingested ' + n + ' refined notes.\nNo square issues detected.');
   }
