@@ -846,6 +846,17 @@ async function initSFPool() {
   }
   if (!SF_POOL.length) setSfBadge('ws', 'HTTP engine');
 }
+async function waitForEngine(timeoutMs = 8000) {
+  if (SF_POOL.some(s => s.ready)) return true;
+  if (!SF_POOL.length) await initSFPool();
+  if (SF_POOL.some(s => s.ready)) return true;
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    await delay(200);
+    if (SF_POOL.some(s => s.ready)) return true;
+  }
+  return false;
+}
 async function sfAnalyzeOnSlot(slot, fen, opts) {
   const depth = opts.depth || 16, multipv = opts.multipv || 5;
   const timeoutMs = opts.timeoutMs || (depth >= 20 ? 12000 : depth >= 18 ? 9000 : 6000);
@@ -2118,7 +2129,6 @@ function findVariationEnd(chunk) {
   return null;
 }
 
-/* ---- eval helpers (our-side signed) ---- */
 function evalForUs(evalStr, ourColor) {
   const s = String(evalStr || '');
   if (/^#/.test(s)) {
@@ -2147,99 +2157,141 @@ function evalLabelForUs(evalStr, ourColor) {
   return txt + ' clearly worse for us';
 }
 
-/* ---- Per-move engine context for Stage 1 / Stage 3 ----
-   Always emits a block so downstream prompts never lose the section,
-   collects OUR moves from every PV line, and reports threats via
-   multipv spread.  we = ourSide ("we"/"our"), them = theySide ("White"/"Black"). */
+/* ---- THREAT DETECTION — runs on every move ----
+   Uses multipv divergence (1st vs 2nd/3rd) to find precision-required moments,
+   and surfaces concrete threats such as "White threatens Bxh7#". */
+async function detectThreats(fenAfter, ourColor, theySide) {
+  if (!isValidFen(fenAfter)) return '';
+  const stm = fenAfter.split(' ')[1];
+  const isOurTurn = stm === ourColor;
+  const out = [];
+
+  let data = null;
+  try { data = await getEngineMultiPV(fenAfter, { depth: 14, multipv: 4 }); } catch (e) {}
+  if (!data || data.invalid || !data.lines || !data.lines.length) return '';
+
+  // 1) Forced-mate line by whoever is to move — surface it
+  for (let i = 0; i < Math.min(2, data.lines.length); i++) {
+    const l = data.lines[i];
+    const ev = String(l.eval || '');
+    const mv = l.allSan && l.allSan[0];
+    if (!mv || !/^#/.test(ev)) continue;
+    const n = parseInt(ev.slice(1), 10);
+    if (n > 0) {
+      if (isOurTurn) {
+        out.push('WE HAVE MATE: ' + mv + (n === 1 ? '#' : ' (mate in ' + n + ')') + ' — play it.');
+      } else {
+        out.push('THREAT: ' + theySide + ' threatens ' + mv + (n === 1 ? '#' : ' (mate in ' + n + ')') + '.');
+      }
+      break;
+    }
+  }
+
+  // 2) Multipv divergence — the precision moment
+  const evals = data.lines.map(l => evalForUs(l.eval, stm));
+  if (evals.length >= 2) {
+    const best = evals[0];
+    const second = evals[1];
+    const third = evals.length >= 3 ? evals[2] : second;
+    const gapToSecond = Math.abs(best - second);
+    const gapToThird = Math.abs(best - third);
+    const maxGap = Math.max(gapToSecond, gapToThird);
+
+    if (maxGap >= 1.0) {
+      if (isOurTurn) {
+        const bestMove = data.lines[0].allSan && data.lines[0].allSan[0];
+        const punishes = [];
+        for (let i = 1; i < Math.min(3, data.lines.length); i++) {
+          const l = data.lines[i];
+          const ourAlt = l.allSan && l.allSan[0];
+          const theirPunish = l.allSan && l.allSan[1];
+          if (ourAlt && theirPunish) punishes.push({ ourAlt, theirPunish, eval: l.eval });
+        }
+        if (bestMove && punishes.length) {
+          out.push('PRECISION NEEDED: we must play ' + bestMove + '. ' +
+            punishes.slice(0, 2).map(p => 'If we play ' + p.ourAlt + ', ' + theySide + ' punishes with ' + p.theirPunish + ' (' + evalLabelForUs(p.eval, ourColor) + ')').join('; ') + '.');
+          out.push('THREAT: ' + theySide + ' threatens ' + punishes[0].theirPunish + ' if we are imprecise.');
+        }
+      } else {
+        const theirBest = data.lines[0].allSan && data.lines[0].allSan[0];
+        if (theirBest) {
+          out.push('PRECISION NEEDED (for ' + theySide + '): ' + theySide + ' must play ' + theirBest + ' here — that is their main threat.');
+          out.push('THREAT: ' + theySide + ' threatens ' + theirBest + '.');
+        }
+      }
+    } else {
+      // No big divergence, but check for a simple forcing move (capture / check) at the top
+      const topMove = data.lines[0].allSan && data.lines[0].allSan[0];
+      if (topMove && !isOurTurn && (/x/.test(topMove) || /[+#]/.test(topMove))) {
+        out.push('THREAT: ' + theySide + ' threatens ' + topMove + '.');
+      }
+    }
+  }
+
+  return out.join('\n');
+}
+
+/* ---- ENGINE IDEAS — only at a variation close ---- */
+async function variationCloseIdeas(c, ourColor, theySide) {
+  const isClose = (c.isVariationStart || c.isVariationEnd) && c.variationLevel > 0;
+  if (!isClose) return '';
+
+  let closeFen = c.fenAfter;
+  if (c.isVariationStart && !c.isVariationEnd) {
+    const endChunk = findVariationEnd(c);
+    if (endChunk && endChunk.fenAfter && isValidFen(endChunk.fenAfter)) closeFen = endChunk.fenAfter;
+  }
+  if (!closeFen || !isValidFen(closeFen)) return '';
+
+  let data = null;
+  try { data = await getEngineMultiPV(closeFen, { depth: 14, multipv: 3 }); } catch (e) {}
+  if (!data || data.invalid || !data.lines || !data.lines.length) return '';
+
+  const stmColor = closeFen.split(' ')[1];
+  const ourIdeas = [];
+  for (const l of data.lines.slice(0, 2)) {
+    if (!l.allSan || !l.allSan.length) continue;
+    let turn = stmColor;
+    for (const san of l.allSan) {
+      if (turn === ourColor && san && !ourIdeas.includes(san)) ourIdeas.push(san);
+      turn = turn === 'w' ? 'b' : 'w';
+      if (ourIdeas.length >= 3) break;
+    }
+    if (ourIdeas.length >= 3) break;
+  }
+
+  const evalStr = evalLabelForUs(data.lines[0].eval, ourColor);
+  const prefix = ourColor === 'b' ? '...' : '';
+
+  let out = '\n=== VARIATION CLOSES — OUR IDEAS (' + (ourColor === 'w' ? 'White' : 'Black') + ') ===\n';
+  out += 'Eval here: ' + evalStr + '.\n';
+  if (ourIdeas.length) {
+    out += 'We continue with ' + ourIdeas.map(m => prefix + m).join(' and ') + ' ideas next.\n';
+  }
+  out += 'Phrase the note as: "We continue with ' + (ourIdeas.length ? prefix + ourIdeas[0] : 'our plan') + ' ideas next." — closing sentence only, no other plans for ' + theySide + '.\n';
+  return out;
+}
+
+/* ---- Per-move engine context: threats on every move, ideas only at close ---- */
 async function buildEngineContext(c, ourSide) {
   if (!c || !c.fenAfter || !isValidFen(c.fenAfter)) return '';
   const ourColor = ourSide === 'White' ? 'w' : 'b';
   const theySide = ourColor === 'w' ? 'Black' : 'White';
 
-  let evalChunk = c, isClosing = false;
-  if (c.isVariationStart) {
-    const endChunk = findVariationEnd(c);
-    if (endChunk && endChunk.fenAfter && isValidFen(endChunk.fenAfter)) {
-      evalChunk = endChunk; isClosing = true;
-    }
-  } else if (c.isVariationEnd && c.variationLevel > 0) {
-    isClosing = true;
-  }
-  const fenForEval = (evalChunk.fenAfter && isValidFen(evalChunk.fenAfter)) ? evalChunk.fenAfter : c.fenAfter;
-  if (!fenForEval || !isValidFen(fenForEval)) return '';
+  let out = '';
 
-  const stmColor = fenForEval.split(' ')[1];
-  const stmIsUs  = stmColor === ourColor;
+  // THREAT CHECK — every move
+  try {
+    const th = await detectThreats(c.fenAfter, ourColor, theySide);
+    if (th) out += th + '\n';
+  } catch (e) {}
 
-  let data = null;
-  try { data = await getEngineMultiPV(fenForEval, { depth: 14, multipv: 5 }); } catch (e) {}
+  // ENGINE IDEAS — only at variation close
+  try {
+    const close = await variationCloseIdeas(c, ourColor, theySide);
+    if (close) out += close;
+  } catch (e) {}
 
-  const ourIdeas = [];
-  let evalStr = 'engine unavailable';
-  let hasEngine = false;
-
-  if (data && !data.invalid && data.lines && data.lines.length) {
-    hasEngine = true;
-    evalStr = evalLabelForUs(data.lines[0].eval, ourColor);
-    for (const l of data.lines) {
-      if (!l.allSan || !l.allSan.length) continue;
-      let turn = stmColor;
-      for (const san of l.allSan) {
-        if (turn === ourColor && san) {
-          if (!ourIdeas.includes(san)) ourIdeas.push(san);
-        }
-        turn = turn === 'w' ? 'b' : 'w';
-        if (ourIdeas.length >= 6) break;
-      }
-      if (ourIdeas.length >= 6) break;
-    }
-  }
-
-  const header = isClosing
-    ? ('\n=== VARIATION CLOSES — OUR PLANS (' + ourSide + ') ===\n')
-    : '\n=== ENGINE CONTEXT ===\n';
-  let out = header;
-  out += 'Eval: ' + evalStr + '. ' + (stmIsUs ? 'It is our turn.' : 'It is ' + theySide + "'s turn.") + '\n';
-  if (ourIdeas.length) {
-    out += 'Our next moves (per engine): ' + ourIdeas.join(', ') + '\n';
-  } else if (hasEngine) {
-    out += 'Our next moves (per engine): (no concrete move found)\n';
-  } else {
-    out += 'Our next moves (per engine): (engine not loaded — describe position features instead)\n';
-  }
-  const pos = positionFeatures(fenForEval);
-  if (pos) out += 'Structure: ' + pos + '\n';
-
-  if (isClosing) {
-    out += 'Closing rule: say where the line leaves us (better/worse for us) and give our next plan. Use format: "We capture the knight and continue with Ng6 and g6 ideas. The open files give us a slightly better position."\n';
-  }
-
-  if (hasEngine && data.lines.length >= 3) {
-    const evals = data.lines.map(l => evalForUs(l.eval, ourColor));
-    const worstEval = evals[Math.min(4, evals.length - 1)];
-    const spread = Math.abs(evals[0] - worstEval);
-    if (spread >= 1.0) {
-      if (stmIsUs) {
-        const punishes = [];
-        for (let i = 1; i < Math.min(4, data.lines.length); i++) {
-          const l = data.lines[i];
-          if (l.allSan && l.allSan[0] && l.allSan[1]) {
-            punishes.push({ ourAlt: l.allSan[0], theirPunish: l.allSan[1], eval: evalLabelForUs(l.eval, ourColor) });
-          }
-        }
-        if (punishes.length) {
-          out += '⚠ PRECISION NEEDED (gap ' + spread.toFixed(1) + '):\n';
-          for (const p of punishes.slice(0, 2)) {
-            out += '  · if we play ' + p.ourAlt + ', ' + theySide + ' punishes with ' + p.theirPunish + ' (' + p.eval + ')\n';
-          }
-          out += 'Say it plainly: "' + theySide + ' threatens ' + punishes[0].theirPunish + ' if we play imprecisely."\n';
-        }
-      } else {
-        const theirBest = data.lines[0].allSan && data.lines[0].allSan[0];
-        if (theirBest) out += '⚠ ' + theySide + ' threatens: ' + theirBest + '.\n';
-      }
-    }
-  }
   return out;
 }
 
@@ -2358,11 +2410,11 @@ CRITICAL: Every section MUST begin with its ID exactly as given (### CHK_xxx_Mn_
 
 STYLE RULES — always apply:
 - Do NOT include move numbers. Never write "15. Bc6" or "12...Ng6".
-- Bare SAN is allowed when citing a move: "we continue with Ng6" (White) or "we continue with ...Ng6" (Black). Prefer prose ("the bishop on c6") where it reads naturally.
+- Bare SAN is allowed when citing a move: "we continue with Ng6" (White) or "we continue with ...Ng6" (Black).
 - Write from OUR side: "we"/"our" for ${ourSide}, "${theySide}" for the other side.
-- USE the "Our next moves (per engine)" line: weave at least one of those moves into every annotation where the line is not empty. Only when it reads "(engine not loaded…)" or "(no concrete move found)" may you fall back to describing the structure.
-- When a section carries "VARIATION CLOSES — OUR PLANS", the note must state where the line leaves us (better/worse for us) and our next ideas — e.g. "We capture the knight and continue with ...Ng6 and ...g6 ideas. The open files give us a slightly better position." Only ever give plans for us, never for ${theySide}.
-- When a "PRECISION NEEDED" block appears, name the threat explicitly: "${theySide} threatens Nxc6 if we play imprecisely."
+- A "THREAT:" line names a concrete threat by ${theySide}. Quote it literally in the note, e.g. "${theySide} threatens Bxh7#". Never generalise it.
+- A "PRECISION NEEDED" line marks an important moment where we must play the top move. Say so, and name the punishing move if we are imprecise.
+- A "VARIATION CLOSES" line appears ONLY at the end of a variation. Paraphrase it as the closing sentence of that move's note, e.g. "We continue with ...g6 ideas next." No other plans after a close.
 
 Return EXACTLY this format — no JSON, no markdown fences:
 
@@ -2398,7 +2450,6 @@ Return EXACTLY this format — no JSON, no markdown fences:
   return out;
 }
 
-/* ---------- STAGE 3 — VERIFIER / EDITOR ---------- */
 async function buildStage3Prompt(idx, drafts) {
   const ctxWiki = document.getElementById('ctx-wiki')?.checked;
   const ctxEngine = document.getElementById('ctx-engine')?.checked;
@@ -2417,7 +2468,7 @@ Your ONLY job for each note below:
 3. If the DRAFT mentions a square or piece that is not in the FACTS or ENGINE lines, DELETE that sentence.
 4. Never add a square, a piece, a plan, or a tactical idea that was not already in the DRAFT, FACTS, ENGINE, or SIGN lines.
 5. If the DRAFT contains move numbers ("15. Bc6", "12...Ng6"), remove the number and keep the move as bare SAN ("Bc6") or as prose ("the bishop on c6").
-6. Where a "VARIATION CLOSES — OUR PLANS" block appears, keep the draft's closing summary (the verdict + our next ideas) if it agrees with that block. Cut any plan for ${theySide}.
+6. Where a "VARIATION CLOSES — OUR IDEAS" block appears, keep only the closing sentence ("we continue with ...g6 ideas next"). Cut any plan for ${theySide}.
 
 We play ${ourSide}. Refer to us as "we"/"our". Refer to the opponent as "${theySide}" — never as "the opponent".
 
@@ -2428,12 +2479,11 @@ HARD RULES — these override everything:
 - NEVER write "passed pawn" unless FACTS says "passed pawn".
 - NEVER write "open file" for a file that isn't in FACTS.
 - NEVER invent a knight, bishop, rook, or queen square. Only the squares in FACTS, ENGINE, or the DRAFT.
-- NEVER describe what will happen next — EXCEPT in a closing note, where plans for us drawn from "VARIATION CLOSES — OUR PLANS" are allowed. Plans for ${theySide} are always forbidden.
+- NEVER describe what will happen next — EXCEPT in a closing sentence drawn from "VARIATION CLOSES — OUR IDEAS" ("we continue with ...g6 ideas next"). Plans for ${theySide} are always forbidden.
 - NEVER include move numbers. No "15. Bc6", no "12...Ng6". Bare SAN is fine: "we continue with Ng6". Prose is fine: "the bishop on c6".
 - If the DRAFT says a piece is on a square and FACTS does not list that piece on that square, cut it.
-- Do NOT add plans for ${theySide}. Our moves and our threats only. The one exception: a PRECISION NEEDED block names ${theySide}'s punishing move — you may name that move, nothing more.
-- If "Our next moves (per engine)" is populated, do not contradict it. If the DRAFT names a move that is not in that list and not ${theySide}'s named punish, trim it to a general idea.
-- If "VARIATION CLOSES — OUR PLANS" appears, keep the closing summary (verdict + our continuing ideas) if it agrees with the block. Cut any plan for ${theySide}.
+- A "THREAT:" line names ${theySide}'s concrete threat — keep it literal ("${theySide} threatens Bxh7#"). Never soften it into a plan.
+- A "PRECISION NEEDED" line means the position requires one specific move. Keep that warning; do not add tactical claims beyond it.
 
 Return EXACTLY this format — no JSON, no markdown fences:
 
@@ -2513,17 +2563,31 @@ async function stage1Copy() {
   if (selStart === null || selEnd === null) { alert('Pick a start and end move.'); return; }
   const idx = getSelectedIndices();
   lastBatchIds = idx.map(i => globalChunks[i].id);
-  if (document.getElementById('ctx-engine')?.checked) {
-    const ready = SF_POOL.filter(s => s.ready).length;
-    if (ready === 0) {
-      if (!confirm('Stockfish is still loading. Copy without engine lines?')) return;
-    }
+
+  document.getElementById('pipeline-status').innerText = 'Waiting for engine…';
+  const ready = await waitForEngine(8000);
+  if (!ready) {
+    if (!confirm('Stockfish did not load within 8 seconds. Copy anyway without engine threats?')) return;
   }
-  document.getElementById('pipeline-status').innerText = 'Stage 1 · analysing closing variations…';
+
+  document.getElementById('pipeline-status').innerText = 'Stage 1 · building prompt…';
   const prompt = await buildStage1Prompt(idx, '', [], '');
+
+  const threatLines = (prompt.match(/^THREAT:/gm) || []).length;
+  const precisionLines = (prompt.match(/PRECISION NEEDED/g) || []).length;
+  const closeBlocks = (prompt.match(/=== VARIATION CLOSES/g) || []).length;
+
   await navigator.clipboard.writeText(prompt);
-  document.getElementById('pipeline-status').innerText = 'Stage 1 copied · paste into AI';
-  alert('Stage 1 prompt copied (' + idx.length + ' moves).\nPaste into your LLM. Then paste the response into the "Stage 1" box and click Ingest.');
+
+  document.getElementById('pipeline-status').innerText =
+    'Stage 1 copied · ' + threatLines + ' threats, ' + precisionLines + ' precision, ' + closeBlocks + ' closes';
+
+  let msg = 'Stage 1 prompt copied (' + idx.length + ' moves).\n\n';
+  msg += 'Threat lines (every move): ' + threatLines + '\n';
+  msg += 'Precision-needed blocks: ' + precisionLines + '\n';
+  msg += 'Variation-close blocks: ' + closeBlocks + '\n';
+  msg += '\nPaste into your LLM. Then paste the response into the "Stage 1" box and click Ingest.';
+  alert(msg);
 }
 
 async function stage2Start() {
@@ -2565,9 +2629,10 @@ async function stage3Copy(event) {
   if (!Object.keys(drafts).length) { alert('No drafts found. Run Stage 1 first.'); return; }
 
   if (document.getElementById('ctx-engine')?.checked) {
-    const ready = SF_POOL.filter(s => s.ready).length;
-    if (ready === 0) {
-      if (!confirm('Stockfish is still loading. Copy without engine lines?')) return;
+    document.getElementById('pipeline-status').innerText = 'Waiting for engine…';
+    const ready = await waitForEngine(8000);
+    if (!ready) {
+      if (!confirm('Stockfish did not load. Copy anyway without engine threats?')) return;
     }
   }
 
@@ -2576,8 +2641,13 @@ async function stage3Copy(event) {
   if (btn) { btn.disabled = true; btn.innerText = 'Preparing…'; }
 
   try {
+    document.getElementById('pipeline-status').innerText = 'Stage 3 · building prompt…';
     const prompt = await buildStage3Prompt(idx, drafts);
+    const threatLines = (prompt.match(/^THREAT:/gm) || []).length;
+    const precisionLines = (prompt.match(/PRECISION NEEDED/g) || []).length;
+    const closeBlocks = (prompt.match(/=== VARIATION CLOSES/g) || []).length;
     await navigator.clipboard.writeText(prompt);
+
     const included = [];
     if (document.getElementById('ctx-wiki')?.checked) included.push('wiki');
     if (document.getElementById('ctx-engine')?.checked) included.push('engine');
@@ -2585,13 +2655,18 @@ async function stage3Copy(event) {
     if (document.getElementById('ctx-explorer')?.checked) included.push('explorer');
     const ctxText = included.length ? included.join(', ') : 'drafts + plans only';
     document.getElementById('pipeline-status').innerText = 'Stage 3 copied · ' + ctxText;
-    alert('Stage 3 verify prompt copied.\n\nContext included: ' + ctxText + '\n\nPaste into your LLM, then paste the response into the "Stage 3" box.');
+
+    let msg = 'Stage 3 verify prompt copied.\n\nContext included: ' + ctxText + '\n';
+    if (document.getElementById('ctx-engine')?.checked) {
+      msg += 'Threat lines: ' + threatLines + ' · Precision blocks: ' + precisionLines + ' · Closes: ' + closeBlocks + '\n';
+    }
+    msg += '\nPaste into your LLM, then paste the response into the "Stage 3" box.';
+    alert(msg);
   } finally {
     if (btn) { btn.disabled = false; btn.innerText = origText || '3. Copy Verify Prompt'; }
   }
 }
 
-/* ---------- STAGE 3 INGEST — with square + move-number verification ---------- */
 function stage3Ingest() {
   const raw = document.getElementById('stage3-response').value;
   const map = parseIdSections(raw);
