@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GM Variation Master · v8.7 | Decipher Chess Academy</title>
+<title>GM Variation Master · v9.1 | Decipher Chess Academy</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -37,10 +37,10 @@ details[open] .chev{transform:rotate(90deg)}.chev{transition:transform .2s}
 <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
 <div>
 <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
-<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Editor stage 3 · engine plan · v8.7</p>
+<p class="text-slate-400 text-sm font-light uppercase tracking-widest">Editor stage 3 · engine plan · v9.1</p>
 </div>
 <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg items-center flex-wrap">
-<span id="sf-badge" class="sf-badge loading">Engine loading…</span>
+<span id="sf-badge" class="sf-badge ws">WS Engine</span>
 <span id="db-badge" class="sf-badge loading">DB loading…</span>
 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
 <button onclick="switchTab('reassembler')" id="tab-r" class="px-6 py-2 rounded-md font-bold text-xs uppercase text-slate-400 hover:text-white">2. Re-assembler</button>
@@ -98,7 +98,7 @@ Import<input type="file" accept=".json,.txt" class="hidden" onchange="importPack
 <span class="chev gold-text text-lg">▶</span>
 <div>
 <h2 class="text-base font-bold gold-text">Annotation Corpus</h2>
-<p class="text-[11px] text-slate-400">Load annotated PGNs → index by position → retrieve similar GM comments.</p>
+<p class="text-[11px] text-slate-400">Load PGNs or Lichess Studies → index by position → retrieve similar GM comments.</p>
 </div>
 </div>
 <span id="corpus-status" class="pack-badge empty">empty</span>
@@ -112,6 +112,13 @@ Import<input type="file" accept=".json,.txt" class="hidden" onchange="importPack
 📂 Load PGN file(s)
 <input type="file" accept=".pgn,.txt" multiple class="hidden" onchange="corpusLoadFiles(event)">
 </label>
+<div class="border-t border-slate-700 pt-2 mt-2">
+<label class="text-[10px] font-bold uppercase text-slate-500">Import Lichess Study</label>
+<div class="flex gap-1 mt-1">
+<input type="text" id="lichess-study-id" class="flex-1 p-2 rounded-lg text-[10px]" placeholder="e.g. 9Yt3R2zW">
+<button onclick="importLichessStudy()" class="px-3 py-2 bg-blue-700 hover:bg-blue-600 rounded-lg font-bold uppercase text-[10px]">Import</button>
+</div>
+</div>
 <button onclick="corpusClear()" class="w-full py-2 bg-red-900/30 text-red-400 rounded-lg font-bold uppercase text-[11px]">Clear corpus</button>
 <button onclick="corpusExport()" class="w-full py-2 bg-slate-800 rounded-lg font-bold uppercase text-[10px] text-slate-300">Export corpus JSON</button>
 <label class="w-full py-2 bg-slate-800 rounded-lg font-bold uppercase text-[10px] text-slate-300 text-center cursor-pointer block">
@@ -156,7 +163,6 @@ Import JSON<input type="file" accept=".json" class="hidden" onchange="corpusImpo
 </select>
 </label>
 <button onclick="testEngine()" class="px-4 py-3 bg-slate-800 text-slate-300 font-bold rounded-xl uppercase text-xs hover:bg-slate-700">🧪 Test</button>
-<button onclick="debugEngine()" class="px-4 py-3 bg-slate-800 text-slate-300 font-bold rounded-xl uppercase text-xs hover:bg-slate-700">🔍 Engine</button>
 <button onclick="extractAndReview()" id="review-facts-btn" class="px-6 py-3 bg-emerald-700 hover:bg-emerald-600 rounded-xl font-bold uppercase text-xs hidden">🔬 Review Facts</button>
 <button onclick="clearAll()" class="px-6 py-3 bg-red-900/30 text-red-400 rounded-xl font-bold uppercase text-xs">Reset</button>
 </div>
@@ -355,7 +361,7 @@ let board = null, reviewBoard = null;
 let selStart = null, selEnd = null, reviewIndex = null;
 let userNotes = {};
 let engineCache = {};
-let sfCache = new Map();
+let wsCache = new Map();
 let explorerCache = new Map();
 let reviewEngineToken = 0, mainEngineToken = 0;
 let reviewLine = [], reviewLineIdx = 0;
@@ -364,7 +370,6 @@ let openingsDB = [], openingsMap = {};
 let lastBatchIds = [];
 let reviewedFacts = {};
 let planBoard = null, planChess = null, planMovesList = [], currentIntentionId = null;
-let sfInitAttempted = false;
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 /* ===================== CLIPBOARD HELPER ===================== */
@@ -785,121 +790,7 @@ function copyResearchPrompt() {
   copyTextToClipboard(prompt).then(() => alert('Copied.')).catch(() => {});
 }
 
-/* ===================== ENGINE ===================== */
-const SF_POOL = [];
-function setSfBadge(state, text) {
-  const b = document.getElementById('sf-badge'); if (!b) return;
-  b.classList.remove('on','off','loading','ws'); b.classList.add(state); b.innerText = text;
-}
-async function createSFWorker() {
-  const cdns = [
-    'https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js',
-    'https://unpkg.com/stockfish.js@10.0.2/stockfish.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js'
-  ];
-  for (const url of cdns) {
-    try {
-      const ctl = new AbortController();
-      const timer = setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 4000);
-      const res = await fetch(url, { signal: ctl.signal });
-      clearTimeout(timer);
-      if (!res.ok) continue;
-      const code = await res.text();
-      if (!code || code.length < 1000) continue;
-      try {
-        const blob = new Blob([code], { type: 'application/javascript' });
-        const w = new Worker(URL.createObjectURL(blob));
-        console.log('[GM] Worker created from ' + url);
-        return w;
-      } catch (e) { console.warn('[GM] Worker create failed:', e); }
-    } catch (e) { console.warn('[GM] Fetch failed:', url, e && e.message); }
-  }
-  return null;
-}
-async function initSFPool() {
-  if (SF_POOL.length || sfInitAttempted) return;
-  sfInitAttempted = true;
-  setSfBadge('loading', 'Engine loading…');
-  try {
-    for (let i = 0; i < 2; i++) {
-      const slot = { worker: null, ready: false, busy: false, handler: null, chain: Promise.resolve() };
-      const w = await createSFWorker();
-      if (!w) continue;
-      slot.worker = w;
-      w.onmessage = (e) => {
-        const s = typeof e.data === 'string' ? e.data : (e.data && e.data.data) || '';
-        if (!s) return;
-        if (s === 'uciok') {
-          slot.ready = true;
-          try { w.postMessage('setoption name Hash value 32'); w.postMessage('setoption name Threads value 1'); } catch (e) {}
-          const c = SF_POOL.filter(x => x.ready).length;
-          if (c >= 1) setSfBadge('on', 'SF ready ×' + c);
-        }
-        if (slot.busy && slot.handler) slot.handler(s);
-      };
-      w.onerror = (e) => { console.warn('[GM] Worker error:', e && e.message); slot.ready = false; };
-      try { w.postMessage('uci'); } catch (e) {}
-      SF_POOL.push(slot);
-    }
-  } catch (e) { console.error('[GM] initSFPool:', e); }
-  if (!SF_POOL.length) setSfBadge('off', 'Engine unavailable');
-  else if (!SF_POOL.some(s => s.ready)) setSfBadge('loading', 'Waiting for UCI…');
-}
-async function waitForEngine(timeoutMs = 3000) {
-  if (SF_POOL.some(s => s.ready)) return true;
-  if (!sfInitAttempted) await initSFPool();
-  if (SF_POOL.some(s => s.ready)) return true;
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    await delay(200);
-    if (SF_POOL.some(s => s.ready)) return true;
-  }
-  return false;
-}
-async function sfAnalyzeOnSlot(slot, fen, opts) {
-  const depth = opts.depth || 16, multipv = opts.multipv || 5;
-  const timeoutMs = opts.timeoutMs || (depth >= 20 ? 10000 : depth >= 18 ? 8000 : 5000);
-  const key = fen + '::' + depth + '::' + multipv;
-  if (sfCache.has(key)) return sfCache.get(key);
-  if (!slot.worker || !slot.ready) return null;
-  const run = () => new Promise((resolve) => {
-    const lines = {}; let done = false, timer = null;
-    slot.handler = (s) => {
-      if (done) return;
-      if (s.startsWith('info') && s.includes(' pv ')) {
-        const mv = s.match(/\bmultipv (\d+)/), sc = s.match(/\bscore (cp|mate) (-?\d+)/), pv = s.match(/\bpv (.+)$/);
-        if (mv && sc && pv) lines[+mv[1]] = { multipv: +mv[1], scoreType: sc[1], score: +sc[2], pvUci: pv[1].trim().split(/\s+/) };
-      } else if (s.startsWith('bestmove')) {
-        done = true; clearTimeout(timer); slot.handler = null; slot.busy = false;
-        const rows = Object.values(lines).sort((a,b) => a.multipv - b.multipv);
-        sfCache.set(key, rows); resolve(rows);
-      }
-    };
-    timer = setTimeout(() => {
-      if (done) return;
-      try { slot.worker.postMessage('stop'); } catch (e) {}
-      setTimeout(() => {
-        if (done) return;
-        done = true; slot.handler = null; slot.busy = false;
-        const rows = Object.values(lines).sort((a,b) => a.multipv - b.multipv);
-        sfCache.set(key, rows); resolve(rows);
-      }, 400);
-    }, timeoutMs);
-    try {
-      slot.worker.postMessage('setoption name MultiPV value ' + multipv);
-      slot.worker.postMessage('position fen ' + fen);
-      slot.worker.postMessage('go depth ' + depth);
-    } catch (e) { done = true; clearTimeout(timer); slot.handler = null; slot.busy = false; resolve([]); }
-  });
-  const chained = slot.chain.then(() => { slot.busy = true; return run(); });
-  slot.chain = chained.catch(() => {}); return chained;
-}
-let sfRR = 0;
-async function sfAnalyze(fen, opts = {}) {
-  if (!SF_POOL.length) await initSFPool();
-  const ready = SF_POOL.filter(s => s.ready); if (!ready.length) return null;
-  return sfAnalyzeOnSlot(ready[sfRR++ % ready.length], fen, opts);
-}
+/* ===================== WEBSOCKET ENGINE ===================== */
 function uciListToSan(fen, uciMoves, maxPlies) {
   const out = [];
   try {
@@ -927,55 +818,111 @@ function formatPvNumberedSans(sans, fen) {
   } catch (e) { return sans.join(' '); }
   return parts.join(' ');
 }
-function sfLinesToEngineData(sfLines, fen) {
-  if (!sfLines || !sfLines.length) return { lines: [], invalid: true };
-  const lines = sfLines.map((l, i) => {
-    const sans = uciListToSan(fen, l.pvUci, 10);
-    return {
-      multipv: l.multipv || (i + 1),
-      eval: l.scoreType === 'mate' ? (l.score > 0 ? '#' + l.score : '#-' + Math.abs(l.score)) : (l.score / 100).toFixed(2),
-      san: sans[0] || '', continuation: sans.slice(1).join(' '),
-      numbered: formatPvNumberedSans(sans, fen), allSan: sans,
-      scoreType: l.scoreType, score: l.score, invalid: false
-    };
-  });
-  const top = lines[0];
-  return { lines, eval: top.eval, san: top.san, continuation: top.continuation, invalid: false };
-}
 async function getEngineMultiPV(fen, opts = {}) {
   if (!isValidFen(fen)) return { lines: [], invalid: true };
-  if (!SF_POOL.some(s => s.ready)) return { lines: [], invalid: true };
-  const depth = opts.depth || parseInt(document.getElementById('engine-depth')?.value || '16', 10);
-  const multipv = opts.multipv || 5;
-  const sfLines = await sfAnalyze(fen, { depth, multipv, timeoutMs: opts.timeoutMs });
-  if (sfLines && sfLines.length) { const data = sfLinesToEngineData(sfLines, fen); data.source = 'stockfish'; return data; }
-  return { lines: [], invalid: true };
+  if (wsCache.has(fen)) return wsCache.get(fen);
+
+  const wantVariants = opts.multipv || 5;
+  const depthWant = opts.depth || 14;
+  
+  return new Promise((resolve) => {
+    let settled = false;
+    const byKey = {};
+    let ws;
+    
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      try { ws && ws.close(); } catch (e) {}
+      
+      const rows = Object.values(byKey);
+      rows.sort((a, b) => {
+        const bits = fen.split(/\s+/);
+        const blackToMove = bits[1] === "b";
+        const ea = typeof a.eval === "number" ? a.eval : 0;
+        const eb = typeof b.eval === "number" ? b.eval : 0;
+        return blackToMove ? (ea - eb) : (eb - ea);
+      });
+      
+      const lines = rows.slice(0, wantVariants).map((data) => {
+        const uciCont = Array.isArray(data.continuationArr) ? data.continuationArr : [];
+        let firstSan = data.san || "";
+        if (!firstSan && data.move && data.move.length >= 4) {
+          firstSan = uciListToSan(fen, [data.move], 1)[0] || data.move;
+        }
+        const restSan = uciListToSan(
+          (() => {
+            try {
+              const ch = new Chess(); ch.load(fen);
+              if (firstSan) ch.move(firstSan, { sloppy: true });
+              else if (data.move) {
+                const u = data.move;
+                ch.move({ from: u.slice(0,2), to: u.slice(2,4), promotion: u[4] || "q" });
+              }
+              return ch.fen();
+            } catch (e) { return fen; }
+          })(),
+          uciCont,
+          5
+        );
+        const allSan = [firstSan].concat(restSan).filter(Boolean).slice(0, 6);
+        const numbered = formatPvNumberedSans(allSan, fen);
+        return {
+          eval: String(data.eval || "0.00"),
+          san: firstSan,
+          continuation: restSan.join(" "),
+          numbered,
+          allSan,
+          invalid: false
+        };
+      });
+      
+      if (!lines.length) { resolve({ lines: [], invalid: true }); return; }
+      wsCache.set(fen, { lines, invalid: false });
+      resolve({ lines, invalid: false });
+    };
+
+    const timer = setTimeout(finish, 4000);
+    try { ws = new WebSocket("wss://chess-api.com/v1"); } catch (e) { clearTimeout(timer); resolve({ lines: [], invalid: true }); return; }
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ fen, variants: wantVariants, depth: depthWant, maxThinkingTime: 100 }));
+    };
+
+    ws.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (data.type !== "move" && data.type !== "bestmove") return;
+        const key = data.move || data.san || data.lan;
+        if (!key) return;
+        
+        const prev = byKey[key];
+        if (!prev || (data.depth || 0) >= (prev.depth || 0)) {
+          byKey[key] = data;
+        }
+        
+        const deep = Object.values(byKey).filter(x => (x.depth || 0) >= 10);
+        if (deep.length >= wantVariants && data.type === "bestmove") {
+          clearTimeout(timer); setTimeout(finish, 100);
+        }
+      } catch (e) {}
+    };
+
+    ws.onerror = () => { clearTimeout(timer); finish(); };
+    ws.onclose = () => { clearTimeout(timer); finish(); };
+  });
 }
+
 async function testEngine() {
   const startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
   document.getElementById('pipeline-status').innerText = 'Testing engine…';
-  const ready = await waitForEngine(5000);
-  if (!ready) { document.getElementById('pipeline-status').innerText = 'Engine failed to load'; alert('✗ Engine failed to load. Check the browser console (F12) for [GM] messages.'); return; }
   const data = await getEngineMultiPV(startFen, { depth: 12, multipv: 2 });
-  if (data && !data.invalid && data.lines && data.lines.length) { document.getElementById('pipeline-status').innerText = 'Engine OK'; alert('✓ Engine working. Top: ' + data.lines[0].san + ' ' + data.lines[0].eval); }
-  else { document.getElementById('pipeline-status').innerText = 'Engine ready but no output'; alert('✗ Engine UCI OK but no lines returned.'); }
-}
-async function debugEngine() {
-  const info = [
-    'SF_POOL.length: ' + SF_POOL.length,
-    'Ready: ' + SF_POOL.filter(s => s.ready).length,
-    'Attempted: ' + sfInitAttempted,
-    'Worker present: ' + SF_POOL.map(s => !!s.worker).join(',') || 'none',
-    'Cache entries: ' + sfCache.size
-  ].join('\n');
-  console.log('[GM Debug]', info, SF_POOL);
-  const tryNow = confirm('Engine status:\n\n' + info + '\n\nTry to reload engine now?');
-  if (tryNow) {
-    sfInitAttempted = false;
-    SF_POOL.length = 0;
-    await initSFPool();
-    await delay(1500);
-    alert('After reload — SF_POOL: ' + SF_POOL.length + ', Ready: ' + SF_POOL.filter(s => s.ready).length);
+  if (data && !data.invalid && data.lines && data.lines.length) { 
+    document.getElementById('pipeline-status').innerText = 'Engine OK'; 
+    alert('✓ Engine working. Top: ' + data.lines[0].san + ' ' + data.lines[0].eval); 
+  } else { 
+    document.getElementById('pipeline-status').innerText = 'Engine failed'; 
+    alert('✗ Engine WebSocket failed.'); 
   }
 }
 
@@ -983,368 +930,6 @@ async function debugEngine() {
 const PIECE_VAL = { p:1, n:3, b:3, r:5, q:9, k:100 };
 const sqToFR = sq => [sq.charCodeAt(0) - 97, 8 - parseInt(sq[1], 10)];
 const frToSq = (f, r) => String.fromCharCode(97 + f) + (8 - r);
-function attackersOfBoard(board, sq, byColor) {
-  const [tf, tr] = sqToFR(sq);
-  const at = (f, r) => (f>=0&&f<8&&r>=0&&r<8) ? board[r][f] : null;
-  const out = [];
-  const slide = (dirs, types) => {
-    for (const [df, dr] of dirs) {
-      let f = tf+df, r = tr+dr;
-      while (f>=0&&f<8&&r>=0&&r<8) {
-        const p = at(f, r);
-        if (p) { if (p.color === byColor && types.includes(p.type)) out.push(frToSq(f, r)); break; }
-        f += df; r += dr;
-      }
-    }
-  };
-  slide([[1,1],[1,-1],[-1,1],[-1,-1]], ['b','q']);
-  slide([[1,0],[-1,0],[0,1],[0,-1]], ['r','q']);
-  slide([[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]], ['k']);
-  for (const [df, dr] of [[1,2],[2,1],[2,-1],[1,-2],[-1,-2],[-2,-1],[-2,1],[-1,2]]) {
-    const p = at(tf+df, tr+dr);
-    if (p && p.color === byColor && p.type === 'n') out.push(frToSq(tf+df, tr+dr));
-  }
-  const pd = byColor === 'w' ? 1 : -1;
-  for (const df of [-1, 1]) {
-    const p = at(tf+df, tr+pd);
-    if (p && p.color === byColor && p.type === 'p') out.push(frToSq(tf+df, tr+pd));
-  }
-  return out;
-}
-function kingSafetyNotes(fen) {
-  const chess = new Chess(fen); if (!chess) return '';
-  const board = chess.board(); const notes = [];
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p || p.type !== 'k') continue;
-    const side = p.color === 'w' ? 'White' : 'Black';
-    const homeRank = p.color === 'w' ? 7 : 0, dir = p.color === 'w' ? -1 : 1;
-    const castled = (f === 6 || f === 2) && r === homeRank;
-    let shield = 0;
-    for (const df of [-1, 0, 1]) {
-      const nf = f + df, nr = r + dir;
-      if (nf < 0 || nf > 7 || nr < 0 || nr > 7) continue;
-      const q = board[nr][nf];
-      if (q && q.type === 'p' && q.color === p.color) shield++;
-    }
-    if (!castled && r === homeRank) notes.push(side + ' king still on e1/e8');
-    else if (castled && shield === 0) notes.push(side + ' king castled, no pawn shield');
-  }
-  return notes.join('; ');
-}
-function undevelopedPieces(fen) {
-  const chess = new Chess(fen); if (!chess) return '';
-  const board = chess.board();
-  const homes = { w:[['b1','n'],['c1','b'],['f1','b'],['g1','n']], b:[['b8','n'],['c8','b'],['f8','b'],['g8','n']] };
-  const out = [];
-  for (const side of ['w', 'b']) {
-    const un = [];
-    for (const [sq, code] of homes[side]) {
-      const [f, r] = sqToFR(sq);
-      const p = board[r][f];
-      if (p && p.color === side && p.type === code) un.push(sq);
-    }
-    if (un.length) out.push((side === 'w' ? 'White' : 'Black') + ' home: ' + un.join(','));
-  }
-  return out.join('; ');
-}
-function positionFeatures(fen) {
-  const chess = new Chess(fen); if (!chess) return '';
-  const board = chess.board(); const files = 'abcdefgh';
-  const wP = new Array(8).fill(0), bP = new Array(8).fill(0);
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p) continue;
-    if (p.type === 'p') { if (p.color === 'w') wP[f]++; else bP[f]++; }
-  }
-  const feats = []; const openFiles = [], wHalf = [], bHalf = [];
-  for (let f = 0; f < 8; f++) {
-    if (wP[f] === 0 && bP[f] === 0) openFiles.push(files[f]);
-    else if (wP[f] === 0 && bP[f] > 0) wHalf.push(files[f]);
-    else if (bP[f] === 0 && wP[f] > 0) bHalf.push(files[f]);
-  }
-  if (openFiles.length) feats.push('Open files: ' + openFiles.join(','));
-  if (wHalf.length) feats.push('Half-open for White: ' + wHalf.join(','));
-  if (bHalf.length) feats.push('Half-open for Black: ' + bHalf.join(','));
-  const qW = wP[0]+wP[1]+wP[2], qB = bP[0]+bP[1]+bP[2];
-  const kW = wP[5]+wP[6]+wP[7], kB = bP[5]+bP[6]+bP[7];
-  if (qB >= qW + 2) feats.push('Black has more pawns on the queenside');
-  if (qW >= qB + 2) feats.push('White has more pawns on the queenside');
-  if (kW >= kB + 2) feats.push('White has more pawns on the kingside');
-  if (kB >= kW + 2) feats.push('Black has more pawns on the kingside');
-  return feats.slice(0, 3).join('. ');
-}
-function pieceFreedom(fen) {
-  const chess = new Chess(fen); if (!chess) return [];
-  const board = chess.board(); const files = 'abcdefgh'; const out = [];
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p || p.type !== 'r') continue;
-    const dir = p.color === 'w' ? -1 : 1;
-    let cr = r + dir, blocked = false;
-    while (cr >= 0 && cr < 8) {
-      const q = board[cr][f];
-      if (q) { if (q.type === 'p' && q.color === p.color) blocked = true; break; }
-      cr += dir;
-    }
-    if (blocked) out.push({ side: p.color === 'w' ? 'White' : 'Black', piece: 'rook', square: files[f] + (8-r), issue: 'blocked by own pawn on the ' + files[f] + '-file' });
-  }
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p || p.type !== 'n') continue;
-    if (f === 0 || f === 7) {
-      const sq = files[f] + (8-r);
-      const test = new Chess(fen);
-      const moves = test.moves({ square: sq, verbose: true });
-      if (moves.length <= 2) out.push({ side: p.color === 'w' ? 'White' : 'Black', piece: 'knight', square: sq, issue: 'on the rim with only ' + moves.length + ' square' + (moves.length === 1 ? '' : 's') });
-    }
-  }
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p || p.type !== 'b') continue;
-    const sq = files[f] + (8-r);
-    const test = new Chess(fen);
-    const moves = test.moves({ square: sq, verbose: true });
-    if (moves.length <= 3) out.push({ side: p.color === 'w' ? 'White' : 'Black', piece: 'bishop', square: sq, issue: 'only ' + moves.length + ' square' + (moves.length === 1 ? '' : 's') });
-  }
-  return out.slice(0, 6);
-}
-function bishopAnalysis(fen) {
-  const chess = new Chess(fen); if (!chess) return { activeBishops: [], whitePair: false, blackPair: false };
-  const board = chess.board(); const files = 'abcdefgh';
-  const result = { activeBishops: [], whiteCount: 0, blackCount: 0, whitePair: false, blackPair: false };
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p || p.type !== 'b') continue;
-    if (p.color === 'w') result.whiteCount++; else result.blackCount++;
-    const sq = files[f] + (8-r);
-    const test = new Chess(fen);
-    const moves = test.moves({ square: sq, verbose: true });
-    const onLong = (f === r) || ((f + r) === 7);
-    const centralLong = onLong && f >= 2 && f <= 5 && r >= 2 && r <= 5;
-    if (centralLong && moves.length >= 6) result.activeBishops.push({ color: p.color, square: sq, moves: moves.length, note: 'on the long ' + (p.color === 'w' ? 'a1-h8' : 'h1-a8') + ' diagonal with ' + moves.length + ' squares' });
-  }
-  result.whitePair = result.whiteCount >= 2;
-  result.blackPair = result.blackCount >= 2;
-  return result;
-}
-function centreStrength(fen) {
-  const chess = new Chess(fen); if (!chess) return [];
-  const board = chess.board(); const files = 'abcdefgh';
-  const centreSquares = ['d4', 'e4', 'd5', 'e5'];
-  const wPawns = [], bPawns = [];
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p || p.type !== 'p') continue;
-    const sq = files[f] + (8-r);
-    if (p.color === 'w') wPawns.push(sq); else bPawns.push(sq);
-  }
-  const out = [];
-  for (const [side, pawns] of [['White', wPawns], ['Black', bPawns]]) {
-    const onCentre = pawns.filter(s => centreSquares.includes(s));
-    if (onCentre.length < 2) continue;
-    const attacked = onCentre.filter(s => {
-      const [f, r] = [s.charCodeAt(0) - 97, 8 - parseInt(s[1])];
-      const enemyDir = side === 'White' ? -1 : 1;
-      for (const df of [-1, 1]) {
-        const ef = f + df, er = r + enemyDir;
-        if (ef < 0 || ef > 7 || er < 0 || er > 7) continue;
-        const q = board[er][ef];
-        const ec = side === 'White' ? 'b' : 'w';
-        if (q && q.type === 'p' && q.color === ec) return true;
-      }
-      return false;
-    });
-    if (attacked.length === 0) out.push(side + ' has a strong pawn centre on ' + onCentre.join(', '));
-    else if (attacked.length >= onCentre.length) out.push(side + ' centre pawns are under pressure');
-  }
-  return out;
-}
-function passedPawns(fen) {
-  const chess = new Chess(fen); if (!chess) return [];
-  const board = chess.board(); const files = 'abcdefgh'; const out = [];
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p || p.type !== 'p') continue;
-    const pawnSide = p.color, enemySide = pawnSide === 'w' ? 'b' : 'w';
-    const dir = pawnSide === 'w' ? -1 : 1;
-    let isPassed = true;
-    for (const df of [-1, 0, 1]) {
-      const nf = f + df; if (nf < 0 || nf > 7) continue;
-      let cr = r + dir;
-      while (cr >= 0 && cr < 8) {
-        const q = board[cr][nf];
-        if (q && q.type === 'p' && q.color === enemySide) { isPassed = false; break; }
-        cr += dir;
-      }
-      if (!isPassed) break;
-    }
-    if (!isPassed) continue;
-    const sq = files[f] + (8-r);
-    const enemyAttacks = attackersOfBoard(board, sq, enemySide);
-    const ownDefends = attackersOfBoard(board, sq, pawnSide);
-    if (enemyAttacks.length && !ownDefends.length) continue;
-    const rankNum = 8 - r;
-    const advanced = pawnSide === 'w' ? rankNum >= 4 : rankNum <= 5;
-    out.push({ side: pawnSide === 'w' ? 'White' : 'Black', square: sq, advanced, defended: ownDefends.length > 0 });
-  }
-  return out.slice(0, 4);
-}
-function weakPawns(fen) {
-  const chess = new Chess(fen); if (!chess) return [];
-  const board = chess.board(); const files = 'abcdefgh'; const out = [];
-  const pbf = { w: new Array(8).fill(0).map(() => []), b: new Array(8).fill(0).map(() => []) };
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p || p.type !== 'p') continue;
-    pbf[p.color][f].push(8 - r);
-  }
-  for (const side of ['w', 'b']) for (let f = 0; f < 8; f++) {
-    const ranks = pbf[side][f]; if (!ranks.length) continue;
-    const lh = f > 0 && pbf[side][f - 1].length > 0, rh = f < 7 && pbf[side][f + 1].length > 0;
-    const sideName = side === 'w' ? 'White' : 'Black';
-    if (!lh && !rh && ranks.length === 1) out.push({ side: sideName, type: 'isolated', square: files[f] + ranks[0] });
-    if (ranks.length >= 2) out.push({ side: sideName, type: 'doubled', square: files[f] + ranks[0] });
-  }
-  return out.slice(0, 5);
-}
-function findManeuver(fen, pvSanList) {
-  if (!pvSanList || pvSanList.length < 3) return null;
-  const chess = new Chess(fen); const moves = [];
-  for (const san of pvSanList) {
-    const m = chess.move(san, { sloppy: true }); if (!m) break;
-    moves.push({ san, from: m.from, to: m.to, piece: m.piece, color: m.color });
-    if (moves.length >= 8) break;
-  }
-  if (moves.length < 3) return null;
-  const myMoves = moves.filter((_, i) => i % 2 === 0);
-  if (myMoves.length < 2) return null;
-  for (let i = 0; i < myMoves.length - 1; i++) {
-    const a = myMoves[i], b = myMoves[i + 1];
-    if (a.piece === b.piece && a.color === b.color && a.to === b.from) {
-      const type = { n:'knight manoeuvre', r:'rook lift', b:'bishop repositioning', q:'queen transfer', k:'king walk', p:'pawn march' }[a.piece] || 'piece transfer';
-      return { type, path: [a.from, a.to, b.to], pathSan: [a.san, b.san], target: b.to };
-    }
-  }
-  return null;
-}
-function lineUsesMotif(line, motif) {
-  if (!line || !line.allSan || !line.allSan.length) return false;
-  const f4 = line.allSan.slice(0, 4);
-  if (motif.type === 'capture') return f4.some(s => s.includes('x' + motif.square));
-  if (motif.type === 'pin') return f4.some(s => s.includes('x' + motif.pinned)) || f4.some(s => s.includes(motif.by));
-  return false;
-}
-function winningCaptures(fen) {
-  const chess = new Chess(fen); if (!chess) return [];
-  const board = chess.board();
-  const stm = chess.turn(), enemy = stm === 'w' ? 'b' : 'w';
-  const names = { p:'pawn', n:'knight', b:'bishop', r:'rook', q:'queen' };
-  const out = [];
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f];
-    if (!p || p.color !== enemy || p.type === 'k') continue;
-    const sq = frToSq(f, r);
-    const atk = attackersOfBoard(board, sq, stm);
-    if (!atk.length) continue;
-    let cheapestSq = null, cheapestVal = 999;
-    for (const as of atk) {
-      const [af, ar] = sqToFR(as);
-      const ap = board[ar][af];
-      if (PIECE_VAL[ap.type] < cheapestVal) { cheapestVal = PIECE_VAL[ap.type]; cheapestSq = as; }
-    }
-    const test = new Chess(fen);
-    try { if (!test.move({ from: cheapestSq, to: sq, promotion: 'q' })) continue; } catch (e) { continue; }
-    const newBoard = test.board();
-    const defs = attackersOfBoard(newBoard, sq, enemy);
-    let netGain;
-    if (defs.length === 0) netGain = PIECE_VAL[p.type] - cheapestVal;
-    else {
-      let cd = 999;
-      for (const ds of defs) { const [df, dr] = sqToFR(ds); const dp = newBoard[dr][df]; if (dp && PIECE_VAL[dp.type] < cd) cd = PIECE_VAL[dp.type]; }
-      netGain = PIECE_VAL[p.type] - Math.max(cheapestVal, cd);
-    }
-    if (netGain >= 1) out.push({ piece: names[p.type], square: sq, color: p.color, gain: netGain, free: defs.length === 0 });
-  }
-  return out.slice(0, 4);
-}
-function pinsAndSkewers(fen) {
-  const chess = new Chess(fen); if (!chess) return [];
-  const board = chess.board(), stm = chess.turn(), enemy = stm === 'w' ? 'b' : 'w';
-  const dirsB = [[1,1],[1,-1],[-1,1],[-1,-1]], dirsR = [[1,0],[-1,0],[0,1],[0,-1]];
-  const out = [];
-  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const p = board[r][f]; if (!p || p.color !== stm || !['b','r','q'].includes(p.type)) continue;
-    const dirs = p.type === 'b' ? dirsB : p.type === 'r' ? dirsR : [...dirsB, ...dirsR];
-    for (const [df, dr] of dirs) {
-      let cf = f+df, cr = r+dr, first = null, second = null;
-      while (cf>=0&&cf<8&&cr>=0&&cr<8) {
-        const q = board[cr][cf];
-        if (q) { if (!first) { if (q.color === stm) break; first = { sq: frToSq(cf,cr), p:q }; } else { second = { sq: frToSq(cf,cr), p:q }; break; } }
-        cf += df; cr += dr;
-      }
-      if (first && second && second.p.color === enemy && second.p.type === 'k')
-        out.push({ type:'pin', pinned:first.sq, pinnedPiece:first.p.type, pinnedColor:first.p.color, toKing:second.sq, by:frToSq(f,r), byPiece:p.type });
-      else if (first && second && second.p.color === stm && PIECE_VAL[first.p.type] > PIECE_VAL[second.p.type])
-        out.push({ type:'skewer', front:first.sq, frontPiece:first.p.type, behind:second.sq, behindPiece:second.p.type, by:frToSq(f,r), byPiece:p.type });
-    }
-  }
-  return out;
-}
-function nullMove(fen) { const p = fen.split(' '); p[1] = p[1] === 'w' ? 'b' : 'w'; p[3] = '-'; return p.join(' '); }
-
-function enginePlanPhrase(engineLines, stm) {
-  if (!engineLines || !engineLines.length) return '';
-  const top = engineLines[0];
-  if (!top || !top.allSan || top.allSan.length < 3) return '';
-  return top.allSan.slice(0, 5).join(' ');
-}
-
-async function buildFactList(fenAfter, moverSide) {
-  const facts = [];
-  const chess = new Chess(fenAfter); if (!chess) return facts;
-  const stm = chess.turn() === 'w' ? 'White' : 'Black';
-  const ks = kingSafetyNotes(fenAfter); if (ks) facts.push(ks);
-  const freedom = pieceFreedom(fenAfter);
-  for (const f of freedom) facts.push(f.side + ' ' + f.piece + ' on ' + f.square + ' — ' + f.issue);
-  const bish = bishopAnalysis(fenAfter);
-  for (const b of bish.activeBishops) facts.push((b.color === 'w' ? 'White' : 'Black') + ' bishop on ' + b.square + ' ' + b.note);
-  if (bish.whitePair) facts.push('White has the bishop pair');
-  if (bish.blackPair) facts.push('Black has the bishop pair');
-  for (const x of centreStrength(fenAfter)) facts.push(x);
-  for (const p of passedPawns(fenAfter)) facts.push(p.side + ' passed pawn on ' + p.square + (p.advanced ? ' (advanced)' : '') + (p.defended ? ', defended' : ''));
-  for (const w of weakPawns(fenAfter)) facts.push(w.side + ' ' + w.type + ' pawn on ' + w.square);
-  const pos = positionFeatures(fenAfter); if (pos) facts.push(pos);
-  const un = undevelopedPieces(fenAfter); if (un) facts.push(un);
-  const engineData = await getEngineMultiPV(fenAfter, { multipv: 2 });
-  const engineLines = (engineData && !engineData.invalid && engineData.lines) ? engineData.lines.slice(0, 2) : [];
-  const planPhrase = enginePlanPhrase(engineLines, stm);
-  if (planPhrase) facts.push('ENGINE PLAN (' + stm + ' to move, top line): ' + planPhrase);
-  const wc = winningCaptures(fenAfter);
-  if (wc.length) {
-    const confirmed = wc.filter(x => engineLines.some(l => lineUsesMotif(l, { type:'capture', square: x.square })));
-    const real = confirmed.length ? confirmed : wc.filter(x => x.gain >= 3);
-    if (real.length) facts.push('WINNING CAPTURES FOR ' + stm + ': ' + real.map(x => x.piece + ' on ' + x.square + (x.free ? ' is free' : ' (wins ' + x.gain + ')')).join('; '));
-  }
-  const ps = pinsAndSkewers(fenAfter);
-  const activePs = ps.filter(p => engineLines.some(l => lineUsesMotif(l, p)));
-  if (activePs.length) facts.push('PINS: ' + activePs.map(x => x.type === 'pin'
-    ? x.pinnedPiece + ' on ' + x.pinned + ' pinned to king by ' + x.byPiece + ' on ' + x.by
-    : 'skewer: ' + x.frontPiece + '/' + x.behindPiece + ' on ' + x.front + '/' + x.behind
-  ).join('; '));
-  const nullFen = nullMove(fenAfter);
-  if (isValidFen(nullFen)) {
-    const t = await getEngineMultiPV(nullFen, { multipv: 2 });
-    if (t && !t.invalid && t.lines && t.lines.length) {
-      const tl = t.lines[0];
-      const isMate = /^#/.test(String(tl.eval));
-      const evNum = parseFloat(String(tl.eval).replace('#', ''));
-      if (isMate || (!isNaN(evNum) && Math.abs(evNum) >= 1.0)) facts.push('THREAT (if ' + stm + ' passes): ' + tl.numbered);
-      const man = findManeuver(nullFen, tl.allSan || []);
-      if (man) facts.push('INTENT: ' + man.type + ' — ' + man.pathSan.join(' then ') + ' → ' + man.target);
-    }
-  }
-  try {
-    const fam = (document.getElementById('corpus-family')?.value || '').trim() || (document.getElementById('opening-name')?.value || '').trim();
-    const similar = await queryCorpus(fenAfter, fam, 3);
-    if (similar.length) {
-      const block = similar.map(s => '(' + s.moveNum + (s.isWhite ? '.' : '...') + ' ' + s.san + (s.tags && s.tags.length ? ' [' + s.tags.join(',') + ']' : '') + ') ' + s.comment.slice(0, 300)).join(' || ');
-      facts.push('CORPUS: ' + block);
-    }
-  } catch (e) {}
-  return facts;
-}
 
 /* ===================== ANNOTATION CORPUS ===================== */
 const CORPUS_DB = 'gm_corpus_v1';
@@ -1377,37 +962,6 @@ function corpusStructureKey(fen) {
   pawns.sort();
   return pawns.join('|') + '#' + JSON.stringify(mat);
 }
-function classifyCorpusMove(fenBefore, san, prevSan) {
-  const tags = [];
-  const test = new Chess(fenBefore); if (!test) return tags;
-  const mv = test.move(san.replace(/[!?]+/g, ''), { sloppy: true }); if (!mv) return tags;
-  const piece = mv.piece, to = mv.to;
-  const toFile = to.charCodeAt(0) - 97; const toRank = parseInt(to[1], 10);
-  const isCapture = !!mv.flags.match(/[ce]/);
-  const isCheck = san.includes('+') || san.includes('#');
-  if (isCapture && prevSan && prevSan.includes('x')) tags.push('recapture');
-  if (piece === 'p') {
-    if (toFile >= 6) tags.push('kingside_storm');
-    else if (toFile <= 2) tags.push('queenside_expansion');
-    else tags.push('central_break');
-  }
-  if (piece === 'r') {
-    if ((mv.color === 'w' && toRank >= 5) || (mv.color === 'b' && toRank <= 4)) tags.push('rook_lift');
-    let ownPawnsOnFile = 0;
-    const board = new Chess(fenBefore).board();
-    for (let r = 0; r < 8; r++) { const p = board[r][toFile]; if (p && p.type === 'p' && p.color === mv.color) ownPawnsOnFile++; }
-    if (ownPawnsOnFile === 0) tags.push('open_file');
-  }
-  if (piece === 'b' && ['b7','g7','b2','g2'].includes(to)) tags.push('fianchetto');
-  if (piece === 'n' && ['e4','d5','e5','d4','c5','f5'].includes(to)) tags.push('central_knight');
-  if (isCheck) tags.push('check');
-  if (isCapture) {
-    const beforeBoard = new Chess(fenBefore).board();
-    const tp = beforeBoard[8 - toRank] && beforeBoard[8 - toRank][toFile];
-    if (tp) tags.push('capture_' + tp.type);
-  }
-  return tags;
-}
 function parseCorpusPgnText(pgn, family) {
   const entries = [];
   const games = pgn.split(/\n\s*\n(?=\[Event)/);
@@ -1434,14 +988,49 @@ function parseCorpusPgnText(pgn, family) {
       if (!mv) { pendingComment = ''; continue; }
       const fenAfter = chess.fen();
       if (pendingComment && varStack.length === 0 && pendingComment.length >= 40) {
-        const tags = classifyCorpusMove(fenBefore, mv.san, prevSan);
-        entries.push({ fenKey: posKey(fenBefore), fenAfterKey: posKey(fenAfter), structureKey: corpusStructureKey(fenBefore), openingFamily: familyTag, san: mv.san, moveNum, isWhite: mv.color === 'w', comment: pendingComment.slice(0, 2000), tags });
+        entries.push({ fenKey: posKey(fenBefore), fenAfterKey: posKey(fenAfter), structureKey: corpusStructureKey(fenBefore), openingFamily: familyTag, san: mv.san, moveNum, isWhite: mv.color === 'w', comment: pendingComment.slice(0, 2000), tags: [] });
       }
       pendingComment = ''; prevSan = mv.san;
       if (mv.color === 'b') moveNum++;
     }
   }
   return entries;
+}
+async function importLichessStudy() {
+  const idInput = document.getElementById('lichess-study-id');
+  const id = (idInput.value || '').trim();
+  if (!id) { alert('Please enter a Lichess Study ID.'); return; }
+
+  const btn = event?.target || document.querySelector('button[onclick*="importLichessStudy"]');
+  const origText = btn ? btn.innerText : '';
+  if (btn) { btn.disabled = true; btn.innerText = 'Fetching…'; }
+
+  try {
+    const url = `https://lichess.org/api/study/${id}.pgn?comments=true&variations=true`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Study not found or API error.');
+    const pgnText = await res.text();
+
+    const entries = parseCorpusPgnText(pgnText, 'Lichess Study');
+    if (!entries.length) throw new Error('No annotated moves found in this study.');
+
+    const db = await openCorpusDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(CORPUS_STORE, 'readwrite');
+      const store = tx.objectStore(CORPUS_STORE);
+      for (const e of entries) store.add(e);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+
+    await corpusUpdateStats();
+    alert(`Imported ${entries.length} annotated positions from study ${id}.`);
+    idInput.value = '';
+  } catch (e) {
+    alert('Failed to import study: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerText = origText || 'Import'; }
+  }
 }
 async function corpusLoadFiles(event) {
   const files = Array.from(event.target.files || []);
@@ -1480,7 +1069,6 @@ async function corpusUpdateStats() {
       if (c) {
         count++;
         uniqFen.add(c.value.fenKey); uniqStruct.add(c.value.structureKey); families.add(c.value.openingFamily);
-        for (const t of c.value.tags || []) tags[t] = (tags[t] || 0) + 1;
         c.continue();
       } else resolve({ count, uniqFen: uniqFen.size, uniqStruct: uniqStruct.size, families: [...families], tags });
     };
@@ -1551,7 +1139,7 @@ async function corpusTestQuery() {
   const fam = (document.getElementById('corpus-family').value || '').trim();
   const hits = await queryCorpus(fen, fam, 5);
   if (!hits.length) { el.innerText = 'No matches.'; return; }
-  el.innerHTML = hits.map(h => '<div class="mb-2 pb-2 border-b border-slate-700"><span class="gold-text text-[10px]">' + h.moveNum + (h.isWhite ? '. ' : '... ') + h.san + ' — ' + h.openingFamily + ' [' + (h.tags || []).join(',') + ']</span><br>' + h.comment.slice(0, 220) + '</div>').join('');
+  el.innerHTML = hits.map(h => '<div class="mb-2 pb-2 border-b border-slate-700"><span class="gold-text text-[10px]">' + h.moveNum + (h.isWhite ? '. ' : '... ') + h.san + ' — ' + h.openingFamily + '</span><br>' + h.comment.slice(0, 220) + '</div>').join('');
 }
 
 /* ===================== INIT ===================== */
@@ -1560,7 +1148,6 @@ window.onload = async () => {
     board = Chessboard('board', { pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', position: 'start' });
     reviewBoard = Chessboard('review-board', { pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', position: 'start' });
   } catch (e) { console.error('[GM] Board init:', e); }
-  initSFPool();
   ensureOpeningsDB();
   loadIdeasPack();
   const saved = localStorage.getItem('gm_master_state');
@@ -1768,6 +1355,7 @@ function getSelectedIndices() {
   
   return Array.from(mustInclude).sort((a, b) => a - b);
 }
+
 let voiceRecognition = null, voiceListening = false;
 function toggleVoiceNote() {
   const status = document.getElementById('voice-note-status');
@@ -1839,7 +1427,6 @@ async function loadEngineForPanel(fen, linesElId, statusElId, tokenRef, opts) {
   if (!linesEl || !statusEl) return;
   if (!fen || !isValidFen(fen)) { linesEl.innerHTML = '<p class="text-slate-500 italic">Invalid FEN</p>'; return; }
   const myToken = ++tokenRef.n;
-  if (!SF_POOL.some(s => s.ready)) { linesEl.innerHTML = '<p class="text-slate-500 italic">Engine not ready</p>'; statusEl.innerText = 'no engine'; return; }
   linesEl.innerHTML = '<p class="text-slate-500"><span class="spinner"></span>Analyzing…</p>';
   const data = await getEngineMultiPV(fen, opts || { depth: 16, multipv: 5 });
   if (myToken !== tokenRef.n) return;
@@ -2104,7 +1691,6 @@ function evalLabelForUs(evalStr, ourColor) {
 }
 async function detectThreats(fenAfter, ourColor, theySide) {
   if (!isValidFen(fenAfter)) return '';
-  if (!SF_POOL.some(s => s.ready)) return ''; 
   const stm = fenAfter.split(' ')[1];
   const isOurTurn = stm === ourColor;
   const out = [];
@@ -2157,7 +1743,6 @@ async function detectThreats(fenAfter, ourColor, theySide) {
 async function variationCloseIdeas(c, ourColor, theySide) {
   const isClose = (c.isVariationStart || c.isVariationEnd) && c.variationLevel > 0;
   if (!isClose) return '';
-  if (!SF_POOL.some(s => s.ready)) return '';
   let closeFen = c.fenAfter;
   if (c.isVariationStart && !c.isVariationEnd) {
     const endChunk = findVariationEnd(c);
@@ -2189,22 +1774,11 @@ async function variationCloseIdeas(c, ourColor, theySide) {
 }
 async function buildEngineContext(c, ourSide) {
   if (!c || !c.fenAfter || !isValidFen(c.fenAfter)) return '';
-  if (!SF_POOL.some(s => s.ready)) return '\n[ENGINE NOT READY - THREATS AND PLANS OMITTED]\n'; 
-  
   const ourColor = ourSide === 'White' ? 'w' : 'b';
   const theySide = ourColor === 'w' ? 'Black' : 'White';
   let out = '';
-  
-  try { 
-    const th = await detectThreats(c.fenAfter, ourColor, theySide); 
-    if (th) out += th + '\n'; 
-  } catch (e) {}
-  
-  try { 
-    const close = await variationCloseIdeas(c, ourColor, theySide); 
-    if (close) out += close; 
-  } catch (e) {}
-  
+  try { const th = await detectThreats(c.fenAfter, ourColor, theySide); if (th) out += th + '\n'; } catch (e) {}
+  try { const close = await variationCloseIdeas(c, ourColor, theySide); if (close) out += close; } catch (e) {}
   return out;
 }
 function formatMoveSigns(c, includeVariationEnd) {
@@ -2273,6 +1847,7 @@ The annotator has left signs on some moves. Respect them:
 - NAG ($1–$6 move quality, $10–$13 equality/unclear, $14–$19 advantage, $44 compensation) is the annotator's verdict in coded form.
 - POSITION EVAL is the annotator's view of the position right after this move.
 - VARIATION ENDS AT appears on the FIRST move of a variation and tells you where this line is heading in evaluation terms. Your note on a variation's first move must reflect that destination.
+- MASTER GAMES shows the actual moves Grandmasters played from this exact position. Use it as an "interpolation anchor" to guide your style and plans.
 
 We play ${ourSide}. Refer to us as "we"/"our". Refer to the opponent as "${theySide}" — never as "the opponent".
 
@@ -2285,6 +1860,7 @@ STYLE RULES — always apply:
 - A "THREAT:" line names a concrete threat by ${theySide}. Quote it literally, e.g. "${theySide} threatens Bxh7#". Never generalise it.
 - A "PRECISION NEEDED" line marks an important moment where we must play the top move. Say so, and name the punishing move if we are imprecise.
 - A "VARIATION CLOSES" line appears ONLY at the end of a variation. Paraphrase it as the closing sentence of that move's note, e.g. "We continue with ...g6 ideas next."
+- CORPUS matches are similar positions (same pawn structure) from real games. Interpolate the ideas, do not copy them verbatim.
 
 Return EXACTLY this format — no JSON, no markdown fences:
 
@@ -2304,7 +1880,36 @@ Return EXACTLY this format — no JSON, no markdown fences:
     out += 'MOVE: ' + c.moveNum + '. ' + moveWithSign + ' by ' + sideJustPlayed + '\n';
     const signLines = formatMoveSigns(c, true);
     for (const line of signLines) out += line + '\n';
+    
+    // Engine & Threats
     try { const vctx = await buildEngineContext(c, ourSide); if (vctx) out += vctx; } catch (e) {}
+    
+    // Lichess Master Games Interpolation
+    if (c.fenAfter) {
+      try {
+        const ex = await lichessExplorer(c.fenAfter);
+        if (ex && ex.moves && ex.moves.length > 0) {
+          const tot = ex.white + ex.draws + ex.black;
+          if (tot > 0) {
+            const topMoves = ex.moves.slice(0, 3).map(m => {
+              const mt = m.white + m.draws + m.black;
+              const perc = Math.round((mt / tot) * 100);
+              return m.san + ' (' + perc + '%)';
+            }).join(', ');
+            out += 'MASTER GAMES (GM moves from this exact FEN): ' + topMoves + '\n';
+          }
+        }
+      } catch (e) {}
+    }
+    
+    // Local Corpus Interpolation
+    try {
+      const fam = (document.getElementById('corpus-family')?.value || '').trim() || (document.getElementById('opening-name')?.value || '').trim();
+      const sim = await queryCorpus(c.fenAfter, fam, 2);
+      if (sim.length) {
+        out += 'CORPUS (similar positions — interpolate the ideas): ' + sim.map(s => s.comment.slice(0, 200)).join(' || ') + '\n';
+      }
+    } catch (e) {}
   }
   const wikiBlock = (wikiEntries || []).slice(0, 8).map(w => '· ' + (w.move ? w.move.slice(0, 60) + ' — ' : '') + String(w.comment || '').slice(0, 400)).join('\n');
   if (wikiBlock) out += '\n=== WIKI STYLE ANCHORS ===\n' + wikiBlock + '\n';
@@ -2376,9 +1981,16 @@ Return EXACTLY this format — no JSON, no markdown fences:
     if (ctxExplorer && c.fenAfter) {
       try {
         const ex = await lichessExplorer(c.fenAfter);
-        if (ex && (ex.white + ex.draws + ex.black) > 0) {
+        if (ex && ex.moves && ex.moves.length > 0) {
           const tot = ex.white + ex.draws + ex.black;
-          out += 'MASTER GAMES: ' + tot + ' games. White ' + Math.round(ex.white / tot * 100) + '%, Draws ' + Math.round(ex.draws / tot * 100) + '%, Black ' + Math.round(ex.black / tot * 100) + '%.\n';
+          if (tot > 0) {
+            const topMoves = ex.moves.slice(0, 3).map(m => {
+              const mt = m.white + m.draws + m.black;
+              const perc = Math.round((mt / tot) * 100);
+              return m.san + ' (' + perc + '%)';
+            }).join(', ');
+            out += 'MASTER GAMES (GM moves from this exact FEN): ' + topMoves + '\n';
+          }
         }
       } catch (e) {}
     }
@@ -2386,7 +1998,9 @@ Return EXACTLY this format — no JSON, no markdown fences:
       try {
         const fam = (document.getElementById('corpus-family').value || '').trim() || (document.getElementById('opening-name')?.value || '').trim();
         const sim = await queryCorpus(c.fenAfter, fam, 2);
-        if (sim.length) out += 'CORPUS (real GM comments on similar positions — do not copy verbatim): ' + sim.map(s => s.comment.slice(0, 200)).join(' || ') + '\n';
+        if (sim.length) {
+          out += 'CORPUS (real GM comments on similar positions — interpolate ideas, do not copy verbatim): ' + sim.map(s => s.comment.slice(0, 200)).join(' || ') + '\n';
+        }
       } catch (e) {}
     }
   }
@@ -2406,10 +2020,6 @@ async function stage1Copy() {
     if (!idx.length) { alert('No moves selected.'); return; }
     lastBatchIds = idx.map(i => globalChunks[i].id);
     if (btn) { btn.disabled = true; btn.innerText = 'Building…'; }
-    statusEl.innerText = 'Stage 1 · engine status: ' + (SF_POOL.some(s => s.ready) ? 'ready' : 'loading (will skip engine context)');
-    if (!SF_POOL.some(s => s.ready)) {
-      await waitForEngine(3000);
-    }
     statusEl.innerText = 'Stage 1 · building prompt…';
     const prompt = await buildStage1Prompt(idx, '', [], '');
     const threatLines = (prompt.match(/^THREAT:/gm) || []).length;
@@ -2418,7 +2028,7 @@ async function stage1Copy() {
     const ok = await copyTextToClipboard(prompt);
     if (!ok) { statusEl.innerText = 'Stage 1 · clipboard blocked'; alert('Could not access clipboard. Prompt length: ' + prompt.length + ' chars.\nTry opening the file via http:// instead of file://, or copy from the console.'); console.log(prompt); return; }
     statusEl.innerText = 'Stage 1 · copied (' + prompt.length + ' chars, ' + threatLines + ' threats, ' + closeBlocks + ' closes)';
-    alert('Stage 1 prompt copied (' + idx.length + ' moves, ' + prompt.length + ' chars).\n\nThreat lines: ' + threatLines + '\nPrecision blocks: ' + precisionLines + '\nVariation closes: ' + closeBlocks + (SF_POOL.some(s => s.ready) ? '' : '\n\n⚠ Engine was not ready — no threats/closes were added.'));
+    alert('Stage 1 prompt copied (' + idx.length + ' moves, ' + prompt.length + ' chars).\n\nThreat lines: ' + threatLines + '\nPrecision blocks: ' + precisionLines + '\nVariation closes: ' + closeBlocks);
   } catch (e) {
     console.error('[GM] stage1Copy error:', e);
     statusEl.innerText = 'Stage 1 · ERROR: ' + (e && e.message ? e.message : String(e));
@@ -2462,10 +2072,6 @@ async function stage3Copy(event) {
     for (const i of idx) { const c = globalChunks[i]; if (c._draft) drafts[c.id] = c._draft; }
     if (!Object.keys(drafts).length) { alert('No drafts found. Run Stage 1 first.'); return; }
     if (btn) { btn.disabled = true; btn.innerText = 'Building…'; }
-    if (document.getElementById('ctx-engine')?.checked && !SF_POOL.some(s => s.ready)) {
-      statusEl.innerText = 'Stage 3 · waiting for engine (3s max)…';
-      await waitForEngine(3000);
-    }
     statusEl.innerText = 'Stage 3 · building prompt…';
     const prompt = await buildStage3Prompt(idx, drafts);
     const threatLines = (prompt.match(/^THREAT:/gm) || []).length;
