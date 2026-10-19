@@ -184,7 +184,7 @@ Import JSON<input type="file" accept=".json" class="hidden" onchange="corpusImpo
 </div>
 <div class="lg:w-2/3 glass p-4 rounded-xl">
 <div class="mb-3 text-xs text-slate-400 italic">
-<span class="text-yellow-400 font-bold">Instruction:</span> Click a move for START, another for END.
+<span class="text-yellow-400 font-bold">Instruction:</span> Click a move for START, another for END. (Selects 42% of range, preferring signs).
 </div>
 <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
 </div>
@@ -1602,49 +1602,76 @@ function processPgn(isLoad = false) {
   const normalizedInput = input.replace(/\b(\d{1,3})\$/g, '$$$1');
   pgnTokens = normalizedInput.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[O0]-[O0](?:-[O0])?[+#]?|[a-hRNBQK][a-hRNBQK1-8x\-=+#]*[?!]*|[a-h][1-8](?:=[RNBQ])?[+#]?[?!]*)/g) || [];
   let chunks = [], moveNumber = 0, variationLevel = 0;
-  let depthPlyCounts = { 0: 0 }, lastChunkAtLevel = {};
+  let depthPlyCounts = { 0: 0 };
   let chess = new Chess();
   const startFen = chess.fen();
   let plyStack = [], branchStack = [];
   const normFen = (f) => { if (!f || typeof f !== 'string') return f; try { const t = new Chess(); if (t.load(f)) return t.fen(); } catch (e) {} return f; };
   const fenAtTip = () => (plyStack.length === 0 ? startFen : plyStack[plyStack.length-1].fenAfter);
   const loadTip = () => { chess.load(fenAtTip()); return normFen(chess.fen()); };
+  
   pgnTokens.forEach((token, index) => {
     if (token.startsWith('[') || token.startsWith('{')) return;
+    
     if (token === '(') {
       branchStack.push({ plies: plyStack.map(p => ({ san:p.san, fenBefore:p.fenBefore, fenAfter:p.fenAfter })), level: variationLevel });
       if (plyStack.length > 0) plyStack.pop();
       loadTip(); variationLevel++; depthPlyCounts[variationLevel] = 0; return;
     }
+    
     if (token === ')') {
-      if (lastChunkAtLevel[variationLevel]) lastChunkAtLevel[variationLevel].isVariationEnd = true;
+      // Find the most recent chunk at this variation level and mark it as the end
+      for (let k = chunks.length - 1; k >= 0; k--) {
+        if (chunks[k].variationLevel === variationLevel) {
+          chunks[k].isVariationEnd = true;
+          break;
+        }
+      }
       const s = branchStack.pop();
       if (s) { plyStack = s.plies; variationLevel = s.level; } else variationLevel = Math.max(0, variationLevel - 1);
       loadTip(); return;
     }
+    
     if (/^\d+\./.test(token)) { moveNumber = parseInt(token, 10); return; }
     if (token.startsWith('$')) return;
     if (!/^([a-hRNBQK]|[O0]-)/.test(token)) return;
+    
     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
     const fenBefore = normFen(loadTip());
     let cleanMove = token.replace(/\$\d+/g,'').replace(/[!?]+/g,'').replace(/[±∓∞]/g,'').replace(/[=\/+\-]+$/g,'').replace(/[^a-zA-Z0-9=\+\-#O]/g,'').trim();
     if (/=$/.test(cleanMove)) cleanMove = cleanMove.replace(/=$/,'');
     cleanMove = cleanMove.replace(/0/g, 'O');
+    
     let mv = chess.move(cleanMove, { sloppy: true });
     if (!mv) { const nc = cleanMove.replace(/[+#]/g,''); if (nc !== cleanMove) mv = chess.move(nc, { sloppy: true }); }
     if (!mv) { const alt = token.replace(/[!?$±∓∞=\/\+\-].*$/g,'').replace(/0/g,'O').trim(); if (alt && alt !== cleanMove) mv = chess.move(alt, { sloppy: true }); }
-    let parsedOk = !!mv, sanUsed = '', fenAfter = fenBefore;
-    if (mv) { fenAfter = normFen(chess.fen()); sanUsed = mv.san; plyStack.push({ san: sanUsed, fenBefore, fenAfter }); }
-    else sanUsed = token.replace(/[!?$±∓∞].*$/,'').replace(/[=\/+\-]+$/,'').trim();
+    
+    // If the move is illegal, it's likely junk text. Skip it entirely to protect the FEN.
+    if (!mv) return;
+    
+    let sanUsed = mv.san;
+    let fenAfter = normFen(chess.fen());
+    plyStack.push({ san: sanUsed, fenBefore, fenAfter });
+    
     let evalSymbol = '';
     const nextToken = pgnTokens[index + 1];
     if (nextToken && (nextToken.startsWith('$') || /^[!?]+$/.test(nextToken) || /^[\+\-=±∓∞\/]+$/.test(nextToken))) evalSymbol = ' ' + nextToken;
+    
     const isVarStart = (variationLevel > 0 && depthPlyCounts[variationLevel] === 1);
     const pathArray = plyStack.map(p => p.san);
-    chunks.push({ id: 'CHK_' + chunks.length + '_M' + moveNumber + '_V' + variationLevel, target: token + evalSymbol, moveNum: moveNumber, tokenIndex: index, isMainLine: variationLevel === 0, isVariationStart: isVarStart, isVariationEnd: false, fen: fenBefore, fenAfter, moveParsed: parsedOk, variationLevel, pathArray, san: sanUsed });
-    lastChunkAtLevel[variationLevel] = chunks[chunks.length - 1];
+    
+    chunks.push({
+      id: 'CHK_' + chunks.length + '_M' + moveNumber + '_V' + variationLevel,
+      target: token + evalSymbol, moveNum: moveNumber, tokenIndex: index,
+      isMainLine: variationLevel === 0, isVariationStart: isVarStart, isVariationEnd: false,
+      fen: fenBefore, fenAfter, moveParsed: true, variationLevel, pathArray, san: sanUsed
+    });
   });
-  if (lastChunkAtLevel[0]) lastChunkAtLevel[0].isVariationEnd = true;
+  
+  if (chunks.length > 0 && !chunks[chunks.length - 1].isVariationEnd && chunks[chunks.length - 1].variationLevel === 0) {
+      chunks[chunks.length - 1].isVariationEnd = true;
+  }
+
   for (let i = 0; i < chunks.length; i++) {
     const c = chunks[i], nextSans = [], nextFull = [];
     let j = i + 1;
@@ -1659,6 +1686,7 @@ function processPgn(isLoad = false) {
     }
     c.nextMoves = nextSans; c.nextMovesFull = nextFull;
   }
+  
   globalChunks = chunks;
   document.getElementById('workspace').classList.remove('hidden');
   const cb = document.getElementById('copy-btn'); if (cb) cb.classList.remove('hidden');
@@ -1693,43 +1721,58 @@ function processPgn(isLoad = false) {
 function getMainLineSANs() {
   return globalChunks.filter(c => c.variationLevel === 0 && c.san).sort((a, b) => a.tokenIndex - b.tokenIndex).map(c => c.san);
 }
+
+// 42% selection target, prioritising signs/symbols
 function getSelectedIndices() {
   if (selStart === null) return [];
   const endIdx = selEnd !== null ? selEnd : selStart;
   const range = [];
   for (let i = selStart; i <= endIdx; i++) range.push(i);
   if (!range.length) return [];
-  if (range.length <= 14) return range;
-  const TARGET = 12;
+  
+  const TARGET = Math.max(2, Math.round(range.length * 0.42));
+  if (range.length <= TARGET) return range;
+  
   const mustInclude = new Set([selStart, endIdx]);
   const scored = [];
   for (const i of range) {
     const c = globalChunks[i]; if (!c) continue;
     let score = 0;
-    if (c.isVariationStart) { score += 20; mustInclude.add(i); }
-    if (c.isVariationEnd) { score += 20; mustInclude.add(i); }
-    if (/\?\?/.test(c.target)) score += 15;
-    if (/\?!/.test(c.target)) score += 12;
-    if (/!\?/.test(c.target)) score += 10;
-    if (/!!/.test(c.target)) score += 15;
-    if (/(^|[^!])\?/.test(c.target)) score += 10;
-    if (/(^|[^?])!/.test(c.target)) score += 8;
-    if (/[=±∓∞]/.test(c.target)) score += 8;
-    if (/\$\d+/.test(c.target)) score += 8;
-    if (/x/.test(c.san || '')) score += 3;
-    if (/[+#]/.test(c.san || '')) score += 4;
+    
+    if (c.isVariationStart) { score += 50; mustInclude.add(i); }
+    if (c.isVariationEnd) { score += 50; mustInclude.add(i); }
+    
+    if (/\?\?/.test(c.target)) score += 40;
+    if (/\?!/.test(c.target)) score += 35;
+    if (/!\?/.test(c.target)) score += 30;
+    if (/!!/.test(c.target)) score += 40;
+    if (/(^|[^!])\?/.test(c.target)) score += 25;
+    if (/(^|[^?])!/.test(c.target)) score += 20;
+    if (/[=±∓∞]/.test(c.target)) score += 15;
+    if (/\$\d+/.test(c.target)) score += 15;
+    
+    if (/x/.test(c.san || '')) score += 5;
+    if (/[+#]/.test(c.san || '')) score += 5;
     if (c.variationLevel === 0 && i < 12) score += 3;
+    
     scored.push({ i, score });
   }
+  
   scored.sort((a, b) => b.score - a.score);
-  for (const s of scored) { if (mustInclude.size >= TARGET) break; mustInclude.add(s.i); }
+  for (const s of scored) {
+    if (mustInclude.size >= TARGET) break;
+    mustInclude.add(s.i);
+  }
+  
   if (mustInclude.size < TARGET) {
     const need = TARGET - mustInclude.size;
     const stride = Math.max(1, Math.floor(range.length / (need + 1)));
     for (let k = stride; k < range.length && mustInclude.size < TARGET; k += stride) mustInclude.add(range[k]);
   }
+  
   return Array.from(mustInclude).sort((a, b) => a - b);
 }
+
 let voiceRecognition = null, voiceListening = false;
 function toggleVoiceNote() {
   const status = document.getElementById('voice-note-status');
@@ -1922,7 +1965,10 @@ function updateUI() {
     }
     d.className = 'chunk-card glass p-3 rounded-lg ' + cls;
     d.onclick = () => selectChunk(i);
-    d.innerHTML = '<p class="text-[9px] gold-text font-bold mb-1">' + ch.id + '</p><p class="text-xs font-semibold truncate">' + ch.moveNum + '. ' + ch.target + '</p>';
+    let tag = '';
+    if (ch.isVariationStart) tag += ' <span class="text-blue-400 text-[8px]">START</span>';
+    if (ch.isVariationEnd) tag += ' <span class="text-blue-400 text-[8px]">END</span>';
+    d.innerHTML = '<p class="text-[9px] gold-text font-bold mb-1">' + ch.id + tag + '</p><p class="text-xs font-semibold truncate">' + ch.moveNum + '. ' + ch.target + '</p>';
     c.appendChild(d);
   });
   document.getElementById('stats').innerText = globalChunks.length + ' TOTAL MOVES';
@@ -2027,11 +2073,16 @@ const NAG_MAP = { '$1': 'good move (!)', '$2': 'poor move (?)', '$3': 'very good
 function decodeNAG(nag) { return NAG_MAP[nag] || ''; }
 function findVariationEnd(chunk) {
   if (!chunk || !chunk.isVariationStart) return null;
-  const startIdx = globalChunks.indexOf(chunk); if (startIdx < 0) return null;
+  const startIdx = globalChunks.indexOf(chunk);
+  if (startIdx < 0) return null;
+  let currentLevel = chunk.variationLevel;
+  let depth = 0;
   for (let j = startIdx; j < globalChunks.length; j++) {
     const n = globalChunks[j];
-    if (n.variationLevel < chunk.variationLevel) break;
-    if (n.variationLevel === chunk.variationLevel && n.isVariationEnd) return n;
+    if (n.variationLevel > currentLevel) depth++;
+    else if (n.variationLevel < currentLevel) depth--;
+    else if (depth === 0 && n.isVariationEnd) return n;
+    if (n.variationLevel < currentLevel && depth === 0) break;
   }
   return null;
 }
@@ -2062,12 +2113,12 @@ function evalLabelForUs(evalStr, ourColor) {
 }
 async function detectThreats(fenAfter, ourColor, theySide) {
   if (!isValidFen(fenAfter)) return '';
-  if (!SF_POOL.some(s => s.ready)) return ''; /* fast-fail */
+  if (!SF_POOL.some(s => s.ready)) return ''; 
   const stm = fenAfter.split(' ')[1];
   const isOurTurn = stm === ourColor;
   const out = [];
   let data = null;
-  try { data = await getEngineMultiPV(fenAfter, { depth: 14, multipv: 4 }); } catch (e) {}
+  try { data = await getEngineMultiPV(fenAfter, { depth: 12, multipv: 4 }); } catch (e) {}
   if (!data || data.invalid || !data.lines || !data.lines.length) return '';
   for (let i = 0; i < Math.min(2, data.lines.length); i++) {
     const l = data.lines[i]; const ev = String(l.eval || ''); const mv = l.allSan && l.allSan[0];
@@ -2145,7 +2196,7 @@ async function variationCloseIdeas(c, ourColor, theySide) {
 }
 async function buildEngineContext(c, ourSide) {
   if (!c || !c.fenAfter || !isValidFen(c.fenAfter)) return '';
-  if (!SF_POOL.some(s => s.ready)) return ''; /* fast-fail when no engine */
+  if (!SF_POOL.some(s => s.ready)) return '\n[ENGINE NOT READY - THREATS AND PLANS OMITTED]\n'; 
   const ourColor = ourSide === 'White' ? 'w' : 'b';
   const theySide = ourColor === 'w' ? 'Black' : 'White';
   let out = '';
@@ -2288,6 +2339,7 @@ HARD RULES — these override everything:
 - If the DRAFT says a piece is on a square and FACTS does not list that piece on that square, cut it.
 - A "THREAT:" line names ${theySide}'s concrete threat — keep it literal ("${theySide} threatens Bxh7#"). Never soften it into a plan.
 - A "PRECISION NEEDED" line means the position requires one specific move. Keep that warning; do not add tactical claims beyond it.
+- If you see "[ENGINE NOT READY]", write your best human assessment based on the DRAFT and FACTS.
 
 Return EXACTLY this format — no JSON, no markdown fences:
 
