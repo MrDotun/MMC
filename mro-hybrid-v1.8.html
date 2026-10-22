@@ -606,53 +606,29 @@
          * Returns short human clue (no numbers) for END PLAN / KEY
          */
         async function getHumanClue(fenAfter, weSide) {
+            const clues = [];
             try {
-                await initLocalEngine();
-                if (!stockfishEngine || !stockfishEngine.ready) return "equal";
-
                 const game = new Chess();
                 if (!game.load(fenAfter)) return "equal";
 
-                // Stockfish analysis
-                const result = await stockfishEngine.analyze(fenAfter, 14);
-
-                // Threat detection
-                const threats = (typeof analyzeThreats === "function")
-                    ? analyzeThreats(game)
-                    : { hangingPieces: [], attackedPieces: [], checksAvailable: [] };
-
-                const clues = [];
-
-                // Hanging / underdefended pieces
-                if (threats.hangingPieces && threats.hangingPieces.length) {
-                    clues.push(threats.hangingPieces[0]);
-                } else if (threats.attackedPieces && threats.attackedPieces.length) {
-                    clues.push(threats.attackedPieces[0]);
+                // 1. Threat detection (works even if Stockfish fails)
+                if (typeof analyzeThreats === "function") {
+                    try {
+                        const threats = analyzeThreats(game);
+                        if (threats.hangingPieces && threats.hangingPieces.length) {
+                            clues.push(threats.hangingPieces[0]);
+                        } else if (threats.attackedPieces && threats.attackedPieces.length) {
+                            clues.push(threats.attackedPieces[0]);
+                        }
+                        if (threats.checksAvailable && threats.checksAvailable.length) {
+                            clues.push("check available");
+                        }
+                    } catch (te) {
+                        console.warn("Threat analysis failed:", te);
+                    }
                 }
 
-                // Checks
-                if (threats.checksAvailable && threats.checksAvailable.length) {
-                    clues.push("check available");
-                }
-
-                // Engine judgment + short idea
-                if (result.lines && result.lines.length > 0) {
-                    const top = result.lines[0];
-                    const sanLine = (top.movesSan || []).slice(0, 3).join(" ");
-                    if (sanLine) clues.push("best idea: " + sanLine);
-
-                    const cp = top.evalCp ?? 0;
-                    let judgment = "equal";
-                    if (Math.abs(cp) < 40) judgment = "equal";
-                    else if (cp >= 40 && cp < 120) judgment = weSide === "White" ? "we are better" : "they are better";
-                    else if (cp <= -40 && cp > -120) judgment = weSide === "White" ? "they are better" : "we are better";
-                    else if (cp >= 120) judgment = weSide === "White" ? "we are clearly better" : "they are clearly better";
-                    else if (cp <= -120) judgment = weSide === "White" ? "they are clearly better" : "we are clearly better";
-
-                    clues.unshift(judgment);
-                }
-
-                // Bishop pair
+                // 2. Bishop pair (cheap, always available)
                 const boardPart = fenAfter.split(" ")[0];
                 const whiteBishops = (boardPart.match(/B/g) || []).length;
                 const blackBishops = (boardPart.match(/b/g) || []).length;
@@ -660,6 +636,35 @@
                     clues.push(weSide === "White" ? "we have the bishop pair" : "they have the bishop pair");
                 } else if (blackBishops >= 2 && whiteBishops < 2) {
                     clues.push(weSide === "Black" ? "we have the bishop pair" : "they have the bishop pair");
+                }
+
+                // 3. Stockfish (may fail on file://)
+                try {
+                    await initLocalEngine();
+                    if (stockfishEngine && stockfishEngine.ready) {
+                        const result = await stockfishEngine.analyze(fenAfter, 12);
+                        if (result.lines && result.lines.length > 0) {
+                            const top = result.lines[0];
+                            const sanLine = (top.movesSan || []).slice(0, 3).join(" ");
+                            if (sanLine) clues.push("best idea: " + sanLine);
+
+                            const cp = top.evalCp ?? 0;
+                            let judgment = "equal";
+                            if (Math.abs(cp) < 40) judgment = "equal";
+                            else if (cp >= 40 && cp < 120) judgment = weSide === "White" ? "we are better" : "they are better";
+                            else if (cp <= -40 && cp > -120) judgment = weSide === "White" ? "they are better" : "we are better";
+                            else if (cp >= 120) judgment = weSide === "White" ? "we are clearly better" : "they are clearly better";
+                            else if (cp <= -120) judgment = weSide === "White" ? "they are clearly better" : "we are clearly better";
+
+                            clues.unshift(judgment);
+                        }
+                    } else {
+                        console.warn("Stockfish not ready – using threats only");
+                        if (!clues.length) clues.push("equal");
+                    }
+                } catch (se) {
+                    console.warn("Stockfish analyze failed:", se);
+                    if (!clues.length) clues.push("equal");
                 }
 
                 return clues.slice(0, 3).join(" · ") || "equal";
@@ -1319,13 +1324,21 @@ FEN AFTER: ${fenAfter || "unavailable"}`;
                     lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
                 }
 
-                // Hybrid clue: variation ends OR moves with symbol / user note
-                if ((c.isVariationEnd || signOnly || userNotes[c.id]) && fenAfter) {
+                // Always try to generate a human clue when we have a valid FEN
+                if (fenAfter) {
                     engineCalls++;
                     btnText.innerHTML = `<div class="spinner"></div>Clue [${currentStep}/${totalSelectedMoves}]...`;
-                    const humanClue = await getHumanClue(fenAfter, weSide);
+                    let humanClue = "equal";
+                    try {
+                        humanClue = await getHumanClue(fenAfter, weSide);
+                    } catch (err) {
+                        console.warn("Clue failed:", err);
+                        humanClue = "equal";
+                    }
+                    // Always write END PLAN so the AI receives aid
                     lineOutput += `\nEND PLAN: ${humanClue}`;
-                    if (signOnly || userNotes[c.id]) {
+                    // Extra KEY on important moves
+                    if (c.isVariationEnd || signOnly || userNotes[c.id]) {
                         lineOutput += `\nKEY: ${humanClue}`;
                     }
                     statsText.innerText = `[${c.moveNum}.${sanDisplay}] ${humanClue}`;
@@ -1344,19 +1357,23 @@ FEN AFTER: ${fenAfter || "unavailable"}`;
             const batchString = batchData.join("\n\n");
             
             const fullPrompt = `You are a 2700 GM writing course notes in very simple, correct English.
-We play ${weSide}. Use "we/our" for us and "${theySide}/they" for the opponent.
+We play ${weSide}. Use "we/our" for our moves. For the opponent say "${theySide}" (not "they").
 
 Rules:
 - 1–2 short sentences only.
-- Explain the idea of the move.
+- Explain only the idea of the side that just moved.
+- On our move: talk about our plan ("We develop the knight...").
+- On ${theySide}'s move: talk only about ${theySide}'s idea ("${theySide} decides to move the bishop away..."). Do not mention our future plans on their move.
 - Never start with the move number or the move itself.
 - Respect the GM symbol (!, ?, !!, ??, !?, ?!).
 - At the end of a variation, explain why the position is equal/better/worse using the board (not numbers).
 - Do not invent pieces or moves. Use the FENs.
 - Use END PLAN and KEY only as silent help. Do not copy them into the note.
 
-Example of good end-of-variation note:
-"We capture on d6, attacking the c7 knight. Our bishop pair and space on the queenside give us more than enough compensation for the pawn."
+Good examples:
+Our move: "We develop the knight to f6, preparing castling and controlling the centre."
+Opponent move: "${theySide} decides to move the bishop away, keeping pressure on the kingside."
+Variation end: "We capture on d6, attacking the c7 knight. Our bishop pair and space on the queenside give us more than enough compensation for the pawn."
 
 Return ONLY JSON. Keys = IDs. Values = comment text only.
 
