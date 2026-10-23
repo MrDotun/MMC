@@ -677,7 +677,7 @@
             const moves = uciToSanList(fen, uciMoves, 3);
             if (!moves.length) return "";
             const sans = moves.map(m => m.san);
-            return 'natural plan: ' + sans.join(' ');
+            return 'we can continue with ' + sans.join(', ') + ' ideas';
         }
 
         /**
@@ -849,9 +849,36 @@
                         clues.unshift(judgment);
 
                         const stm = fenAfter.split(/\s+/)[1] === 'w' ? 'White' : 'Black';
-                        if (stm === weSide || isVarEnd) {
-                            const plan = describePlanMoves(fenAfter, top.moves || [], weSide);
+                        // Our recommended continuations (always at var end / signed moves)
+                        if (isVarEnd || stm === weSide) {
+                            let planFen = fenAfter;
+                            let planMoves = top.moves || [];
+                            if (stm !== weSide) {
+                                // Opponent to move — flip so we see OUR ideas
+                                planFen = flipSideToMove(fenAfter);
+                                try {
+                                    const planRes = await Promise.race([
+                                        stockfishEngine.analyze(planFen, 12),
+                                        new Promise(r => setTimeout(() => r(null), 3500))
+                                    ]);
+                                    if (planRes && planRes.lines && planRes.lines[0]) {
+                                        planMoves = planRes.lines[0].moves || [];
+                                    }
+                                } catch (e) {}
+                            }
+                            const plan = describePlanMoves(planFen, planMoves, weSide);
                             if (plan) clues.push(plan);
+                        }
+                        // Favour-our-side hint for unclear / compensation-type evals
+                        if (isVarEnd) {
+                            const abs = Math.abs(top.evalCp ?? 0);
+                            if (abs < 80) {
+                                clues.push("complex but our play is easier");
+                            } else {
+                                const weBetter = (weSide === 'White' && (top.evalCp ?? 0) > 40) ||
+                                                 (weSide === 'Black' && (top.evalCp ?? 0) < -40);
+                                if (weBetter) clues.push("our active pieces give us good play");
+                            }
                         }
                         // Critical position: alternatives collapse
                         const critical = describeCriticalAlternatives(fenAfter, result.lines);
@@ -1464,24 +1491,30 @@
         function expandNagText(raw) {
             if (!raw) return "";
             let s = String(raw);
-            // $44 $11 etc.
+            // $NAG codes first
             s = s.replace(/\$(\d+)/g, (_, n) => {
                 const m = NAG_MEANING[parseInt(n, 10)];
                 return m ? (" " + m) : (" $" + n);
             });
-            // unicode / ASCII eval symbols → short words the AI already knows
+            // compound evaluation glyphs often glued to ! ?
+            s = s.replace(/!\/=\/∞|!\/∞|!\/=/g, " good move, unclear");
+            s = s.replace(/\?\/=\/∞|\?\/∞/g, " dubious, unclear");
             s = s.replace(/=\/∞|∞\/=|\/∞/g, " unclear");
             s = s.replace(/∞/g, " unclear");
-            s = s.replace(/\+\/=|=\/\+/g, " slight edge for White");
-            s = s.replace(/=\/\-|\-\/=/g, " slight edge for Black");
-            s = s.replace(/\+\-\/|\+\-/g, " winning for White");
-            s = s.replace(/\-\+\//g, " winning for Black");
-            s = s.replace(/±/g, " clear edge for White");
-            s = s.replace(/∓/g, " clear edge for Black");
-            s = s.replace(/\+\=/g, " slight edge for White");
-            s = s.replace(/=\+/g, " slight edge for Black");
-            s = s.replace(/\+\/\-/g, " clear edge for White");
-            s = s.replace(/\-\/\+/g, " clear edge for Black");
+            s = s.replace(/\+\/=|=\/\+|\+=/g, " slight edge for White");
+            s = s.replace(/=\/\-|\-\/=|=\+/g, " slight edge for Black");
+            s = s.replace(/\+\/\-|±/g, " clear edge for White");
+            s = s.replace(/\-\/\+|∓/g, " clear edge for Black");
+            s = s.replace(/\+\-/g, " winning for White");
+            s = s.replace(/\-\+/g, " winning for Black");
+            // keep ! ? !! ?? !? ?! as words when alone in symbol part
+            s = s.replace(/!!/g, " excellent");
+            s = s.replace(/\?\?/g, " blunder");
+            s = s.replace(/!\?/g, " interesting");
+            s = s.replace(/\?!/g, " dubious");
+            // single ! or ? only if not part of word
+            s = s.replace(/(^|\s)!(\s|$)/g, "$1good move$2");
+            s = s.replace(/(^|\s)\?(\s|$)/g, "$1mistake$2");
             return s.replace(/\s+/g, " ").trim();
         }
 
@@ -1610,7 +1643,11 @@
                 }
 
                 let lineOutput = `[ID: ${c.id}]
-MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}
+MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
+                if (judgment) {
+                    lineOutput += `\nJUDGMENT: ${judgment}`;
+                }
+                lineOutput += `
 LINE: ${lineHistory || "(start)"}
 FEN BEFORE: ${fenBefore || "unavailable"}
 FEN AFTER: ${fenAfter || "unavailable"}`;
@@ -1661,33 +1698,28 @@ FEN AFTER: ${fenAfter || "unavailable"}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a 2700 GM writing course notes in very simple, correct English.
+            const fullPrompt = `You are a 2700+ human GM writing a paid chess course in very simple, correct English. You are teaching students who play ${weSide}. Always favour our side — show why our position is workable or easier to play when the judgment is unclear or compensation.
+
 We play ${weSide}. Use "we/our" for our moves. For the opponent say "${theySide}" (not "they").
 
 Rules:
 - 1–2 short sentences only.
 - Explain only the idea of the side that just moved.
-- On our move: talk about our plan ("We develop the knight...").
-- On ${theySide}'s move: talk only about ${theySide}'s idea ("${theySide} decides to move the bishop away..."). Do not mention our future plans on their move.
+- On our move: our plan ("We swing the rook to d6...").
+- On ${theySide}'s move: only their idea. Do not mention our future plans on their move.
 - Never start with the move number or the move itself.
-- Respect the GM judgment on the MOVE line (in [brackets] or as !, ?, !!, ??, !?, ?!, unclear, compensation, slight edge, etc.). Your note must fit that judgment. $11/∞ = unclear; $44 = compensation; $14/$15 = slight edge; $16/$17 = clear edge.
-- Use the LINE field as the move history of this variation. Ground your idea in what already happened, not only the current FEN.
-- At the end of a variation, or when the move carries an evaluation symbol, explain why that symbol fits using the board, plans, and LINE history (not numbers). For ∞ / unclear, say what makes the position hard to assess or easier for one side.
-- Do not invent attacks on well-defended squares. Only claim a threat if THREATS or the FEN supports it.
-- Do not invent pieces or moves. Use the FENs.
-- Use END PLAN and KEY only as silent help. Do not copy them into the note.
-- A POSITIONAL block gives you real facts (pawns, kings, files, activity, outposts, weak squares). Use it, do NOT list it. Pick the ONE fact that best explains the move.
-- A THREATS block and END PLAN may name a concrete threat (e.g. "White threatens to win the bishop on g3"). Use that wording; do not invent other tactics.
-- At variation ends, END PLAN may include a natural plan (e.g. "natural plan: Ne7 Ng6"). Prefer that over vague phrases.
-- If END PLAN says a side "cannot afford" certain moves, the position is critical — stress that only accurate moves hold, using those concrete moves.
-- TACTICAL MOTIFS lists detected pins/forks/etc. Mention one only if it drives the idea.
-- Never use the words "FEN", "material", "mobility", or "eval". Translate facts into chess language ("our rook is on the open c-file").
-- If a claim cannot be supported by the POSITIONAL or THREATS block, do not make it.
+- The MOVE line has the GM judgment in [brackets] (unclear, compensation, good move, slight edge...). Your note MUST fit that judgment — never ignore it.
+- Use LINE as the history of this variation.
+- At a variation end, or when judgment is unclear / compensation: explain WHY we are fine (active pieces, easier play, strong centre, etc.) and give concrete next ideas from END PLAN ("we can continue with ...Nd6 and ...h5 ideas"). Do not only write the word "unclear".
+- Do not invent attacks on well-defended squares.
+- Do not invent pieces or moves. Use FENs, POSITIONAL, THREATS, END PLAN.
+- END PLAN / KEY are silent help — do not copy them word-for-word; turn them into natural GM prose.
+- Never say "FEN", "material", "mobility", or "eval".
 
 Good examples:
-Our move: "We develop the knight to f6, preparing castling and controlling the centre."
+Our move: "We swing the rook to d6, pressing the queen and the d-file. The rook is safe because our queen protects it."
+Unclear / compensation at end: "It is a complex position, but our play is easier. Our active knights and strong centre give us good compensation; we can continue with Nd6 and h5 ideas."
 Opponent move: "${theySide} decides to move the bishop away, keeping pressure on the kingside."
-Variation end: "We capture on d6, attacking the c7 knight. Our bishop pair and space on the queenside give us more than enough compensation for the pawn."
 
 Return ONLY JSON. Keys = IDs. Values = comment text only.
 
