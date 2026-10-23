@@ -1301,7 +1301,7 @@
                 const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
                 const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
 
-                // Symbol only if present on the move
+                // Symbol only if present on the move (incl. evaluation symbols)
                 const tgt = c.target || "";
                 const hasBlunder = /\?\?/.test(tgt);
                 const hasDubious = /\?!/.test(tgt);
@@ -1309,6 +1309,9 @@
                 const hasBrilliant = /!!/.test(tgt);
                 const hasMistake = /\?/.test(tgt) && !hasBlunder && !hasDubious;
                 const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
+                // evaluation / unclear symbols often appear after the move
+                const evalMatch = tgt.match(/(\+\/=|=\/\+|\+\/=|=\/\-|\+\/=|\-\/=|\+\/=|\+\-|\-\+|\+=|=\+|\+\/\-|\-\/\+|±|∓|∞|=\/∞|∞\/=|\/∞|\$\d+)/);
+                const evalSym = evalMatch ? evalMatch[1] : "";
 
                 let signOnly = "";
                 if (hasBlunder) signOnly = "??";
@@ -1317,9 +1320,15 @@
                 else if (hasBrilliant) signOnly = "!!";
                 else if (hasMistake) signOnly = "?";
                 else if (hasGood) signOnly = "!";
+                if (evalSym && !signOnly) signOnly = evalSym;
+                else if (evalSym && signOnly) signOnly = signOnly + evalSym;
 
-                let sanDisplay = (c.san || tgt).replace(/[!?]+/g, "").replace(/\$\d+/g, "").trim() || tgt;
-                const moveWithSign = signOnly ? `${sanDisplay}${signOnly}` : sanDisplay;
+                let sanDisplay = (c.san || tgt)
+                    .replace(/[!?]+/g, "")
+                    .replace(/\$\d+/g, "")
+                    .replace(/[±∓∞=\/\+\-]+$/g, "")
+                    .trim() || tgt;
+                const moveWithSign = signOnly ? `${sanDisplay} ${signOnly}`.trim() : sanDisplay;
 
                 // FENs: before move, after move, and ~4 plies later along THIS variation
                 const fenBefore = isValidFen(c.fen) ? c.fen : null;
@@ -1362,8 +1371,22 @@
                     nextClue = parts.join(" ");
                 }
 
+                // Numbered path from the start of this variation so the AI sees the history
+                let lineHistory = "";
+                if (pathArr.length) {
+                    const hParts = [];
+                    for (let pi = 0; pi < pathArr.length; pi++) {
+                        const mn = Math.floor(pi / 2) + 1;
+                        const isW = (pi % 2 === 0);
+                        const san = String(pathArr[pi]).trim();
+                        hParts.push(isW ? `${mn}. ${san}` : `${mn}... ${san}`);
+                    }
+                    lineHistory = hParts.join(" ");
+                }
+
                 let lineOutput = `[ID: ${c.id}]
 MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}
+LINE: ${lineHistory || "(start)"}
 FEN BEFORE: ${fenBefore || "unavailable"}
 FEN AFTER: ${fenAfter || "unavailable"}`;
                 for (let si = 0; si < fenSteps.length; si++) {
@@ -1422,8 +1445,10 @@ Rules:
 - On our move: talk about our plan ("We develop the knight...").
 - On ${theySide}'s move: talk only about ${theySide}'s idea ("${theySide} decides to move the bishop away..."). Do not mention our future plans on their move.
 - Never start with the move number or the move itself.
-- Respect the GM symbol (!, ?, !!, ??, !?, ?!).
-- At the end of a variation, explain why the position is equal/better/worse using the board (not numbers).
+- Respect the GM symbol (!, ?, !!, ??, !?, ?!, +=, =+, +/-, -/+, =, ∞, unclear, etc.). If the MOVE line has a symbol, your note must fit that judgment.
+- Use the LINE field as the move history of this variation. Ground your idea in what already happened, not only the current FEN.
+- At the end of a variation, or when the move carries an evaluation symbol, explain why that symbol fits using the board, plans, and LINE history (not numbers). For ∞ / unclear, say what makes the position hard to assess or easier for one side.
+- Do not invent attacks on well-defended squares. Only claim a threat if THREATS or the FEN supports it.
 - Do not invent pieces or moves. Use the FENs.
 - Use END PLAN and KEY only as silent help. Do not copy them into the note.
 - A POSITIONAL block gives you real facts (pawns, kings, files, activity, outposts, weak squares). Use it, do NOT list it. Pick the ONE fact that best explains the move.
