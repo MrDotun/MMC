@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GM Variation Master Pro (RO) v1.4 | Decipher Chess Academy</title>
-    <!-- build: 2026-10-05-fen-steps-v3 -->
+    <title>GM Variation Master Pro (MRO) v1.8 Hybrid | Decipher Chess Academy</title>
+    <!-- build: 2026-10-22-mro-v1.8-hybrid -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
@@ -33,8 +33,8 @@
     <div class="max-w-7xl mx-auto">
         <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
             <div>
-                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (RO)</span></h1>
-                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Simple English · FEN +1..+4 · END PLAN only · v1.6</p>
+                <h1 class="text-3xl font-bold gold-text tracking-tight italic">DECIPHER <span class="text-white not-italic">GM-MASTER PRO (MRO)</span></h1>
+                <p class="text-slate-400 text-sm font-light uppercase tracking-widest">Hybrid · Local Stockfish + Threat Clues · v1.8</p>
             </div>
             <nav class="flex gap-2 p-1 bg-slate-900 rounded-lg">
                 <button onclick="switchTab('fragmenter')" id="tab-f" class="px-6 py-2 rounded-md font-bold text-xs uppercase gold-bg">1. Fragmenter</button>
@@ -179,6 +179,11 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <!-- HYBRID MODULES - all files must be in the same folder as this HTML -->
+    <script src="stockfish-global.js"></script>
+    <script src="threats-global.js"></script>
+    <script src="positional-global.js"></script>
 
     <script>
         let globalChunks = [];
@@ -406,6 +411,9 @@
                 position: 'start'
             });
 
+            // Pre-load local Stockfish in background
+            initLocalEngine().catch(e => console.warn("Engine pre-load:", e));
+
             loadZippedDatabase();
 
             const saved = localStorage.getItem('gm_master_state');
@@ -575,143 +583,183 @@
             return parts.join(" ");
         }
 
-        // MultiPV via WebSocket (REST only returns 1 line). variants max 5 on chess-api.com
+        // ===================== LOCAL STOCKFISH + THREAT HYBRID =====================
+        let stockfishEngine = null;
+
+        async function initLocalEngine() {
+            if (stockfishEngine && stockfishEngine.ready) return stockfishEngine;
+            try {
+                if (typeof StockfishEngine === "undefined") {
+                    console.warn("StockfishEngine not loaded");
+                    return null;
+                }
+                stockfishEngine = new StockfishEngine(3);
+                // Hard timeout so init never hangs forever on mobile
+                const initPromise = stockfishEngine.init();
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Engine init timeout")), 6000)
+                );
+                await Promise.race([initPromise, timeoutPromise]);
+                console.log("Local Stockfish ready");
+                return stockfishEngine;
+            } catch (e) {
+                console.error("Failed to init local Stockfish:", e);
+                stockfishEngine = null;
+                return null;
+            }
+        }
+
+        /**
+         * Returns short human clue (no numbers) for END PLAN / KEY
+         */
+        async function getHumanClue(fenAfter, weSide) {
+            const clues = [];
+            try {
+                const game = new Chess();
+                if (!game.load(fenAfter)) return "equal";
+
+                // 1. Threat detection (fast, always works)
+                if (typeof analyzeThreats === "function") {
+                    try {
+                        const threats = analyzeThreats(game);
+                        if (threats.hangingPieces && threats.hangingPieces.length) {
+                            clues.push(threats.hangingPieces[0]);
+                        } else if (threats.attackedPieces && threats.attackedPieces.length) {
+                            clues.push(threats.attackedPieces[0]);
+                        }
+                        if (threats.checksAvailable && threats.checksAvailable.length) {
+                            clues.push("check available");
+                        }
+                    } catch (te) {
+                        console.warn("Threat analysis failed:", te);
+                    }
+                }
+
+                // 2. Bishop pair (instant)
+                const boardPart = fenAfter.split(" ")[0];
+                const whiteBishops = (boardPart.match(/B/g) || []).length;
+                const blackBishops = (boardPart.match(/b/g) || []).length;
+                if (whiteBishops >= 2 && blackBishops < 2) {
+                    clues.push(weSide === "White" ? "we have the bishop pair" : "they have the bishop pair");
+                } else if (blackBishops >= 2 && whiteBishops < 2) {
+                    clues.push(weSide === "Black" ? "we have the bishop pair" : "they have the bishop pair");
+                }
+
+                // 3. Stockfish with HARD 3.5-second timeout — never hang the UI
+                try {
+                    const enginePromise = (async () => {
+                        await initLocalEngine();
+                        if (!stockfishEngine || !stockfishEngine.ready) return null;
+                        return await stockfishEngine.analyze(fenAfter, 10);
+                    })();
+
+                    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 3500));
+                    const result = await Promise.race([enginePromise, timeoutPromise]);
+
+                    if (result && result.lines && result.lines.length > 0) {
+                        const top = result.lines[0];
+                        const sanLine = (top.movesSan || []).slice(0, 3).join(" ");
+                        if (sanLine) clues.push("best idea: " + sanLine);
+
+                        const cp = top.evalCp ?? 0;
+                        let judgment = "equal";
+                        if (Math.abs(cp) < 40) judgment = "equal";
+                        else if (cp >= 40 && cp < 120) judgment = weSide === "White" ? "we are better" : "they are better";
+                        else if (cp <= -40 && cp > -120) judgment = weSide === "White" ? "they are better" : "we are better";
+                        else if (cp >= 120) judgment = weSide === "White" ? "we are clearly better" : "they are clearly better";
+                        else if (cp <= -120) judgment = weSide === "White" ? "they are clearly better" : "we are clearly better";
+
+                        clues.unshift(judgment);
+                    } else if (!clues.length) {
+                        clues.push("equal");
+                    }
+                } catch (se) {
+                    console.warn("Stockfish failed or timed out:", se);
+                    if (!clues.length) clues.push("equal");
+                }
+
+                return clues.slice(0, 3).join(" · ") || "equal";
+            } catch (e) {
+                console.warn("getHumanClue error:", e);
+                return "equal";
+            }
+        }
+
+        // Keep old name as thin wrapper so other UI panels still work
+        
+        /**
+         * Rich positional + threat report block for the AI prompt.
+         * Non-fatal: returns "" if anything fails.
+         */
+        function buildPositionReport(fenAfter, weSide) {
+            if (!fenAfter || !isValidFen(fenAfter)) return "";
+            try {
+                const game = new Chess();
+                if (!game.load(fenAfter)) return "";
+
+                const sideToMove = game.turn() === 'w' ? 'White' : 'Black';
+
+                const pos = (typeof window.analyzePosition === 'function')
+                    ? window.analyzePosition(fenAfter)
+                    : null;
+                const th = (typeof window.analyzeThreats === 'function')
+                    ? window.analyzeThreats(game)
+                    : null;
+
+                const parts = [];
+                if (pos && typeof window.formatPositionAnalysis === 'function') {
+                    const block = window.formatPositionAnalysis(pos);
+                    if (block) parts.push("POSITIONAL:\n" + block);
+                }
+                if (th && typeof window.formatThreats === 'function') {
+                    const block = window.formatThreats(th, sideToMove);
+                    if (block) parts.push(block);
+                }
+                if (th && th.tacticalMotifs && th.tacticalMotifs.length) {
+                    parts.push("TACTICAL MOTIFS: " + th.tacticalMotifs.join(', '));
+                }
+
+                return parts.join("\n");
+            } catch (e) {
+                console.warn("buildPositionReport failed:", e);
+                return "";
+            }
+        }
+
         async function getEngineRefutation(fen, retries = 2) {
             if (!isValidFen(fen)) {
                 return { lines: [], invalid: true, text: "INVALID FEN" };
             }
-            const wantVariants = 5; // API max
-            const depthWant = 14;
-            const thinkMs = 100;
-
-            for (let attempt = 0; attempt <= retries; attempt++) {
-                try {
-                    const result = await new Promise((resolve) => {
-                        let settled = false;
-                        const byKey = {}; // first-move UCI or SAN -> best depth message
-                        let ws;
-                        const finish = () => {
-                            if (settled) return;
-                            settled = true;
-                            try { ws && ws.close(); } catch (e) {}
-                            const rows = Object.values(byKey);
-                            // Sort: best for side-to-move first
-                            const bits = fen.split(/\s+/);
-                            const blackToMove = bits[1] === "b";
-                            rows.sort((a, b) => {
-                                const ea = typeof a.eval === "number" ? a.eval : 0;
-                                const eb = typeof b.eval === "number" ? b.eval : 0;
-                                // White POV eval: Black wants lower, White wants higher
-                                return blackToMove ? (ea - eb) : (eb - ea);
-                            });
-                            const lines = rows.slice(0, wantVariants).map((data) => {
-                                const uciCont = Array.isArray(data.continuationArr)
-                                    ? data.continuationArr
-                                    : [];
-                                // first move: prefer SAN from API, else convert UCI
-                                let firstSan = data.san || "";
-                                if (!firstSan && data.move && data.move.length >= 4) {
-                                    firstSan = uciListToSan(fen, [data.move], 1)[0] || data.move;
-                                }
-                                const restSan = uciListToSan(
-                                    // position after first move
-                                    (() => {
-                                        try {
-                                            const ch = new Chess();
-                                            ch.load(fen);
-                                            if (firstSan) ch.move(firstSan, { sloppy: true });
-                                            else if (data.move) {
-                                                const u = data.move;
-                                                ch.move({ from: u.slice(0,2), to: u.slice(2,4), promotion: u[4] || "q" });
-                                            }
-                                            return ch.fen();
-                                        } catch (e) { return fen; }
-                                    })(),
-                                    uciCont,
-                                    5
-                                );
-                                const allSan = [firstSan].concat(restSan).filter(Boolean).slice(0, 6);
-                                const numbered = formatPvNumberedSans(allSan, fen);
-                                return {
-                                    eval: data.eval,
-                                    san: firstSan,
-                                    continuation: restSan.join(" "),
-                                    numbered,
-                                    allSan,
-                                    text: data.text || "",
-                                    planHint: buildPlanHint(data.eval, restSan.join(" ")),
-                                    invalid: false
-                                };
-                            });
-                            if (!lines.length) {
-                                resolve({ lines: [], invalid: true, text: "No engine lines" });
-                                return;
-                            }
-                            const top = lines[0];
-                            resolve({
-                                lines,
-                                eval: top.eval,
-                                san: top.san,
-                                continuation: top.continuation,
-                                text: top.text,
-                                planHint: top.planHint,
-                                invalid: false
-                            });
-                        };
-
-                        const timer = setTimeout(finish, 4500);
-                        try {
-                            ws = new WebSocket("wss://chess-api.com/v1");
-                        } catch (e) {
-                            clearTimeout(timer);
-                            resolve(null);
-                            return;
-                        }
-                        ws.onopen = () => {
-                            ws.send(JSON.stringify({
-                                fen,
-                                variants: wantVariants,
-                                depth: depthWant,
-                                maxThinkingTime: thinkMs
-                            }));
-                        };
-                        ws.onmessage = (ev) => {
-                            try {
-                                const data = JSON.parse(ev.data);
-                                if (data.type !== "move" && data.type !== "bestmove") return;
-                                const key = data.move || data.san || data.lan;
-                                if (!key) return;
-                                const prev = byKey[key];
-                                if (!prev || (data.depth || 0) >= (prev.depth || 0)) {
-                                    byKey[key] = data;
-                                }
-                                // enough distinct lines at decent depth
-                                const deep = Object.values(byKey).filter(x => (x.depth || 0) >= 10);
-                                if (deep.length >= wantVariants && data.type === "bestmove") {
-                                    clearTimeout(timer);
-                                    setTimeout(finish, 200);
-                                }
-                            } catch (e) {}
-                        };
-                        ws.onerror = () => {
-                            clearTimeout(timer);
-                            finish();
-                        };
-                        ws.onclose = () => {
-                            clearTimeout(timer);
-                            finish();
-                        };
-                    });
-
-                    if (result && !result.invalid && result.lines && result.lines.length) {
-                        return result;
-                    }
-                } catch (e) {
-                    if (attempt === retries) return null;
-                    await delay(800);
+            try {
+                await initLocalEngine();
+                if (!stockfishEngine || !stockfishEngine.ready) {
+                    return { lines: [], invalid: true, text: "Engine not ready" };
                 }
+                const result = await stockfishEngine.analyze(fen, 14);
+                const lines = (result.lines || []).map((l, idx) => ({
+                    eval: (l.evalCp / 100).toFixed(1),
+                    san: (l.movesSan && l.movesSan[0]) || "",
+                    continuation: (l.movesSan || []).slice(1).join(" "),
+                    allSan: l.movesSan || [],
+                    numbered: (l.movesSan || []).join(" "),
+                    text: "",
+                    planHint: "",
+                    invalid: false
+                }));
+                if (!lines.length) return { lines: [], invalid: true, text: "No engine lines" };
+                return {
+                    lines,
+                    eval: lines[0].eval,
+                    san: lines[0].san,
+                    continuation: lines[0].continuation,
+                    text: "",
+                    planHint: "",
+                    invalid: false
+                };
+            } catch (e) {
+                console.warn("getEngineRefutation error:", e);
+                return { lines: [], invalid: true, text: "Engine error" };
             }
-            return null;
         }
 
 
@@ -1327,29 +1375,32 @@ FEN AFTER: ${fenAfter || "unavailable"}`;
                     lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
                 }
 
-                // ONLY last move of a variation: one Stockfish line (4 moves + eval)
-                if (c.isVariationEnd && fenAfter) {
+                // Always try to generate a human clue when we have a valid FEN
+                if (fenAfter) {
                     engineCalls++;
-                    btnText.innerHTML = `<div class="spinner"></div>End plan [${currentStep}/${totalSelectedMoves}]...`;
-                    await delay(200);
-                    const engineData = await getEngineRefutation(fenAfter);
-                    if (engineData && !engineData.invalid && engineData.lines && engineData.lines.length > 0) {
-                        const top = engineData.lines[0];
-                        const sans = (top.allSan && top.allSan.length)
-                            ? top.allSan.slice(0, 4)
-                            : `${top.san || ""} ${top.continuation || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 4);
-                        const planSans = formatPvNumberedSans(sans, fenAfter);
-                        const ev = (top.eval !== undefined && top.eval !== null) ? String(top.eval) : "?";
-                        const stm = sideToMoveAfter;
-                        lineOutput += `\nEND PLAN: eval ${ev} | ${stm} to move | ${planSans}`;
-                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] end plan ${ev}`;
-                    } else {
-                        lineOutput += `\nEND PLAN: (none)`;
-                        statsText.innerText = `[${c.moveNum}.${sanDisplay}] no end plan`;
+
+                    // Rich positional + threat report for the AI
+                    const posReport = buildPositionReport(fenAfter, weSide);
+                    if (posReport) lineOutput += `\n${posReport}`;
+
+                    btnText.innerHTML = `<div class="spinner"></div>Clue [${currentStep}/${totalSelectedMoves}]...`;
+                    let humanClue = "equal";
+                    try {
+                        humanClue = await getHumanClue(fenAfter, weSide);
+                    } catch (err) {
+                        console.warn("Clue failed:", err);
+                        humanClue = "equal";
                     }
+                    // Always write END PLAN so the AI receives aid
+                    lineOutput += `\nEND PLAN: ${humanClue}`;
+                    // Extra KEY on important moves
+                    if (c.isVariationEnd || signOnly || userNotes[c.id]) {
+                        lineOutput += `\nKEY: ${humanClue}`;
+                    }
+                    statsText.innerText = `[${c.moveNum}.${sanDisplay}] ${humanClue}`;
                 } else {
                     statsText.innerText = `Preparing: ${c.moveNum}. ${sanDisplay}`;
-                    await delay(10);
+                    await delay(8);
                 }
 
                 let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
@@ -1361,20 +1412,34 @@ FEN AFTER: ${fenAfter || "unavailable"}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a 2700+ GM writing notes for a chess course. We play ${weSide}. They play ${theySide}.
+            const fullPrompt = `You are a 2700 GM writing course notes in very simple, correct English.
+We play ${weSide}. Use "we/our" for our moves. For the opponent say "${theySide}" (not "they").
 
-Each item has:
-MOVE (with symbol if any: ? ?? ! !! ?! !?)
-FEN BEFORE, FEN AFTER, and FEN +1 … FEN +4 (board after each of the next plies)
-NEXT (clue only — do not copy into the note)
-END PLAN (only on the last move of a variation: one eval and 4 moves — equal/better/worse only)
-YOUR NOTE (optional)
+PRIORITY: Moves with a GM sign (!, ?, !!, ??, !?, ?!, +=, =+, +/-, -/+, =, etc.) are the most important. Always annotate them carefully. Plain moves without a sign may get a shorter note.
 
-Write like a GM course note: very simple correct English, 1–2 short sentences.
-Explain WHY this one move was played. Respect the symbol if present.
-Do not list the next moves. Do not invent pieces — use the FENs.
-On variation ends, one short equal/better/worse from END PLAN.
-Side: ${weSide} → we/our; ${theySide} → ${theySide}/they.
+Rules:
+- 1–2 short sentences only.
+- Explain only the idea of the side that just moved.
+- On our move: talk about our plan ("We place our knight on the kingside...").
+- On ${theySide}'s move: talk only about ${theySide}'s idea ("${theySide} decides to move the bishop away..."). Do not mention our future plans on their move.
+- Never start with the move number or the move itself.
+- Respect the GM symbol on the move. The symbol is the GM's judgment — your note must justify it.
+- On a signed move or at the end of a variation: explain WHY the sign was given, using the plan, positional features, threats, or structure from the POSITIONAL / THREATS / END PLAN blocks (not numbers).
+- Do not invent pieces or moves. Use the FENs and the POSITIONAL / THREATS blocks.
+- Use END PLAN and KEY only as silent help. Do not copy them into the note.
+- A POSITIONAL block gives real facts (pawns, kings, files, activity, outposts, weak squares). Use it — do NOT list it. Pick the ONE fact that best explains the move or the sign.
+- A THREATS block shows what the side to move can do. Use it to justify the idea or the sign.
+- TACTICAL MOTIFS lists pins/forks/etc. Mention one only if it drives the idea or the sign.
+- Never use the words "FEN", "material", "mobility", or "eval". Translate into chess language ("our bishop pair and the strong outpost on e5 give us a slight advantage").
+- If a claim cannot be supported by the POSITIONAL or THREATS block, do not make it.
+
+Meaning of common signs (justify with the board):
+! good move · !! excellent · ? mistake · ?? blunder · !? interesting · ?! dubious · += slight advantage for us · =+ slight for them · +/- clear for us · -/+ clear for them · = equal
+
+Good examples:
+Our move with sign: "We place our knight on the kingside, hitting Black's weak structure. Our bishop pair and the strong outpost on e5 give us a slight advantage."
+Opponent move: "${theySide} decides to move the bishop away, keeping pressure on the kingside."
+Variation end with evaluation: "We capture on d6, attacking the c7 knight. Our bishop pair and space on the queenside give us more than enough compensation for the pawn."
 
 Return ONLY JSON. Keys = IDs. Values = comment text only.
 
