@@ -593,7 +593,7 @@
                     console.warn("StockfishEngine not loaded");
                     return null;
                 }
-                stockfishEngine = new StockfishEngine(3);
+                stockfishEngine = new StockfishEngine(4);
                 // Hard timeout so init never hangs forever on mobile
                 const initPromise = stockfishEngine.init();
                 const timeoutPromise = new Promise((_, reject) =>
@@ -612,30 +612,210 @@
         /**
          * Returns short human clue (no numbers) for END PLAN / KEY
          */
-        async function getHumanClue(fenAfter, weSide) {
+
+        function flipSideToMove(fen) {
+            const parts = String(fen).trim().split(/\s+/);
+            if (parts.length < 4) return fen;
+            parts[1] = parts[1] === 'w' ? 'b' : 'w';
+            parts[3] = '-'; // clear ep — may be illegal after side flip
+            return parts.join(' ');
+        }
+
+        function uciToSanList(fen, uciMoves, maxN) {
+            const out = [];
+            try {
+                const ch = new Chess();
+                if (!ch.load(fen)) return out;
+                const n = maxN || 4;
+                for (let i = 0; i < (uciMoves || []).length && out.length < n; i++) {
+                    const u = String(uciMoves[i] || '').trim();
+                    if (u.length < 4) continue;
+                    const mv = ch.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] || 'q' });
+                    if (!mv) break;
+                    out.push(mv);
+                }
+            } catch (e) {}
+            return out;
+        }
+
+        function describeThreatMove(fen, uciMoves, threatSideName) {
+            // fen = position where threatSide is about to play the threat
+            const moves = uciToSanList(fen, uciMoves, 3);
+            if (!moves.length) return "";
+            const m = moves[0];
+            const san = m.san;
+            const pieceNames = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
+            const who = threatSideName || 'they';
+
+            if (/#/.test(san)) {
+                return who + ' threatens mate with ' + san.replace('#', '');
+            }
+            if (m.captured) {
+                const cap = pieceNames[m.captured] || 'piece';
+                let extra = '';
+                // bishop pair note
+                try {
+                    const board = fen.split(' ')[0];
+                    const isWhite = fen.split(' ')[1] === 'w';
+                    if (m.captured === 'b') {
+                        const count = isWhite
+                            ? (board.match(/b/g) || []).length
+                            : (board.match(/B/g) || []).length;
+                        if (count >= 2) extra = ' (bishop pair)';
+                    }
+                } catch (e) {}
+                return who + ' threatens to win the ' + cap + ' on ' + m.to + extra;
+            }
+            if (/\\+/.test(san)) {
+                return who + ' threatens check with ' + san.replace('+', '');
+            }
+            // quiet but forced idea
+            return who + ' prepares ' + san;
+        }
+
+        function describePlanMoves(fen, uciMoves, weSide) {
+            const moves = uciToSanList(fen, uciMoves, 3);
+            if (!moves.length) return "";
+            const sans = moves.map(m => m.san);
+            return 'natural plan: ' + sans.join(' ');
+        }
+
+        /**
+         * If 2nd–4th MultiPV lines are much worse for the side to move,
+         * the position is critical — only the best move (or few) hold.
+         * evalCp is always White's perspective.
+         */
+        function describeCriticalAlternatives(fen, lines) {
+            if (!lines || lines.length < 2) return "";
+            const parts = String(fen).split(/\s+/);
+            const whiteToMove = parts[1] === 'w';
+            const side = whiteToMove ? 'White' : 'Black';
+            const best = lines[0];
+            const bestCp = best.evalCp ?? 0;
+            const bad = [];
+
+            for (let i = 1; i < Math.min(lines.length, 4); i++) {
+                const ln = lines[i];
+                const cp = ln.evalCp ?? 0;
+                // Massive disadvantage for the side to move
+                let isDisaster = false;
+                if (whiteToMove) {
+                    // Black is winning on this line, or much worse than best
+                    if (cp <= -250 || (bestCp - cp) >= 250) isDisaster = true;
+                } else {
+                    // White is winning on this line (bad for Black), or much worse than best
+                    if (cp >= 250 || (cp - bestCp) >= 250) isDisaster = true;
+                }
+                if (!isDisaster) continue;
+
+                const sans = uciToSanList(fen, ln.moves || [], 2);
+                const moveSan = sans.length ? sans[0].san : ((ln.moves && ln.moves[0]) || '?');
+                // Outcome in human words (no numbers)
+                let outcome = 'a lost position';
+                if (whiteToMove) {
+                    if (cp <= -500) outcome = 'a forced loss';
+                    else if (cp <= -250) outcome = 'a lost position for White';
+                    else outcome = 'a clear disadvantage';
+                } else {
+                    if (cp >= 500) outcome = 'a forced loss';
+                    else if (cp >= 250) outcome = 'a lost position for Black';
+                    else outcome = 'a clear disadvantage';
+                }
+                bad.push(moveSan + ' (leads to ' + outcome + ')');
+            }
+
+            if (!bad.length) return "";
+            return side + ' cannot afford ' + bad.slice(0, 2).join(' or ') + ' — only accurate moves hold the position';
+        }
+
+        /**
+         * Engine threat: give the side who just moved another turn (null-move style)
+         * and read their best continuation as the threat.
+         */
+        async function engineThreatIfSameSideMovesAgain(fenAfter, sideJustPlayed) {
+            try {
+                await initLocalEngine();
+                if (!stockfishEngine || !stockfishEngine.ready) return "";
+                const parts = fenAfter.split(/\s+/);
+                const stm = parts[1] === 'w' ? 'White' : 'Black';
+                // If side who just played is NOT to move, flip so they can "play again"
+                let threatFen = fenAfter;
+                if (stm !== sideJustPlayed) {
+                    threatFen = flipSideToMove(fenAfter);
+                }
+                const result = await Promise.race([
+                    stockfishEngine.analyze(threatFen, 12),
+                    new Promise(r => setTimeout(() => r(null), 4000))
+                ]);
+                if (!result || !result.lines || !result.lines.length) return "";
+                const top = result.lines[0];
+                const uci = top.moves || [];
+                return describeThreatMove(threatFen, uci, sideJustPlayed);
+            } catch (e) {
+                console.warn('engineThreat failed', e);
+                return "";
+            }
+        }
+
+        /**
+         * Plan for our side from this position (what we would play if it is or becomes our turn).
+         */
+        async function engineOurPlan(fenAfter, weSide) {
+            try {
+                await initLocalEngine();
+                if (!stockfishEngine || !stockfishEngine.ready) return "";
+                const parts = fenAfter.split(/\s+/);
+                const stm = parts[1] === 'w' ? 'White' : 'Black';
+                let planFen = fenAfter;
+                // If it is not our turn, still show what we want after a typical reply — use current if our turn
+                if (stm !== weSide) {
+                    // analyze opponent position but report our reply from multipv after 1 ply is heavy;
+                    // simpler: flip so we move (what we would do if we could continue)
+                    planFen = fenAfter; // keep real side to move; plan from legal side
+                }
+                const result = await Promise.race([
+                    stockfishEngine.analyze(planFen, 12),
+                    new Promise(r => setTimeout(() => r(null), 4000))
+                ]);
+                if (!result || !result.lines || !result.lines.length) return "";
+                const top = result.lines[0];
+                const stmName = stm === weSide ? 'we' : (stm === 'White' ? 'White' : 'Black');
+                if (stm === weSide) {
+                    return describePlanMoves(planFen, top.moves || [], weSide);
+                }
+                // opponent to move — still give their best so we know the pressure
+                return describeThreatMove(planFen, top.moves || [], stm);
+            } catch (e) {
+                return "";
+            }
+        }
+
+        async function getHumanClue(fenAfter, weSide, sideJustPlayed, isVarEnd) {
             const clues = [];
             try {
                 const game = new Chess();
                 if (!game.load(fenAfter)) return "equal";
 
-                // 1. Threat detection (fast, always works)
+                // 1) Engine threat by letting the mover play again
+                if (sideJustPlayed) {
+                    const threat = await engineThreatIfSameSideMovesAgain(fenAfter, sideJustPlayed);
+                    if (threat) clues.push(threat);
+                }
+
+                // 2) Static hanging / checks as backup
                 if (typeof analyzeThreats === "function") {
                     try {
                         const threats = analyzeThreats(game);
-                        if (threats.hangingPieces && threats.hangingPieces.length) {
-                            clues.push(threats.hangingPieces[0]);
-                        } else if (threats.attackedPieces && threats.attackedPieces.length) {
-                            clues.push(threats.attackedPieces[0]);
+                        if (threats.hangingPieces && threats.hangingPieces.length && clues.length < 2) {
+                            clues.push("can take " + threats.hangingPieces[0]);
                         }
-                        if (threats.checksAvailable && threats.checksAvailable.length) {
+                        if (threats.checksAvailable && threats.checksAvailable.length && clues.length < 2) {
                             clues.push("check available");
                         }
-                    } catch (te) {
-                        console.warn("Threat analysis failed:", te);
-                    }
+                    } catch (te) {}
                 }
 
-                // 2. Bishop pair (instant)
+                // 3) Bishop pair
                 const boardPart = fenAfter.split(" ")[0];
                 const whiteBishops = (boardPart.match(/B/g) || []).length;
                 const blackBishops = (boardPart.match(/b/g) || []).length;
@@ -645,22 +825,20 @@
                     clues.push(weSide === "Black" ? "we have the bishop pair" : "they have the bishop pair");
                 }
 
-                // 3. Stockfish with HARD 3.5-second timeout — never hang the UI
+                // 4) Judgment + our natural plan (especially useful at variation ends)
                 try {
                     const enginePromise = (async () => {
                         await initLocalEngine();
                         if (!stockfishEngine || !stockfishEngine.ready) return null;
-                        return await stockfishEngine.analyze(fenAfter, 10);
+                        return await stockfishEngine.analyze(fenAfter, 12);
                     })();
-
-                    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 3500));
-                    const result = await Promise.race([enginePromise, timeoutPromise]);
+                    const result = await Promise.race([
+                        enginePromise,
+                        new Promise(resolve => setTimeout(() => resolve(null), 4000))
+                    ]);
 
                     if (result && result.lines && result.lines.length > 0) {
                         const top = result.lines[0];
-                        const sanLine = (top.movesSan || []).slice(0, 3).join(" ");
-                        if (sanLine) clues.push("best idea: " + sanLine);
-
                         const cp = top.evalCp ?? 0;
                         let judgment = "equal";
                         if (Math.abs(cp) < 40) judgment = "equal";
@@ -668,17 +846,24 @@
                         else if (cp <= -40 && cp > -120) judgment = weSide === "White" ? "they are better" : "we are better";
                         else if (cp >= 120) judgment = weSide === "White" ? "we are clearly better" : "they are clearly better";
                         else if (cp <= -120) judgment = weSide === "White" ? "they are clearly better" : "we are clearly better";
-
                         clues.unshift(judgment);
+
+                        const stm = fenAfter.split(/\s+/)[1] === 'w' ? 'White' : 'Black';
+                        if (stm === weSide || isVarEnd) {
+                            const plan = describePlanMoves(fenAfter, top.moves || [], weSide);
+                            if (plan) clues.push(plan);
+                        }
+                        // Critical position: alternatives collapse
+                        const critical = describeCriticalAlternatives(fenAfter, result.lines);
+                        if (critical) clues.push(critical);
                     } else if (!clues.length) {
                         clues.push("equal");
                     }
                 } catch (se) {
-                    console.warn("Stockfish failed or timed out:", se);
                     if (!clues.length) clues.push("equal");
                 }
 
-                return clues.slice(0, 3).join(" · ") || "equal";
+                return clues.slice(0, 5).join(" · ") || "equal";
             } catch (e) {
                 console.warn("getHumanClue error:", e);
                 return "equal";
@@ -1450,7 +1635,7 @@ FEN AFTER: ${fenAfter || "unavailable"}`;
                     btnText.innerHTML = `<div class="spinner"></div>Clue [${currentStep}/${totalSelectedMoves}]...`;
                     let humanClue = "equal";
                     try {
-                        humanClue = await getHumanClue(fenAfter, weSide);
+                        humanClue = await getHumanClue(fenAfter, weSide, sideJustPlayed, !!(c.isVariationEnd || signOnly || hasNag || hasEval));
                     } catch (err) {
                         console.warn("Clue failed:", err);
                         humanClue = "equal";
@@ -1492,7 +1677,9 @@ Rules:
 - Do not invent pieces or moves. Use the FENs.
 - Use END PLAN and KEY only as silent help. Do not copy them into the note.
 - A POSITIONAL block gives you real facts (pawns, kings, files, activity, outposts, weak squares). Use it, do NOT list it. Pick the ONE fact that best explains the move.
-- A THREATS block tells you what the side to move can do next. On our move, use it to show what we prevented or prepared. On the opponent's move, use it to show what they threaten.
+- A THREATS block and END PLAN may name a concrete threat (e.g. "White threatens to win the bishop on g3"). Use that wording; do not invent other tactics.
+- At variation ends, END PLAN may include a natural plan (e.g. "natural plan: Ne7 Ng6"). Prefer that over vague phrases.
+- If END PLAN says a side "cannot afford" certain moves, the position is critical — stress that only accurate moves hold, using those concrete moves.
 - TACTICAL MOTIFS lists detected pins/forks/etc. Mention one only if it drives the idea.
 - Never use the words "FEN", "material", "mobility", or "eval". Translate facts into chess language ("our rook is on the open c-file").
 - If a claim cannot be supported by the POSITIONAL or THREATS block, do not make it.
