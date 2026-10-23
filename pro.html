@@ -1264,6 +1264,42 @@
             updateUI();
         }
 
+
+        // PGN NAG ($codes) → human GM meaning for the AI
+        const NAG_MEANING = {
+            1: "!", 2: "?", 3: "!!", 4: "??", 5: "!?", 6: "?!",
+            10: "=", 11: "unclear", 12: "equal", 13: "unclear",
+            14: "slight edge for White", 15: "slight edge for Black",
+            16: "clear edge for White", 17: "clear edge for Black",
+            18: "winning for White", 19: "winning for Black",
+            22: "zugzwang", 32: "development advantage",
+            36: "initiative", 40: "attack", 44: "compensation",
+            132: "counterplay", 138: "time trouble"
+        };
+        function expandNagText(raw) {
+            if (!raw) return "";
+            let s = String(raw);
+            // $44 $11 etc.
+            s = s.replace(/\$(\d+)/g, (_, n) => {
+                const m = NAG_MEANING[parseInt(n, 10)];
+                return m ? (" " + m) : (" $" + n);
+            });
+            // unicode / ASCII eval symbols → short words the AI already knows
+            s = s.replace(/=\/∞|∞\/=|\/∞/g, " unclear");
+            s = s.replace(/∞/g, " unclear");
+            s = s.replace(/\+\/=|=\/\+/g, " slight edge for White");
+            s = s.replace(/=\/\-|\-\/=/g, " slight edge for Black");
+            s = s.replace(/\+\-\/|\+\-/g, " winning for White");
+            s = s.replace(/\-\+\//g, " winning for Black");
+            s = s.replace(/±/g, " clear edge for White");
+            s = s.replace(/∓/g, " clear edge for Black");
+            s = s.replace(/\+\=/g, " slight edge for White");
+            s = s.replace(/=\+/g, " slight edge for Black");
+            s = s.replace(/\+\/\-/g, " clear edge for White");
+            s = s.replace(/\-\/\+/g, " clear edge for Black");
+            return s.replace(/\s+/g, " ").trim();
+        }
+
         async function copySelectedBatch() {
             if (selStart === null || selEnd === null) {
                 alert("Please click on a starting move and an ending move first!");
@@ -1301,7 +1337,7 @@
                 const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
                 const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
 
-                // Symbol only if present on the move (incl. evaluation symbols)
+                // Symbol only if present on the move (incl. $NAG and evaluation symbols)
                 const tgt = c.target || "";
                 const hasBlunder = /\?\?/.test(tgt);
                 const hasDubious = /\?!/.test(tgt);
@@ -1309,9 +1345,8 @@
                 const hasBrilliant = /!!/.test(tgt);
                 const hasMistake = /\?/.test(tgt) && !hasBlunder && !hasDubious;
                 const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
-                // evaluation / unclear symbols often appear after the move
-                const evalMatch = tgt.match(/(\+\/=|=\/\+|\+\/=|=\/\-|\+\/=|\-\/=|\+\/=|\+\-|\-\+|\+=|=\+|\+\/\-|\-\/\+|±|∓|∞|=\/∞|∞\/=|\/∞|\$\d+)/);
-                const evalSym = evalMatch ? evalMatch[1] : "";
+                const hasNag = /\$\d+/.test(tgt);
+                const hasEval = /[±∓∞]|\+\/=|=\/\+|\+=|=\+|\+\/\-|\-\/\+|=\/∞|∞\/=/.test(tgt);
 
                 let signOnly = "";
                 if (hasBlunder) signOnly = "??";
@@ -1320,15 +1355,20 @@
                 else if (hasBrilliant) signOnly = "!!";
                 else if (hasMistake) signOnly = "?";
                 else if (hasGood) signOnly = "!";
-                if (evalSym && !signOnly) signOnly = evalSym;
-                else if (evalSym && signOnly) signOnly = signOnly + evalSym;
 
                 let sanDisplay = (c.san || tgt)
                     .replace(/[!?]+/g, "")
                     .replace(/\$\d+/g, "")
                     .replace(/[±∓∞=\/\+\-]+$/g, "")
                     .trim() || tgt;
-                const moveWithSign = signOnly ? `${sanDisplay} ${signOnly}`.trim() : sanDisplay;
+                // Only the symbol / $NAG part → plain words for the AI
+                const symbolPart = tgt.replace(sanDisplay, " ").replace(c.san || "", " ");
+                const judgment = expandNagText(symbolPart) || expandNagText(tgt.replace(sanDisplay, " "));
+                const hasJudgment = !!(signOnly || hasNag || hasEval || judgment);
+                // MOVE line: SAN + [unclear] / [compensation] / etc.
+                const moveWithSign = judgment
+                    ? `${sanDisplay} [${judgment}]`
+                    : (signOnly ? `${sanDisplay} ${signOnly}`.trim() : sanDisplay);
 
                 // FENs: before move, after move, and ~4 plies later along THIS variation
                 const fenBefore = isValidFen(c.fen) ? c.fen : null;
@@ -1418,7 +1458,7 @@ FEN AFTER: ${fenAfter || "unavailable"}`;
                     // Always write END PLAN so the AI receives aid
                     lineOutput += `\nEND PLAN: ${humanClue}`;
                     // Extra KEY on important moves
-                    if (c.isVariationEnd || signOnly || userNotes[c.id]) {
+                    if (c.isVariationEnd || signOnly || hasNag || hasEval || userNotes[c.id]) {
                         lineOutput += `\nKEY: ${humanClue}`;
                     }
                     statsText.innerText = `[${c.moveNum}.${sanDisplay}] ${humanClue}`;
@@ -1445,7 +1485,7 @@ Rules:
 - On our move: talk about our plan ("We develop the knight...").
 - On ${theySide}'s move: talk only about ${theySide}'s idea ("${theySide} decides to move the bishop away..."). Do not mention our future plans on their move.
 - Never start with the move number or the move itself.
-- Respect the GM symbol (!, ?, !!, ??, !?, ?!, +=, =+, +/-, -/+, =, ∞, unclear, etc.). If the MOVE line has a symbol, your note must fit that judgment.
+- Respect the GM judgment on the MOVE line (in [brackets] or as !, ?, !!, ??, !?, ?!, unclear, compensation, slight edge, etc.). Your note must fit that judgment. $11/∞ = unclear; $44 = compensation; $14/$15 = slight edge; $16/$17 = clear edge.
 - Use the LINE field as the move history of this variation. Ground your idea in what already happened, not only the current FEN.
 - At the end of a variation, or when the move carries an evaluation symbol, explain why that symbol fits using the board, plans, and LINE history (not numbers). For ∞ / unclear, say what makes the position hard to assess or easier for one side.
 - Do not invent attacks on well-defended squares. Only claim a threat if THREATS or the FEN supports it.
