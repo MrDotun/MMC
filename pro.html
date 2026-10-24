@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -193,13 +194,13 @@
         let selStart = null;
         let selEnd = null;
         let isDbLoaded = false;
-        let reviewIndex = null; // which selected move is shown on review board
-        let userNotes = {}; // chunkId -> short note from the player
+        let reviewIndex = null; 
+        let userNotes = {}; 
         let dynamicMasterDb = {};
-        let engineCache = {}; // fen -> engine result
-        let reviewEngineToken = 0; // cancel stale async fetches
+        let engineCache = {}; 
+        let reviewEngineToken = 0; 
         let mainEngineToken = 0;
-        let reviewLine = []; // [{fen, label, isFocus}] built for current review chunk
+        let reviewLine = []; 
         let reviewLineIdx = 0;
 
         const delay = ms => new Promise(res => setTimeout(res, ms));
@@ -411,7 +412,6 @@
                 position: 'start'
             });
 
-            // Pre-load local Stockfish in background
             initLocalEngine().catch(e => console.warn("Engine pre-load:", e));
 
             loadZippedDatabase();
@@ -424,44 +424,6 @@
             }
         };
 
-        async function getOpeningDatabase(fen) {
-            try {
-                const parts = fen.split(' ');
-                if (parts.length < 4) return null;
-
-                const board = parts[0];
-                const turn = parts[1];
-                const castling = parts[2];
-                const ep = parts[3];
-
-                const formatsToTry = [
-                    fen,
-                    `${board} ${turn} ${castling} ${ep}`,
-                    `${board} ${turn} ${castling} -`,
-                    `${board} ${turn} ${castling}`
-                ];
-
-                for (let f of formatsToTry) {
-                    if (dynamicMasterDb[f]) {
-                        return dynamicMasterDb[f];
-                    }
-                }
-
-                if (typeof NAJDORF_G3_MASTER_DB !== 'undefined') {
-                    for (let f of formatsToTry) {
-                        if (NAJDORF_G3_MASTER_DB[f]) {
-                            return NAJDORF_G3_MASTER_DB[f];
-                        }
-                    }
-                }
-
-                return null;
-            } catch (e) {
-                console.error("Local database fetch failed:", e);
-                return null;
-            }
-        }
-
         function isValidFen(fen) {
             if (!fen || typeof fen !== "string") return false;
             const parts = fen.trim().split(/\s+/);
@@ -471,39 +433,6 @@
                 return c.load(fen);
             } catch (e) {
                 return false;
-            }
-        }
-
-        // One clear board diagram from FEN (only format sent to the AI)
-        function fenToAsciiBoard(fen) {
-            if (!fen || !isValidFen(fen)) return "";
-            try {
-                const parts = fen.trim().split(/\s+/);
-                const rows = parts[0].split("/");
-                if (rows.length !== 8) return "";
-                const lines = [
-                    "Orientation: rank 8 top, rank 1 bottom | a-file left, h-file right | a1 dark",
-                    "UPPERCASE=White  lowercase=Black  .=empty",
-                    "  +-----------------+",
-                ];
-                for (let r = 0; r < 8; r++) {
-                    let row = "";
-                    for (const ch of rows[r]) {
-                        if (ch >= "1" && ch <= "8") {
-                            row += " .".repeat(parseInt(ch, 10));
-                        } else {
-                            row += " " + ch;
-                        }
-                    }
-                    lines.push(`${8 - r} |${row} |`);
-                }
-                lines.push("  +-----------------+");
-                lines.push("    a b c d e f g h");
-                const turn = parts[1] === "b" ? "Black" : "White";
-                lines.push(`Side to move: ${turn}`);
-                return lines.join("\n");
-            } catch (e) {
-                return "";
             }
         }
 
@@ -530,14 +459,6 @@
                 stockfishEngine = null;
                 return null;
             }
-        }
-
-        function flipSideToMove(fen) {
-            const parts = String(fen).trim().split(/\s+/);
-            if (parts.length < 4) return fen;
-            parts[1] = parts[1] === 'w' ? 'b' : 'w';
-            parts[3] = '-'; 
-            return parts.join(' ');
         }
 
         function uciToSanList(fen, uciMoves, maxN) {
@@ -576,13 +497,10 @@
                 const isOurTurn = (stm === weSide);
                 const moveCounts = {};
                 
-                // Look at top 4 engine lines
                 result.lines.forEach(line => {
                     const sans = uciToSanList(fen, line.moves, 5);
                     if (!sans.length) return;
                     
-                    // If it's our turn, we want our 1st move. 
-                    // If opponent's turn, we want our 2nd move (the reply after their move).
                     const moveIdx = isOurTurn ? 0 : 1;
                     if (sans.length > moveIdx) {
                         const ourMove = sans[moveIdx];
@@ -590,43 +508,13 @@
                     }
                 });
 
-                // Sort by frequency
                 const sortedMoves = Object.keys(moveCounts).sort((a, b) => moveCounts[b] - moveCounts[a]);
                 if (!sortedMoves.length) return "";
 
-                // Get the top 2 moves that appear most frequently
                 const topMoves = sortedMoves.slice(0, 2).map(m => `${m}`);
                 return topMoves.join(" and ");
             } catch (e) {
                 console.warn("Consensus plan error:", e);
-                return "";
-            }
-        }
-
-        async function engineThreatIfSameSideMovesAgain(fenAfter, sideJustPlayed) {
-            try {
-                await initLocalEngine();
-                if (!stockfishEngine || !stockfishEngine.ready) return "";
-                const parts = fenAfter.split(/\s+/);
-                const stm = parts[1] === 'w' ? 'White' : 'Black';
-                let threatFen = fenAfter;
-                if (stm !== sideJustPlayed) {
-                    threatFen = flipSideToMove(fenAfter);
-                }
-                const result = await Promise.race([
-                    stockfishEngine.analyze(threatFen, 12),
-                    new Promise(r => setTimeout(() => r(null), 4000))
-                ]);
-                if (!result || !result.lines || !result.lines.length) return "";
-                const top = result.lines[0];
-                const uci = top.moves || [];
-                
-                const moves = uciToSanList(threatFen, uci, 1);
-                if (!moves.length) return "";
-                const san = moves[0].san;
-                return sideJustPlayed + ' threatens ' + san;
-            } catch (e) {
-                console.warn('engineThreat failed', e);
                 return "";
             }
         }
@@ -636,11 +524,6 @@
             try {
                 const game = new Chess();
                 if (!game.load(fenAfter)) return "equal";
-
-                if (sideJustPlayed) {
-                    const threat = await engineThreatIfSameSideMovesAgain(fenAfter, sideJustPlayed);
-                    if (threat) clues.push(threat);
-                }
 
                 try {
                     const enginePromise = (async () => {
@@ -971,7 +854,6 @@
             statusEl.innerText = (data && !data.invalid) ? 'ready' : 'failed';
         }
 
-        // Dummy to prevent crashes, implementation was missing in previous version
         async function getEngineRefutation(fen) {
             return { lines: [], invalid: true, text: "not implemented" };
         }
@@ -1258,15 +1140,15 @@ FEN AFTER: ${fenAfter || "unavailable"}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a 2700+ human GM writing a paid chess course in simple, correct English.
-We play ${weSide}. Use "we/our" for our moves. The opponent is ${theySide}.
-
+            const fullPrompt = `You are a 2700+ human GM writing a paid chess course in very simple, correct English.
+We play ${weSide}. Use "we/our" for our moves. For the opponent say "${theySide}".
 Rules:
-- 1-2 short sentences only. Explain the idea of the move just played.
-- Respect the [JUDGMENT]. If it says "equal", we are happy with equality. If it has "?" or "??", explain the mistake.
-- At the end of a variation, use the CONSENSUS PLAN to state our next ideas.
-- Do not invent moves that are not in the plan or FEN.
-- Never say "FEN", "material", "mobility", or "eval".
+- 1-2 short sentences only.
+- Explain the idea of the side that just moved. 
+- On our move: our plan.
+- On opponent's move: their idea only.
+- Use the [JUDGMENT] and [CONSENSUS PLAN] to shape your explanation, but write naturally like a human GM. Do not repeat phrases.
+- Never invent attacks on well-defended squares.
 
 Return ONLY JSON. Keys = IDs. Values = comment text only.
 
