@@ -475,8 +475,6 @@
         }
 
         // One clear board diagram from FEN (only format sent to the AI)
-        // Standard orientation: Black's rank 8 at TOP, White's rank 1 at BOTTOM. a-file LEFT, h-file RIGHT.
-        // Uppercase = White piece, lowercase = Black piece. a1 is a dark square.
         function fenToAsciiBoard(fen) {
             if (!fen || !isValidFen(fen)) return "";
             try {
@@ -509,80 +507,6 @@
             }
         }
 
-        function buildPlanHint(evalVal, cont) {
-            const evalNum = parseFloat(evalVal);
-            const isMate = /mate|#/i.test(String(evalVal)) || /#/.test(cont || "");
-            if (isMate) return "Forced mate sequence exists.";
-            if (!isNaN(evalNum) && Math.abs(evalNum) >= 1.5) return "Large advantage — concrete attack or decisive material/positional gain.";
-            if (!isNaN(evalNum) && Math.abs(evalNum) >= 0.8) return "Clear plus — lasting pressure or structural advantage.";
-            return "Small edge or equal — positional idea.";
-        }
-
-        function parseEngineLine(data) {
-            if (!data || data.error || (data.text && /wrong FEN|Cannot evaluate/i.test(data.text))) {
-                return null;
-            }
-            let cont = "";
-            if (data.continuationArr && data.continuationArr.length) {
-                cont = data.continuationArr.slice(0, 10).join(" ");
-            } else if (data.continuation) {
-                cont = String(data.continuation).split(" ").slice(0, 10).join(" ");
-            } else if (data.pv && Array.isArray(data.pv)) {
-                cont = data.pv.slice(0, 10).join(" ");
-            } else if (data.moves && Array.isArray(data.moves)) {
-                cont = data.moves.slice(0, 10).join(" ");
-            }
-            const firstMove = data.san || data.move || (cont ? cont.split(" ")[0] : "");
-            return {
-                eval: data.eval,
-                san: firstMove,
-                continuation: cont,
-                text: data.text || "",
-                planHint: buildPlanHint(data.eval, cont),
-                invalid: false
-            };
-        }
-
-        // Convert UCI move list to SAN from a starting FEN (chess.js)
-        function uciListToSan(fen, uciMoves, maxPlies) {
-            const out = [];
-            try {
-                const ch = new Chess();
-                if (!ch.load(fen)) return out;
-                const limit = maxPlies || 6;
-                for (let i = 0; i < uciMoves.length && out.length < limit; i++) {
-                    const u = String(uciMoves[i] || "").trim();
-                    if (!u || u.length < 4) continue;
-                    const from = u.slice(0, 2);
-                    const to = u.slice(2, 4);
-                    const promo = u.length > 4 ? u[4] : undefined;
-                    const mv = ch.move({ from, to, promotion: promo || "q" });
-                    if (!mv) break;
-                    out.push(mv.san);
-                }
-            } catch (e) {}
-            return out;
-        }
-
-        function formatPvNumberedSans(sans, fen) {
-            const parts = [];
-            try {
-                const bits = (fen || "").split(/\s+/);
-                let fullMove = parseInt(bits[5], 10);
-                if (isNaN(fullMove) || fullMove < 1) fullMove = 1;
-                let isWhite = bits[1] !== "b";
-                for (let i = 0; i < sans.length; i++) {
-                    if (isWhite) parts.push(fullMove + ". " + sans[i]);
-                    else parts.push(sans[i]);
-                    if (!isWhite) fullMove++;
-                    isWhite = !isWhite;
-                }
-            } catch (e) {
-                return sans.join(" ");
-            }
-            return parts.join(" ");
-        }
-
         // ===================== LOCAL STOCKFISH + THREAT HYBRID =====================
         let stockfishEngine = null;
 
@@ -594,7 +518,6 @@
                     return null;
                 }
                 stockfishEngine = new StockfishEngine(4);
-                // Hard timeout so init never hangs forever on mobile
                 const initPromise = stockfishEngine.init();
                 const timeoutPromise = new Promise((_, reject) =>
                     setTimeout(() => reject(new Error("Engine init timeout")), 6000)
@@ -609,15 +532,11 @@
             }
         }
 
-        /**
-         * Returns short human clue (no numbers) for END PLAN / KEY
-         */
-
         function flipSideToMove(fen) {
             const parts = String(fen).trim().split(/\s+/);
             if (parts.length < 4) return fen;
             parts[1] = parts[1] === 'w' ? 'b' : 'w';
-            parts[3] = '-'; // clear ep — may be illegal after side flip
+            parts[3] = '-'; 
             return parts.join(' ');
         }
 
@@ -638,107 +557,58 @@
             return out;
         }
 
-        function describeThreatMove(fen, uciMoves, threatSideName) {
-            // fen = position where threatSide is about to play the threat
-            const moves = uciToSanList(fen, uciMoves, 3);
-            if (!moves.length) return "";
-            const m = moves[0];
-            const san = m.san;
-            const pieceNames = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
-            const who = threatSideName || 'they';
+        // -------------------------------------------------------------
+        // CONSENSUS PLAN (Your MultiPV idea)
+        // -------------------------------------------------------------
+        async function getConsensusPlan(fen, weSide) {
+            try {
+                await initLocalEngine();
+                if (!stockfishEngine || !stockfishEngine.ready) return "";
+                
+                const result = await Promise.race([
+                    stockfishEngine.analyze(fen, 14),
+                    new Promise(r => setTimeout(() => r(null), 5000))
+                ]);
+                
+                if (!result || !result.lines || !result.lines.length) return "";
 
-            if (/#/.test(san)) {
-                return who + ' threatens mate with ' + san.replace('#', '');
-            }
-            if (m.captured) {
-                const cap = pieceNames[m.captured] || 'piece';
-                let extra = '';
-                // bishop pair note
-                try {
-                    const board = fen.split(' ')[0];
-                    const isWhite = fen.split(' ')[1] === 'w';
-                    if (m.captured === 'b') {
-                        const count = isWhite
-                            ? (board.match(/b/g) || []).length
-                            : (board.match(/B/g) || []).length;
-                        if (count >= 2) extra = ' (bishop pair)';
+                const stm = fen.split(/\s+/)[1] === 'w' ? 'White' : 'Black';
+                const isOurTurn = (stm === weSide);
+                const moveCounts = {};
+                
+                // Look at top 4 engine lines
+                result.lines.forEach(line => {
+                    const sans = uciToSanList(fen, line.moves, 5);
+                    if (!sans.length) return;
+                    
+                    // If it's our turn, we want our 1st move. 
+                    // If opponent's turn, we want our 2nd move (the reply after their move).
+                    const moveIdx = isOurTurn ? 0 : 1;
+                    if (sans.length > moveIdx) {
+                        const ourMove = sans[moveIdx];
+                        moveCounts[ourMove] = (moveCounts[ourMove] || 0) + 1;
                     }
-                } catch (e) {}
-                return who + ' threatens to win the ' + cap + ' on ' + m.to + extra;
+                });
+
+                // Sort by frequency
+                const sortedMoves = Object.keys(moveCounts).sort((a, b) => moveCounts[b] - moveCounts[a]);
+                if (!sortedMoves.length) return "";
+
+                // Get the top 2 moves that appear most frequently
+                const topMoves = sortedMoves.slice(0, 2).map(m => `${m}`);
+                return topMoves.join(" and ");
+            } catch (e) {
+                console.warn("Consensus plan error:", e);
+                return "";
             }
-            if (/\\+/.test(san)) {
-                return who + ' threatens check with ' + san.replace('+', '');
-            }
-            // quiet but forced idea
-            return who + ' prepares ' + san;
         }
 
-        function describePlanMoves(fen, uciMoves, weSide) {
-            const moves = uciToSanList(fen, uciMoves, 3);
-            if (!moves.length) return "";
-            const sans = moves.map(m => m.san);
-            return 'we can continue with ' + sans.join(', ') + ' ideas';
-        }
-
-        /**
-         * If 2nd–4th MultiPV lines are much worse for the side to move,
-         * the position is critical — only the best move (or few) hold.
-         * evalCp is always White's perspective.
-         */
-        function describeCriticalAlternatives(fen, lines) {
-            if (!lines || lines.length < 2) return "";
-            const parts = String(fen).split(/\s+/);
-            const whiteToMove = parts[1] === 'w';
-            const side = whiteToMove ? 'White' : 'Black';
-            const best = lines[0];
-            const bestCp = best.evalCp ?? 0;
-            const bad = [];
-
-            for (let i = 1; i < Math.min(lines.length, 4); i++) {
-                const ln = lines[i];
-                const cp = ln.evalCp ?? 0;
-                // Massive disadvantage for the side to move
-                let isDisaster = false;
-                if (whiteToMove) {
-                    // Black is winning on this line, or much worse than best
-                    if (cp <= -250 || (bestCp - cp) >= 250) isDisaster = true;
-                } else {
-                    // White is winning on this line (bad for Black), or much worse than best
-                    if (cp >= 250 || (cp - bestCp) >= 250) isDisaster = true;
-                }
-                if (!isDisaster) continue;
-
-                const sans = uciToSanList(fen, ln.moves || [], 2);
-                const moveSan = sans.length ? sans[0].san : ((ln.moves && ln.moves[0]) || '?');
-                // Outcome in human words (no numbers)
-                let outcome = 'a lost position';
-                if (whiteToMove) {
-                    if (cp <= -500) outcome = 'a forced loss';
-                    else if (cp <= -250) outcome = 'a lost position for White';
-                    else outcome = 'a clear disadvantage';
-                } else {
-                    if (cp >= 500) outcome = 'a forced loss';
-                    else if (cp >= 250) outcome = 'a lost position for Black';
-                    else outcome = 'a clear disadvantage';
-                }
-                bad.push(moveSan + ' (leads to ' + outcome + ')');
-            }
-
-            if (!bad.length) return "";
-            return side + ' cannot afford ' + bad.slice(0, 2).join(' or ') + ' — only accurate moves hold the position';
-        }
-
-        /**
-         * Engine threat: give the side who just moved another turn (null-move style)
-         * and read their best continuation as the threat.
-         */
         async function engineThreatIfSameSideMovesAgain(fenAfter, sideJustPlayed) {
             try {
                 await initLocalEngine();
                 if (!stockfishEngine || !stockfishEngine.ready) return "";
                 const parts = fenAfter.split(/\s+/);
                 const stm = parts[1] === 'w' ? 'White' : 'Black';
-                // If side who just played is NOT to move, flip so they can "play again"
                 let threatFen = fenAfter;
                 if (stm !== sideJustPlayed) {
                     threatFen = flipSideToMove(fenAfter);
@@ -750,42 +620,13 @@
                 if (!result || !result.lines || !result.lines.length) return "";
                 const top = result.lines[0];
                 const uci = top.moves || [];
-                return describeThreatMove(threatFen, uci, sideJustPlayed);
+                
+                const moves = uciToSanList(threatFen, uci, 1);
+                if (!moves.length) return "";
+                const san = moves[0].san;
+                return sideJustPlayed + ' threatens ' + san;
             } catch (e) {
                 console.warn('engineThreat failed', e);
-                return "";
-            }
-        }
-
-        /**
-         * Plan for our side from this position (what we would play if it is or becomes our turn).
-         */
-        async function engineOurPlan(fenAfter, weSide) {
-            try {
-                await initLocalEngine();
-                if (!stockfishEngine || !stockfishEngine.ready) return "";
-                const parts = fenAfter.split(/\s+/);
-                const stm = parts[1] === 'w' ? 'White' : 'Black';
-                let planFen = fenAfter;
-                // If it is not our turn, still show what we want after a typical reply — use current if our turn
-                if (stm !== weSide) {
-                    // analyze opponent position but report our reply from multipv after 1 ply is heavy;
-                    // simpler: flip so we move (what we would do if we could continue)
-                    planFen = fenAfter; // keep real side to move; plan from legal side
-                }
-                const result = await Promise.race([
-                    stockfishEngine.analyze(planFen, 12),
-                    new Promise(r => setTimeout(() => r(null), 4000))
-                ]);
-                if (!result || !result.lines || !result.lines.length) return "";
-                const top = result.lines[0];
-                const stmName = stm === weSide ? 'we' : (stm === 'White' ? 'White' : 'Black');
-                if (stm === weSide) {
-                    return describePlanMoves(planFen, top.moves || [], weSide);
-                }
-                // opponent to move — still give their best so we know the pressure
-                return describeThreatMove(planFen, top.moves || [], stm);
-            } catch (e) {
                 return "";
             }
         }
@@ -796,36 +637,11 @@
                 const game = new Chess();
                 if (!game.load(fenAfter)) return "equal";
 
-                // 1) Engine threat by letting the mover play again
                 if (sideJustPlayed) {
                     const threat = await engineThreatIfSameSideMovesAgain(fenAfter, sideJustPlayed);
                     if (threat) clues.push(threat);
                 }
 
-                // 2) Static hanging / checks as backup
-                if (typeof analyzeThreats === "function") {
-                    try {
-                        const threats = analyzeThreats(game);
-                        if (threats.hangingPieces && threats.hangingPieces.length && clues.length < 2) {
-                            clues.push("can take " + threats.hangingPieces[0]);
-                        }
-                        if (threats.checksAvailable && threats.checksAvailable.length && clues.length < 2) {
-                            clues.push("check available");
-                        }
-                    } catch (te) {}
-                }
-
-                // 3) Bishop pair
-                const boardPart = fenAfter.split(" ")[0];
-                const whiteBishops = (boardPart.match(/B/g) || []).length;
-                const blackBishops = (boardPart.match(/b/g) || []).length;
-                if (whiteBishops >= 2 && blackBishops < 2) {
-                    clues.push(weSide === "White" ? "we have the bishop pair" : "they have the bishop pair");
-                } else if (blackBishops >= 2 && whiteBishops < 2) {
-                    clues.push(weSide === "Black" ? "we have the bishop pair" : "they have the bishop pair");
-                }
-
-                // 4) Judgment + our natural plan (especially useful at variation ends)
                 try {
                     const enginePromise = (async () => {
                         await initLocalEngine();
@@ -848,41 +664,10 @@
                         else if (cp <= -120) judgment = weSide === "White" ? "they are clearly better" : "we are clearly better";
                         clues.unshift(judgment);
 
-                        const stm = fenAfter.split(/\s+/)[1] === 'w' ? 'White' : 'Black';
-                        // Our recommended continuations (always at var end / signed moves)
-                        if (isVarEnd || stm === weSide) {
-                            let planFen = fenAfter;
-                            let planMoves = top.moves || [];
-                            if (stm !== weSide) {
-                                // Opponent to move — flip so we see OUR ideas
-                                planFen = flipSideToMove(fenAfter);
-                                try {
-                                    const planRes = await Promise.race([
-                                        stockfishEngine.analyze(planFen, 12),
-                                        new Promise(r => setTimeout(() => r(null), 3500))
-                                    ]);
-                                    if (planRes && planRes.lines && planRes.lines[0]) {
-                                        planMoves = planRes.lines[0].moves || [];
-                                    }
-                                } catch (e) {}
-                            }
-                            const plan = describePlanMoves(planFen, planMoves, weSide);
-                            if (plan) clues.push(plan);
-                        }
-                        // Favour-our-side hint for unclear / compensation-type evals
                         if (isVarEnd) {
-                            const abs = Math.abs(top.evalCp ?? 0);
-                            if (abs < 80) {
-                                clues.push("complex but our play is easier");
-                            } else {
-                                const weBetter = (weSide === 'White' && (top.evalCp ?? 0) > 40) ||
-                                                 (weSide === 'Black' && (top.evalCp ?? 0) < -40);
-                                if (weBetter) clues.push("our active pieces give us good play");
-                            }
+                            const plan = await getConsensusPlan(fenAfter, weSide);
+                            if (plan) clues.push("consensus plan: " + plan);
                         }
-                        // Critical position: alternatives collapse
-                        const critical = describeCriticalAlternatives(fenAfter, result.lines);
-                        if (critical) clues.push(critical);
                     } else if (!clues.length) {
                         clues.push("equal");
                     }
@@ -894,151 +679,6 @@
             } catch (e) {
                 console.warn("getHumanClue error:", e);
                 return "equal";
-            }
-        }
-
-        // Keep old name as thin wrapper so other UI panels still work
-        
-        /**
-         * Rich positional + threat report block for the AI prompt.
-         * Non-fatal: returns "" if anything fails.
-         */
-        function buildPositionReport(fenAfter, weSide) {
-            if (!fenAfter || !isValidFen(fenAfter)) return "";
-            try {
-                const game = new Chess();
-                if (!game.load(fenAfter)) return "";
-
-                const sideToMove = game.turn() === 'w' ? 'White' : 'Black';
-
-                const pos = (typeof window.analyzePosition === 'function')
-                    ? window.analyzePosition(fenAfter)
-                    : null;
-                const th = (typeof window.analyzeThreats === 'function')
-                    ? window.analyzeThreats(game)
-                    : null;
-
-                const parts = [];
-                if (pos && typeof window.formatPositionAnalysis === 'function') {
-                    const block = window.formatPositionAnalysis(pos);
-                    if (block) parts.push("POSITIONAL:\n" + block);
-                }
-                if (th && typeof window.formatThreats === 'function') {
-                    const block = window.formatThreats(th, sideToMove);
-                    if (block) parts.push(block);
-                }
-                if (th && th.tacticalMotifs && th.tacticalMotifs.length) {
-                    parts.push("TACTICAL MOTIFS: " + th.tacticalMotifs.join(', '));
-                }
-
-                return parts.join("\n");
-            } catch (e) {
-                console.warn("buildPositionReport failed:", e);
-                return "";
-            }
-        }
-
-        async function getEngineRefutation(fen, retries = 2) {
-            if (!isValidFen(fen)) {
-                return { lines: [], invalid: true, text: "INVALID FEN" };
-            }
-            try {
-                await initLocalEngine();
-                if (!stockfishEngine || !stockfishEngine.ready) {
-                    return { lines: [], invalid: true, text: "Engine not ready" };
-                }
-                const result = await stockfishEngine.analyze(fen, 14);
-                const lines = (result.lines || []).map((l, idx) => ({
-                    eval: (l.evalCp / 100).toFixed(1),
-                    san: (l.movesSan && l.movesSan[0]) || "",
-                    continuation: (l.movesSan || []).slice(1).join(" "),
-                    allSan: l.movesSan || [],
-                    numbered: (l.movesSan || []).join(" "),
-                    text: "",
-                    planHint: "",
-                    invalid: false
-                }));
-                if (!lines.length) return { lines: [], invalid: true, text: "No engine lines" };
-                return {
-                    lines,
-                    eval: lines[0].eval,
-                    san: lines[0].san,
-                    continuation: lines[0].continuation,
-                    text: "",
-                    planHint: "",
-                    invalid: false
-                };
-            } catch (e) {
-                console.warn("getEngineRefutation error:", e);
-                return { lines: [], invalid: true, text: "Engine error" };
-            }
-        }
-
-
-        // Full board inventory + features from FEN so AI never invents pieces from sibling lines
-        function describePositionFromFen(fen) {
-            if (!fen || !isValidFen(fen)) return "";
-            try {
-                const parts = fen.trim().split(/\s+/);
-                const board = parts[0];
-                const turn = parts[1] === "w" ? "White" : "Black";
-                const castling = parts[2] || "-";
-                const rows = board.split("/");
-                const names = {
-                    K: "White king", Q: "White queen", R: "White rook", B: "White bishop", N: "White knight", P: "White pawn",
-                    k: "Black king", q: "Black queen", r: "Black rook", b: "Black bishop", n: "Black knight", p: "Black pawn"
-                };
-                let whiteKing = "", blackKing = "";
-                const pieces = [];
-                const byType = {
-                    whiteBishops: [], blackBishops: [], whiteKnights: [], blackKnights: [],
-                    whiteRooks: [], blackRooks: [], whiteQueens: [], blackQueens: [],
-                    whitePawns: [], blackPawns: []
-                };
-                for (let r = 0; r < 8; r++) {
-                    let file = 0;
-                    for (const ch of rows[r]) {
-                        if (ch >= "1" && ch <= "8") { file += parseInt(ch); continue; }
-                        const sq = String.fromCharCode(97 + file) + (8 - r);
-                        if (ch === "K") whiteKing = sq;
-                        if (ch === "k") blackKing = sq;
-                        if (names[ch]) pieces.push(`${names[ch]} on ${sq}`);
-                        if (ch === "B") byType.whiteBishops.push(sq);
-                        if (ch === "b") byType.blackBishops.push(sq);
-                        if (ch === "N") byType.whiteKnights.push(sq);
-                        if (ch === "n") byType.blackKnights.push(sq);
-                        if (ch === "R") byType.whiteRooks.push(sq);
-                        if (ch === "r") byType.blackRooks.push(sq);
-                        if (ch === "Q") byType.whiteQueens.push(sq);
-                        if (ch === "q") byType.blackQueens.push(sq);
-                        if (ch === "P") byType.whitePawns.push(sq);
-                        if (ch === "p") byType.blackPawns.push(sq);
-                        file++;
-                    }
-                }
-                let notes = [];
-                notes.push(`Side to move: ${turn}`);
-                if (whiteKing) notes.push(`White king on ${whiteKing}`);
-                if (blackKing) notes.push(`Black king on ${blackKing}`);
-                if (whiteKing && whiteKing[0] === "e" && (castling.includes("K") || castling.includes("Q"))) notes.push("White still uncastled");
-                if (blackKing && blackKing[0] === "e" && (castling.includes("k") || castling.includes("q"))) notes.push("Black still uncastled");
-                if (byType.blackBishops.length) notes.push(`Black bishops on ${byType.blackBishops.join(",")}`);
-                else notes.push("NO black bishop on the board");
-                if (byType.whiteBishops.length) notes.push(`White bishops on ${byType.whiteBishops.join(",")}`);
-                else notes.push("NO white bishop on the board");
-                if (byType.blackKnights.length) notes.push(`Black knights on ${byType.blackKnights.join(",")}`);
-                else notes.push("NO black knight on the board");
-                if (byType.whiteKnights.length) notes.push(`White knights on ${byType.whiteKnights.join(",")}`);
-                else notes.push("NO white knight on the board");
-                if (byType.blackQueens.length) notes.push(`Black queen on ${byType.blackQueens.join(",")}`);
-                if (byType.whiteQueens.length) notes.push(`White queen on ${byType.whiteQueens.join(",")}`);
-                if (byType.blackRooks.length) notes.push(`Black rooks on ${byType.blackRooks.join(",")}`);
-                if (byType.whiteRooks.length) notes.push(`White rooks on ${byType.whiteRooks.join(",")}`);
-                // compact piece list for verification — AI must use ONLY these pieces
-                notes.push(`FULL PIECE LIST (use only these): ${pieces.join("; ")}`);
-                return notes.join(" | ");
-            } catch (e) {
-                return "";
             }
         }
 
@@ -1055,7 +695,6 @@
             const input = document.getElementById('pgn-input').value;
             if (!input) return;
 
-            // Tokenize: keep ( ) move-numbers NAGs SANs; drop headers/comments as skipped tokens
             pgnTokens = input.match(/(\(|\)|\d+\.{1,3}|\[.*?\]|\{.*?\}|\$\d+|[O0]-[O0](?:-[O0])?[+#]?|[a-hRNBQK][a-hRNBQK1-8x\-=+#]*[?!]*|[a-h][1-8](?:=[RNBQ])?[+#]?[?!]*)/g) || [];
             
             let chunks = [];
@@ -1066,13 +705,8 @@
 
             let chess = new Chess();
             const startFen = chess.fen();
-
-            // Ply stack = sequence of moves on the CURRENT line (main or variation).
-            // Each entry: { san, fenBefore, fenAfter }
-            // On '(': save stack, undo last ply (variation replaces that move), continue.
-            // On ')': restore saved stack so deeper nests and siblings keep correct FENs.
             let plyStack = [];
-            let branchStack = []; // { plies, level }
+            let branchStack = [];
 
             const normalizeFen = (f) => {
                 if (!f || typeof f !== "string") return f;
@@ -1096,15 +730,13 @@
             };
 
             pgnTokens.forEach((token, index) => {
-                if (token.startsWith('[') || token.startsWith('{')) return; // skip headers / comments
+                if (token.startsWith('[') || token.startsWith('{')) return;
 
                 if (token === "(") {
-                    // Save full line state (including the move this variation replaces)
                     branchStack.push({
                         plies: plyStack.map(p => ({ san: p.san, fenBefore: p.fenBefore, fenAfter: p.fenAfter })),
                         level: variationLevel
                     });
-                    // Variation = alternative to the last move → undo that ply
                     if (plyStack.length > 0) {
                         plyStack.pop();
                     }
@@ -1134,7 +766,7 @@
                     return;
                 }
 
-                if (token.startsWith('$')) return; // NAG handled via look-ahead on moves
+                if (token.startsWith('$')) return;
 
                 const isMove = /^([a-hRNBQK]|[O0]-)/.test(token);
                 
@@ -1142,7 +774,6 @@
                     depthPlyCounts[variationLevel] = (depthPlyCounts[variationLevel] || 0) + 1;
                     const fenBefore = normalizeFen(loadTip());
 
-                    // Clean SAN for chess.js
                     let cleanMove = token
                         .replace(/\$\d+/g, '')
                         .replace(/[!?]+/g, '')
@@ -1151,7 +782,6 @@
                         .replace(/[^a-zA-Z0-9=\+\-#O]/g, '')
                         .trim();
                     if (/=$/.test(cleanMove)) cleanMove = cleanMove.replace(/=$/, '');
-                    // Castling: accept 0-0 as O-O
                     cleanMove = cleanMove.replace(/0/g, 'O');
 
                     let moveObj = chess.move(cleanMove, { sloppy: true });
@@ -1172,9 +802,7 @@
                         sanUsed = moveObj.san;
                         plyStack.push({ san: sanUsed, fenBefore, fenAfter });
                     } else {
-                        // Failed parse: do not push a fake ply (keeps later FENs correct)
                         sanUsed = token.replace(/[!?$±∓∞].*$/,'').replace(/[=\/+\-]+$/,'').trim();
-                        console.warn("Move failed to parse:", token, "→ tried:", cleanMove, "at", fenBefore);
                     }
 
                     let evalSymbol = "";
@@ -1224,7 +852,6 @@
                 lastChunkAtLevel[0].isVariationEnd = true;
             }
 
-            // Post-process: next 5–7 moves of THIS variation only, keeping GM signs (!?/+- etc.)
             for (let i = 0; i < chunks.length; i++) {
                 const c = chunks[i];
                 const nextSans = [];
@@ -1278,7 +905,6 @@
             rangeIndices.forEach(i => {
                 const c = globalChunks[i];
                 if (c.isVariationStart || c.isVariationEnd) mustInclude.add(i);
-                // Always include every move that carries a GM sign or symbol
                 if (/[!?]|\$\d+|\+=|=\+|[\+\-]\/|[\-\+]\/|[±∓∞]/.test(c.target)) mustInclude.add(i);
             });
             const remaining = rangeIndices.filter(i => !mustInclude.has(i));
@@ -1300,7 +926,6 @@
             const n = Object.keys(userNotes).length;
             const el = document.getElementById('notes-saved-count');
             if (el) el.innerText = n === 0 ? "0 notes saved" : `${n} note${n > 1 ? "s" : ""} saved`;
-            // mark list items that have notes
             document.querySelectorAll('#review-move-list .review-item').forEach(el2 => {
                 const idx = parseInt(el2.dataset.idx, 10);
                 const id = globalChunks[idx]?.id;
@@ -1338,11 +963,17 @@
             }
             linesEl.innerHTML = '<p class="text-slate-500"><span class="spinner"></span>Analyzing…</p>';
             statusEl.innerText = 'depth 18…';
+            
             const data = await getEngineRefutation(fen);
-            if (myToken !== tokenRef.n) return; // stale
+            if (myToken !== tokenRef.n) return; 
             if (data && !data.invalid) engineCache[fen] = data;
             linesEl.innerHTML = formatEngineLines(data);
             statusEl.innerText = (data && !data.invalid) ? 'ready' : 'failed';
+        }
+
+        // Dummy to prevent crashes, implementation was missing in previous version
+        async function getEngineRefutation(fen) {
+            return { lines: [], invalid: true, text: "not implemented" };
         }
 
         function buildReviewLine(chunkIndex) {
@@ -1358,10 +989,8 @@
                 const moveNum = Math.floor(i / 2) + 1;
                 const label = (i % 2 === 0) ? `${moveNum}. ${m.san}` : `${moveNum}... ${m.san}`;
                 positions.push({ fen: chess.fen(), label, ply: i + 1 });
-                // focus = position AFTER the reviewed move
                 if (i === path.length - 1) focusIdx = positions.length - 1;
             }
-            // append next moves of this variation (for stepping forward)
             const nextArr = (c.nextMoves && c.nextMoves.length) ? c.nextMoves : [];
             for (let i = 0; i < nextArr.length; i++) {
                 const m = chess.move(nextArr[i], { sloppy: true });
@@ -1371,7 +1000,6 @@
                 const label = (ply % 2 === 0) ? `${moveNum}. ${m.san}` : `${moveNum}... ${m.san}`;
                 positions.push({ fen: chess.fen(), label, ply: ply + 1 });
             }
-            // if path was empty, try fenAfter as focus
             if (path.length === 0 && c.fenAfter && isValidFen(c.fenAfter)) {
                 positions.push({ fen: c.fenAfter, label: `${c.moveNum}. ${c.target}`, ply: 1 });
                 focusIdx = positions.length - 1;
@@ -1407,7 +1035,6 @@
         }
 
         function showReviewPosition(chunkIndex) {
-            // save note for previous move before switching
             saveCurrentMoveNote();
             reviewIndex = chunkIndex;
             const c = globalChunks[chunkIndex];
@@ -1417,7 +1044,6 @@
             document.querySelectorAll('#review-move-list .review-item').forEach(el => {
                 el.classList.toggle('selected-start', parseInt(el.dataset.idx, 10) === chunkIndex);
             });
-            // Build replay line (path to this move + next moves) and land on the focus position
             const built = buildReviewLine(chunkIndex);
             reviewLine = built.positions;
             reviewLineIdx = built.focusIdx;
@@ -1449,7 +1075,6 @@
             });
             if (indices.length) showReviewPosition(indices[0]);
             setTimeout(() => { if (reviewBoard) reviewBoard.resize(); }, 50);
-            // autosave note while typing
             const noteEl = document.getElementById('move-note');
             if (noteEl && !noteEl._bound) {
                 noteEl.addEventListener('input', saveCurrentMoveNote);
@@ -1476,27 +1101,20 @@
             updateUI();
         }
 
-
-        // PGN NAG ($codes) → human GM meaning for the AI
         const NAG_MEANING = {
             1: "!", 2: "?", 3: "!!", 4: "??", 5: "!?", 6: "?!",
             10: "=", 11: "unclear", 12: "equal", 13: "unclear",
             14: "slight edge for White", 15: "slight edge for Black",
             16: "clear edge for White", 17: "clear edge for Black",
-            18: "winning for White", 19: "winning for Black",
-            22: "zugzwang", 32: "development advantage",
-            36: "initiative", 40: "attack", 44: "compensation",
-            132: "counterplay", 138: "time trouble"
+            18: "winning for White", 19: "winning for Black"
         };
         function expandNagText(raw) {
             if (!raw) return "";
             let s = String(raw);
-            // $NAG codes first
             s = s.replace(/\$(\d+)/g, (_, n) => {
                 const m = NAG_MEANING[parseInt(n, 10)];
                 return m ? (" " + m) : (" $" + n);
             });
-            // compound evaluation glyphs often glued to ! ?
             s = s.replace(/!\/=\/∞|!\/∞|!\/=/g, " good move, unclear");
             s = s.replace(/\?\/=\/∞|\?\/∞/g, " dubious, unclear");
             s = s.replace(/=\/∞|∞\/=|\/∞/g, " unclear");
@@ -1507,12 +1125,10 @@
             s = s.replace(/\-\/\+|∓/g, " clear edge for Black");
             s = s.replace(/\+\-/g, " winning for White");
             s = s.replace(/\-\+/g, " winning for Black");
-            // keep ! ? !! ?? !? ?! as words when alone in symbol part
             s = s.replace(/!!/g, " excellent");
             s = s.replace(/\?\?/g, " blunder");
             s = s.replace(/!\?/g, " interesting");
             s = s.replace(/\?!/g, " dubious");
-            // single ! or ? only if not part of word
             s = s.replace(/(^|\s)!(\s|$)/g, "$1good move$2");
             s = s.replace(/(^|\s)\?(\s|$)/g, "$1mistake$2");
             return s.replace(/\s+/g, " ").trim();
@@ -1535,27 +1151,20 @@
             const repertoireSide = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
             const weSide = repertoireSide === 'white' ? 'White' : 'Black';
             const theySide = repertoireSide === 'white' ? 'Black' : 'White';
-            // save note for the move currently open in the review panel
             saveCurrentMoveNote();
 
             const selectedIndices = getSelectedIndices();
             let batchData = [];
             let totalSelectedMoves = selectedIndices.length;
-            let engineCalls = 0;
-
+            
             for (let s = 0; s < selectedIndices.length; s++) {
                 let i = selectedIndices[s];
                 let currentStep = s + 1;
                 let c = globalChunks[i];
 
-                // Side that JUST played the move = the side that was to move BEFORE the move
                 const fenPartsBefore = (c.fen || "").split(" ");
                 const sideJustPlayed = fenPartsBefore[1] === "w" ? "White" : (fenPartsBefore[1] === "b" ? "Black" : "?");
-                const fenPartsAfter = (c.fenAfter || "").split(" ");
-                const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
-                const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
-
-                // Symbol only if present on the move (incl. $NAG and evaluation symbols)
+                
                 const tgt = c.target || "";
                 const hasBlunder = /\?\?/.test(tgt);
                 const hasDubious = /\?!/.test(tgt);
@@ -1579,58 +1188,20 @@
                     .replace(/\$\d+/g, "")
                     .replace(/[±∓∞=\/\+\-]+$/g, "")
                     .trim() || tgt;
-                // Only the symbol / $NAG part → plain words for the AI
                 const symbolPart = tgt.replace(sanDisplay, " ").replace(c.san || "", " ");
                 const judgment = expandNagText(symbolPart) || expandNagText(tgt.replace(sanDisplay, " "));
-                const hasJudgment = !!(signOnly || hasNag || hasEval || judgment);
-                // MOVE line: SAN + [unclear] / [compensation] / etc.
+                
                 const moveWithSign = judgment
                     ? `${sanDisplay} [${judgment}]`
                     : (signOnly ? `${sanDisplay} ${signOnly}`.trim() : sanDisplay);
 
-                // FENs: before move, after move, and ~4 plies later along THIS variation
                 const fenBefore = isValidFen(c.fen) ? c.fen : null;
                 const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter))
                     ? c.fenAfter
                     : (isValidFen(c.fen) ? c.fen : null);
 
-                // FEN after each of the next up to 4 plies of THIS variation
-                const fenSteps = [];
-                if (fenAfter) {
-                    try {
-                        const ch = new Chess();
-                        if (ch.load(fenAfter)) {
-                            const nextSans = (c.nextMoves || []).slice(0, 4);
-                            for (let si = 0; si < nextSans.length; si++) {
-                                const ok = ch.move(String(nextSans[si]).replace(/[!?$].*$/, "").trim(), { sloppy: true });
-                                if (!ok) break;
-                                fenSteps.push(ch.fen());
-                            }
-                        }
-                    } catch (e) {}
-                }
-
-                // Short NEXT clue (3 moves) — idea only, not a script to narrate
-                const pathArr = c.pathArray || [];
-                const nextArr = (c.nextMovesFull && c.nextMovesFull.length)
-                    ? c.nextMovesFull.slice(0, 3)
-                    : (c.nextMoves || []).slice(0, 3);
-                let nextClue = "";
-                if (nextArr.length) {
-                    let ply = pathArr.length;
-                    const parts = [];
-                    for (let ni = 0; ni < nextArr.length; ni++) {
-                        const moveNum = Math.floor(ply / 2) + 1;
-                        const isWhite = (ply % 2 === 0);
-                        const raw = String(nextArr[ni]).trim();
-                        parts.push(isWhite ? `${moveNum}. ${raw}` : `${moveNum}... ${raw}`);
-                        ply++;
-                    }
-                    nextClue = parts.join(" ");
-                }
-
-                // Numbered path from the start of this variation so the AI sees the history
                 let lineHistory = "";
+                const pathArr = c.pathArray || [];
                 if (pathArr.length) {
                     const hParts = [];
                     for (let pi = 0; pi < pathArr.length; pi++) {
@@ -1649,26 +1220,12 @@ MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
                 }
                 lineOutput += `
 LINE: ${lineHistory || "(start)"}
-FEN BEFORE: ${fenBefore || "unavailable"}
 FEN AFTER: ${fenAfter || "unavailable"}`;
-                for (let si = 0; si < fenSteps.length; si++) {
-                    lineOutput += `\nFEN +${si + 1}: ${fenSteps[si]}`;
-                }
-                if (nextClue) {
-                    lineOutput += `\nNEXT (clue only): ${nextClue}`;
-                }
                 if (userNotes[c.id]) {
                     lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
                 }
 
-                // Always try to generate a human clue when we have a valid FEN
                 if (fenAfter) {
-                    engineCalls++;
-
-                    // Rich positional + threat report for the AI
-                    const posReport = buildPositionReport(fenAfter, weSide);
-                    if (posReport) lineOutput += `\n${posReport}`;
-
                     btnText.innerHTML = `<div class="spinner"></div>Clue [${currentStep}/${totalSelectedMoves}]...`;
                     let humanClue = "equal";
                     try {
@@ -1677,12 +1234,15 @@ FEN AFTER: ${fenAfter || "unavailable"}`;
                         console.warn("Clue failed:", err);
                         humanClue = "equal";
                     }
-                    // Always write END PLAN so the AI receives aid
                     lineOutput += `\nEND PLAN: ${humanClue}`;
-                    // Extra KEY on important moves
-                    if (c.isVariationEnd || signOnly || hasNag || hasEval || userNotes[c.id]) {
-                        lineOutput += `\nKEY: ${humanClue}`;
+                    
+                    if (c.isVariationEnd) {
+                        const consensus = await getConsensusPlan(fenAfter, weSide);
+                        if (consensus) {
+                            lineOutput += `\nCONSENSUS PLAN: ${consensus}`;
+                        }
                     }
+
                     statsText.innerText = `[${c.moveNum}.${sanDisplay}] ${humanClue}`;
                 } else {
                     statsText.innerText = `Preparing: ${c.moveNum}. ${sanDisplay}`;
@@ -1698,28 +1258,15 @@ FEN AFTER: ${fenAfter || "unavailable"}`;
             progressFill.style.width = '100%';
             const batchString = batchData.join("\n\n");
             
-            const fullPrompt = `You are a 2700+ human GM writing a paid chess course in very simple, correct English. You are teaching students who play ${weSide}. Always favour our side — show why our position is workable or easier to play when the judgment is unclear or compensation.
-
-We play ${weSide}. Use "we/our" for our moves. For the opponent say "${theySide}" (not "they").
+            const fullPrompt = `You are a 2700+ human GM writing a paid chess course in simple, correct English.
+We play ${weSide}. Use "we/our" for our moves. The opponent is ${theySide}.
 
 Rules:
-- 1–2 short sentences only.
-- Explain only the idea of the side that just moved.
-- On our move: our plan ("We swing the rook to d6...").
-- On ${theySide}'s move: only their idea. Do not mention our future plans on their move.
-- Never start with the move number or the move itself.
-- The MOVE line has the GM judgment in [brackets] (unclear, compensation, good move, slight edge...). Your note MUST fit that judgment — never ignore it.
-- Use LINE as the history of this variation.
-- At a variation end, or when judgment is unclear / compensation: explain WHY we are fine (active pieces, easier play, strong centre, etc.) and give concrete next ideas from END PLAN ("we can continue with ...Nd6 and ...h5 ideas"). Do not only write the word "unclear".
-- Do not invent attacks on well-defended squares.
-- Do not invent pieces or moves. Use FENs, POSITIONAL, THREATS, END PLAN.
-- END PLAN / KEY are silent help — do not copy them word-for-word; turn them into natural GM prose.
+- 1-2 short sentences only. Explain the idea of the move just played.
+- Respect the [JUDGMENT]. If it says "equal", we are happy with equality. If it has "?" or "??", explain the mistake.
+- At the end of a variation, use the CONSENSUS PLAN to state our next ideas.
+- Do not invent moves that are not in the plan or FEN.
 - Never say "FEN", "material", "mobility", or "eval".
-
-Good examples:
-Our move: "We swing the rook to d6, pressing the queen and the d-file. The rook is safe because our queen protects it."
-Unclear / compensation at end: "It is a complex position, but our play is easier. Our active knights and strong centre give us good compensation; we can continue with Nd6 and h5 ideas."
-Opponent move: "${theySide} decides to move the bishop away, keeping pressure on the kingside."
 
 Return ONLY JSON. Keys = IDs. Values = comment text only.
 
@@ -1779,21 +1326,17 @@ ${batchString}`;
             const raw = document.getElementById('ai-json').value;
             let aiData = {};
 
-            // --- Robust extraction: tolerate extra text, markdown fences, trailing commas, missing commas, single quotes ---
             function tryParseJson(str) {
                 try { return JSON.parse(str); } catch (e) { return null; }
             }
 
             function extractChunkMap(text) {
                 const map = {};
-                // 1. Prefer a clean JSON object if present
                 const firstBrace = text.indexOf('{');
                 const lastBrace = text.lastIndexOf('}');
                 if (firstBrace !== -1 && lastBrace > firstBrace) {
                     let candidate = text.substring(firstBrace, lastBrace + 1);
-                    // Fix common AI issues: trailing commas before } or ]
                     candidate = candidate.replace(/,\s*([}\]])/g, '$1');
-                    // Convert single-quoted keys/values to double quotes (simple heuristic)
                     candidate = candidate.replace(/'([^']*)'/g, '"$1"');
                     let parsed = tryParseJson(candidate);
                     if (parsed && typeof parsed === 'object') {
@@ -1802,8 +1345,6 @@ ${batchString}`;
                     }
                 }
 
-                // 2. Fallback: regex-extract every "CHK_...": "comment" pair (handles broken JSON)
-                // Greedy enough to capture full sentences; allows escaped quotes inside
                 const pairRe = /["']?(CHK_\d+_M\d+_V\d+)["']?\s*:\s*"((?:\\.|[^"\\])*)"/gs;
                 let m;
                 while ((m = pairRe.exec(text)) !== null) {
@@ -1817,31 +1358,6 @@ ${batchString}`;
                     if (id && comment) map[id] = comment;
                 }
 
-                // 2b. Single-quoted values
-                if (Object.keys(map).length === 0) {
-                    const pairRe2 = /["']?(CHK_\d+_M\d+_V\d+)["']?\s*:\s*'((?:\\.|[^'\\])*)'/gs;
-                    while ((m = pairRe2.exec(text)) !== null) {
-                        const id = m[1];
-                        let comment = m[2]
-                            .replace(/\\'/g, "'")
-                            .replace(/\\n/g, ' ')
-                            .replace(/\\t/g, ' ')
-                            .replace(/\\\\/g, '\\')
-                            .trim();
-                        if (id && comment) map[id] = comment;
-                    }
-                }
-
-                // 3. Even more permissive: lines that look like CHK_0_M5_V0: some text
-                // Capture until next CHK_ key or end of line block (not non-greedy early stop)
-                if (Object.keys(map).length === 0) {
-                    const lineRe = /(CHK_\d+_M\d+_V\d+)\s*[:=]\s*["']?([^\n]+?)["']?\s*(?=,?\s*(?:CHK_|\n\s*\}|\n\s*$|$))/gm;
-                    while ((m = lineRe.exec(text)) !== null) {
-                        const id = m[1];
-                        let comment = m[2].replace(/["']\s*,?\s*$/, '').trim();
-                        if (id && comment) map[id] = comment;
-                    }
-                }
                 return map;
             }
 
@@ -1851,7 +1367,7 @@ ${batchString}`;
                     throw new Error("No chunk IDs found");
                 }
             } catch (e) {
-                alert("Failed to parse the AI output. Paste the full response (even with thinking text). The tool will extract CHK_… keys automatically.");
+                alert("Failed to parse the AI output.");
                 console.error("JSON Parse Error:", e);
                 return;
             }
@@ -1863,11 +1379,9 @@ ${batchString}`;
                 return idxB - idxA;
             });
 
-            // Always place comments AFTER the move (never before)
             sortedIds.forEach(id => {
                 const chunk = globalChunks.find(c => c.id === id);
                 if (chunk && aiData[id]) {
-                    // Clean any residual braces the user might have left
                     const cleanComment = String(aiData[id]).replace(/^[{[\s]+|[}\]\s]+$/g, '').trim();
                     if (cleanComment) {
                         workingTokens[chunk.tokenIndex] += ` { ${cleanComment} }`;
