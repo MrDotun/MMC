@@ -82,12 +82,22 @@
                         <input type="number" id="batch-size-input" value="10" min="5" max="20" class="w-14 bg-slate-800 text-emerald-400 rounded px-2 py-1 border border-slate-600 font-bold">
                     </label>
                     <button onclick="buildAutoBatches()" class="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold uppercase">Split Selection</button>
+                    <button onclick="prepareAllBatches()" id="btn-prepare-all" class="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded-lg text-xs font-bold uppercase hidden">Prepare All (engine clues)</button>
                     <div id="auto-batch-nav" class="hidden flex items-center gap-2">
                         <button onclick="autoBatchStep(-1)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold">◀ Prev</button>
                         <span id="auto-batch-label" class="text-xs font-mono text-emerald-400 min-w-[7rem] text-center">1 / 1</span>
                         <button onclick="autoBatchStep(1)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold">Next ▶</button>
-                        <button onclick="copySelectedBatch()" class="px-4 py-1.5 gold-bg rounded-lg text-xs font-bold uppercase">Copy This Batch</button>
+                        <button onclick="copyPreparedOrLive()" class="px-4 py-1.5 gold-bg rounded-lg text-xs font-bold uppercase">Copy This Batch</button>
                         <span id="auto-batch-done" class="text-[10px] text-slate-500"></span>
+                    </div>
+                    <div id="prepare-progress" class="hidden w-full mt-1">
+                        <div class="flex justify-between text-[10px] text-slate-400 mb-1">
+                            <span id="prepare-status">Preparing…</span>
+                            <span id="prepare-count">0 / 0</span>
+                        </div>
+                        <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                            <div id="prepare-fill" class="h-full bg-indigo-500 transition-all duration-300" style="width:0%"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -225,6 +235,8 @@
         let autoBatchIdx = 0;      // current batch
         let autoBatchDone = {};    // batchIndex -> true once copied
         let autoBatchActive = false;
+        let preparedPrompts = {};  // batchIndex -> full prompt string (pre-computed with engine clues)
+        let prepareCancelled = false;
         let accumulatedAiComments = {}; // id -> comment, survives multiple paste→rebuild cycles
 
         // Restore accumulated AI comments from previous sessions
@@ -1379,33 +1391,73 @@
         }
 
         function getSelectedIndices() {
-            // Auto-batch mode: return the exact consecutive window (no random drop)
+            // Resolve the candidate window (auto-batch or manual selection)
+            let rangeIndices = [];
             const auto = (typeof getAutoBatchIndices === 'function') ? getAutoBatchIndices() : null;
-            if (auto && auto.length) return auto;
+            if (auto && auto.length) {
+                rangeIndices = auto.slice();
+            } else {
+                if (selStart === null) return [];
+                const endIdx = selEnd !== null ? selEnd : selStart;
+                for (let i = selStart; i <= endIdx; i++) rangeIndices.push(i);
+            }
 
-            if (selStart === null) return [];
-            const endIdx = selEnd !== null ? selEnd : selStart;
-            const rangeIndices = [];
-            for (let i = selStart; i <= endIdx; i++) rangeIndices.push(i);
+            if (!rangeIndices.length) return [];
 
-            // For small selections (<=12) keep every move
-            if (rangeIndices.length <= 12) return rangeIndices;
-
+            // Always keep: first/last of window, variation starts/ends, any GM symbol
             const mustInclude = new Set();
-            mustInclude.add(selStart);
-            mustInclude.add(endIdx);
+            mustInclude.add(rangeIndices[0]);
+            mustInclude.add(rangeIndices[rangeIndices.length - 1]);
             rangeIndices.forEach(i => {
                 const c = globalChunks[i];
+                if (!c) return;
                 if (c.isVariationStart || c.isVariationEnd) mustInclude.add(i);
-                // Always include every move that carries a GM sign or symbol
-                if (/[!?]|\$\d+|\+=|=\+|[\+\-]\/|[\-\+]\/|[±∓∞]/.test(c.target)) mustInclude.add(i);
+                if (/[!?]|\$\d+|\+=|=\+|[\+\-]\/|[\-\+]\/|[±∓∞]/.test(c.target || "")) mustInclude.add(i);
             });
+
+            // Target ~6 moves for good AI quality (max 8)
+            const TARGET = 6;
+            const MAX = 8;
             const remaining = rangeIndices.filter(i => !mustInclude.has(i));
-            const randomCount = Math.min(12, Math.max(3, Math.floor(remaining.length * 0.20)));
-            for (let k = 0; k < randomCount && remaining.length; k++) {
-                const r = Math.floor(Math.random() * remaining.length);
-                mustInclude.add(remaining.splice(r, 1)[0]);
+
+            // Prefer our moves (Black or White per repertoire) and longer next-clues
+            remaining.sort((a, b) => {
+                const ca = globalChunks[a], cb = globalChunks[b];
+                const aOur = (ca && ca.fen && ca.fen.split(" ")[1] === (document.getElementById("repertoire-side")?.value === "white" ? "w" : "b")) ? 1 : 0;
+                const bOur = (cb && cb.fen && cb.fen.split(" ")[1] === (document.getElementById("repertoire-side")?.value === "white" ? "w" : "b")) ? 1 : 0;
+                if (bOur !== aOur) return bOur - aOur;
+                const aNext = (ca && ca.nextMoves) ? ca.nextMoves.length : 0;
+                const bNext = (cb && cb.nextMoves) ? cb.nextMoves.length : 0;
+                return bNext - aNext;
+            });
+
+            let need = Math.max(0, TARGET - mustInclude.size);
+            // If must-include is already large, still allow up to MAX
+            if (mustInclude.size >= MAX) {
+                // Keep only the most important must-includes: symbols + var ends first
+                const ranked = Array.from(mustInclude).sort((a, b) => {
+                    const ca = globalChunks[a], cb = globalChunks[b];
+                    const score = (c) => {
+                        if (!c) return 0;
+                        let s = 0;
+                        if (/[!?]|\$\d+|[±∓∞]/.test(c.target || "")) s += 3;
+                        if (c.isVariationEnd) s += 2;
+                        if (c.isVariationStart) s += 1;
+                        return s;
+                    };
+                    return score(cb) - score(ca);
+                });
+                return ranked.slice(0, MAX).sort((a, b) => a - b);
             }
+
+            for (let k = 0; k < need && remaining.length; k++) {
+                mustInclude.add(remaining.shift());
+            }
+            // Soft fill up to MAX if window is sparse
+            while (mustInclude.size < Math.min(MAX, rangeIndices.length) && remaining.length) {
+                mustInclude.add(remaining.shift());
+            }
+
             return Array.from(mustInclude).sort((a, b) => a - b);
         }
 
@@ -1707,9 +1759,12 @@
             } catch (e) {}
 
             document.getElementById('auto-batch-nav').classList.remove('hidden');
+            const prepBtn = document.getElementById('btn-prepare-all');
+            if (prepBtn) prepBtn.classList.remove('hidden');
+            preparedPrompts = {};
             applyAutoBatch(0);
             updateAutoBatchLabel();
-            alert(`Split into ${autoBatches.length} batches of ~${size} moves.\\nUse Next / Prev and Copy This Batch.\\nYour progress is saved — no need to reload.`);
+            alert(`Split into ${autoBatches.length} batches of ~${size} moves.\n\nRecommended: click "Prepare All (engine clues)" once, wait, then Copy/Next is instant.`);
         }
 
         function pgnHash() {
@@ -1750,13 +1805,17 @@
                 label.innerText = "—";
                 return;
             }
-            label.innerText = `${autoBatchIdx + 1} / ${autoBatches.length}`;
+            let t = `${autoBatchIdx + 1} / ${autoBatches.length}`;
+            if (autoBatchDone[autoBatchIdx]) t += " ✓";
+            if (preparedPrompts[autoBatchIdx]) t += " ⚡";
+            label.innerText = t;
             const doneCount = Object.keys(autoBatchDone).filter(k => autoBatchDone[k]).length;
+            const prepCount = Object.keys(preparedPrompts).filter(k => preparedPrompts[k]).length;
             if (doneEl) {
-                doneEl.innerText = doneCount ? `${doneCount} copied` : '';
-                if (autoBatchDone[autoBatchIdx]) {
-                    label.innerText += " ✓";
-                }
+                const bits = [];
+                if (prepCount) bits.push(`${prepCount} ready`);
+                if (doneCount) bits.push(`${doneCount} copied`);
+                doneEl.innerText = bits.join(" · ");
             }
         }
 
@@ -1779,6 +1838,260 @@
         function getAutoBatchIndices() {
             if (!autoBatchActive || !autoBatches.length) return null;
             return autoBatches[autoBatchIdx].slice();
+        }
+
+
+        /**
+         * Pre-compute every batch prompt (with engine clues) so Copy becomes instant.
+         */
+        async function prepareAllBatches() {
+            if (!autoBatches.length) {
+                alert("Split a selection first.");
+                return;
+            }
+            prepareCancelled = false;
+            preparedPrompts = {};
+            const prepBar = document.getElementById('prepare-progress');
+            const prepStatus = document.getElementById('prepare-status');
+            const prepCount = document.getElementById('prepare-count');
+            const prepFill = document.getElementById('prepare-fill');
+            const prepBtn = document.getElementById('btn-prepare-all');
+            if (prepBar) prepBar.classList.remove('hidden');
+            if (prepBtn) {
+                prepBtn.disabled = true;
+                prepBtn.innerText = "Preparing…";
+            }
+
+            const repertoireSide = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
+            const weSide = repertoireSide === 'white' ? 'White' : 'Black';
+            const theySide = repertoireSide === 'white' ? 'Black' : 'White';
+            saveCurrentMoveNote();
+
+            // Warm up engine once
+            try { await initLocalEngine(); } catch (e) {}
+
+            for (let b = 0; b < autoBatches.length; b++) {
+                if (prepareCancelled) break;
+                if (prepStatus) prepStatus.innerText = `Batch ${b + 1}: running engine clues…`;
+                if (prepCount) prepCount.innerText = `${b} / ${autoBatches.length}`;
+                if (prepFill) prepFill.style.width = `${(b / autoBatches.length) * 100}%`;
+
+                // Activate this batch window so getSelectedIndices filters correctly
+                autoBatchIdx = b;
+                selStart = autoBatches[b][0];
+                selEnd = autoBatches[b][autoBatches[b].length - 1];
+
+                const indices = getSelectedIndices();
+                try {
+                    const prompt = await buildPromptForIndices(indices, weSide, theySide, (step, total, label) => {
+                        if (prepStatus) prepStatus.innerText = `Batch ${b + 1}/${autoBatches.length}: ${label || step + '/' + total}`;
+                    });
+                    preparedPrompts[b] = prompt;
+                } catch (err) {
+                    console.warn("Prepare batch failed", b, err);
+                    preparedPrompts[b] = null;
+                }
+            }
+
+            if (prepFill) prepFill.style.width = '100%';
+            if (prepStatus) prepStatus.innerText = prepareCancelled ? "Cancelled" : "All batches ready — Copy is instant";
+            if (prepCount) prepCount.innerText = `${Object.keys(preparedPrompts).length} / ${autoBatches.length}`;
+            if (prepBtn) {
+                prepBtn.disabled = false;
+                prepBtn.innerText = "Re-prepare All";
+            }
+            applyAutoBatch(0);
+            updateAutoBatchLabel();
+            const ready = Object.values(preparedPrompts).filter(Boolean).length;
+            alert(`Prepared ${ready} of ${autoBatches.length} batches.\\nYou can now click Copy This Batch → paste to AI → Next → Copy… with no waiting.`);
+        }
+
+        /** Copy pre-built prompt if available, otherwise build live. */
+        async function copyPreparedOrLive() {
+            if (autoBatchActive && preparedPrompts[autoBatchIdx]) {
+                const prompt = preparedPrompts[autoBatchIdx];
+                const n = (prompt.match(/\\[ID: /g) || []).length;
+                try {
+                    await navigator.clipboard.writeText(prompt);
+                } catch (e) {
+                    const ta = document.createElement("textarea");
+                    ta.value = prompt;
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(ta);
+                }
+                markAutoBatchCopied();
+                updateAutoBatchLabel();
+                const statsText = document.getElementById('stats');
+                if (statsText) statsText.innerText = `Batch ${autoBatchIdx + 1} copied (${n} moves) — instant`;
+                return;
+            }
+            // Fall back to live generation
+            await copySelectedBatch();
+        }
+
+        /**
+         * Core: build the full AI prompt for a list of chunk indices.
+         * onProgress(step, total, label) optional.
+         */
+        async function buildPromptForIndices(selectedIndices, weSide, theySide, onProgress) {
+            let batchData = [];
+            let totalSelectedMoves = selectedIndices.length;
+
+            for (let s = 0; s < selectedIndices.length; s++) {
+                let i = selectedIndices[s];
+                let currentStep = s + 1;
+                let c = globalChunks[i];
+                if (!c) continue;
+
+                const fenPartsBefore = (c.fen || "").split(" ");
+                const sideJustPlayed = fenPartsBefore[1] === "w" ? "White" : (fenPartsBefore[1] === "b" ? "Black" : "?");
+                const tgt = c.target || "";
+                const hasBlunder = /\\?\\?/.test(tgt);
+                const hasDubious = /\\?!/.test(tgt);
+                const hasInteresting = /!\\?/.test(tgt);
+                const hasBrilliant = /!!/.test(tgt);
+                const hasMistake = /\\?/.test(tgt) && !hasBlunder && !hasDubious;
+                const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
+                const hasNag = /\\$\\d+/.test(tgt);
+                const hasEval = /[±∓∞]|\\+\\/=|=\\/\\+|\\+=|=\\+|\\+\\/\\-|\\-\\/\\+|=\\/∞|∞\\/=/.test(tgt);
+
+                let signOnly = "";
+                if (hasBlunder) signOnly = "??";
+                else if (hasDubious) signOnly = "?!";
+                else if (hasInteresting) signOnly = "!?";
+                else if (hasBrilliant) signOnly = "!!";
+                else if (hasMistake) signOnly = "?";
+                else if (hasGood) signOnly = "!";
+
+                let sanDisplay = (c.san || tgt)
+                    .replace(/[!?]+/g, "")
+                    .replace(/\\$\\d+/g, "")
+                    .replace(/[±∓∞=\\/\\+\\-]+$/g, "")
+                    .trim() || tgt;
+                const symbolPart = tgt.replace(sanDisplay, " ").replace(c.san || "", " ");
+                const judgment = expandNagText(symbolPart) || expandNagText(tgt.replace(sanDisplay, " "));
+                const moveWithSign = judgment
+                    ? `${sanDisplay} [${judgment}]`
+                    : (signOnly ? `${sanDisplay} ${signOnly}`.trim() : sanDisplay);
+
+                const fenBefore = isValidFen(c.fen) ? c.fen : null;
+                const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter))
+                    ? c.fenAfter
+                    : (isValidFen(c.fen) ? c.fen : null);
+
+                const pathArr = c.pathArray || [];
+                const nextArr = (c.nextMovesFull && c.nextMovesFull.length)
+                    ? c.nextMovesFull.slice(0, 3)
+                    : (c.nextMoves || []).slice(0, 3);
+                let nextClue = "";
+                if (nextArr.length) {
+                    let ply = pathArr.length;
+                    const parts = [];
+                    for (let ni = 0; ni < nextArr.length; ni++) {
+                        const moveNum = Math.floor(ply / 2) + 1;
+                        const isWhite = (ply % 2 === 0);
+                        const raw = String(nextArr[ni]).trim();
+                        parts.push(isWhite ? `${moveNum}. ${raw}` : `${moveNum}... ${raw}`);
+                        ply++;
+                    }
+                    nextClue = parts.join(" ");
+                }
+
+                let lineHistory = "";
+                if (pathArr.length) {
+                    const hParts = [];
+                    for (let pi = 0; pi < pathArr.length; pi++) {
+                        const mn = Math.floor(pi / 2) + 1;
+                        const isW = (pi % 2 === 0);
+                        const san = String(pathArr[pi]).trim();
+                        hParts.push(isW ? `${mn}. ${san}` : `${mn}... ${san}`);
+                    }
+                    lineHistory = hParts.join(" ");
+                }
+
+                let lineOutput = `[ID: ${c.id}]
+MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
+
+                if (judgment) {
+                    lineOutput += `\\nJUDGMENT: ${judgment}`;
+                    const tone = (typeof judgmentTone === 'function') ? judgmentTone(judgment) : '';
+                    if (tone) lineOutput += `\\nTONE: ${tone}`;
+                }
+                if (c.isVariationEnd) {
+                    lineOutput += `\\nVARIATION END: yes — give concrete next ideas from END PLAN`;
+                }
+                lineOutput += `\\nLINE: ${lineHistory || "(start)"}`;
+                if (nextClue) lineOutput += `\\nNEXT (from GM): ${nextClue}`;
+                if (userNotes[c.id]) lineOutput += `\\nYOUR NOTE: ${userNotes[c.id]}`;
+                if (fenAfter) lineOutput += `\\nFEN AFTER: ${fenAfter}`;
+
+                if (fenAfter) {
+                    if (onProgress) onProgress(currentStep, totalSelectedMoves, `${c.moveNum}.${sanDisplay}`);
+                    let humanClue = "";
+                    try {
+                        const hasGmJudgment = !!(signOnly || hasNag || hasEval || judgment);
+                        const needsClue = !!(c.isVariationEnd || hasGmJudgment || userNotes[c.id]);
+                        if (needsClue) {
+                            humanClue = await getHumanClue(fenAfter, weSide, sideJustPlayed, !!c.isVariationEnd, hasGmJudgment);
+                        }
+                    } catch (err) {
+                        humanClue = "";
+                    }
+                    if (nextClue && humanClue && !humanClue.includes("continue")) {
+                        humanClue = humanClue + " · GM continues " + nextClue.split(/\\s+/).slice(0, 6).join(" ");
+                    } else if (nextClue && !humanClue) {
+                        humanClue = "GM continues " + nextClue.split(/\\s+/).slice(0, 6).join(" ");
+                    }
+                    if (humanClue) lineOutput += `\\nEND PLAN: ${humanClue}`;
+                }
+
+                batchData.push(lineOutput);
+            }
+
+            const batchString = batchData.join("\\n\\n");
+            return `You are a 2700+ human GM writing a paid chess course in very simple, correct English for students who play ${weSide}. Always favour our side.
+
+We play ${weSide}. Use "we/our" for our moves. For the opponent say "${theySide}" (never "they").
+
+MOST IMPORTANT RULES:
+1. Look at the JUDGMENT line (if it exists). You MUST follow it exactly.
+   - "unclear" → write confidently: "the position is complex but our play is easier / we have good practical chances". NEVER invent the word "compensation".
+   - "compensation" → name the concrete reason.
+   - "equal" → "the position is equal and solid / pleasant".
+2. If there is NO JUDGMENT line → do NOT invent "complex", "unclear", "compensation", or any evaluation. Only explain the idea of the move the GM played.
+3. At a variation end (when END PLAN contains "next ideas" or "next we can play"): you MUST give 1–2 concrete next ideas from END PLAN. Do not stop at "our play is easier".
+
+Other rules:
+- 1–3 short sentences only.
+- Explain only the idea of the side that just moved.
+- On our move: our plan and why the move is good.
+- On ${theySide}'s move: only their idea. Do not mention our future plans.
+- Never start with the move number or the move itself.
+- Prefer NEXT (from GM) and END PLAN ideas. Do not invent moves that contradict them.
+- YOUR NOTE (if present) is the highest priority — use it.
+- END PLAN is silent help — turn it into natural prose.
+- Never say "FEN", "material", "mobility", "eval", or "Stockfish".
+
+Good examples:
+
+Our move (no judgment — just the idea):
+"We bring the knight to c5 to attack the queen and prepare …d4, gaining active piece play."
+
+Our move (unclear at variation end — encouraging + concrete plan):
+"The position is complex, but our play is easier. We can continue with …Bd7, …Rfc8 and …Ne4 ideas."
+
+Our move (real compensation):
+"We have good compensation thanks to the active rooks and bishop, with White’s king still in the centre. We can continue with …Bd7 connecting the rooks."
+
+Opponent move:
+"${theySide} develops the bishop with tempo, hoping to get a very strong piece if we block with the knight."
+
+Return ONLY JSON. Keys = IDs. Values = comment text only.
+
+=== BATCH ===
+${batchString}`;
         }
 
         async function copySelectedBatch() {
