@@ -683,6 +683,50 @@
         }
 
         /**
+         * From MultiPV top lines, extract the most recurring first moves / themes
+         * so the AI gets real plan ideas at variation ends.
+         */
+        function extractCommonIdeas(fen, lines, weSide, maxIdeas = 4) {
+            if (!lines || !lines.length) return "";
+            const stm = (fen.split(/\s+/)[1] === 'w') ? 'White' : 'Black';
+            const isOurTurn = (stm === weSide);
+
+            // Count first-move frequency across multipv
+            const firstCount = {};
+            const secondCount = {};
+            for (const ln of lines.slice(0, 5)) {
+                const moves = uciToSanList(fen, ln.moves || [], 3);
+                if (!moves.length) continue;
+                const s0 = moves[0].san;
+                firstCount[s0] = (firstCount[s0] || 0) + 1;
+                if (moves[1]) {
+                    const s1 = moves[1].san;
+                    secondCount[s1] = (secondCount[s1] || 0) + 1;
+                }
+            }
+
+            const sortedFirst = Object.keys(firstCount).sort((a,b) => firstCount[b]-firstCount[a]);
+            const sortedSecond = Object.keys(secondCount).sort((a,b) => secondCount[b]-secondCount[a]);
+
+            const ideas = [];
+            for (const s of sortedFirst.slice(0, 3)) ideas.push(s);
+            for (const s of sortedSecond.slice(0, 2)) {
+                if (ideas.length < maxIdeas && !ideas.includes(s)) ideas.push(s);
+            }
+
+            if (!ideas.length) return "";
+
+            // Phrase depending on whose turn it is
+            if (isOurTurn) {
+                if (ideas.length === 1) return 'next we can play ...' + ideas[0];
+                return 'next ideas: ...' + ideas.slice(0, 3).join(', ...');
+            } else {
+                // Opponent to move — still show what we want after
+                return 'after their reply we look at ...' + ideas.slice(0, 3).join(', ...');
+            }
+        }
+
+        /**
          * Concrete compensation only when real features exist.
          * Never the empty phrase "our active pieces give us good compensation".
          */
@@ -833,104 +877,107 @@
             }
         }
 
-        async function getHumanClue(fenAfter, weSide, sideJustPlayed, isVarEnd) {
+        async function getHumanClue(fenAfter, weSide, sideJustPlayed, isVarEnd, hasGmJudgment) {
             const clues = [];
             try {
                 const game = new Chess();
-                if (!game.load(fenAfter)) return "equal";
+                if (!game.load(fenAfter)) return "";
 
-                // 1) Engine threat by letting the mover play again
+                // 1) Quick tactical threat
                 if (sideJustPlayed) {
                     const threat = await engineThreatIfSameSideMovesAgain(fenAfter, sideJustPlayed);
                     if (threat) clues.push(threat);
                 }
 
-                // 2) Static hanging / checks as backup (only the most important)
+                // 2) Hanging pieces (short)
                 if (typeof analyzeThreats === "function") {
                     try {
                         const threats = analyzeThreats(game);
                         if (threats.hangingPieces && threats.hangingPieces.length && clues.length < 2) {
-                            const h = threats.hangingPieces[0];
-                            const short = h.replace(/ \(attacked by.*$/, '');
-                            clues.push("can take " + short);
-                        }
-                        if (threats.checksAvailable && threats.checksAvailable.length && clues.length < 2) {
-                            clues.push("check available");
+                            const h = threats.hangingPieces[0].replace(/ \(attacked by.*$/, '');
+                            clues.push("can take " + h);
                         }
                     } catch (te) {}
                 }
 
-                // 3) Judgment + plan + concrete compensation (model-PGN style)
+                // 3) Engine MultiPV — especially important at variation ends
                 try {
-                    const enginePromise = (async () => {
-                        await initLocalEngine();
-                        if (!stockfishEngine || !stockfishEngine.ready) return null;
-                        return await stockfishEngine.analyze(fenAfter, 12);
-                    })();
-                    const result = await Promise.race([
-                        enginePromise,
-                        new Promise(resolve => setTimeout(() => resolve(null), 4000))
-                    ]);
+                    await initLocalEngine();
+                    if (stockfishEngine && stockfishEngine.ready) {
+                        const result = await Promise.race([
+                            stockfishEngine.analyze(fenAfter, 14),
+                            new Promise(r => setTimeout(() => r(null), 5000))
+                        ]);
 
-                    if (result && result.lines && result.lines.length > 0) {
-                        const top = result.lines[0];
-                        const cp = top.evalCp ?? 0;
-                        const abs = Math.abs(cp);
+                        if (result && result.lines && result.lines.length) {
+                            const top = result.lines[0];
+                            const cp = top.evalCp ?? 0;
+                            const abs = Math.abs(cp);
+                            const stm = fenAfter.split(/\s+/)[1] === 'w' ? 'White' : 'Black';
 
-                        // Clean judgment language
-                        let judgment = "equal";
-                        if (abs < 35) judgment = "equal";
-                        else if (cp >= 35 && cp < 100) judgment = weSide === "White" ? "we are slightly better" : "they are slightly better";
-                        else if (cp <= -35 && cp > -100) judgment = weSide === "White" ? "they are slightly better" : "we are slightly better";
-                        else if (cp >= 100) judgment = weSide === "White" ? "we are clearly better" : "they are clearly better";
-                        else if (cp <= -100) judgment = weSide === "White" ? "they are clearly better" : "we are clearly better";
-                        clues.unshift(judgment);
+                            // Judgment only as soft hint (never overrides GM)
+                            let soft = "";
+                            if (abs < 35) soft = "equal";
+                            else if (cp >= 35 && cp < 100) soft = weSide === "White" ? "we are slightly better" : "they are slightly better";
+                            else if (cp <= -35 && cp > -100) soft = weSide === "White" ? "they are slightly better" : "we are slightly better";
+                            else if (cp >= 100) soft = weSide === "White" ? "we are clearly better" : "they are clearly better";
+                            else if (cp <= -100) soft = weSide === "White" ? "they are clearly better" : "we are clearly better";
+                            if (soft) clues.unshift(soft);
 
-                        const stm = fenAfter.split(/\s+/)[1] === 'w' ? 'White' : 'Black';
+                            // === VARIATION END: give concrete next ideas from MultiPV ===
+                            if (isVarEnd) {
+                                // Prefer analyzing from OUR perspective when possible
+                                let planFen = fenAfter;
+                                let planLines = result.lines;
+                                if (stm !== weSide) {
+                                    planFen = flipSideToMove(fenAfter);
+                                    try {
+                                        const planRes = await Promise.race([
+                                            stockfishEngine.analyze(planFen, 14),
+                                            new Promise(r => setTimeout(() => r(null), 4000))
+                                        ]);
+                                        if (planRes && planRes.lines && planRes.lines.length) {
+                                            planLines = planRes.lines;
+                                        }
+                                    } catch (e) {}
+                                }
 
-                        // Our recommended continuations (especially useful at variation ends)
-                        if (isVarEnd || stm === weSide) {
-                            let planFen = fenAfter;
-                            let planMoves = top.moves || [];
-                            if (stm !== weSide) {
-                                planFen = flipSideToMove(fenAfter);
-                                try {
-                                    const planRes = await Promise.race([
-                                        stockfishEngine.analyze(planFen, 12),
-                                        new Promise(r => setTimeout(() => r(null), 3500))
-                                    ]);
-                                    if (planRes && planRes.lines && planRes.lines[0]) {
-                                        planMoves = planRes.lines[0].moves || [];
-                                    }
-                                } catch (e) {}
+                                // Recurring ideas across top 5 lines
+                                const common = extractCommonIdeas(planFen, planLines, weSide, 4);
+                                if (common) clues.push(common);
+
+                                // Also keep the single best short plan
+                                const bestPlan = describePlanMoves(planFen, (planLines[0] && planLines[0].moves) || [], weSide);
+                                if (bestPlan && !clues.some(c => c.includes("continue") || c.includes("next"))) {
+                                    clues.push(bestPlan);
+                                }
+
+                                // Compensation language ONLY if GM already gave a judgment
+                                // (hasGmJudgment) or the position is truly close
+                                if (hasGmJudgment) {
+                                    const comp = describeCompensation(fenAfter, weSide, cp, true);
+                                    if (comp) clues.push(comp);
+                                }
+                            } else if (stm === weSide) {
+                                // Not var end but our turn — light plan
+                                const plan = describePlanMoves(fenAfter, top.moves || [], weSide);
+                                if (plan) clues.push(plan);
                             }
-                            const plan = describePlanMoves(planFen, planMoves, weSide);
-                            if (plan) clues.push(plan);
+
+                            // Critical alternatives
+                            const critical = describeCriticalAlternatives(fenAfter, result.lines);
+                            if (critical) clues.push(critical);
                         }
-
-                        // Concrete compensation only when real features exist
-                        const comp = describeCompensation(fenAfter, weSide, cp, isVarEnd);
-                        if (comp) clues.push(comp);
-
-                        // Critical position: alternatives collapse
-                        const critical = describeCriticalAlternatives(fenAfter, result.lines);
-                        if (critical) clues.push(critical);
-                    } else if (!clues.length) {
-                        clues.push("equal");
                     }
-                } catch (se) {
-                    if (!clues.length) clues.push("equal");
-                }
+                } catch (se) {}
 
-                return clues.slice(0, 4).join(" · ") || "equal";
+                return clues.slice(0, 5).join(" · ") || "";
             } catch (e) {
                 console.warn("getHumanClue error:", e);
-                return "equal";
+                return "";
             }
         }
 
-        // Keep old name as thin wrapper so other UI panels still work
-        
         /**
          * Rich positional + threat report block for the AI prompt.
          * Non-fatal: returns "" if anything fails.
@@ -1724,6 +1771,10 @@ MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
                     if (tone) lineOutput += `\nTONE: ${tone}`;
                 }
 
+                if (c.isVariationEnd) {
+                    lineOutput += `\nVARIATION END: yes — give concrete next ideas from END PLAN`;
+                }
+
                 lineOutput += `\nLINE: ${lineHistory || "(start)"}`;
 
                 if (nextClue) {
@@ -1744,9 +1795,10 @@ MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
                     btnText.innerHTML = `<div class="spinner"></div>Clue [${currentStep}/${totalSelectedMoves}]...`;
                     let humanClue = "";
                     try {
-                        const needsClue = !!(c.isVariationEnd || signOnly || hasNag || hasEval || userNotes[c.id]);
+                        const hasGmJudgment = !!(signOnly || hasNag || hasEval || judgment);
+                        const needsClue = !!(c.isVariationEnd || hasGmJudgment || userNotes[c.id]);
                         if (needsClue) {
-                            humanClue = await getHumanClue(fenAfter, weSide, sideJustPlayed, true);
+                            humanClue = await getHumanClue(fenAfter, weSide, sideJustPlayed, !!c.isVariationEnd, hasGmJudgment);
                         }
                     } catch (err) {
                         console.warn("Clue failed:", err);
@@ -1784,12 +1836,13 @@ MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
 
 We play ${weSide}. Use "we/our" for our moves. For the opponent say "${theySide}" (never "they").
 
-MOST IMPORTANT RULE — READ THIS FIRST:
-Look at the JUDGMENT line. You MUST follow it exactly.
-- If JUDGMENT = "unclear" → write confidently and encouragingly. The student must feel our preparation is solid. Use: "the position is complex but our play is easier", "we have good practical chances", "the position remains playable and pleasant". NEVER invent the word "compensation" if the judgment is only "unclear".
-- If JUDGMENT = "compensation" → name the concrete reason (bishop pair, activity, structure…).
-- If JUDGMENT = "equal" → say the position is equal and solid / pleasant.
-- Never invent a different evaluation than the one given in JUDGMENT / TONE.
+MOST IMPORTANT RULES:
+1. Look at the JUDGMENT line (if it exists). You MUST follow it exactly.
+   - "unclear" → write confidently: "the position is complex but our play is easier / we have good practical chances". NEVER invent the word "compensation".
+   - "compensation" → name the concrete reason.
+   - "equal" → "the position is equal and solid / pleasant".
+2. If there is NO JUDGMENT line → do NOT invent "complex", "unclear", "compensation", or any evaluation. Only explain the idea of the move the GM played.
+3. At a variation end (when END PLAN contains "next ideas" or "next we can play"): you MUST give 1–2 concrete next ideas from END PLAN. Do not stop at "our play is easier".
 
 Other rules:
 - 1–3 short sentences only.
@@ -1797,24 +1850,21 @@ Other rules:
 - On our move: our plan and why the move is good.
 - On ${theySide}'s move: only their idea. Do not mention our future plans.
 - Never start with the move number or the move itself.
-- Prefer the NEXT (from GM) moves when giving ideas. Do not invent engine moves that contradict the GM line.
-- YOUR NOTE (if present) is the highest priority human idea — use it.
-- END PLAN is silent help only — turn it into natural prose, do not copy it word-for-word.
+- Prefer NEXT (from GM) and END PLAN ideas. Do not invent moves that contradict them.
+- YOUR NOTE (if present) is the highest priority — use it.
+- END PLAN is silent help — turn it into natural prose.
 - Never say "FEN", "material", "mobility", "eval", or "Stockfish".
 
-Good examples (copy this exact style):
+Good examples:
 
-Our move (equal):
-"We develop the bishop, aiming to exchange White’s active pieces. After the simplifications both sides have solid structures and the position is equal."
+Our move (no judgment — just the idea):
+"We bring the knight to c5 to attack the queen and prepare …d4, gaining active piece play."
 
-Our move (key idea):
-"Nd7 is played specifically to reinforce the c5-square and to prepare …c5 as quickly as possible."
-
-Our move (unclear — encouraging, NO compensation invented):
-"The position is complex, but our play is easier. We have good practical chances and can continue with …Nd6 and …h5 ideas."
+Our move (unclear at variation end — encouraging + concrete plan):
+"The position is complex, but our play is easier. We can continue with …Bd7, …Rfc8 and …Ne4 ideas."
 
 Our move (real compensation):
-"We have good compensation for the pawn thanks to the bishop pair and active pieces. We can continue with …Nd6 and …h5 ideas."
+"We have good compensation thanks to the active rooks and bishop, with White’s king still in the centre. We can continue with …Bd7 connecting the rooks."
 
 Opponent move:
 "${theySide} develops the bishop with tempo, hoping to get a very strong piece if we block with the knight."
