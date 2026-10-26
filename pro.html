@@ -463,9 +463,18 @@
 
             const saved = localStorage.getItem('gm_master_state');
             if (saved) {
-                const state = JSON.parse(saved);
-                document.getElementById('pgn-input').value = state.original;
-                if(state.original) { processPgn(true); }
+                try {
+                    const state = JSON.parse(saved);
+                    document.getElementById('pgn-input').value = state.original || '';
+                    if (state.repertoire && document.getElementById('repertoire-side')) {
+                        document.getElementById('repertoire-side').value = state.repertoire;
+                    }
+                    if (state.userNotes && typeof state.userNotes === 'object') {
+                        userNotes = state.userNotes;
+                    }
+                    if (state.original) { processPgn(true); }
+                    // processPgn will call restoreSessionAfterPgn
+                } catch (e) { console.warn('restore state', e); }
             }
         };
 
@@ -1393,6 +1402,10 @@
 
             updateUI();
             saveState();
+            // Restore auto-batch + prepared prompts after refresh
+            setTimeout(() => {
+                if (typeof restoreSessionAfterPgn === 'function') restoreSessionAfterPgn();
+            }, 100);
         }
 
         function getSelectedIndices() {
@@ -1769,7 +1782,8 @@
             preparedPrompts = {};
             applyAutoBatch(0);
             updateAutoBatchLabel();
-            alert(`Split into ${autoBatches.length} batches of ~${size} moves.\n\nRecommended: click "Prepare All (engine clues)" once, wait, then Copy/Next is instant.`);
+            if (typeof persistSession === 'function') persistSession();
+            alert(`Split into ${autoBatches.length} batches of ~${size} moves.\n\nRecommended: click "Prepare All (engine clues)" once, wait, then Copy/Next is instant.\nProgress is saved across refresh.`);
         }
 
         function pgnHash() {
@@ -1835,6 +1849,7 @@
                     total: autoBatches.length
                 }));
             } catch (e) {}
+            if (typeof persistSession === 'function') persistSession();
             updateAutoBatchLabel();
         }
 
@@ -1907,8 +1922,10 @@
             }
             applyAutoBatch(0);
             updateAutoBatchLabel();
+            if (typeof persistSession === 'function') persistSession();
+            if (typeof saveState === 'function') saveState();
             const ready = Object.values(preparedPrompts).filter(Boolean).length;
-            alert(`Prepared ${ready} of ${autoBatches.length} batches.\\nYou can now click Copy This Batch → paste to AI → Next → Copy… with no waiting.`);
+            alert(`Prepared ${ready} of ${autoBatches.length} batches.\nProgress is saved — you can refresh and continue.\nCopy This Batch → paste to AI → Next → Copy…`);
         }
 
         /** Copy pre-built prompt if available, otherwise build live. */
@@ -2508,11 +2525,111 @@ ${batchString}`;
         }
 
         function saveState() {
-            localStorage.setItem('gm_master_state', JSON.stringify({ original: document.getElementById('pgn-input').value }));
+            try {
+                localStorage.setItem('gm_master_state', JSON.stringify({
+                    original: document.getElementById('pgn-input').value,
+                    repertoire: document.getElementById('repertoire-side')?.value || 'black',
+                    userNotes: userNotes || {},
+                    selStart: selStart,
+                    selEnd: selEnd
+                }));
+            } catch (e) { console.warn('saveState', e); }
         }
+
+        /** Persist auto-batch + prepared prompts so refresh does not wipe work. */
+        function persistSession() {
+            try {
+                const light = {
+                    pgnHash: (typeof pgnHash === 'function') ? pgnHash() : '',
+                    autoBatches: autoBatches,
+                    autoBatchIdx: autoBatchIdx,
+                    autoBatchDone: autoBatchDone,
+                    autoBatchActive: autoBatchActive,
+                    batchSize: document.getElementById('batch-size-input')?.value || '10',
+                    selStart: selStart,
+                    selEnd: selEnd,
+                    preparedKeys: Object.keys(preparedPrompts || {}).filter(k => preparedPrompts[k])
+                };
+                localStorage.setItem('gm_session_light', JSON.stringify(light));
+                // Large prompts → sessionStorage (survives refresh, cleared when tab closes)
+                sessionStorage.setItem('gm_prepared_prompts', JSON.stringify(preparedPrompts || {}));
+            } catch (e) {
+                console.warn('persistSession failed (storage full?)', e);
+                try {
+                    // If too large, keep only undelivered batches
+                    const slim = {};
+                    Object.keys(preparedPrompts || {}).forEach(k => {
+                        if (!autoBatchDone[k] && preparedPrompts[k]) slim[k] = preparedPrompts[k];
+                    });
+                    sessionStorage.setItem('gm_prepared_prompts', JSON.stringify(slim));
+                } catch (e2) {
+                    console.warn('persistSession slim also failed', e2);
+                }
+            }
+        }
+
+        function restoreSessionAfterPgn() {
+            try {
+                const light = JSON.parse(localStorage.getItem('gm_session_light') || 'null');
+                if (!light || !light.autoBatches || !light.autoBatches.length) return false;
+                // Verify same PGN
+                if (typeof pgnHash === 'function' && light.pgnHash && light.pgnHash !== pgnHash()) {
+                    return false;
+                }
+                autoBatches = light.autoBatches;
+                autoBatchIdx = light.autoBatchIdx || 0;
+                autoBatchDone = light.autoBatchDone || {};
+                autoBatchActive = !!light.autoBatchActive;
+                if (light.batchSize && document.getElementById('batch-size-input')) {
+                    document.getElementById('batch-size-input').value = light.batchSize;
+                }
+                try {
+                    preparedPrompts = JSON.parse(sessionStorage.getItem('gm_prepared_prompts') || '{}') || {};
+                } catch (e) { preparedPrompts = {}; }
+
+                // Show UI
+                const bar = document.getElementById('auto-batch-bar');
+                if (bar) bar.classList.remove('hidden');
+                const nav = document.getElementById('auto-batch-nav');
+                if (nav) nav.classList.remove('hidden');
+                const prepBtn = document.getElementById('btn-prepare-all');
+                if (prepBtn) {
+                    prepBtn.classList.remove('hidden');
+                    const ready = Object.keys(preparedPrompts).filter(k => preparedPrompts[k]).length;
+                    if (ready) prepBtn.innerText = `Re-prepare All (${ready} saved)`;
+                }
+                applyAutoBatch(autoBatchIdx);
+                updateAutoBatchLabel();
+                const stats = document.getElementById('stats');
+                const ready = Object.keys(preparedPrompts).filter(k => preparedPrompts[k]).length;
+                if (stats && ready) {
+                    stats.innerText = `Restored ${ready} prepared batches — continue with Copy / Next`;
+                }
+                return true;
+            } catch (e) {
+                console.warn('restoreSession failed', e);
+                return false;
+            }
+        }
+
+        // Warn before leaving if prepared work exists
+        window.addEventListener('beforeunload', function (e) {
+            const hasPrep = preparedPrompts && Object.keys(preparedPrompts).some(k => preparedPrompts[k]);
+            const hasAccum = accumulatedAiComments && Object.keys(accumulatedAiComments).length > 0;
+            if (hasPrep || hasAccum) {
+                persistSession();
+                saveState();
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
 
         function clearAll() {
             localStorage.removeItem('gm_master_state');
+            localStorage.removeItem('gm_session_light');
+            localStorage.removeItem('gm_ai_comments');
+            localStorage.removeItem('gm_auto_batch_done');
+            try { sessionStorage.removeItem('gm_prepared_prompts'); } catch (e) {}
             location.reload();
         }
 
