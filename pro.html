@@ -1711,7 +1711,7 @@
                 return "UNCERTAIN but our side is fine — explain why our play is easier / practical / solid. Never discourage the student. NEVER invent the word compensation.";
             }
             if (j.includes("compensation") || j.includes("counterplay")) {
-                return "We have compensation — name the concrete reason (bishop pair, activity, structure, easier play).";
+                return "Explain WHY we have compensation (centre, activity, tempo on queen, king still in centre…). Do not restate the move.";
             }
             if (j.includes("equal") || j === "=") {
                 return "Position is equal and solid / pleasant to play.";
@@ -1969,7 +1969,7 @@
                 const hasMistake = /\?/.test(tgt) && !hasBlunder && !hasDubious;
                 const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
                 const hasNag = /\$\d+/.test(tgt);
-                const hasEval = /[±∓∞]|\+\/=|=\/\+|\+=|=\+|\+\/\-|\-\/\+|=\/∞|∞\/=/.test(tgt);
+                const hasEval = /[±∓∞]|\+\/=|=\/\+|\+=|=\+|\+\/\-|\-\/\+|=\/∞|∞\/=|=\/\∞/.test(tgt);
 
                 let signOnly = "";
                 if (hasBlunder) signOnly = "??";
@@ -1985,118 +1985,95 @@
                     .replace(/[±∓∞=\/\+\-]+$/g, "")
                     .trim() || tgt;
                 const symbolPart = tgt.replace(sanDisplay, " ").replace(c.san || "", " ");
-                const judgment = expandNagText(symbolPart) || expandNagText(tgt.replace(sanDisplay, " "));
-                const moveWithSign = judgment
-                    ? `${sanDisplay} [${judgment}]`
-                    : (signOnly ? `${sanDisplay} ${signOnly}`.trim() : sanDisplay);
+                let judgment = expandNagText(symbolPart) || expandNagText(tgt.replace(sanDisplay, " "));
+                // Normalize common compound glyphs the GM uses at ends
+                if (!judgment && /=\/∞|∞\/=|=\/\∞/.test(tgt)) judgment = "unclear";
+                if (!judgment && /∞/.test(tgt)) judgment = "unclear";
 
                 const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter))
                     ? c.fenAfter
                     : (isValidFen(c.fen) ? c.fen : null);
 
-                const pathArr = c.pathArray || [];
+                // Next 2 moves only (from GM line) — no full history from move 1
                 const nextArr = (c.nextMovesFull && c.nextMovesFull.length)
-                    ? c.nextMovesFull.slice(0, 3)
-                    : (c.nextMoves || []).slice(0, 3);
-                let nextClue = "";
-                if (nextArr.length) {
-                    let ply = pathArr.length;
-                    const parts = [];
-                    for (let ni = 0; ni < nextArr.length; ni++) {
-                        const moveNum = Math.floor(ply / 2) + 1;
-                        const isWhite = (ply % 2 === 0);
-                        const raw = String(nextArr[ni]).trim();
-                        parts.push(isWhite ? `${moveNum}. ${raw}` : `${moveNum}... ${raw}`);
-                        ply++;
-                    }
-                    nextClue = parts.join(" ");
-                }
+                    ? c.nextMovesFull.slice(0, 2)
+                    : (c.nextMoves || []).slice(0, 2);
+                const nextClue = nextArr.length ? nextArr.map(x => String(x).trim()).join(" ") : "";
 
-                let lineHistory = "";
-                if (pathArr.length) {
-                    const hParts = [];
-                    for (let pi = 0; pi < pathArr.length; pi++) {
-                        const mn = Math.floor(pi / 2) + 1;
-                        const isW = (pi % 2 === 0);
-                        const san = String(pathArr[pi]).trim();
-                        hParts.push(isW ? `${mn}. ${san}` : `${mn}... ${san}`);
-                    }
-                    lineHistory = hParts.join(" ");
-                }
-
+                // Compact block for the AI
                 let lineOutput = `[ID: ${c.id}]
-MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
-
+MOVE: ${sanDisplay} by ${sideJustPlayed}`;
                 if (judgment) {
                     lineOutput += `\nJUDGMENT: ${judgment}`;
                     const tone = (typeof judgmentTone === 'function') ? judgmentTone(judgment) : '';
                     if (tone) lineOutput += `\nTONE: ${tone}`;
+                } else if (signOnly) {
+                    lineOutput += `\nJUDGMENT: ${expandNagText(signOnly) || signOnly}`;
                 }
-                if (c.isVariationEnd) {
-                    lineOutput += `\nVARIATION END: yes — give concrete next ideas from END PLAN`;
-                }
-                lineOutput += `\nLINE: ${lineHistory || "(start)"}`;
-                if (nextClue) lineOutput += `\nNEXT (from GM): ${nextClue}`;
+                if (nextClue) lineOutput += `\nNEXT: ${nextClue}`;
                 if (userNotes[c.id]) lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
-                if (fenAfter) lineOutput += `\nFEN AFTER: ${fenAfter}`;
+                if (fenAfter) lineOutput += `\nFEN: ${fenAfter}`;
 
                 if (onProgress) onProgress(currentStep, totalSelectedMoves, `${c.moveNum}.${sanDisplay}`);
 
-                if (fenAfter) {
+                // END PLAN only at variation ends — Stockfish ideas for how to continue
+                if (fenAfter && c.isVariationEnd) {
+                    lineOutput += `\nVARIATION END: yes`;
                     let humanClue = "";
                     try {
-                        // END PLAN only at variation ends — Stockfish next ideas for the reader
-                        if (c.isVariationEnd) {
-                            humanClue = await getHumanClue(fenAfter, weSide, sideJustPlayed, true, true);
-                        }
+                        humanClue = await getHumanClue(fenAfter, weSide, sideJustPlayed, true, true);
                     } catch (err) {
                         humanClue = "";
                     }
-                    if (c.isVariationEnd && humanClue) {
-                        lineOutput += `\nEND PLAN: ${humanClue}`;
-                    }
+                    if (humanClue) lineOutput += `\nEND PLAN: ${humanClue}`;
                 }
 
                 batchData.push(lineOutput);
             }
 
             const batchString = batchData.join("\n\n");
-            return `You are a 2700+ human GM writing a paid chess course in very simple, correct English for students who play ${weSide}. Always favour our side.
+            return buildSystemPrompt(weSide, theySide, batchString);
+        }
 
-We play ${weSide}. Use "we/our" for our moves. For the opponent say "${theySide}" (never "they").
+        function buildSystemPrompt(weSide, theySide, batchString) {
+            return `You are a 2700+ GM writing a paid chess course in very simple, correct English.
 
-MOST IMPORTANT RULES:
-1. Look at the JUDGMENT line (if it exists). You MUST follow it exactly.
-   - "unclear" → write confidently: "the position is complex but our play is easier / we have good practical chances". NEVER invent the word "compensation".
-   - "compensation" → name the concrete reason.
-   - "equal" → "the position is equal and solid / pleasant".
-2. If there is NO JUDGMENT line → do NOT invent "complex", "unclear", "compensation", or any evaluation. Only explain the idea of the move the GM played.
-3. END PLAN appears only on variation-end moves. When you see END PLAN / VARIATION END: give 1–2 concrete next ideas from it (Stockfish plans for the reader). Do not invent END PLAN on other moves.
+We play ${weSide}. Always say "we/our" for our side. Say "${theySide}" for the opponent (never "they").
 
-Other rules:
-- 1–3 short sentences only.
-- Explain only the idea of the side that just moved.
-- On our move: our plan and why the move is good.
-- On ${theySide}'s move: only their idea. Do not mention our future plans.
-- Never start with the move number or the move itself.
-- Prefer NEXT (from GM) and END PLAN ideas. Do not invent moves that contradict them.
-- YOUR NOTE (if present) is the highest priority — use it.
-- END PLAN is silent help — turn it into natural prose.
-- Never say "FEN", "material", "mobility", "eval", or "Stockfish".
+What each field means:
+- MOVE: the move that was just played (do NOT repeat it in your text — the reader already sees it).
+- JUDGMENT: the GM evaluation symbol in words (equal / unclear / compensation / slight edge…). Your comment MUST match this.
+- NEXT: the next 1–2 moves on the GM line (context only).
+- FEN: the position after the move.
+- VARIATION END + END PLAN: only on the last move of a variation. END PLAN is Stockfish’s idea of how we can continue — turn it into natural words, do not copy it.
 
-Good examples:
+How to write:
+- 1–3 short sentences.
+- Never start with the move or the move number.
+- On our move: explain the idea / why the judgment is justified.
+- On ${theySide}'s move: only their idea.
+- Do not say "we play Rd6" or restate the move — go straight to the idea.
+- Vary your wording. Stay concrete (file, tempo, centre, piece activity, king safety).
+- Never invent a different evaluation than JUDGMENT.
+- If JUDGMENT is "unclear": confident tone — complex but our play is easier / good practical chances. Do NOT invent "compensation" unless JUDGMENT says compensation.
+- If JUDGMENT is "compensation": say why (centre, activity, tempo, king in centre…).
+- If VARIATION END: include a brief practical plan from END PLAN (e.g. …Ne4, …Rfc8 ideas).
+- YOUR NOTE overrides everything if present.
+- Never say FEN, eval, Stockfish, material, mobility.
 
-Our move (no judgment — just the idea):
-"We bring the knight to c5 to attack the queen and prepare …d4, gaining active piece play."
+Examples:
 
-Our move (unclear at variation end — encouraging + concrete plan):
-"The position is complex, but our play is easier. We can continue with …Bd7, …Rfc8 and …Ne4 ideas."
+Our move with compensation at a variation end:
+"Of course, we occupy the d-file with tempo on the queen. Our strong centre and active pieces give us compensation for the pawn; we can continue with …Ne4 and …Rfc8 ideas."
 
-Our move (real compensation):
-"We have good compensation thanks to the active rooks and bishop, with White’s king still in the centre. We can continue with …Bd7 connecting the rooks."
+Our move, unclear:
+"The position is complex, but our play is easier. Active pieces and a strong centre give us good practical chances."
 
-Opponent move:
-"${theySide} develops the bishop with tempo, hoping to get a very strong piece if we block with the knight."
+Our move, no judgment (just the idea):
+"We bring the knight toward the centre, preparing …Ncd5 and …Ra8."
+
+${theySide}'s move:
+"${theySide} develops the bishop toward our kingside, aiming at h7."
 
 Return ONLY JSON. Keys = IDs. Values = comment text only.
 
@@ -2109,256 +2086,50 @@ ${batchString}`;
                 alert("Please click on a starting move and an ending move first!");
                 return;
             }
-            
+
             const btn = document.getElementById('copy-btn');
             const btnText = document.getElementById('copy-text');
             const statsText = document.getElementById('stats');
             const progressFill = document.getElementById('progress-fill');
-            
-            btn.classList.add('opacity-80', 'cursor-not-allowed');
-            btn.disabled = true;
+
+            if (btn) {
+                btn.classList.add('opacity-80', 'cursor-not-allowed');
+                btn.disabled = true;
+            }
 
             const repertoireSide = (document.getElementById('repertoire-side')?.value || 'black').toLowerCase();
             const weSide = repertoireSide === 'white' ? 'White' : 'Black';
             const theySide = repertoireSide === 'white' ? 'Black' : 'White';
-            // save note for the move currently open in the review panel
             saveCurrentMoveNote();
 
             const selectedIndices = getSelectedIndices();
-            let batchData = [];
-            let totalSelectedMoves = selectedIndices.length;
-            let engineCalls = 0;
+            const totalSelectedMoves = selectedIndices.length;
 
-            for (let s = 0; s < selectedIndices.length; s++) {
-                let i = selectedIndices[s];
-                let currentStep = s + 1;
-                let c = globalChunks[i];
+            try {
+                const fullPrompt = await buildPromptForIndices(selectedIndices, weSide, theySide, (step, total, label) => {
+                    if (btnText) btnText.innerHTML = `<div class="spinner"></div>Clue [${step}/${total}]...`;
+                    if (statsText) statsText.innerText = label || `${step}/${total}`;
+                    if (progressFill) progressFill.style.width = `${((step - 1) / Math.max(1, total)) * 100}%`;
+                });
+                if (progressFill) progressFill.style.width = '100%';
 
-                // Side that JUST played the move = the side that was to move BEFORE the move
-                const fenPartsBefore = (c.fen || "").split(" ");
-                const sideJustPlayed = fenPartsBefore[1] === "w" ? "White" : (fenPartsBefore[1] === "b" ? "Black" : "?");
-                const fenPartsAfter = (c.fenAfter || "").split(" ");
-                const sideToMoveAfter = fenPartsAfter[1] === "w" ? "White" : (fenPartsAfter[1] === "b" ? "Black" : "?");
-                const fenOk = c.moveParsed !== false && isValidFen(c.fenAfter);
-
-                // Symbol only if present on the move (incl. $NAG and evaluation symbols)
-                const tgt = c.target || "";
-                const hasBlunder = /\?\?/.test(tgt);
-                const hasDubious = /\?!/.test(tgt);
-                const hasInteresting = /!\?/.test(tgt);
-                const hasBrilliant = /!!/.test(tgt);
-                const hasMistake = /\?/.test(tgt) && !hasBlunder && !hasDubious;
-                const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
-                const hasNag = /\$\d+/.test(tgt);
-                const hasEval = /[±∓∞]|\+\/=|=\/\+|\+=|=\+|\+\/\-|\-\/\+|=\/∞|∞\/=/.test(tgt);
-
-                let signOnly = "";
-                if (hasBlunder) signOnly = "??";
-                else if (hasDubious) signOnly = "?!";
-                else if (hasInteresting) signOnly = "!?";
-                else if (hasBrilliant) signOnly = "!!";
-                else if (hasMistake) signOnly = "?";
-                else if (hasGood) signOnly = "!";
-
-                let sanDisplay = (c.san || tgt)
-                    .replace(/[!?]+/g, "")
-                    .replace(/\$\d+/g, "")
-                    .replace(/[±∓∞=\/\+\-]+$/g, "")
-                    .trim() || tgt;
-                // Only the symbol / $NAG part → plain words for the AI
-                const symbolPart = tgt.replace(sanDisplay, " ").replace(c.san || "", " ");
-                const judgment = expandNagText(symbolPart) || expandNagText(tgt.replace(sanDisplay, " "));
-                const hasJudgment = !!(signOnly || hasNag || hasEval || judgment);
-                // MOVE line: SAN + [unclear] / [compensation] / etc.
-                const moveWithSign = judgment
-                    ? `${sanDisplay} [${judgment}]`
-                    : (signOnly ? `${sanDisplay} ${signOnly}`.trim() : sanDisplay);
-
-                // FENs: before move, after move, and ~4 plies later along THIS variation
-                const fenBefore = isValidFen(c.fen) ? c.fen : null;
-                const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter))
-                    ? c.fenAfter
-                    : (isValidFen(c.fen) ? c.fen : null);
-
-                // FEN after each of the next up to 4 plies of THIS variation
-                const fenSteps = [];
-                if (fenAfter) {
-                    try {
-                        const ch = new Chess();
-                        if (ch.load(fenAfter)) {
-                            const nextSans = (c.nextMoves || []).slice(0, 4);
-                            for (let si = 0; si < nextSans.length; si++) {
-                                const ok = ch.move(String(nextSans[si]).replace(/[!?$].*$/, "").trim(), { sloppy: true });
-                                if (!ok) break;
-                                fenSteps.push(ch.fen());
-                            }
-                        }
-                    } catch (e) {}
+                try {
+                    await navigator.clipboard.writeText(fullPrompt);
+                } catch (err) {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = fullPrompt;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try { document.execCommand('copy'); } catch (e) {}
+                    document.body.removeChild(textArea);
                 }
-
-                // Short NEXT clue (3 moves) — idea only, not a script to narrate
-                const pathArr = c.pathArray || [];
-                const nextArr = (c.nextMovesFull && c.nextMovesFull.length)
-                    ? c.nextMovesFull.slice(0, 3)
-                    : (c.nextMoves || []).slice(0, 3);
-                let nextClue = "";
-                if (nextArr.length) {
-                    let ply = pathArr.length;
-                    const parts = [];
-                    for (let ni = 0; ni < nextArr.length; ni++) {
-                        const moveNum = Math.floor(ply / 2) + 1;
-                        const isWhite = (ply % 2 === 0);
-                        const raw = String(nextArr[ni]).trim();
-                        parts.push(isWhite ? `${moveNum}. ${raw}` : `${moveNum}... ${raw}`);
-                        ply++;
-                    }
-                    nextClue = parts.join(" ");
-                }
-
-                // Numbered path from the start of this variation so the AI sees the history
-                let lineHistory = "";
-                if (pathArr.length) {
-                    const hParts = [];
-                    for (let pi = 0; pi < pathArr.length; pi++) {
-                        const mn = Math.floor(pi / 2) + 1;
-                        const isW = (pi % 2 === 0);
-                        const san = String(pathArr[pi]).trim();
-                        hParts.push(isW ? `${mn}. ${san}` : `${mn}... ${san}`);
-                    }
-                    lineHistory = hParts.join(" ");
-                }
-
-                // === CLEAN priority-ordered block for the AI ===
-                // 1. JUDGMENT (must be obeyed) + TONE
-                // 2. MOVE
-                // 3. LINE history
-                // 4. NEXT from the GM (preferred over engine)
-                // 5. YOUR NOTE
-                // 6. short END PLAN
-                // 7. one FEN AFTER only
-                // Deliberately NO full POSITIONAL / THREATS / extra FENs
-
-                let lineOutput = `[ID: ${c.id}]
-MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
-
-                if (judgment) {
-                    lineOutput += `\nJUDGMENT: ${judgment}`;
-                    const tone = (typeof judgmentTone === 'function') ? judgmentTone(judgment) : '';
-                    if (tone) lineOutput += `\nTONE: ${tone}`;
-                }
-
-                if (c.isVariationEnd) {
-                    lineOutput += `\nVARIATION END: yes — give concrete next ideas from END PLAN`;
-                }
-
-                lineOutput += `\nLINE: ${lineHistory || "(start)"}`;
-
-                if (nextClue) {
-                    lineOutput += `\nNEXT (from GM): ${nextClue}`;
-                }
-
-                if (userNotes[c.id]) {
-                    lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
-                }
-
-                if (fenAfter) {
-                    lineOutput += `\nFEN AFTER: ${fenAfter}`;
-                }
-
-                // Generate a short END PLAN only when needed
-                if (fenAfter) {
-                    engineCalls++;
-                    btnText.innerHTML = `<div class="spinner"></div>Clue [${currentStep}/${totalSelectedMoves}]...`;
-                    let humanClue = "";
-                    try {
-                        // END PLAN only at variation ends — Stockfish next ideas
-                        if (c.isVariationEnd) {
-                            humanClue = await getHumanClue(fenAfter, weSide, sideJustPlayed, true, true);
-                        }
-                    } catch (err) {
-                        console.warn("Clue failed:", err);
-                        humanClue = "";
-                    }
-
-                    if (c.isVariationEnd && humanClue) {
-                        lineOutput += `\nEND PLAN: ${humanClue}`;
-                    }
-
-                    statsText.innerText = `[${c.moveNum}.${sanDisplay}] ${judgment || humanClue || "ok"}`;
-                } else {
-                    statsText.innerText = `Preparing: ${c.moveNum}. ${sanDisplay}`;
-                    await delay(8);
-                }
-
-                let currentProgress = ((currentStep - 1) / totalSelectedMoves) * 100;
-                progressFill.style.width = `${currentProgress}%`;
-
-                batchData.push(lineOutput);
-            }
-
-            progressFill.style.width = '100%';
-            const batchString = batchData.join("\n\n");
-            
-            const fullPrompt = `You are a 2700+ human GM writing a paid chess course in very simple, correct English for students who play ${weSide}. Always favour our side.
-
-We play ${weSide}. Use "we/our" for our moves. For the opponent say "${theySide}" (never "they").
-
-MOST IMPORTANT RULES:
-1. Look at the JUDGMENT line (if it exists). You MUST follow it exactly.
-   - "unclear" → write confidently: "the position is complex but our play is easier / we have good practical chances". NEVER invent the word "compensation".
-   - "compensation" → name the concrete reason.
-   - "equal" → "the position is equal and solid / pleasant".
-2. If there is NO JUDGMENT line → do NOT invent "complex", "unclear", "compensation", or any evaluation. Only explain the idea of the move the GM played.
-3. END PLAN appears only on variation-end moves. When you see END PLAN / VARIATION END: give 1–2 concrete next ideas from it (Stockfish plans for the reader). Do not invent END PLAN on other moves.
-
-Other rules:
-- 1–3 short sentences only.
-- Explain only the idea of the side that just moved.
-- On our move: our plan and why the move is good.
-- On ${theySide}'s move: only their idea. Do not mention our future plans.
-- Never start with the move number or the move itself.
-- Prefer NEXT (from GM) and END PLAN ideas. Do not invent moves that contradict them.
-- YOUR NOTE (if present) is the highest priority — use it.
-- END PLAN is silent help — turn it into natural prose.
-- Never say "FEN", "material", "mobility", "eval", or "Stockfish".
-
-Good examples:
-
-Our move (no judgment — just the idea):
-"We bring the knight to c5 to attack the queen and prepare …d4, gaining active piece play."
-
-Our move (unclear at variation end — encouraging + concrete plan):
-"The position is complex, but our play is easier. We can continue with …Bd7, …Rfc8 and …Ne4 ideas."
-
-Our move (real compensation):
-"We have good compensation thanks to the active rooks and bishop, with White’s king still in the centre. We can continue with …Bd7 connecting the rooks."
-
-Opponent move:
-"${theySide} develops the bishop with tempo, hoping to get a very strong piece if we block with the knight."
-
-Return ONLY JSON. Keys = IDs. Values = comment text only.
-
-=== BATCH ===
-${batchString}`;
-
-            navigator.clipboard.writeText(fullPrompt).then(() => {
                 resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
                 alert(`Selected Batch Copied!\n${totalSelectedMoves} positions.`);
-            }).catch(err => {
-                const textArea = document.createElement("textarea");
-                textArea.value = fullPrompt;
-                document.body.appendChild(textArea);
-                textArea.select();
-                try {
-                    document.execCommand('copy');
-                    resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                    alert(`Selected Batch Copied!\n${totalSelectedMoves} positions.`);
-                } catch (e) {
-                    alert("Clipboard error. Please try again or copy manually.");
-                    resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
-                }
-                document.body.removeChild(textArea);
-            });
+            } catch (e) {
+                console.error(e);
+                resetCopyBtnUI(btn, btnText, statsText, progressFill, totalSelectedMoves);
+                alert("Copy failed. Please try again.");
+            }
         }
 
         function resetCopyBtnUI(btn, btnText, statsText, progressFill, total) {
