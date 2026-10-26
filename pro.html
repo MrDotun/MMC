@@ -130,8 +130,7 @@
 
                 <div class="lg:w-2/3 glass p-4 rounded-xl">
                     <div class="mb-3 text-xs text-slate-400 italic">
-                        <span class="text-yellow-400 font-bold">Instruction:</span> Click a move to set the <span class="text-white">START</span> of your batch, then click another move to set the <span class="text-white">END</span>.
-                        Then review each position below, write your ideas, and copy for the AI.
+                        <span class="text-yellow-400 font-bold">Instruction:</span> Click any move as <span class="text-white">START</span>, another as <span class="text-white">END</span> (not only from move 1). Then use Auto-batch → Split → Prepare All, or copy a single selection.
                     </div>
                     <div id="chunks-container" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto pr-2"></div>
                 </div>
@@ -1382,7 +1381,7 @@
             globalChunks = chunks;
             if (!chunks.length) {
                 document.getElementById('stats').innerText = "0 MOVES — check PGN";
-                alert("No moves were parsed from this PGN.\n\nTips:\n• Include the full game from move 1 (or a complete FEN + moves)\n• Ensure moves are standard SAN\n• $11 / $13 NAGs are fine; keep parentheses balanced");
+                alert("No moves were parsed from this PGN.\n\nTips:\n• Paste a PGN with standard SAN moves (headers optional)\n• $11 / $13 NAGs and variations in parentheses are fine\n• Keep parentheses balanced");
                 return;
             }
             document.getElementById('workspace').classList.remove('hidden');
@@ -1433,24 +1432,10 @@
                 if (/[!?]|\$\d+|\+=|=\+|[\+\-]\/|[\-\+]\/|[±∓∞]/.test(c.target || "")) mustInclude.add(i);
             });
 
-            // Target 4–6 moves for good AI quality (hard max 6)
+            // Target 4–6 moves, in order through the window (do not jump to late moves)
             const TARGET = 5;
             const MAX = 6;
-            const remaining = rangeIndices.filter(i => !mustInclude.has(i));
 
-            // Prefer our moves (side to move before the move matches repertoire) and richer next-clues
-            const weIsWhite = (document.getElementById("repertoire-side")?.value || "black") === "white";
-            remaining.sort((a, b) => {
-                const ca = globalChunks[a], cb = globalChunks[b];
-                const aOur = (ca && ca.fen && ca.fen.split(" ")[1] === (weIsWhite ? "w" : "b")) ? 1 : 0;
-                const bOur = (cb && cb.fen && cb.fen.split(" ")[1] === (weIsWhite ? "w" : "b")) ? 1 : 0;
-                if (bOur !== aOur) return bOur - aOur;
-                const aNext = (ca && ca.nextMoves) ? ca.nextMoves.length : 0;
-                const bNext = (cb && cb.nextMoves) ? cb.nextMoves.length : 0;
-                return bNext - aNext;
-            });
-
-            // Score helper for trimming must-include if it is already too large
             const scoreMove = (i) => {
                 const c = globalChunks[i];
                 if (!c) return 0;
@@ -1458,22 +1443,25 @@
                 if (/[!?]|\$\d+|[±∓∞]/.test(c.target || "")) s += 5;
                 if (c.isVariationEnd) s += 4;
                 if (c.isVariationStart) s += 2;
-                if (i === rangeIndices[0] || i === rangeIndices[rangeIndices.length - 1]) s += 1;
                 return s;
             };
 
-            if (mustInclude.size > MAX) {
-                const ranked = Array.from(mustInclude).sort((a, b) => scoreMove(b) - scoreMove(a));
-                return ranked.slice(0, MAX).sort((a, b) => a - b);
+            // If must-include alone is already large, keep the best-scored but preserve order
+            if (mustInclude.size >= TARGET) {
+                if (mustInclude.size > MAX) {
+                    const ranked = Array.from(mustInclude).sort((a, b) => scoreMove(b) - scoreMove(a));
+                    return ranked.slice(0, MAX).sort((a, b) => a - b);
+                }
+                return Array.from(mustInclude).sort((a, b) => a - b);
             }
 
-            // Fill only up to TARGET (not MAX) — keep batches lean for the AI
-            let need = Math.max(0, TARGET - mustInclude.size);
+            // Fill gaps in chronological order so batch 1 starts at the beginning of the window
+            const remaining = rangeIndices.filter(i => !mustInclude.has(i)); // already sorted ascending
+            let need = TARGET - mustInclude.size;
             for (let k = 0; k < need && remaining.length; k++) {
                 mustInclude.add(remaining.shift());
             }
-
-            // If still under 4, add 1–2 more so the AI has a bit of context
+            // Ensure at least 4 when the window has enough moves
             while (mustInclude.size < Math.min(4, rangeIndices.length) && remaining.length) {
                 mustInclude.add(remaining.shift());
             }
@@ -1683,6 +1671,8 @@
         function expandNagText(raw) {
             if (!raw) return "";
             let s = String(raw);
+            // Strip check/mate markers so "Qa5+" is not read as an evaluation
+            s = s.replace(/[+#]/g, " ");
             // $NAG codes first (most reliable)
             s = s.replace(/\$(\d+)/g, (_, n) => {
                 const m = NAG_MEANING[parseInt(n, 10)];
@@ -1785,7 +1775,7 @@
             applyAutoBatch(0);
             updateAutoBatchLabel();
             if (typeof persistSession === 'function') persistSession();
-            alert(`Split into ${autoBatches.length} batches of ~${size} moves.\n\nRecommended: click "Prepare All (engine clues)" once, wait, then Copy/Next is instant.\nProgress is saved across refresh.`);
+            alert(`Split into ${autoBatches.length} batches of ~${size} moves.\nYou can start from any move — only your selected range is batched.\n\nRecommended: click "Prepare All (engine clues)" once, then Copy/Next is instant.\nProgress is saved across refresh.`);
         }
 
         function pgnHash() {
@@ -2050,24 +2040,21 @@ MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
                 if (userNotes[c.id]) lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
                 if (fenAfter) lineOutput += `\nFEN AFTER: ${fenAfter}`;
 
+                if (onProgress) onProgress(currentStep, totalSelectedMoves, `${c.moveNum}.${sanDisplay}`);
+
                 if (fenAfter) {
-                    if (onProgress) onProgress(currentStep, totalSelectedMoves, `${c.moveNum}.${sanDisplay}`);
                     let humanClue = "";
                     try {
-                        const hasGmJudgment = !!(signOnly || hasNag || hasEval || judgment);
-                        const needsClue = !!(c.isVariationEnd || hasGmJudgment || userNotes[c.id]);
-                        if (needsClue) {
-                            humanClue = await getHumanClue(fenAfter, weSide, sideJustPlayed, !!c.isVariationEnd, hasGmJudgment);
+                        // END PLAN only at variation ends — Stockfish next ideas for the reader
+                        if (c.isVariationEnd) {
+                            humanClue = await getHumanClue(fenAfter, weSide, sideJustPlayed, true, true);
                         }
                     } catch (err) {
                         humanClue = "";
                     }
-                    if (nextClue && humanClue && !humanClue.includes("continue")) {
-                        humanClue = humanClue + " · GM continues " + nextClue.split(/\s+/).slice(0, 6).join(" ");
-                    } else if (nextClue && !humanClue) {
-                        humanClue = "GM continues " + nextClue.split(/\s+/).slice(0, 6).join(" ");
+                    if (c.isVariationEnd && humanClue) {
+                        lineOutput += `\nEND PLAN: ${humanClue}`;
                     }
-                    if (humanClue) lineOutput += `\nEND PLAN: ${humanClue}`;
                 }
 
                 batchData.push(lineOutput);
@@ -2084,7 +2071,7 @@ MOST IMPORTANT RULES:
    - "compensation" → name the concrete reason.
    - "equal" → "the position is equal and solid / pleasant".
 2. If there is NO JUDGMENT line → do NOT invent "complex", "unclear", "compensation", or any evaluation. Only explain the idea of the move the GM played.
-3. At a variation end (when END PLAN contains "next ideas" or "next we can play"): you MUST give 1–2 concrete next ideas from END PLAN. Do not stop at "our play is easier".
+3. END PLAN appears only on variation-end moves. When you see END PLAN / VARIATION END: give 1–2 concrete next ideas from it (Stockfish plans for the reader). Do not invent END PLAN on other moves.
 
 Other rules:
 - 1–3 short sentences only.
@@ -2284,25 +2271,16 @@ MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
                     btnText.innerHTML = `<div class="spinner"></div>Clue [${currentStep}/${totalSelectedMoves}]...`;
                     let humanClue = "";
                     try {
-                        const hasGmJudgment = !!(signOnly || hasNag || hasEval || judgment);
-                        const needsClue = !!(c.isVariationEnd || hasGmJudgment || userNotes[c.id]);
-                        if (needsClue) {
-                            humanClue = await getHumanClue(fenAfter, weSide, sideJustPlayed, !!c.isVariationEnd, hasGmJudgment);
+                        // END PLAN only at variation ends — Stockfish next ideas
+                        if (c.isVariationEnd) {
+                            humanClue = await getHumanClue(fenAfter, weSide, sideJustPlayed, true, true);
                         }
                     } catch (err) {
                         console.warn("Clue failed:", err);
                         humanClue = "";
                     }
 
-                    // Prefer GM next moves in the plan when available
-                    if (nextClue && humanClue && !humanClue.includes("continue")) {
-                        const shortNext = nextClue.split(/\s+/).slice(0, 6).join(" ");
-                        humanClue = humanClue + " · GM continues " + shortNext;
-                    } else if (nextClue && !humanClue) {
-                        humanClue = "GM continues " + nextClue.split(/\s+/).slice(0, 6).join(" ");
-                    }
-
-                    if (humanClue) {
+                    if (c.isVariationEnd && humanClue) {
                         lineOutput += `\nEND PLAN: ${humanClue}`;
                     }
 
@@ -2331,7 +2309,7 @@ MOST IMPORTANT RULES:
    - "compensation" → name the concrete reason.
    - "equal" → "the position is equal and solid / pleasant".
 2. If there is NO JUDGMENT line → do NOT invent "complex", "unclear", "compensation", or any evaluation. Only explain the idea of the move the GM played.
-3. At a variation end (when END PLAN contains "next ideas" or "next we can play"): you MUST give 1–2 concrete next ideas from END PLAN. Do not stop at "our play is easier".
+3. END PLAN appears only on variation-end moves. When you see END PLAN / VARIATION END: give 1–2 concrete next ideas from it (Stockfish plans for the reader). Do not invent END PLAN on other moves.
 
 Other rules:
 - 1–3 short sentences only.
