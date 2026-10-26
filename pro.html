@@ -1371,6 +1371,11 @@
             }
 
             globalChunks = chunks;
+            if (!chunks.length) {
+                document.getElementById('stats').innerText = "0 MOVES — check PGN";
+                alert("No moves were parsed from this PGN.\n\nTips:\n• Include the full game from move 1 (or a complete FEN + moves)\n• Ensure moves are standard SAN\n• $11 / $13 NAGs are fine; keep parentheses balanced");
+                return;
+            }
             document.getElementById('workspace').classList.remove('hidden');
             document.getElementById('copy-btn').classList.remove('hidden');
             
@@ -1910,7 +1915,7 @@
         async function copyPreparedOrLive() {
             if (autoBatchActive && preparedPrompts[autoBatchIdx]) {
                 const prompt = preparedPrompts[autoBatchIdx];
-                const n = (prompt.match(/\\[ID: /g) || []).length;
+                const n = (prompt.match(/\[ID: /g) || []).length;
                 try {
                     await navigator.clipboard.writeText(prompt);
                 } catch (e) {
@@ -1948,14 +1953,14 @@
                 const fenPartsBefore = (c.fen || "").split(" ");
                 const sideJustPlayed = fenPartsBefore[1] === "w" ? "White" : (fenPartsBefore[1] === "b" ? "Black" : "?");
                 const tgt = c.target || "";
-                const hasBlunder = /\\?\\?/.test(tgt);
-                const hasDubious = /\\?!/.test(tgt);
-                const hasInteresting = /!\\?/.test(tgt);
+                const hasBlunder = /\?\?/.test(tgt);
+                const hasDubious = /\?!/.test(tgt);
+                const hasInteresting = /!\?/.test(tgt);
                 const hasBrilliant = /!!/.test(tgt);
-                const hasMistake = /\\?/.test(tgt) && !hasBlunder && !hasDubious;
+                const hasMistake = /\?/.test(tgt) && !hasBlunder && !hasDubious;
                 const hasGood = (/!/.test(tgt) && !hasBrilliant && !hasInteresting) || hasBrilliant;
-                const hasNag = /\\$\\d+/.test(tgt);
-                const hasEval = /[±∓∞]|\\+\\/=|=\\/\\+|\\+=|=\\+|\\+\\/\\-|\\-\\/\\+|=\\/∞|∞\\/=/.test(tgt);
+                const hasNag = /\$\d+/.test(tgt);
+                const hasEval = /[±∓∞]|\+\/=|=\/\+|\+=|=\+|\+\/\-|\-\/\+|=\/∞|∞\/=/.test(tgt);
 
                 let signOnly = "";
                 if (hasBlunder) signOnly = "??";
@@ -1967,8 +1972,8 @@
 
                 let sanDisplay = (c.san || tgt)
                     .replace(/[!?]+/g, "")
-                    .replace(/\\$\\d+/g, "")
-                    .replace(/[±∓∞=\\/\\+\\-]+$/g, "")
+                    .replace(/\$\d+/g, "")
+                    .replace(/[±∓∞=\/\+\-]+$/g, "")
                     .trim() || tgt;
                 const symbolPart = tgt.replace(sanDisplay, " ").replace(c.san || "", " ");
                 const judgment = expandNagText(symbolPart) || expandNagText(tgt.replace(sanDisplay, " "));
@@ -1976,7 +1981,6 @@
                     ? `${sanDisplay} [${judgment}]`
                     : (signOnly ? `${sanDisplay} ${signOnly}`.trim() : sanDisplay);
 
-                const fenBefore = isValidFen(c.fen) ? c.fen : null;
                 const fenAfter = (c.moveParsed !== false && isValidFen(c.fenAfter))
                     ? c.fenAfter
                     : (isValidFen(c.fen) ? c.fen : null);
@@ -2015,17 +2019,17 @@
 MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
 
                 if (judgment) {
-                    lineOutput += `\\nJUDGMENT: ${judgment}`;
+                    lineOutput += `\nJUDGMENT: ${judgment}`;
                     const tone = (typeof judgmentTone === 'function') ? judgmentTone(judgment) : '';
-                    if (tone) lineOutput += `\\nTONE: ${tone}`;
+                    if (tone) lineOutput += `\nTONE: ${tone}`;
                 }
                 if (c.isVariationEnd) {
-                    lineOutput += `\\nVARIATION END: yes — give concrete next ideas from END PLAN`;
+                    lineOutput += `\nVARIATION END: yes — give concrete next ideas from END PLAN`;
                 }
-                lineOutput += `\\nLINE: ${lineHistory || "(start)"}`;
-                if (nextClue) lineOutput += `\\nNEXT (from GM): ${nextClue}`;
-                if (userNotes[c.id]) lineOutput += `\\nYOUR NOTE: ${userNotes[c.id]}`;
-                if (fenAfter) lineOutput += `\\nFEN AFTER: ${fenAfter}`;
+                lineOutput += `\nLINE: ${lineHistory || "(start)"}`;
+                if (nextClue) lineOutput += `\nNEXT (from GM): ${nextClue}`;
+                if (userNotes[c.id]) lineOutput += `\nYOUR NOTE: ${userNotes[c.id]}`;
+                if (fenAfter) lineOutput += `\nFEN AFTER: ${fenAfter}`;
 
                 if (fenAfter) {
                     if (onProgress) onProgress(currentStep, totalSelectedMoves, `${c.moveNum}.${sanDisplay}`);
@@ -2040,17 +2044,17 @@ MOVE: ${c.moveNum}. ${moveWithSign} by ${sideJustPlayed}`;
                         humanClue = "";
                     }
                     if (nextClue && humanClue && !humanClue.includes("continue")) {
-                        humanClue = humanClue + " · GM continues " + nextClue.split(/\\s+/).slice(0, 6).join(" ");
+                        humanClue = humanClue + " · GM continues " + nextClue.split(/\s+/).slice(0, 6).join(" ");
                     } else if (nextClue && !humanClue) {
-                        humanClue = "GM continues " + nextClue.split(/\\s+/).slice(0, 6).join(" ");
+                        humanClue = "GM continues " + nextClue.split(/\s+/).slice(0, 6).join(" ");
                     }
-                    if (humanClue) lineOutput += `\\nEND PLAN: ${humanClue}`;
+                    if (humanClue) lineOutput += `\nEND PLAN: ${humanClue}`;
                 }
 
                 batchData.push(lineOutput);
             }
 
-            const batchString = batchData.join("\\n\\n");
+            const batchString = batchData.join("\n\n");
             return `You are a 2700+ human GM writing a paid chess course in very simple, correct English for students who play ${weSide}. Always favour our side.
 
 We play ${weSide}. Use "we/our" for our moves. For the opponent say "${theySide}" (never "they").
