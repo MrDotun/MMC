@@ -1433,46 +1433,48 @@
                 if (/[!?]|\$\d+|\+=|=\+|[\+\-]\/|[\-\+]\/|[±∓∞]/.test(c.target || "")) mustInclude.add(i);
             });
 
-            // Target ~6 moves for good AI quality (max 8)
-            const TARGET = 6;
-            const MAX = 8;
+            // Target 4–6 moves for good AI quality (hard max 6)
+            const TARGET = 5;
+            const MAX = 6;
             const remaining = rangeIndices.filter(i => !mustInclude.has(i));
 
-            // Prefer our moves (Black or White per repertoire) and longer next-clues
+            // Prefer our moves (side to move before the move matches repertoire) and richer next-clues
+            const weIsWhite = (document.getElementById("repertoire-side")?.value || "black") === "white";
             remaining.sort((a, b) => {
                 const ca = globalChunks[a], cb = globalChunks[b];
-                const aOur = (ca && ca.fen && ca.fen.split(" ")[1] === (document.getElementById("repertoire-side")?.value === "white" ? "w" : "b")) ? 1 : 0;
-                const bOur = (cb && cb.fen && cb.fen.split(" ")[1] === (document.getElementById("repertoire-side")?.value === "white" ? "w" : "b")) ? 1 : 0;
+                const aOur = (ca && ca.fen && ca.fen.split(" ")[1] === (weIsWhite ? "w" : "b")) ? 1 : 0;
+                const bOur = (cb && cb.fen && cb.fen.split(" ")[1] === (weIsWhite ? "w" : "b")) ? 1 : 0;
                 if (bOur !== aOur) return bOur - aOur;
                 const aNext = (ca && ca.nextMoves) ? ca.nextMoves.length : 0;
                 const bNext = (cb && cb.nextMoves) ? cb.nextMoves.length : 0;
                 return bNext - aNext;
             });
 
-            let need = Math.max(0, TARGET - mustInclude.size);
-            // If must-include is already large, still allow up to MAX
-            if (mustInclude.size >= MAX) {
-                // Keep only the most important must-includes: symbols + var ends first
-                const ranked = Array.from(mustInclude).sort((a, b) => {
-                    const ca = globalChunks[a], cb = globalChunks[b];
-                    const score = (c) => {
-                        if (!c) return 0;
-                        let s = 0;
-                        if (/[!?]|\$\d+|[±∓∞]/.test(c.target || "")) s += 3;
-                        if (c.isVariationEnd) s += 2;
-                        if (c.isVariationStart) s += 1;
-                        return s;
-                    };
-                    return score(cb) - score(ca);
-                });
+            // Score helper for trimming must-include if it is already too large
+            const scoreMove = (i) => {
+                const c = globalChunks[i];
+                if (!c) return 0;
+                let s = 0;
+                if (/[!?]|\$\d+|[±∓∞]/.test(c.target || "")) s += 5;
+                if (c.isVariationEnd) s += 4;
+                if (c.isVariationStart) s += 2;
+                if (i === rangeIndices[0] || i === rangeIndices[rangeIndices.length - 1]) s += 1;
+                return s;
+            };
+
+            if (mustInclude.size > MAX) {
+                const ranked = Array.from(mustInclude).sort((a, b) => scoreMove(b) - scoreMove(a));
                 return ranked.slice(0, MAX).sort((a, b) => a - b);
             }
 
+            // Fill only up to TARGET (not MAX) — keep batches lean for the AI
+            let need = Math.max(0, TARGET - mustInclude.size);
             for (let k = 0; k < need && remaining.length; k++) {
                 mustInclude.add(remaining.shift());
             }
-            // Soft fill up to MAX if window is sparse
-            while (mustInclude.size < Math.min(MAX, rangeIndices.length) && remaining.length) {
+
+            // If still under 4, add 1–2 more so the AI has a bit of context
+            while (mustInclude.size < Math.min(4, rangeIndices.length) && remaining.length) {
                 mustInclude.add(remaining.shift());
             }
 
