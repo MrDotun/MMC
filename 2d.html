@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>2D Chess - Screen Record Tool</title>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.min.js"></script>
@@ -34,7 +34,6 @@
       gap: 12px;
     }
 
-    /* ===== SIZE CONTROLS ===== */
     .size-controls {
       background: #1a1a1a;
       padding: 10px;
@@ -50,30 +49,30 @@
       align-items: center;
     }
     .size-controls input[type="range"] {
-      width: 180px;
+      width: 160px;
     }
 
-    /* ===== VIDEO ===== */
     .video-wrapper {
       background: #000;
       border-radius: 10px;
       overflow: hidden;
       margin: 0 auto;
+      width: 90%;
     }
     video {
       width: 100%;
       display: block;
+      background: #000;
     }
 
-    /* ===== BOARD ===== */
     .board-wrapper {
       margin: 0 auto;
+      width: 92%;
     }
     #board {
       width: 100%;
     }
 
-    /* ===== BUTTONS ===== */
     .controls {
       display: flex;
       flex-wrap: wrap;
@@ -81,23 +80,31 @@
       justify-content: center;
     }
 
-    button, label.file-btn {
-      padding: 8px 12px;
+    button, .file-btn {
+      padding: 10px 14px;
       border: none;
-      border-radius: 7px;
-      font-size: 13px;
+      border-radius: 8px;
+      font-size: 14px;
       cursor: pointer;
       background: #3b82f6;
       color: white;
       font-weight: 500;
+      display: inline-block;
     }
-    button:hover, label.file-btn:hover { background: #2563eb; }
+    button:hover, .file-btn:hover { background: #2563eb; }
     button.secondary { background: #374151; }
-    button.secondary:hover { background: #4b5563; }
     button.active { background: #059669; }
-    button.danger { background: #dc2626; }
 
-    input[type="file"] { display: none; }
+    #videoInput {
+      display: none;
+    }
+
+    .file-name {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #4ade80;
+      min-height: 1.2em;
+    }
 
     .setup-info {
       text-align: center;
@@ -125,7 +132,6 @@
       margin-top: 6px;
     }
 
-    /* Hide some controls when recording */
     .recording-mode .size-controls,
     .recording-mode .tip,
     .recording-mode h1 {
@@ -136,37 +142,34 @@
 <body>
   <h1>2D Chess Record Tool</h1>
 
-  <div class="container" id="mainContainer">
+  <div class="container">
 
-    <!-- SIZE CONTROLS -->
     <div class="size-controls">
       <label>
         Video size
-        <input type="range" id="videoSize" min="40" max="100" value="85">
+        <input type="range" id="videoSize" min="50" max="100" value="90">
       </label>
       <label>
         Board size
-        <input type="range" id="boardSize" min="50" max="100" value="90">
+        <input type="range" id="boardSize" min="60" max="100" value="92">
       </label>
       <div class="controls" style="margin-top:6px;">
         <button onclick="toggleRecordingMode()" id="recordModeBtn" class="secondary">Recording Mode</button>
       </div>
     </div>
 
-    <!-- VIDEO -->
     <div class="video-wrapper" id="videoWrapper">
       <video id="video" controls playsinline></video>
     </div>
 
     <div class="controls">
-      <label class="file-btn">
-        Upload Video
-        <input type="file" id="videoInput" accept="video/*">
-      </label>
-      <button onclick="togglePlay()" id="playBtn">Play / Pause</button>
+      <label for="videoInput" class="file-btn">Upload Video</label>
+      <input type="file" id="videoInput" accept="video/*">
+      <button onclick="togglePlay()">Play / Pause</button>
     </div>
 
-    <!-- BOARD -->
+    <div class="file-name" id="fileName"></div>
+
     <div class="board-wrapper" id="boardWrapper">
       <div id="board"></div>
     </div>
@@ -205,7 +208,7 @@
     let orientation = 'white';
     let setupMode = false;
 
-    // ===== SIZE CONTROLS =====
+    // Size controls
     const videoSize = document.getElementById('videoSize');
     const boardSize = document.getElementById('boardSize');
     const videoWrapper = document.getElementById('videoWrapper');
@@ -219,11 +222,6 @@
       if (board) board.resize();
     });
 
-    // Set initial sizes
-    videoWrapper.style.width = '85%';
-    boardWrapper.style.width = '90%';
-
-    // ===== RECORDING MODE =====
     function toggleRecordingMode() {
       document.body.classList.toggle('recording-mode');
       const btn = document.getElementById('recordModeBtn');
@@ -236,17 +234,12 @@
       }
     }
 
-    // ===== VIDEO CONTROLS =====
     function togglePlay() {
       const video = document.getElementById('video');
-      if (video.paused) {
-        video.play();
-      } else {
-        video.pause();
-      }
+      if (video.paused) video.play();
+      else video.pause();
     }
 
-    // ===== CHESS LOGIC =====
     function onDragStart(source, piece) {
       if (setupMode) return true;
       if (chess.game_over()) return false;
@@ -273,7 +266,7 @@
     }
 
     function updateAll() {
-      if (!setupMode) board.position(chess.fen());
+      if (!setupMode && board) board.position(chess.fen());
 
       let status = '';
       if (chess.in_checkmate()) status = 'Checkmate!';
@@ -326,7 +319,7 @@
           });
           updateAll();
         } else {
-          alert('Invalid position');
+          alert('Invalid position. Try again.');
           setupMode = true;
         }
       }
@@ -388,7 +381,7 @@
       pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
     });
 
-    // Video upload
+    // Better file upload handling
     document.getElementById('videoInput').addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (file) {
@@ -396,6 +389,7 @@
         const video = document.getElementById('video');
         video.src = url;
         video.load();
+        document.getElementById('fileName').textContent = '✓ ' + file.name;
       }
     });
 
