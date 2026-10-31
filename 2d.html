@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2D Chess - Screen Record Tool</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.min.js"></script>
+  <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f0f0f;
+      color: #eee;
+      padding: 10px;
+      min-height: 100vh;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 1.2rem;
+      margin-bottom: 10px;
+    }
+
+    .container {
+      max-width: 520px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ===== SIZE CONTROLS ===== */
+    .size-controls {
+      background: #1a1a1a;
+      padding: 10px;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .size-controls label {
+      font-size: 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .size-controls input[type="range"] {
+      width: 180px;
+    }
+
+    /* ===== VIDEO ===== */
+    .video-wrapper {
+      background: #000;
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 0 auto;
+    }
+    video {
+      width: 100%;
+      display: block;
+    }
+
+    /* ===== BOARD ===== */
+    .board-wrapper {
+      margin: 0 auto;
+    }
+    #board {
+      width: 100%;
+    }
+
+    /* ===== BUTTONS ===== */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      justify-content: center;
+    }
+
+    button, label.file-btn {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 7px;
+      font-size: 13px;
+      cursor: pointer;
+      background: #3b82f6;
+      color: white;
+      font-weight: 500;
+    }
+    button:hover, label.file-btn:hover { background: #2563eb; }
+    button.secondary { background: #374151; }
+    button.secondary:hover { background: #4b5563; }
+    button.active { background: #059669; }
+    button.danger { background: #dc2626; }
+
+    input[type="file"] { display: none; }
+
+    .setup-info {
+      text-align: center;
+      background: #064e3b;
+      color: #a7f3d0;
+      padding: 8px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      display: none;
+    }
+    .setup-info.show { display: block; }
+
+    .status {
+      text-align: center;
+      font-size: 0.9rem;
+      color: #9ca3af;
+      min-height: 1.3em;
+    }
+
+    .tip {
+      text-align: center;
+      font-size: 0.82rem;
+      color: #6b7280;
+      line-height: 1.4;
+      margin-top: 6px;
+    }
+
+    /* Hide some controls when recording */
+    .recording-mode .size-controls,
+    .recording-mode .tip,
+    .recording-mode h1 {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>2D Chess Record Tool</h1>
+
+  <div class="container" id="mainContainer">
+
+    <!-- SIZE CONTROLS -->
+    <div class="size-controls">
+      <label>
+        Video size
+        <input type="range" id="videoSize" min="40" max="100" value="85">
+      </label>
+      <label>
+        Board size
+        <input type="range" id="boardSize" min="50" max="100" value="90">
+      </label>
+      <div class="controls" style="margin-top:6px;">
+        <button onclick="toggleRecordingMode()" id="recordModeBtn" class="secondary">Recording Mode</button>
+      </div>
+    </div>
+
+    <!-- VIDEO -->
+    <div class="video-wrapper" id="videoWrapper">
+      <video id="video" controls playsinline></video>
+    </div>
+
+    <div class="controls">
+      <label class="file-btn">
+        Upload Video
+        <input type="file" id="videoInput" accept="video/*">
+      </label>
+      <button onclick="togglePlay()" id="playBtn">Play / Pause</button>
+    </div>
+
+    <!-- BOARD -->
+    <div class="board-wrapper" id="boardWrapper">
+      <div id="board"></div>
+    </div>
+
+    <div class="setup-info" id="setupInfo">
+      SETUP MODE — Drag pieces to match your video, then click "Start Playing"
+    </div>
+
+    <div class="controls">
+      <button id="setupBtn" onclick="toggleSetup()">Set Position</button>
+      <button onclick="undoMove()">Undo</button>
+      <button onclick="flipBoard()" class="secondary">Flip</button>
+      <button onclick="resetBoard()" class="secondary">Reset</button>
+    </div>
+
+    <div class="controls">
+      <button onclick="setTurn('w')" class="secondary">White to move</button>
+      <button onclick="setTurn('b')" class="secondary">Black to move</button>
+      <button onclick="copyFEN()">Copy FEN</button>
+      <button onclick="copyPGN()" class="secondary">Copy PGN</button>
+    </div>
+
+    <div class="status" id="status">White to move</div>
+  </div>
+
+  <p class="tip">
+    1. Upload video → Set Position → match the board<br>
+    2. Click "Start Playing"<br>
+    3. Use Play/Pause and make moves in time with the boys<br>
+    4. Turn on Recording Mode → screen record
+  </p>
+
+  <script>
+    const chess = new Chess();
+    let board = null;
+    let orientation = 'white';
+    let setupMode = false;
+
+    // ===== SIZE CONTROLS =====
+    const videoSize = document.getElementById('videoSize');
+    const boardSize = document.getElementById('boardSize');
+    const videoWrapper = document.getElementById('videoWrapper');
+    const boardWrapper = document.getElementById('boardWrapper');
+
+    videoSize.addEventListener('input', () => {
+      videoWrapper.style.width = videoSize.value + '%';
+    });
+    boardSize.addEventListener('input', () => {
+      boardWrapper.style.width = boardSize.value + '%';
+      if (board) board.resize();
+    });
+
+    // Set initial sizes
+    videoWrapper.style.width = '85%';
+    boardWrapper.style.width = '90%';
+
+    // ===== RECORDING MODE =====
+    function toggleRecordingMode() {
+      document.body.classList.toggle('recording-mode');
+      const btn = document.getElementById('recordModeBtn');
+      if (document.body.classList.contains('recording-mode')) {
+        btn.textContent = 'Exit Recording Mode';
+        btn.classList.add('active');
+      } else {
+        btn.textContent = 'Recording Mode';
+        btn.classList.remove('active');
+      }
+    }
+
+    // ===== VIDEO CONTROLS =====
+    function togglePlay() {
+      const video = document.getElementById('video');
+      if (video.paused) {
+        video.play();
+      } else {
+        video.pause();
+      }
+    }
+
+    // ===== CHESS LOGIC =====
+    function onDragStart(source, piece) {
+      if (setupMode) return true;
+      if (chess.game_over()) return false;
+      if ((chess.turn() === 'w' && piece.search(/^b/) !== -1) ||
+          (chess.turn() === 'b' && piece.search(/^w/) !== -1)) {
+        return false;
+      }
+    }
+
+    function onDrop(source, target) {
+      if (setupMode) return;
+
+      const move = chess.move({
+        from: source,
+        to: target,
+        promotion: 'q'
+      });
+      if (move === null) return 'snapback';
+      updateAll();
+    }
+
+    function onSnapEnd() {
+      if (!setupMode) board.position(chess.fen());
+    }
+
+    function updateAll() {
+      if (!setupMode) board.position(chess.fen());
+
+      let status = '';
+      if (chess.in_checkmate()) status = 'Checkmate!';
+      else if (chess.in_draw()) status = 'Draw';
+      else {
+        status = (chess.turn() === 'w' ? 'White' : 'Black') + ' to move';
+        if (chess.in_check()) status += ' (Check)';
+      }
+      document.getElementById('status').textContent = status;
+    }
+
+    function toggleSetup() {
+      setupMode = !setupMode;
+      const btn = document.getElementById('setupBtn');
+      const info = document.getElementById('setupInfo');
+
+      if (setupMode) {
+        btn.textContent = 'Start Playing';
+        btn.classList.add('active');
+        info.classList.add('show');
+
+        board.destroy();
+        board = Chessboard('board', {
+          draggable: true,
+          dropOffBoard: 'trash',
+          sparePieces: true,
+          position: chess.fen(),
+          onDragStart: onDragStart,
+          onDrop: onDrop,
+          pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+        });
+      } else {
+        const currentPos = board.fen();
+        const turn = chess.turn();
+        const newFen = currentPos + ' ' + turn + ' KQkq - 0 1';
+
+        if (chess.load(newFen)) {
+          btn.textContent = 'Set Position';
+          btn.classList.remove('active');
+          info.classList.remove('show');
+
+          board.destroy();
+          board = Chessboard('board', {
+            draggable: true,
+            position: chess.fen(),
+            onDragStart: onDragStart,
+            onDrop: onDrop,
+            onSnapEnd: onSnapEnd,
+            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+          });
+          updateAll();
+        } else {
+          alert('Invalid position');
+          setupMode = true;
+        }
+      }
+    }
+
+    function setTurn(color) {
+      const parts = chess.fen().split(' ');
+      parts[1] = color;
+      if (chess.load(parts.join(' '))) updateAll();
+    }
+
+    function undoMove() {
+      if (setupMode) return;
+      chess.undo();
+      updateAll();
+    }
+
+    function resetBoard() {
+      if (confirm('Reset to starting position?')) {
+        chess.reset();
+        setupMode = false;
+        document.getElementById('setupBtn').textContent = 'Set Position';
+        document.getElementById('setupBtn').classList.remove('active');
+        document.getElementById('setupInfo').classList.remove('show');
+
+        board.destroy();
+        board = Chessboard('board', {
+          draggable: true,
+          position: 'start',
+          onDragStart: onDragStart,
+          onDrop: onDrop,
+          onSnapEnd: onSnapEnd,
+          pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+        });
+        updateAll();
+      }
+    }
+
+    function flipBoard() {
+      orientation = orientation === 'white' ? 'black' : 'white';
+      board.orientation(orientation);
+    }
+
+    function copyFEN() {
+      navigator.clipboard.writeText(chess.fen()).then(() => alert('FEN copied!'));
+    }
+
+    function copyPGN() {
+      navigator.clipboard.writeText(chess.pgn()).then(() => alert('PGN copied!'));
+    }
+
+    // Initialize board
+    board = Chessboard('board', {
+      draggable: true,
+      position: 'start',
+      onDragStart: onDragStart,
+      onDrop: onDrop,
+      onSnapEnd: onSnapEnd,
+      pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+    });
+
+    // Video upload
+    document.getElementById('videoInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        const url = URL.createObjectURL(file);
+        const video = document.getElementById('video');
+        video.src = url;
+        video.load();
+      }
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+      if (e.target.tagName === 'INPUT') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlay();
+      }
+      if (e.key === 'z' || e.key === 'Z') undoMove();
+      if (e.key === 'f' || e.key === 'F') flipBoard();
+    });
+
+    updateAll();
+  </script>
+</body>
+</html>
