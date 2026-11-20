@@ -1,156 +1,147 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>2700 GM Course Tool v2.0</title>
-    <style>
-        :root { --primary: #2c3e50; --accent: #e67e22; --success: #27ae60; --bg: #f1f2f6; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; max-width: 1100px; margin: 20px auto; background: var(--bg); color: var(--primary); padding: 20px; }
-        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 30px; }
-        textarea { width: 100%; height: 200px; border: 2px solid #ddd; border-radius: 8px; padding: 15px; font-family: 'Courier New', Courier, monospace; font-size: 14px; margin-bottom: 10px; transition: 0.3s; resize: vertical; }
-        textarea:focus { border-color: var(--accent); outline: none; }
-        button { background: var(--primary); color: white; border: none; padding: 12px 22px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
-        button:hover { background: #34495e; transform: translateY(-1px); }
-        .btn-prompt { background: var(--accent); }
-        .btn-assemble { background: var(--success); width: 100%; font-size: 1.2em; margin-top: 15px; }
-        .game-block { background: #fff; border: 1px solid #eee; border-left: 6px solid var(--accent); padding: 20px; margin-top: 20px; border-radius: 4px; }
-        .controls { display: flex; gap: 10px; margin-bottom: 15px; align-items: center; }
-        pre { background: #2d3436; color: #dfe6e9; padding: 15px; border-radius: 6px; overflow-x: auto; font-size: 13px; white-space: pre-wrap; border: 1px solid #000; }
-        .badge { background: #eee; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; color: #555; }
-        h1, h2 { text-align: center; margin-bottom: 10px; }
-        .instruction { font-style: italic; color: #666; margin-bottom: 20px; text-align: center; }
-    </style>
-</head>
-<body>
-
-    <div class="container">
-        <h1>🏆 2700 GM Course Preparer</h1>
-        <p class="instruction">1. Paste PGN with branches. 2. Copy Prompts. 3. Let Gemini add human comments (keeping symbols/highlights).</p>
-        
-        <textarea id="pgnInput" placeholder="Paste your raw PGN with symbols and branches here..."></textarea>
-        <button onclick="processPGN()">1. Split into GM Prompts</button>
-
-        <div id="output"></div>
-    </div>
-
-    <div class="container" style="border-top: 8px solid var(--success);">
-        <h2>🧩 Master Course Assembler</h2>
-        <p class="instruction">Paste Gemini's responses. I will combine them into a single clean PGN file.</p>
-        
-        <textarea id="geminiOutput" placeholder="Paste Gemini's PGN results here..."></textarea>
-        <button class="btn-assemble" onclick="assemblePGN()">2. Export Final Combined PGN</button>
-        <pre id="finalPgnPreview" style="display:none; margin-top: 20px;"></pre>
-    </div>
-
-    <script>
-        function processPGN() {
-            const input = document.getElementById('pgnInput').value;
-            const outputDiv = document.getElementById('output');
-            outputDiv.innerHTML = '';
-
-            const headerRegex = /\[.*?\]/g;
-            const headers = input.match(headerRegex) || [];
-            const headerText = headers.join('\n');
-            let moveText = input.replace(headerRegex, '').trim();
-
-            const variations = [];
-            
-            // This parser now correctly handles nested variations and keeps the full path
-            function parse(text, history = "") {
-                let current = "";
-                let i = 0;
-                while (i < text.length) {
-                    if (text[i] === '(') {
-                        let count = 1, start = i + 1, end = start;
-                        while (count > 0 && end < text.length) {
-                            if (text[end] === '(') count++;
-                            if (text[end] === ')') count--;
-                            end++;
-                        }
-                        parse(text.substring(start, end - 1), history + " " + current);
-                        i = end;
-                    } else {
-                        current += text[i];
-                        i++;
-                    }
-                }
-                variations.push((history + " " + current).trim());
-            }
-
-            parse(moveText);
-
-            variations.forEach((game, idx) => {
-                if (game.length < 15) return;
-                const cleanMoves = game.replace(/\s\s+/g, ' ').trim();
-                const fullPgn = `${headerText}\n\n${cleanMoves} *`;
-                
-                const gmPrompt = `Pretend you are a 2700+ ELO HUMAN GM. 
-Annotate this PGN for a Ruy Lopez course.
-
-CRITICAL RULES:
-1. Do NOT add any comments { } to moves 1, 2, 3, or 4.
-2. DO NOT delete or change existing symbols ($16, $1, !, etc.) or highlights ([%csl...], [%cal...]).
-3. Starting from Move 5, add high-level HUMAN verbal commentary inside curly braces { } in simple English.
-4. Output the result ONLY as a single PGN block in a markdown code block.
-
-PGN:
-${fullPgn}`;
-
-                const block = document.createElement('div');
-                block.className = 'game-block';
-                const escapedPrompt = gmPrompt.replace(/`/g, "\\`").replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                
-                block.innerHTML = `
-                    <div class="controls">
-                        <span class="badge">Variation ${idx + 1}</span>
-                        <button class="btn-prompt" onclick="copyText(this, \`${escapedPrompt}\`)">📋 Copy Prompt</button>
-                    </div>
-                    <pre>${fullPgn}</pre>
-                `;
-                outputDiv.appendChild(block);
-            });
-        }
-
-        function assemblePGN() {
-            const input = document.getElementById('geminiOutput').value;
-            const preview = document.getElementById('finalPgnPreview');
-            
-            // Find all PGN sections starting from moves or headers
-            const pgnRegex = /(?:\[Event[\s\S]*?\]\s+)?1\.\s[\s\S]*?\*/g;
-            const matches = input.match(pgnRegex);
-
-            if (!matches) {
-                alert("No valid PGN found in the input.");
-                return;
-            }
-
-            // Cleanup: ensure move 1-4 comments are removed in the final merge if Gemini slipped up
-            let masterPgn = matches.map(pgn => {
-                let cleaned = pgn.trim();
-                // Regex to remove any {comments} appearing before the 5th move number
-                cleaned = cleaned.replace(/^(.*?1\..*?2\..*?3\..*?4\..*?)(\s\{.*?\})/s, '$1');
-                return cleaned;
-            }).join('\n\n');
-
-            preview.textContent = masterPgn;
-            preview.style.display = 'block';
-
-            const blob = new Blob([masterPgn], { type: 'text/plain' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = "Final_GM_Course.pgn";
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        }
-
-        function copyText(btn, text) {
-            navigator.clipboard.writeText(text).then(() => {
-                const original = btn.innerText;
-                btn.innerText = "✅ Copied!";
-                setTimeout(() => btn.innerText = original, 2000);
-            });
-        }
-    </script>
-</body>
-</html>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A-King Academy | Chess CBT - 1st Term Final 2026/2027</title>
+  <style>
+    :root {
+      --primary: #1a365d;
+      --accent: #2b6cb0;
+      --success: #276749;
+      --danger: #c53030;
+      --bg: #f7fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #edf2f7 0%, #e2e8f0 100%);
+      min-height: 100vh;
+      color: #2d3748;
+      line-height: 1.5;
+    }
+    .container { max-width: 900px; margin: 0 auto; padding: 1.5rem; }
+    header {
+      background: var(--primary);
+      color: white;
+      padding: 1.25rem 1.5rem;
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    header h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+    header p { opacity: 0.9; font-size: 0.95rem; }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      border: 1px solid var(--border);
+    }
+    .class-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.85rem;
+      margin-top: 1rem;
+    }
+    .class-btn {
+      background: white;
+      border: 2px solid var(--accent);
+      color: var(--accent);
+      padding: 1rem 0.5rem;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .class-btn:hover, .class-btn.active {
+      background: var(--accent);
+      color: white;
+      transform: translateY(-2px);
+    }
+    .hidden { display: none !important; }
+    .student-info {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    @media (max-width: 600px) {
+      .student-info { grid-template-columns: 1fr; }
+    }
+    label { font-weight: 600; font-size: 0.9rem; display: block; margin-bottom: 0.3rem; }
+    input[type="text"] {
+      width: 100%;
+      padding: 0.65rem 0.85rem;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+    input[type="text"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(43,108,176,0.15);
+    }
+    .question {
+      margin-bottom: 1.5rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .question:last-child { border-bottom: none; }
+    .q-num {
+      display: inline-block;
+      background: var(--primary);
+      color: white;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 28px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-right: 0.5rem;
+    }
+    .q-text { font-weight: 600; margin-bottom: 0.75rem; font-size: 1.05rem; }
+    .options { display: flex; flex-direction: column; gap: 0.5rem; }
+    .option {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.65rem 0.9rem;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .option:hover { background: #ebf8ff; border-color: #90cdf4; }
+    .option.selected { background: #ebf8ff; border-color: var(--accent); }
+    .option input { accent-color: var(--accent); width: 18px; height: 18px; }
+    .spell-input {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 0.5rem;
+    }
+    .spell-input input {
+      width: 42px;
+      text-align: center;
+      font-size: 1.2rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 0.4rem;
+    }
+    .btn-row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 1.5rem;
+      justify-content: center;
+    }
+    
+... 
